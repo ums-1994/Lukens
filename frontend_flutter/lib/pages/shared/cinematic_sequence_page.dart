@@ -17,9 +17,9 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
   late final AnimationController _parallaxController;
   late final AnimationController _frameController;
 
-  // Background images for cinematic sequence (clean geometric look)
+  // Background images for cinematic sequence (using Background-Dark.png)
   final List<String> _backgroundImages = [
-    'assets/images/Khonology Landing Page Animation Frame 1.jpg',
+    'assets/images/Background-Dark..png',
   ];
 
   int _currentFrameIndex = 0;
@@ -110,67 +110,76 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final isMobile = size.width < 900;
+    final isMobile =
+        size.width < 1200; // Increased breakpoint for better desktop support
 
     return Scaffold(
       backgroundColor: const Color(0xFF000000),
       body: Stack(
-        fit: StackFit.expand,
         children: [
-          // Animated background layers with crossfade
-          _buildBackgroundLayers(),
-
-          // Dark gradient overlay for text contrast
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.black.withOpacity(0.4),
-                  Colors.black.withOpacity(0.6),
-                  Colors.black.withOpacity(0.5),
-                ],
+          // Background image with dark overlay
+          Positioned.fill(
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                Colors.black.withValues(alpha: 0.4),
+                BlendMode.darken,
               ),
+              child: _buildBackgroundLayers(),
             ),
           ),
-
-          // Floating geometric shapes (parallax) - desktop only
-          if (!isMobile) _buildFloatingShapes(),
-
-          // Main content
-          SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                  horizontal: isMobile ? 24 : 80,
-                  vertical: isMobile ? 40 : 60,
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: size.height - (isMobile ? 80 : 120),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Animated headline
-                      _buildAnimatedHeadline(isMobile),
-
-                      SizedBox(height: isMobile ? 24 : 40),
-
-                      // Subheading
-                      _buildSubheading(isMobile),
-
-                      SizedBox(height: isMobile ? 40 : 56),
-
-                      // CTA buttons
-                      _buildCTAButtons(isMobile),
-                    ],
+          // Main content with fixed header
+          Positioned.fill(
+            child: Column(
+              children: [
+                // FIXED HEADER SECTION (never scrolls)
+                const SizedBox(height: 48), // Top safe area/padding
+                Center(
+                  child: Image.asset(
+                    // LOGO - Fixed position
+                    'assets/images/2026.png',
+                    height: 160, // Fixed height
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Text(
+                        '✕ Khonology',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 80,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      );
+                    },
                   ),
                 ),
-              ),
+                Expanded(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: size.height - (isMobile ? 80 : 120),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Animated headline
+                        _buildAnimatedHeadline(isMobile),
+
+                        SizedBox(height: isMobile ? 24 : 40),
+
+                        // Subheading
+                        _buildSubheading(isMobile),
+
+                        SizedBox(height: isMobile ? 40 : 56),
+
+                        // CTA buttons
+                        _buildCTAButtons(isMobile),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -214,7 +223,9 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
           child: Image.asset(
             _backgroundImages[_currentFrameIndex],
             key: ValueKey<int>(_currentFrameIndex),
-            fit: BoxFit.cover,
+            fit: BoxFit.fill,
+            width: double.infinity,
+            height: double.infinity,
             errorBuilder: (context, error, stackTrace) {
               return Container(
                 color: const Color(0xFF000000),
@@ -233,7 +244,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
             final darkness =
                 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+              color: Colors.black.withValues(alpha: darkness.clamp(0.0, 1.0)),
             );
           },
         ),
@@ -358,7 +369,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
       style: TextStyle(
         fontFamily: 'Poppins',
         color: Colors.white,
-        fontSize: isMobile ? 40 : 80,
+        fontSize: isMobile ? 32 : 60, // Reduced for better 100% zoom
         fontWeight: FontWeight.w900,
         height: 0.95,
         letterSpacing: -2,
@@ -373,8 +384,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
         'Smart Proposal & SOW Builder for Digital Teams',
         style: TextStyle(
           fontFamily: 'Poppins',
-          color: Colors.white.withOpacity(0.95),
-          fontSize: isMobile ? 16 : 24,
+          color: Colors.white.withValues(alpha: 0.95),
+          fontSize: isMobile ? 14 : 18, // Reduced for better 100% zoom
           fontWeight: FontWeight.w300,
           height: 1.4,
           letterSpacing: 0.3,
@@ -421,7 +432,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                     ],
                   ),
                   child: ElevatedButton(
-                    onPressed: () => Navigator.pushNamed(context, '/register'),
+                    onPressed: () => Navigator.pushNamed(context, '/login'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
                       shadowColor: Colors.transparent,
@@ -436,10 +447,11 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                       elevation: 0,
                     ),
                     child: Text(
-                      'Get Started',
+                      'GET STARTED',
                       style: TextStyle(
                         fontFamily: 'Poppins',
-                        fontSize: isMobile ? 16 : 20,
+                        fontSize:
+                            isMobile ? 14 : 16, // Reduced for better 100% zoom
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.5,
                       ),
@@ -480,10 +492,11 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                   elevation: 0,
                 ),
                 child: Text(
-                  'Learn More',
+                  'LEARN MORE',
                   style: TextStyle(
                     fontFamily: 'Poppins',
-                    fontSize: isMobile ? 16 : 20,
+                    fontSize:
+                        isMobile ? 14 : 16, // Reduced for better 100% zoom
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.5,
                   ),

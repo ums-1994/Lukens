@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 /// Custom visible scrollbar widget for consistent scrolling across all pages
 class CustomScrollbar extends StatelessWidget {

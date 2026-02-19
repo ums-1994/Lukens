@@ -1,9 +1,10 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
 class ClientService {
-  static String get baseUrl => ApiService.baseUrl;
+  // Backend routes for clients are mounted under `/api`
+  static String get baseUrl => '${ApiService.baseUrl}/api';
 
   static String get _clientsBase => '$baseUrl/api/clients';
 

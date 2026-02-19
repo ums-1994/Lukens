@@ -1,6 +1,7 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:convert';
 import 'dart:js' as js;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
@@ -583,6 +584,8 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -595,6 +598,8 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -617,11 +622,19 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
     String? stage,
+    String? stageFilter,
   }) async {
     try {
+      final resolvedStage = (stage != null && stage.isNotEmpty)
+          ? stage
+          : (stageFilter != null && stageFilter.isNotEmpty)
+              ? stageFilter
+              : null;
       final uri = Uri.parse("$baseUrl/api/analytics/proposal-pipeline").replace(
         queryParameters: {
           if (startDate != null) 'start_date': startDate,
@@ -630,10 +643,14 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
-          if (stage != null && stage.isNotEmpty) 'stage': stage,
+          if (resolvedStage != null) 'stage': resolvedStage,
+          if (stageFilter != null && stageFilter.isNotEmpty)
+            'stage_filter': stageFilter,
         },
       );
 
@@ -654,6 +671,7 @@ class AppState extends ChangeNotifier {
     String? proposalType,
     String? client,
     String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -667,6 +685,7 @@ class AppState extends ChangeNotifier {
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
           if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -689,6 +708,8 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -702,6 +723,8 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -725,31 +748,40 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
     int? limit,
   }) async {
     try {
-      final uri = Uri.parse("$baseUrl/api/risk-gate/proposals").replace(
-        queryParameters: {
-          'risk_status': riskStatus,
-          if (startDate != null) 'start_date': startDate,
-          if (endDate != null) 'end_date': endDate,
-          if (owner != null && owner.isNotEmpty) 'owner': owner,
-          if (proposalType != null && proposalType.isNotEmpty)
-            'proposal_type': proposalType,
-          if (client != null && client.isNotEmpty) 'client': client,
-          if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty)
-            'department': department,
-          if (limit != null) 'limit': limit.toString(),
-        },
-      );
+      final queryParameters = <String, String>{
+        'risk_status': riskStatus,
+        if (startDate != null) 'start_date': startDate,
+        if (endDate != null) 'end_date': endDate,
+        if (owner != null && owner.isNotEmpty) 'owner': owner,
+        if (proposalType != null && proposalType.isNotEmpty)
+          'proposal_type': proposalType,
+        if (client != null && client.isNotEmpty) 'client': client,
+        if (region != null && region.isNotEmpty) 'region': region,
+        if (industry != null && industry.isNotEmpty) 'industry': industry,
+        if (scope != null && scope.isNotEmpty) 'scope': scope,
+        if (department != null && department.isNotEmpty)
+          'department': department,
+        if (limit != null) 'limit': limit.toString(),
+      };
 
-      final r = await http.get(uri, headers: _headers);
-      if (r.statusCode == 200) {
-        return jsonDecode(r.body);
-      }
+      final analyticsUri =
+          Uri.parse("$baseUrl/api/analytics/risk-gate-proposals")
+              .replace(queryParameters: queryParameters);
+      final legacyUri = Uri.parse("$baseUrl/api/risk-gate/proposals")
+          .replace(queryParameters: queryParameters);
+
+      final r1 = await http.get(analyticsUri, headers: _headers);
+      if (r1.statusCode == 200) return jsonDecode(r1.body);
+
+      final r2 = await http.get(legacyUri, headers: _headers);
+      if (r2.statusCode == 200) return jsonDecode(r2.body);
     } catch (e) {
       print('Error fetching risk gate proposals: $e');
     }
@@ -762,28 +794,36 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
     try {
-      final uri = Uri.parse("$baseUrl/api/risk-gate/summary").replace(
-        queryParameters: {
-          if (startDate != null) 'start_date': startDate,
-          if (endDate != null) 'end_date': endDate,
-          if (owner != null && owner.isNotEmpty) 'owner': owner,
-          if (proposalType != null && proposalType.isNotEmpty)
-            'proposal_type': proposalType,
-          if (client != null && client.isNotEmpty) 'client': client,
-          if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty)
-            'department': department,
-        },
-      );
+      final queryParameters = <String, String>{
+        if (startDate != null) 'start_date': startDate,
+        if (endDate != null) 'end_date': endDate,
+        if (owner != null && owner.isNotEmpty) 'owner': owner,
+        if (proposalType != null && proposalType.isNotEmpty)
+          'proposal_type': proposalType,
+        if (client != null && client.isNotEmpty) 'client': client,
+        if (region != null && region.isNotEmpty) 'region': region,
+        if (industry != null && industry.isNotEmpty) 'industry': industry,
+        if (scope != null && scope.isNotEmpty) 'scope': scope,
+        if (department != null && department.isNotEmpty)
+          'department': department,
+      };
 
-      final r = await http.get(uri, headers: _headers);
-      if (r.statusCode == 200) {
-        return jsonDecode(r.body);
-      }
+      final analyticsUri = Uri.parse("$baseUrl/api/analytics/risk-gate-summary")
+          .replace(queryParameters: queryParameters);
+      final legacyUri = Uri.parse("$baseUrl/api/risk-gate/summary")
+          .replace(queryParameters: queryParameters);
+
+      final r1 = await http.get(analyticsUri, headers: _headers);
+      if (r1.statusCode == 200) return jsonDecode(r1.body);
+
+      final r2 = await http.get(legacyUri, headers: _headers);
+      if (r2.statusCode == 200) return jsonDecode(r2.body);
     } catch (e) {
       print('Error fetching risk gate summary: $e');
     }
@@ -1095,17 +1135,20 @@ class AppState extends ChangeNotifier {
   // Proposal Analytics
   Future<Map<String, dynamic>?> getProposalAnalytics(String proposalId) async {
     try {
-      final r = await http.get(
+      final response = await http.get(
         Uri.parse("$baseUrl/api/proposals/$proposalId/analytics"),
         headers: _headers,
       );
-      if (r.statusCode == 200) {
-        return jsonDecode(r.body);
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        print('Error fetching analytics: ${response.statusCode}');
+        return null;
       }
     } catch (e) {
-      print('Error fetching proposal analytics: $e');
+      print('Error fetching analytics: $e');
+      return null;
     }
-    return null;
   }
 
   // Cycle Time Analytics
@@ -1115,6 +1158,9 @@ class AppState extends ChangeNotifier {
     String? status,
     String? owner,
     String? proposalType,
+    String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -1127,6 +1173,9 @@ class AppState extends ChangeNotifier {
           if (owner != null && owner.isNotEmpty) 'owner': owner,
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -1463,6 +1512,23 @@ class AppState extends ChangeNotifier {
     // IMPORTANT: Sync logout with AuthService
     AuthService.logout();
 
+    notifyListeners();
+  }
+
+  // Navigation and sidebar state management
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'Dashboard';
+
+  bool get isSidebarCollapsed => _isSidebarCollapsed;
+  String get currentNavLabel => _currentNavLabel;
+
+  void toggleSidebar() {
+    _isSidebarCollapsed = !_isSidebarCollapsed;
+    notifyListeners();
+  }
+
+  void setCurrentNavLabel(String label) {
+    _currentNavLabel = label;
     notifyListeners();
   }
 }

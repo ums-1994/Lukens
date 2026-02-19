@@ -267,7 +267,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     colors: [
-                      const Color(0xFF2C3E50).withOpacity(0.1),
+                      const Color(0xFF2C3E50).withValues(alpha: 0.1),
                       Colors.transparent,
                     ],
                   ),
@@ -291,9 +291,8 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
           child: Container(
             decoration: BoxDecoration(
               image: DecorationImage(
-                image: const AssetImage(
-                    'assets/images/Khonology Landing Page - Frame 6.png'),
-                fit: BoxFit.cover,
+                image: const AssetImage('assets/images/Background-Dark..png'),
+                fit: BoxFit.fill,
                 alignment: Alignment.center,
                 opacity: _tubeProgress.value,
               ),
@@ -418,8 +417,8 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                       borderRadius: BorderRadius.circular(50),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFFD72638).withOpacity(
-                            _glowController.isAnimating
+                          color: const Color(0xFFD72638).withValues(
+                            alpha: _glowController.isAnimating
                                 ? _glowIntensity.value
                                 : 0.4,
                           ),
@@ -430,7 +429,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                     ),
                     child: ElevatedButton(
                       onPressed: () {
-                        Navigator.pushNamed(context, '/register');
+                        Navigator.pushNamed(context, '/login');
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFD72638),
@@ -445,7 +444,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                         elevation: 0,
                       ),
                       child: const Text(
-                        'Get Started',
+                        'GET STARTED',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w600,
@@ -474,7 +473,7 @@ class _AnimatedLandingPageState extends State<AnimatedLandingPage>
                     ),
                   ),
                   child: const Text(
-                    'Learn More',
+                    'LEARN MORE',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w400,

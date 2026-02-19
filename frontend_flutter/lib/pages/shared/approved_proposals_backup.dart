@@ -448,10 +448,10 @@ class _ProposalsPageState extends State<ProposalsPage>
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
       gradientStart: const Color(0xFF1D2B64),
       gradientEnd: const Color(0xFF1D4350),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 760;
-          final titleBlock = Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               Text(
@@ -468,50 +468,35 @@ class _ProposalsPageState extends State<ProposalsPage>
                 style: TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ],
-          );
-
-          // Ensure the header never overflows when the sidebar expands/collapses.
-          final maxNameWidth = (constraints.maxWidth - 56 - 12 - 40 - 24)
-              .clamp(140.0, isNarrow ? double.infinity : 240.0);
-
-          final userBlock = Row(
-            mainAxisSize: MainAxisSize.min,
+          ),
+          Row(
             children: [
               ClipOval(
                 child: Image.asset(
                   'assets/images/User_Profile.png',
-                  width: 56,
-                  height: 56,
+                  width: 64,
+                  height: 64,
                   fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(width: 12),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxNameWidth),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _getUserName(app.currentUser),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _getUserName(app.currentUser),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
                     ),
-                    Text(
-                      userRole,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
-                ),
+                  ),
+                  Text(
+                    userRole,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, color: Colors.white),
                 onSelected: (value) {
@@ -533,27 +518,8 @@ class _ProposalsPageState extends State<ProposalsPage>
                 ],
               ),
             ],
-          );
-
-          if (isNarrow) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                titleBlock,
-                const SizedBox(height: 14),
-                userBlock,
-              ],
-            );
-          }
-
-          return Row(
-            children: [
-              Expanded(child: titleBlock),
-              const SizedBox(width: 16),
-              userBlock,
-            ],
-          );
-        },
+          ),
+        ],
       ),
     );
   }
@@ -845,25 +811,11 @@ class ProposalItem extends StatelessWidget {
     return date.toString();
   }
 
-  String _statusKey(String? status) {
-    return (status ?? '').toString().toLowerCase().trim();
-  }
-
-  String _statusLabel(String? status) {
-    final s = _statusKey(status);
-    if (s == 'pending ceo approval' || s == 'pending approval') {
-      return 'Pending Approval';
-    }
-    if (s.isEmpty) return 'Unknown';
-    return status!.toString();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final statusKey = _statusKey(proposal['status']?.toString());
-    final displayStatus = _statusLabel(proposal['status']?.toString());
+    final status = (proposal['status'] ?? '').toString().toLowerCase().trim();
     Color statusColor;
-    switch (statusKey) {
+    switch (status) {
       case 'draft':
         statusColor = PremiumTheme.purple;
         break;
@@ -924,7 +876,7 @@ class ProposalItem extends StatelessWidget {
                 decoration: BoxDecoration(
                     color: statusBgColor,
                     borderRadius: BorderRadius.circular(20)),
-                child: Text(displayStatus,
+                child: Text(proposal['status'] ?? 'Unknown',
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -932,7 +884,8 @@ class ProposalItem extends StatelessWidget {
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () {
-                if (statusKey == 'draft') {
+                if ((proposal['status'] ?? '').toString().toLowerCase() ==
+                    'draft') {
                   Navigator.pushNamed(context, '/compose', arguments: proposal)
                       .then((_) {
                     if (onRefresh != null) onRefresh!();

@@ -208,7 +208,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     colors: [
-                      const Color(0xFF2C3E50).withOpacity(0.15),
+                      const Color(0xFF2C3E50).withValues(alpha: 0.15),
                       Colors.transparent,
                     ],
                   ),
@@ -366,7 +366,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                           boxShadow: [
                             BoxShadow(
                               color: const Color(0xFFD72638)
-                                  .withOpacity(_glowAnim.value),
+                                  .withValues(alpha: _glowAnim.value),
                               blurRadius: 30,
                               spreadRadius: 5,
                             ),
@@ -374,7 +374,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                         ),
                         child: ElevatedButton(
                           onPressed: () {
-                            Navigator.pushNamed(context, '/register');
+                            Navigator.pushNamed(context, '/login');
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFD72638),
@@ -389,7 +389,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                             elevation: 0,
                           ),
                           child: const Text(
-                            'Get Started',
+                            'GET STARTED',
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w600,
@@ -414,7 +414,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                           ),
                         ),
                         child: const Text(
-                          'Learn More',
+                          'LEARN MORE',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w400,
@@ -442,9 +442,8 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
           child: Container(
             decoration: const BoxDecoration(
               image: DecorationImage(
-                image: AssetImage(
-                    'assets/images/Khonology Landing Page - Frame 6.png'),
-                fit: BoxFit.cover,
+                image: AssetImage('assets/images/Background-Dark..png'),
+                fit: BoxFit.fill,
                 alignment: Alignment.center,
               ),
             ),
@@ -468,7 +467,7 @@ class RedLinePainter extends CustomPainter {
 
     // Very subtle glow underpaint
     final glow = Paint()
-      ..color = lineColor.withOpacity(0.15)
+      ..color = lineColor.withValues(alpha: 0.15)
       ..strokeWidth = 10
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round

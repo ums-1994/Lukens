@@ -16,7 +16,7 @@ class RoleSwitcher extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: const Color(0xFF3498DB).withOpacity(0.1),
+              color: const Color(0xFF3498DB).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
                 color: const Color(0xFF3498DB),
@@ -71,7 +71,7 @@ class RoleSwitcher extends StatelessWidget {
                       const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
                   decoration: BoxDecoration(
                     color: isCurrentRole
-                        ? const Color(0xFF3498DB).withOpacity(0.1)
+                        ? const Color(0xFF3498DB).withValues(alpha: 0.1)
                         : Colors.transparent,
                     borderRadius: BorderRadius.circular(6),
                   ),
@@ -195,7 +195,7 @@ class CompactRoleSwitcher extends StatelessWidget {
           icon: Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF3498DB).withOpacity(0.1),
+              color: const Color(0xFF3498DB).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Row(

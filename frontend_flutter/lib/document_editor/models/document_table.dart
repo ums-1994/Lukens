@@ -1,13 +1,27 @@
+import 'dart:math';
+
 class DocumentTable {
+  final String id;
   String type; // 'text' or 'price'
   List<List<String>> cells;
   double vatRate; // For price tables (default 15%)
 
+  static String _generateId() {
+    final rand = Random();
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    // NOTE: Avoid using bit shifts like (1 << 32) because in dart2js this can
+    // overflow/truncate to 0, which breaks Random.nextInt.
+    const max32 = 4294967296; // 2^32
+    return 'tbl_${ts}_${rand.nextInt(max32)}';
+  }
+
   DocumentTable({
+    String? id,
     this.type = 'text',
     List<List<String>>? cells,
     this.vatRate = 0.15,
-  }) : cells = cells ??
+  })  : id = id ?? _generateId(),
+        cells = cells ??
             [
               ['Header 1', 'Header 2', 'Header 3'],
               ['Row 1 Col 1', 'Row 1 Col 2', 'Row 1 Col 3'],
@@ -199,12 +213,14 @@ class DocumentTable {
   }
 
   Map<String, dynamic> toJson() => {
+        'id': id,
         'type': type,
         'cells': cells,
         'vatRate': vatRate,
       };
 
   factory DocumentTable.fromJson(Map<String, dynamic> json) => DocumentTable(
+        id: json['id'] as String?,
         type: json['type'] as String? ?? 'text',
         cells: (json['cells'] as List<dynamic>?)
             ?.map((row) =>

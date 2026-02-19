@@ -1,5 +1,8 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
+
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +12,10 @@ import '../../api.dart';
 import '../../services/asset_service.dart';
 import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../theme/app_colors.dart';
+import '../../mixins/sidebar_mixin.dart';
 import '../../widgets/ai_content_generator.dart';
+import '../../widgets/app_side_nav.dart';
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
@@ -19,14 +25,14 @@ class ContentLibraryPage extends StatefulWidget {
 }
 
 class _ContentLibraryPageState extends State<ContentLibraryPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, SidebarMixin {
   final keyCtrl = TextEditingController();
   final labelCtrl = TextEditingController();
   final contentCtrl = TextEditingController();
   final searchCtrl = TextEditingController();
   String selectedCategory = "Sections";
   String sortBy = "Last Edited (Newest First)";
-  int currentPage = 1;
+  int paginationPage = 1;
   int itemsPerPage = 10;
   String _currentPage = 'Content Library';
   bool _isSidebarCollapsed = true;
@@ -35,6 +41,347 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   String searchQuery = "";
   String typeFilter = "all";
   bool _showAIGenerator = false;
+
+  // SidebarMixin implementation
+  @override
+  String get currentPage => _currentPage;
+
+  // Exact Dashboard Sidebar Implementation
+  Widget _buildFixedSidebar(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmall = screenWidth < 768;
+    final effectiveCollapsed = isSmall ? true : _isSidebarCollapsed;
+
+    return AnimatedContainer(
+      duration: AppColors.animationDuration,
+      width: effectiveCollapsed
+          ? AppColors.collapsedWidth
+          : AppColors.expandedWidth,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.backgroundColor
+                .withValues(alpha: AppColors.backgroundOpacity),
+            border: Border(
+              right: BorderSide(
+                color: Colors.white.withValues(alpha: 0.1),
+                width: 1,
+              ),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Header Section
+              SizedBox(
+                height: AppColors.headerHeight,
+                child: Padding(
+                  padding: AppSpacing.sidebarHeaderPadding,
+                  child: InkWell(
+                    onTap: () {
+                      if (!isSmall) {
+                        setState(
+                            () => _isSidebarCollapsed = !_isSidebarCollapsed);
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      height: AppColors.itemHeight,
+                      decoration: BoxDecoration(
+                        color: AppColors.hoverColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: effectiveCollapsed
+                            ? MainAxisAlignment.center
+                            : MainAxisAlignment.spaceBetween,
+                        children: [
+                          if (!effectiveCollapsed)
+                            Expanded(
+                              child: Text(
+                                'Navigation',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          Padding(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: effectiveCollapsed ? 0 : 8),
+                            child: Icon(
+                              effectiveCollapsed
+                                  ? Icons.keyboard_arrow_right
+                                  : Icons.keyboard_arrow_left,
+                              color: AppColors.textPrimary,
+                              size: 20,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Navigation Items
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      _buildSidebarNavItem(
+                        label: 'Dashboard',
+                        assetPath: 'assets/images/Dahboard.png',
+                        isSelected: _currentPage == 'Dashboard',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _navigateToPage(context, 'Dashboard'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'My Proposals',
+                        assetPath: 'assets/images/My_Proposals.png',
+                        isSelected: _currentPage == 'My Proposals',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _navigateToPage(context, 'My Proposals'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Templates',
+                        assetPath: 'assets/images/content_library.png',
+                        isSelected: _currentPage == 'Templates',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _navigateToPage(context, 'Templates'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Content Library',
+                        assetPath: 'assets/images/content_library.png',
+                        isSelected: _currentPage == 'Content Library',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Content Library'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Client Management',
+                        assetPath: 'assets/images/collaborations.png',
+                        isSelected: _currentPage == 'Client Management',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Client Management'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Approved Proposals',
+                        assetPath:
+                            'assets/images/Time Allocation_Approval_Blue.png',
+                        isSelected: _currentPage == 'Approved Proposals',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Approved Proposals'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Analytics (My Pipeline)',
+                        assetPath: 'assets/images/analytics.png',
+                        isSelected: _currentPage == 'Analytics (My Pipeline)',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Analytics (My Pipeline)'),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Divider
+                      if (!effectiveCollapsed)
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          height: 1,
+                          color: Colors.white.withValues(alpha: 0.1),
+                        ),
+                      const SizedBox(height: 12),
+
+                      // Logout
+                      _buildSidebarNavItem(
+                        label: 'Logout',
+                        assetPath: 'assets/images/Logout_KhonoBuzz.png',
+                        isSelected: false,
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _handleLogout(context),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarNavItem({
+    required String label,
+    required String assetPath,
+    required bool isSelected,
+    required bool isCollapsed,
+    required VoidCallback onTap,
+    bool showProfileIndicator = false,
+  }) {
+    bool hovering = false;
+
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          child: MouseRegion(
+            onEnter: (_) => setState(() => hovering = true),
+            onExit: (_) => setState(() => hovering = false),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: AnimatedContainer(
+                duration: AppColors.animationDuration,
+                height: AppColors.itemHeight,
+                decoration: BoxDecoration(
+                  color: _getItemColor(isSelected, hovering, isCollapsed),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: _getItemShadow(isSelected, hovering, isCollapsed),
+                ),
+                child: isCollapsed
+                    ? _buildCollapsedItem(
+                        assetPath, isSelected, showProfileIndicator)
+                    : _buildExpandedItem(label, assetPath, isSelected),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCollapsedItem(
+      String assetPath, bool isSelected, bool showProfileIndicator) {
+    return Center(
+      child: Stack(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            padding: const EdgeInsets.all(8),
+            child: AssetService.buildImageWidget(
+              assetPath,
+              fit: BoxFit.contain,
+            ),
+          ),
+          if (showProfileIndicator)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: AppColors.activeColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.backgroundColor,
+                    width: 1.5,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExpandedItem(String label, String assetPath, bool isSelected) {
+    return Padding(
+      padding: AppSpacing.sidebarItemPadding,
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            padding: const EdgeInsets.all(8),
+            child: AssetService.buildImageWidget(
+              assetPath,
+              fit: BoxFit.contain,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isSelected
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          if (isSelected)
+            const Icon(
+              Icons.arrow_forward_ios,
+              size: 12,
+              color: AppColors.textPrimary,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Color _getItemColor(bool isSelected, bool hovering, bool isCollapsed) {
+    if (isCollapsed) {
+      return Colors.transparent; // All items transparent when collapsed
+    }
+
+    if (isSelected) {
+      return AppColors.activeColor;
+    }
+
+    if (hovering) {
+      return AppColors.hoverColor;
+    }
+
+    return Colors.transparent;
+  }
+
+  List<BoxShadow> _getItemShadow(
+      bool isSelected, bool hovering, bool isCollapsed) {
+    if (isCollapsed) {
+      return []; // No shadow when collapsed
+    }
+
+    if (isSelected) {
+      return [
+        BoxShadow(
+          color: AppColors.activeColor.withValues(alpha: 0x35),
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    }
+
+    if (hovering) {
+      return [
+        BoxShadow(
+          color: AppColors.hoverColor.withValues(alpha: 0x35),
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    }
+
+    return [];
+  }
 
   static const Set<String> _textCategories = {
     'sections',
@@ -1043,7 +1390,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     setState(() {
       // Optionally switch to Sections tab to see the new content
       selectedCategory = "Sections";
-      currentPage = 1;
+      paginationPage = 1;
     });
   }
 
@@ -1125,7 +1472,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
 
     // Calculate pagination
     final totalPages = (filteredItems.length / itemsPerPage).ceil();
-    final startIdx = (currentPage - 1) * itemsPerPage;
+    final startIdx = (paginationPage - 1) * itemsPerPage;
     final endIdx = (startIdx + itemsPerPage).clamp(0, filteredItems.length);
     final pagedItems = filteredItems.sublist(startIdx, endIdx);
 
@@ -1137,142 +1484,25 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
             bottom: false,
             child: Row(
               children: [
-                // Collapsible Sidebar (matching dashboard)
-                GestureDetector(
-                  onTap: () {
-                    if (_isSidebarCollapsed) _toggleSidebar();
+                // Consistent Sidebar using AppSideNav
+                Consumer<AppState>(
+                  builder: (context, app, child) {
+                    final role = (app.currentUser?['role'] ?? '')
+                        .toString()
+                        .toLowerCase()
+                        .trim();
+                    final isAdmin = role == 'admin' || role == 'ceo';
+                    return AppSideNav(
+                      isCollapsed: app.isSidebarCollapsed,
+                      currentLabel: app.currentNavLabel,
+                      isAdmin: isAdmin,
+                      onToggle: app.toggleSidebar,
+                      onSelect: (label) {
+                        app.setCurrentNavLabel(label);
+                        _navigateToPage(context, label);
+                      },
+                    );
                   },
-                  behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black.withOpacity(0.35),
-                          Colors.black.withOpacity(0.2),
-                        ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                      border: Border(
-                        right: BorderSide(
-                          color: PremiumTheme.glassWhiteBorder,
-                          width: 1,
-                        ),
-                      ),
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          // Toggle button
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: PremiumTheme.glassWhite,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: PremiumTheme.glassWhiteBorder,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal:
-                                              _isSidebarCollapsed ? 0 : 8),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Navigation items
-                          _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              _currentPage == 'Dashboard',
-                              context),
-                          _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png',
-                              _currentPage == 'My Proposals',
-                              context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Templates',
-                              context),
-                          _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Content Library',
-                              context),
-                          _buildNavItem(
-                              'Client Management',
-                              'assets/images/collaborations.png',
-                              _currentPage == 'Client Management',
-                              context),
-                          _buildNavItem(
-                              'Approved Proposals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approved Proposals',
-                              context),
-                          _buildNavItem(
-                              'Analytics (My Pipeline)',
-                              'assets/images/analytics.png',
-                              _currentPage == 'Analytics (My Pipeline)',
-                              context),
-                          const SizedBox(height: 20),
-                          // Divider
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: PremiumTheme.glassWhiteBorder
-                                  .withValues(alpha: 0.6),
-                            ),
-                          const SizedBox(height: 12),
-                          // Logout button
-                          _buildNavItem(
-                              'Logout',
-                              'assets/images/Logout_KhonoBuzz.png',
-                              false,
-                              context),
-                          const SizedBox(height: 20),
-                        ],
-                      ),
-                    ),
-                  ),
                 ),
                 // Main Content
                 Expanded(
@@ -1386,7 +1616,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                     setState(() {
                                       selectedCategory = "Sections";
                                       currentFolderId = null;
-                                      currentPage = 1;
+                                      paginationPage = 1;
                                     });
                                   },
                                 ),
@@ -1397,7 +1627,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                     setState(() {
                                       selectedCategory = "Images";
                                       currentFolderId = null;
-                                      currentPage = 1;
+                                      paginationPage = 1;
                                     });
                                   },
                                 ),
@@ -1409,7 +1639,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                     setState(() {
                                       selectedCategory = "Templates";
                                       currentFolderId = null;
-                                      currentPage = 1;
+                                      paginationPage = 1;
                                     });
                                   },
                                 ),
@@ -1529,7 +1759,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                     onChanged: (value) {
                                       setState(() {
                                         sortBy = value!;
-                                        currentPage = 1;
+                                        paginationPage = 1;
                                       });
                                     },
                                   ),
@@ -1550,16 +1780,16 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                               Row(
                                 children: [
                                   IconButton(
-                                    onPressed: currentPage > 1
-                                        ? () => setState(() => currentPage--)
+                                    onPressed: paginationPage > 1
+                                        ? () => setState(() => paginationPage--)
                                         : null,
                                     icon: const Icon(Icons.chevron_left),
                                     iconSize: 20,
                                     color: Colors.white70,
                                   ),
                                   IconButton(
-                                    onPressed: currentPage < totalPages
-                                        ? () => setState(() => currentPage++)
+                                    onPressed: paginationPage < totalPages
+                                        ? () => setState(() => paginationPage++)
                                         : null,
                                     icon: const Icon(Icons.chevron_right),
                                     iconSize: 20,
@@ -3789,8 +4019,10 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     fontSize: 14,
                     fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (isActive) const SizedBox(width: 8),
               if (isActive)
                 const Icon(Icons.arrow_forward_ios,
                     size: 12, color: Colors.white),

@@ -418,6 +418,7 @@ class MyApp extends StatelessWidget {
             }
             return const AnalyticsPage();
           },
+          '/approved-proposals': (context) => const ApprovedProposalsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),
           '/settings': (context) => const SettingsPage(),
           '/test-signature': (context) => const TestSignaturePage(),

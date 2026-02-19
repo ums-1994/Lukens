@@ -25,7 +25,7 @@ class VersionService {
           .map((section) => {
                 'title': section.titleController.text,
                 'content': section.controller.text,
-                'backgroundColor': section.backgroundColor.value,
+                'backgroundColor': section.backgroundColor.toARGB32(),
                 'backgroundImageUrl': section.backgroundImageUrl,
                 'sectionType': section.sectionType,
                 'isCoverPage': section.isCoverPage,
@@ -53,7 +53,7 @@ class VersionService {
           .map((section) => {
                 'title': section.titleController.text,
                 'content': section.controller.text,
-                'backgroundColor': section.backgroundColor.value,
+                'backgroundColor': section.backgroundColor.toARGB32(),
                 'backgroundImageUrl': section.backgroundImageUrl,
                 'sectionType': section.sectionType,
                 'isCoverPage': section.isCoverPage,
@@ -115,16 +115,16 @@ class VersionService {
             ?.map((img) => InlineImage.fromJson(img as Map<String, dynamic>))
             .toList(),
         tables: (sectionData['tables'] as List<dynamic>?)?.map((tableData) {
-          try {
-            return tableData is Map<String, dynamic>
-                ? DocumentTable.fromJson(tableData)
-                : DocumentTable.fromJson(
-                    Map<String, dynamic>.from(tableData as Map));
-          } catch (e) {
-            print('⚠️ Error loading table: $e');
-            return DocumentTable();
-          }
-        }).toList() ??
+              try {
+                return tableData is Map<String, dynamic>
+                    ? DocumentTable.fromJson(tableData)
+                    : DocumentTable.fromJson(
+                        Map<String, dynamic>.from(tableData as Map));
+              } catch (e) {
+                print('⚠️ Error loading table: $e');
+                return DocumentTable();
+              }
+            }).toList() ??
             [],
       );
       sections.add(newSection);
@@ -133,4 +133,3 @@ class VersionService {
     return sections;
   }
 }
-
