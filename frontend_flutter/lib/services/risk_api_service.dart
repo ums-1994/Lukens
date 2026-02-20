@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 class RiskApiService {
@@ -8,38 +7,15 @@ class RiskApiService {
 
   RiskApiService() {
     debugPrint('🔧 RiskApiService constructor called');
-    // Load environment variables without requiring .env in assets
-    _loadEnv();
-  }
-
-  Future<void> _loadEnv() async {
-    try {
-      // For now, hardcode the URL to test connection
-      baseUrl = 'https://lorde01v-v3.hf.space/analyze';
-      debugPrint('🔍 Using hardcoded Risk Gate API URL: $baseUrl');
-      
-      // Try to load from .env for future use
-      try {
-        await dotenv.load(fileName: '../backend/.env');
-        final riskGateUrl = dotenv.env['Risk_Gate_engine_API'];
-        if (riskGateUrl != null) {
-          String finalUrl = riskGateUrl;
-          if (!finalUrl.endsWith('/analyze')) {
-            finalUrl += '/analyze';
-          }
-          baseUrl = finalUrl;
-          debugPrint('🔍 Updated to .env URL: $baseUrl');
-        }
-      } catch (e) {
-        debugPrint('⚠️ Could not load .env, keeping hardcoded URL');
-      }
-      
-      debugPrint('🔍 Final Risk Gate API URL: $baseUrl');
-    } catch (e) {
-      debugPrint('⚠️ Error loading API URL: $e');
-      baseUrl = 'https://lorde01v-v3.hf.space/analyze';
-      debugPrint('🔍 Fallback to default URL: $baseUrl');
+    final configured = const String.fromEnvironment(
+      'RISK_GATE_API_URL',
+      defaultValue: 'https://lorde01v-v3.hf.space/analyze',
+    ).trim();
+    baseUrl = configured.isEmpty ? 'https://lorde01v-v3.hf.space/analyze' : configured;
+    if (!baseUrl.endsWith('/analyze')) {
+      baseUrl = '$baseUrl/analyze';
     }
+    debugPrint('🔍 Risk Gate API URL: $baseUrl');
   }
   
   Future<Map<String, dynamic>> analyzeProposal(String text) async {
