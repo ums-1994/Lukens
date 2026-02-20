@@ -16,11 +16,13 @@ import '../../api.dart';
 class ClientProposalViewer extends StatefulWidget {
   final int proposalId;
   final String accessToken;
+  final int initialTab;
 
   const ClientProposalViewer({
     super.key,
     required this.proposalId,
     required this.accessToken,
+    this.initialTab = 0,
   });
 
   @override
@@ -58,6 +60,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   @override
   void initState() {
     super.initState();
+    _selectedTab = widget.initialTab;
     _pdfViewType = 'pdf-preview-${DateTime.now().microsecondsSinceEpoch}';
     _initPdfView();
     _checkIfReturnedFromSigning();
@@ -447,7 +450,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           'proposal_id': widget.proposalId,
         }),
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         setState(() {
           _currentSessionId = data['session_id'];
@@ -506,7 +509,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       final response = await http
           .get(
             Uri.parse(
-                '$baseUrl/client/proposals/${widget.proposalId}?token=${Uri.encodeComponent(widget.accessToken)}'),
+                '$baseUrl/api/client/proposals/${widget.proposalId}?token=${Uri.encodeComponent(widget.accessToken)}'),
           )
           .timeout(_networkTimeout);
 

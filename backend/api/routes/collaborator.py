@@ -15,7 +15,23 @@ from api.utils.email import send_email, get_logo_html
 
 bp = Blueprint('collaborator', __name__)
 
-@bp.get("/api/collaborate")
+
+def _get_invitation_token_column(cursor):
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'collaboration_invitations'
+        """
+    )
+    cols = {r['column_name'] if isinstance(r, dict) else r[0] for r in cursor.fetchall()}
+    if 'access_token' in cols:
+        return 'access_token'
+    if 'token' in cols:
+        return 'token'
+    return None
+
+@bp.get("/collaborate")
 def get_collaboration_access():
     """Get proposal access for collaborator using token"""
     try:
@@ -25,12 +41,16 @@ def get_collaboration_access():
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            token_col = _get_invitation_token_column(cursor)
+            if not token_col:
+                return {'detail': 'Collaboration invitations not configured (missing token column)'}, 500
             
             cursor.execute("""
                 SELECT ci.*, p.title, p.content, p.status as proposal_status
                 FROM collaboration_invitations ci
                 JOIN proposals p ON ci.proposal_id = p.id
-                WHERE ci.access_token = %s
+                WHERE ci.""" + token_col + """ = %s
             """, (token,))
             
             invitation = cursor.fetchone()
@@ -94,7 +114,7 @@ def get_collaboration_access():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/api/collaborate/comment")
+@bp.post("/collaborate/comment")
 def add_guest_comment():
     """Add a comment as a guest collaborator (no auth required)"""
     try:
@@ -107,13 +127,17 @@ def add_guest_comment():
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            token_col = _get_invitation_token_column(cursor)
+            if not token_col:
+                return {'detail': 'Collaboration invitations not configured (missing token column)'}, 500
             
             # Get invitation
             cursor.execute("""
                 SELECT ci.*, p.id as proposal_id
                 FROM collaboration_invitations ci
                 JOIN proposals p ON ci.proposal_id = p.id
-                WHERE ci.access_token = %s
+                WHERE ci.""" + token_col + """ = %s
             """, (token,))
             
             invitation = cursor.fetchone()

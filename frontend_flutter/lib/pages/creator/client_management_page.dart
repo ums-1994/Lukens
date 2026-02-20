@@ -45,10 +45,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     return _isAdminUser();
   }
 
-  bool _canManageInvitations() {
-    return _isAdminUser();
-  }
-
   bool _isFinanceUser() {
     try {
       final user = AuthService.currentUser;
@@ -1807,6 +1803,37 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   void _showClientMenu(Map<String, dynamic> client) {
     // TODO: Show menu with options (edit, view notes, link proposal, etc.)
     _showSnackBar('Client menu coming soon!');
+  }
+
+  void _showClientDetails(Map<String, dynamic> client) {
+    final company = (client['company_name'] ?? client['name'] ?? 'Client')
+        .toString()
+        .trim();
+    final email = (client['email'] ?? '').toString().trim();
+    final contact = (client['contact_person'] ?? client['contact_name'] ?? '')
+        .toString()
+        .trim();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(company.isNotEmpty ? company : 'Client Details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (email.isNotEmpty) Text('Email: $email'),
+            if (contact.isNotEmpty) Text('Contact: $contact'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool> _confirmAction({

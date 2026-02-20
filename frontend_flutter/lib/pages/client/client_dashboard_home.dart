@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import 'dart:async';
+import 'package:url_launcher/url_launcher_string.dart';
 import 'client_proposal_viewer.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
@@ -22,6 +23,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String? _accessToken;
   String? _clientEmail;
   List<Map<String, dynamic>> _proposals = [];
+  Map<String, dynamic>? _selectedDocument;
+  int _selectedNavIndex = 0;
   Map<String, int> _statusCounts = {
     'pending': 0,
     'approved': 0,
@@ -35,6 +38,735 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _extractTokenAndLoad();
     });
+  }
+
+  List<Map<String, dynamic>> _filteredDocuments() {
+    final idx = _selectedNavIndex;
+    final docs = List<Map<String, dynamic>>.from(_proposals);
+    if (idx == 0) {
+      return docs;
+    }
+
+    bool isSow(Map<String, dynamic> p) {
+      final t = (p['template_type'] ?? p['templateType'] ?? p['template_key'] ?? '')
+          .toString()
+          .toLowerCase();
+      return t.contains('sow');
+    }
+
+    if (idx == 1) {
+      return docs.where((p) => !isSow(p)).toList();
+    }
+    if (idx == 2) {
+      return docs.where(isSow).toList();
+    }
+    return docs;
+  }
+
+  String _documentLabel(Map<String, dynamic> doc) {
+    final t = (doc['template_type'] ?? doc['templateType'] ?? doc['template_key'] ?? '')
+        .toString()
+        .toLowerCase();
+    if (t.contains('sow')) return 'SOW';
+    return 'Proposal';
+  }
+
+  Future<void> _downloadPdfForDocument(Map<String, dynamic> doc) async {
+    final rawId = doc['id'];
+    final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    if (id == null || _accessToken == null || _accessToken!.isEmpty) return;
+
+    final url =
+        '$baseUrl/api/client/proposals/$id/export/pdf?token=${Uri.encodeComponent(_accessToken!)}&download=1';
+    web.window.open(url, '_blank');
+  }
+
+  Future<void> _openSigningUrl(Map<String, dynamic> doc) async {
+    final signingUrl = doc['signing_url']?.toString() ?? '';
+    if (signingUrl.trim().isEmpty) return;
+    await launchUrlString(signingUrl, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _showFallbackSignModal(Map<String, dynamic> doc) async {
+    if (_accessToken == null || _accessToken!.isEmpty) return;
+    final rawId = doc['id'];
+    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    if (proposalId == null) return;
+
+    final nameController = TextEditingController();
+    bool consent = false;
+    bool submitting = false;
+    String? error;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !submitting,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            Future<void> submit() async {
+              final signerName = nameController.text.trim();
+              if (signerName.isEmpty) {
+                setModalState(() => error = 'Please enter your name.');
+                return;
+              }
+              if (!consent) {
+                setModalState(() => error = 'Please confirm you agree to sign.');
+                return;
+              }
+
+              setModalState(() {
+                submitting = true;
+                error = null;
+              });
+
+              try {
+                final resp = await http.post(
+                  Uri.parse('$baseUrl/api/client/proposals/$proposalId/sign_token'),
+                  headers: const {'Content-Type': 'application/json'},
+                  body: jsonEncode({
+                    'token': _accessToken,
+                    'signer_name': signerName,
+                  }),
+                );
+
+                if (resp.statusCode >= 200 && resp.statusCode < 300) {
+                  if (mounted) Navigator.of(context).pop();
+                  await _loadClientProposals();
+                  return;
+                }
+
+                String detail = 'Unable to sign (HTTP ${resp.statusCode})';
+                try {
+                  final decoded = jsonDecode(resp.body);
+                  if (decoded is Map && decoded['detail'] != null) {
+                    detail = decoded['detail'].toString();
+                  }
+                } catch (_) {}
+                setModalState(() => error = detail);
+              } catch (e) {
+                setModalState(() => error = e.toString());
+              } finally {
+                setModalState(() => submitting = false);
+              }
+            }
+
+            return AlertDialog(
+              title: const Text('Confirm Signature'),
+              content: SizedBox(
+                width: 420,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      doc['title']?.toString() ?? 'Document',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: nameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Your name',
+                        border: OutlineInputBorder(),
+                      ),
+                      enabled: !submitting,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: consent,
+                          onChanged: submitting
+                              ? null
+                              : (v) => setModalState(() => consent = v ?? false),
+                        ),
+                        const Expanded(
+                          child: Text(
+                            'I confirm that I agree to sign this document electronically.',
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        error!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: submitting ? null : () => Navigator.of(context).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: submitting ? null : submit,
+                  child: submitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Confirm Signature'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSidebar() {
+    Widget navItem(int index, IconData icon, String label) {
+      final selected = _selectedNavIndex == index;
+      return InkWell(
+        onTap: () {
+          setState(() {
+            _selectedNavIndex = index;
+          });
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white.withValues(alpha: 0.12) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: selected ? Colors.white : Colors.white70, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? Colors.white : Colors.white70,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: 220,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1220).withValues(alpha: 0.96),
+        border: Border(
+          right: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 18),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: const [
+                Icon(Icons.grid_view_rounded, color: Colors.white),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Client Portal',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          navItem(0, Icons.dashboard_outlined, 'Dashboard'),
+          navItem(1, Icons.description_outlined, 'Proposals'),
+          navItem(2, Icons.assignment_outlined, 'SOWs'),
+          navItem(3, Icons.receipt_long_outlined, 'Invoices'),
+          navItem(4, Icons.mail_outline, 'Messages'),
+          navItem(5, Icons.folder_outlined, 'Documents'),
+          navItem(6, Icons.person_outline, 'Profile'),
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+            child: Text(
+              _clientEmail ?? '',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1220).withValues(alpha: 0.55),
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Client Portal',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Welcome back, ${_clientEmail ?? 'Client'}',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () {},
+            icon: const Icon(Icons.mail_outline, color: Colors.white70),
+            tooltip: 'Messages',
+          ),
+          IconButton(
+            onPressed: () {},
+            icon: const Icon(Icons.notifications_none, color: Colors.white70),
+            tooltip: 'Notifications',
+          ),
+          IconButton(
+            onPressed: _loadClientProposals,
+            icon: const Icon(Icons.refresh, color: Colors.white70),
+            tooltip: 'Refresh',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryTiles() {
+    final docs = _filteredDocuments();
+    final activeCount = docs.where((d) {
+      final s = (d['status'] ?? '').toString().toLowerCase();
+      return s.contains('sent') || s.contains('released') || s.contains('review');
+    }).length;
+    final signedCount = docs.where((d) {
+      final s = (d['status'] ?? '').toString().toLowerCase();
+      return s.contains('signed');
+    }).length;
+    final pendingCount = docs.where((d) {
+      final s = (d['status'] ?? '').toString().toLowerCase();
+      return s.contains('pending');
+    }).length;
+
+    Widget tile(String label, String value, IconData icon) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: Colors.white70, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
+                  const SizedBox(height: 4),
+                  Text(value,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 860;
+        final children = [
+          tile('Active Proposals', activeCount.toString(), Icons.description_outlined),
+          tile('Signed SOWs', signedCount.toString(), Icons.verified_outlined),
+          tile('Pending Approvals', pendingCount.toString(), Icons.pending_actions_outlined),
+        ];
+        if (narrow) {
+          return Column(
+            children: [
+              children[0],
+              const SizedBox(height: 12),
+              children[1],
+              const SizedBox(height: 12),
+              children[2],
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: children[0]),
+            const SizedBox(width: 12),
+            Expanded(child: children[1]),
+            const SizedBox(width: 12),
+            Expanded(child: children[2]),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildRecentDocuments() {
+    final docs = _filteredDocuments();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Recent Documents',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '${docs.length}',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (docs.isEmpty)
+            Text(
+              'No documents available for this link.',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
+            )
+          else
+            ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: docs.length > 6 ? 6 : docs.length,
+              separatorBuilder: (_, __) => Divider(
+                height: 14,
+                color: Colors.white.withValues(alpha: 0.08),
+              ),
+              itemBuilder: (context, index) {
+                final doc = docs[index];
+                final selected = _selectedDocument?['id']?.toString() == doc['id']?.toString();
+                final status = (doc['status'] ?? '').toString();
+                return InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedDocument = doc;
+                    });
+                  },
+                  child: Row(
+                    children: [
+                      Icon(
+                        selected ? Icons.check_box : Icons.check_box_outline_blank,
+                        color: selected ? Colors.lightBlueAccent : Colors.white70,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${_documentLabel(doc)} #${doc['id']} - ${doc['title'] ?? 'Untitled'}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              status.isEmpty ? '—' : status,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.70),
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => _openProposal(doc),
+                        child: const Text('View'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRightPanel() {
+    final doc = _selectedDocument;
+    final title = doc?['title']?.toString() ?? 'Select a document';
+    final status = doc?['status']?.toString() ?? '';
+    final hasSigning = (doc?['signing_url']?.toString() ?? '').trim().isNotEmpty;
+
+    Widget panelCard({required String title, required Widget child}) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            child,
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        panelCard(
+          title: 'Sign Document',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                status.isEmpty ? '' : status,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                height: 88,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  'Signature',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: doc == null
+                          ? null
+                          : () {
+                              if (hasSigning) {
+                                _openSigningUrl(doc);
+                              } else {
+                                _showFallbackSignModal(doc);
+                              }
+                            },
+                      child: const Text('Sign Now'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: doc == null ? null : () => _openProposalComments(doc),
+                      child: const Text('Request Changes'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        panelCard(
+          title: 'Project Chat',
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Open a document to view and post comments.',
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+              ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: doc == null ? null : () => _openProposalComments(doc),
+                  icon: const Icon(Icons.forum_outlined, size: 18),
+                  label: const Text('Open Comments'),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        panelCard(
+          title: 'Documents & Downloads',
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: doc == null ? null : () => _downloadPdfForDocument(doc),
+                      icon: const Icon(Icons.download_outlined, size: 18),
+                      label: const Text('Download PDF'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildComingSoon(String title) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.hourglass_top, color: Colors.white70),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Coming soon. This section is part of the client portal experience but is not enabled in this build.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.75),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMainLeftContent() {
+    if (_selectedNavIndex == 0 || _selectedNavIndex == 1 || _selectedNavIndex == 2) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildSummaryTiles(),
+          const SizedBox(height: 16),
+          _buildRecentDocuments(),
+        ],
+      );
+    }
+
+    final titles = {
+      3: 'Invoices',
+      4: 'Messages',
+      5: 'Documents',
+      6: 'Profile',
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSummaryTiles(),
+        const SizedBox(height: 16),
+        _buildComingSoon(titles[_selectedNavIndex] ?? 'Coming Soon'),
+      ],
+    );
   }
 
   void _extractTokenAndLoad() {
@@ -100,7 +832,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     try {
       final response = await http
           .get(
-            Uri.parse('$baseUrl/client/proposals?token=$_accessToken'),
+            Uri.parse('$baseUrl/api/client/proposals?token=$_accessToken'),
           )
           .timeout(
             const Duration(seconds: 8),
@@ -124,6 +856,17 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           _proposals = proposalsRaw
               .map((p) => Map<String, dynamic>.from(p))
               .toList();
+
+          if (_selectedDocument != null) {
+            final selId = _selectedDocument?['id']?.toString();
+            final updated = _proposals
+                .where((p) => p['id']?.toString() == selId)
+                .cast<Map<String, dynamic>>()
+                .toList();
+            if (updated.isNotEmpty) {
+              _selectedDocument = updated.first;
+            }
+          }
 
           // Calculate status counts
           _statusCounts = {
@@ -207,6 +950,26 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     });
   }
 
+  void _openProposalComments(Map<String, dynamic> proposal) {
+    final rawId = proposal['id'];
+    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ClientProposalViewer(
+          proposalId: proposalId,
+          accessToken: _accessToken!,
+          initialTab: 1,
+        ),
+      ),
+    ).then((_) {
+      _loadClientProposals();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -275,27 +1038,54 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             ),
           ),
           SafeArea(
-            child: Column(
+            child: Row(
               children: [
-                // Header
-                _buildHeader(),
-
-                // Content
+                _buildSidebar(),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Stats Cards
-                        _buildStatsCards(),
+                  child: Column(
+                    children: [
+                      _buildTopHeader(),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(18),
+                          child: LayoutBuilder(
+                            builder: (context, constraints) {
+                              final narrow = constraints.maxWidth < 980;
+                              final leftContent = _buildMainLeftContent();
 
-                        const SizedBox(height: 32),
+                              if (narrow) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    leftContent,
+                                    const SizedBox(height: 16),
+                                    if (_selectedNavIndex == 0 ||
+                                        _selectedNavIndex == 1 ||
+                                        _selectedNavIndex == 2)
+                                      _buildRightPanel(),
+                                  ],
+                                );
+                              }
 
-                        // Proposals Table
-                        _buildProposalsSection(),
-                      ],
-                    ),
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: leftContent),
+                                  const SizedBox(width: 16),
+                                  if (_selectedNavIndex == 0 ||
+                                      _selectedNavIndex == 1 ||
+                                      _selectedNavIndex == 2)
+                                    SizedBox(
+                                      width: 380,
+                                      child: _buildRightPanel(),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

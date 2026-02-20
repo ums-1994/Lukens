@@ -824,6 +824,18 @@ def send_to_client(username=None, proposal_id=None):
 
             client_email_expr = 'client_email' if 'client_email' in proposal_cols else "NULL::text"
 
+            sections_expr = 'sections' if 'sections' in proposal_cols else "NULL::text"
+
+            template_expr = None
+            if 'template_type' in proposal_cols:
+                template_expr = 'template_type'
+            elif 'template_key' in proposal_cols:
+                template_expr = 'template_key'
+
+            select_template = f"{template_expr} as template_key" if template_expr else "NULL::text as template_key"
+
+            content_expr = 'content' if 'content' in proposal_cols else "NULL::text"
+
             owner_expr = 'owner_id'
             if 'owner_id' not in proposal_cols and 'user_id' in proposal_cols:
                 owner_expr = 'user_id'
@@ -834,7 +846,10 @@ def send_to_client(username=None, proposal_id=None):
                        title,
                        {client_expr} as client_name,
                        {client_email_expr} as client_email,
-                       {owner_expr} as user_id
+                       {owner_expr} as user_id,
+                       {select_template},
+                       {sections_expr} as sections,
+                       {content_expr} as content
                 FROM proposals
                 WHERE id = %s
                 """,
@@ -843,6 +858,28 @@ def send_to_client(username=None, proposal_id=None):
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
+
+            try:
+                cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+                srow = cursor.fetchone() or {}
+                current_status = (srow.get('status') if hasattr(srow, 'get') else (srow[0] if srow else None))
+                status_lower = str(current_status or '').strip().lower()
+                if status_lower not in {
+                    'approved',
+                    'pending ceo approval',
+                    'in review',
+                    'released',
+                    'sent to client',
+                    'sent for signature',
+                    'signed',
+                }:
+                    return {
+                        'detail': 'Approval required before sending to client',
+                        'message': 'Send this proposal for approval first. After it is approved, it can be sent to the client.',
+                        'status': current_status,
+                    }, 400
+            except Exception as st_err:
+                print(f"[WARN] Status check failed for send_to_client proposal {proposal_id}: {st_err}")
 
             # Block release if latest Risk Gate run is BLOCK without override.
             try:
@@ -872,6 +909,41 @@ def send_to_client(username=None, proposal_id=None):
                     }, 400
             except Exception as rg_err:
                 print(f"[WARN] Risk Gate check failed for send_to_client proposal {proposal_id}: {rg_err}")
+
+            try:
+                from api.utils.governance import evaluate_governance
+
+                gov = evaluate_governance(
+                    template_key=proposal.get('template_key'),
+                    sections_raw=proposal.get('sections'),
+                    content_raw=proposal.get('content'),
+                    risk_gate_status=(rg.get('status') if rg else None),
+                    risk_gate_overridden=(rg.get('overridden') if rg else None),
+                )
+                if gov.blocked:
+                    return {
+                        'detail': 'Proposal blocked by governance',
+                        'message': 'This proposal is not ready for release. Resolve governance issues before sending to client.',
+                        'governance': {
+                            'readiness_score': gov.score,
+                            'required_sections': gov.required_sections,
+                            'missing_required': gov.missing_required,
+                            'missing_optional': gov.missing_optional,
+                            'blocked': True,
+                            'block_reasons': gov.block_reasons,
+                            'issues': gov.issues,
+                        },
+                        'risk_gate': {
+                            'run_id': rg.get('id') if rg else None,
+                            'status': rg.get('status') if rg else None,
+                            'risk_score': rg.get('risk_score') if rg else None,
+                            'overridden': (rg.get('overridden') if rg else None),
+                            'override_reason': rg.get('override_reason') if rg else None,
+                            'run_created_at': rg.get('created_at').isoformat() if (rg and rg.get('created_at')) else None,
+                        },
+                    }, 400
+            except Exception as gov_err:
+                print(f"[WARN] Governance check failed for send_to_client proposal {proposal_id}: {gov_err}")
             
             cursor.execute(
                 "SELECT id, full_name, username, email FROM users WHERE username = %s",

@@ -234,7 +234,9 @@ def approve_proposal(username=None, proposal_id=None):
                     {client_expr} AS client,
                     {owner_expr} AS user_id,
                     p.content,
-                    {client_email_expr} AS client_email
+                    {client_email_expr} AS client_email,
+                    p.sections,
+                    p.template_key
                 FROM proposals p
                 WHERE p.id = %s
             '''
@@ -281,6 +283,33 @@ def approve_proposal(username=None, proposal_id=None):
                         }, 400
             except Exception as rg_err:
                 print(f"[WARN] Risk Gate check failed for approver approve proposal {proposal_id}: {rg_err}")
+
+            try:
+                from api.utils.governance import evaluate_governance
+
+                gov = evaluate_governance(
+                    template_key=proposal.get('template_key'),
+                    sections_raw=proposal.get('sections'),
+                    content_raw=proposal.get('content'),
+                    risk_gate_status=(rg.get('status') if 'rg' in locals() else None),
+                    risk_gate_overridden=(rg.get('overridden') if 'rg' in locals() else None),
+                )
+                if gov.blocked:
+                    return {
+                        'detail': 'Proposal blocked by governance',
+                        'message': 'This proposal is not ready for release. Resolve governance issues before approving/sending to client.',
+                        'governance': {
+                            'readiness_score': gov.score,
+                            'required_sections': gov.required_sections,
+                            'missing_required': gov.missing_required,
+                            'missing_optional': gov.missing_optional,
+                            'blocked': True,
+                            'block_reasons': gov.block_reasons,
+                            'issues': gov.issues,
+                        },
+                    }, 400
+            except Exception as gov_err:
+                print(f"[WARN] Governance check failed for approver approve proposal {proposal_id}: {gov_err}")
             
             title = proposal.get('title')
             client_name = proposal.get('client') or proposal.get('client_name') or 'Unknown'
@@ -468,6 +497,10 @@ def approve_proposal(username=None, proposal_id=None):
 
                 # Send email to client
                 email_sent = False
+                client_link = None
+                access_token = None
+                signing_url = None
+                envelope_id = None
                 # Note: client_email might be empty since the column doesn't exist in schema
                 # We'll still create the envelope if we have a client name
                 if client_name and client_name != 'Unknown':
@@ -540,12 +573,11 @@ def approve_proposal(username=None, proposal_id=None):
                             if invited_by_col:
                                 if approver_user_id is None:
                                     print(
-                                        "⚠️ collaboration_invitations requires inviter id but approver_user_id is unknown; "
-                                        "skipping invitation insert"
+                                        "⚠️ approver_user_id is unknown; omitting invited_by column when inserting collaboration invitation"
                                     )
-                                    raise RuntimeError("missing_approver_user_id_for_invitation")
-                                insert_cols.append(invited_by_col)
-                                insert_vals.append(approver_user_id)
+                                else:
+                                    insert_cols.append(invited_by_col)
+                                    insert_vals.append(approver_user_id)
                             if permission_col:
                                 insert_cols.append(permission_col)
                                 insert_vals.append('view')
@@ -559,7 +591,7 @@ def approve_proposal(username=None, proposal_id=None):
                                 insert_cols.append(expires_col)
                                 insert_vals.append(datetime.utcnow() + timedelta(days=90))
 
-                            if proposal_id_col and inv_email_col and insert_cols:
+                            if proposal_id_col and inv_email_col and token_col and insert_cols:
                                 placeholders = ', '.join(['%s'] * len(insert_cols))
                                 cols_sql = ', '.join(insert_cols)
                                 cursor.execute(
@@ -593,8 +625,8 @@ def approve_proposal(username=None, proposal_id=None):
                                 client_email=client_email,
                             )
 
-                            # Return URL back to client view using the collaboration router
-                            return_url = f"{frontend_url}/#/collaborate?token={access_token}&signed=true"
+                            # Return URL back to client portal (not the internal collaboration/editor route)
+                            return_url = f"{frontend_url}/#/client/proposals?token={access_token}&signed=true"
 
                             envelope_result = create_docusign_envelope(
                                 proposal_id=proposal_id,
@@ -744,7 +776,8 @@ def approve_proposal(username=None, proposal_id=None):
                             print(f"\n⚠️  Continuing with approval despite DocuSign error")
                             print(f"   Client will receive email with proposal link, but DocuSign signing may not be available")
 
-                        client_link = f"{frontend_url}/#/collaborate?token={access_token}"
+                        # Client share link should open the client portal experience
+                        client_link = f"{frontend_url}/#/client/proposals?token={access_token}"
 
                         sendgrid_configured = bool(
                             (os.getenv('SENDGRID_API_KEY') or '').strip()
@@ -807,7 +840,11 @@ def approve_proposal(username=None, proposal_id=None):
                 return {
                     'detail': 'Proposal approved and sent to client',
                     'status': new_status,
-                    'email_sent': email_sent
+                    'email_sent': email_sent,
+                    'client_link': client_link,
+                    'access_token': access_token,
+                    'signing_url': signing_url,
+                    'envelope_id': envelope_id,
                 }, 200
             else:
                 return {'detail': 'Failed to update proposal status'}, 500

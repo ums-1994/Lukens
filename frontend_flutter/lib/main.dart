@@ -20,7 +20,7 @@ import 'pages/creator/client_management_page.dart';
 import 'pages/admin/approver_dashboard_page.dart';
 import 'pages/admin/admin_approvals_page.dart';
 import 'pages/admin/proposal_review_page.dart';
-import 'pages/finance_manager/finance_dashboard_v2.dart';
+import 'pages/finance_manager/finance_dashboard_page.dart';
 import 'pages/finance_manager/finance_client_management_page.dart';
 import 'pages/finance_manager/finance_add_client_page.dart';
 import 'pages/finance_manager/finance_onboarding_page.dart';
@@ -427,7 +427,7 @@ class MyApp extends StatelessWidget {
           },
           '/approvals': (context) => const ApproverDashboardPage(),
           '/approver_dashboard': (context) => const ApproverDashboardPage(),
-          '/finance_dashboard': (context) => FinanceDashboardPage(),
+          '/finance_dashboard': (context) => const FinanceDashboardReviewPage(),
           '/finance/onboarding': (context) => const FinanceOnboardingPage(),
           '/finance/clients': (context) => const FinanceClientManagementPage(),
           '/finance/clients/add': (context) => const FinanceAddClientPage(),

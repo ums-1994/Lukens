@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:flutter/services.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
@@ -27,10 +28,24 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   List<Map<String, dynamic>> _comments = [];
   bool _isLoading = true;
   String? _error;
+  String? _clientLink;
   final TextEditingController _commentController = TextEditingController();
   bool _isSubmittingComment = false;
   bool _showVersions = false;
   final ScrollController _scrollController = ScrollController();
+
+  Future<void> _copyClientLink() async {
+    final link = _clientLink;
+    if (link == null || link.trim().isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: link));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Client link copied to clipboard'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
 
   DateTime? _parseAnyDate(dynamic value) {
     if (value == null) return null;
@@ -463,15 +478,72 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       }
 
       if (response.statusCode == 200) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('âœ… Proposal approved and sent to client!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.pop(context);
-        }
+        Map<String, dynamic>? payload;
+        try {
+          final contentType = response.headers['content-type'] ?? '';
+          if (contentType.contains('application/json')) {
+            final decoded = json.decode(response.body);
+            if (decoded is Map) {
+              payload = Map<String, dynamic>.from(decoded);
+            }
+          }
+        } catch (_) {}
+
+        final returnedToken = payload?['access_token']?.toString();
+        final returnedLink = payload?['client_link']?.toString();
+        final computedLink = (returnedToken != null && returnedToken.trim().isNotEmpty)
+            ? '${Uri.base.origin}/#/client/proposals?token=${returnedToken.trim()}'
+            : (returnedLink?.trim());
+        _safeSetState(() {
+          if (computedLink != null && computedLink.isNotEmpty) {
+            _clientLink = computedLink;
+          }
+        });
+
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('Proposal Approved'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Proposal approved and sent to client.'),
+                  if (_clientLink != null && _clientLink!.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    const Text('Client link:'),
+                    const SizedBox(height: 6),
+                    SelectableText(
+                      _clientLink!,
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+              actions: [
+                if (_clientLink != null && _clientLink!.isNotEmpty)
+                  TextButton(
+                    onPressed: () async {
+                      await _copyClientLink();
+                    },
+                    child: const Text('Copy link'),
+                  ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.teal,
+                  ),
+                  child: const Text('Done'),
+                ),
+              ],
+            );
+          },
+        );
+
+        if (!mounted) return;
+        Navigator.pop(context);
       } else {
         String errorMessage = 'Failed to approve proposal';
         try {
@@ -962,6 +1034,12 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
               onPressed: _openInEditor,
               tooltip: 'Edit in Editor',
             ),
+            if (_clientLink != null && _clientLink!.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.share, color: Colors.white),
+                onPressed: _copyClientLink,
+                tooltip: 'Copy client link',
+              ),
             IconButton(
               icon: const Icon(Icons.history, color: Colors.white),
               onPressed: () =>

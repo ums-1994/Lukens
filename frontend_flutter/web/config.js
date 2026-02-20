@@ -29,9 +29,9 @@ window.APP_CONFIG = {
       return localUrl;
     }
 
-    const defaultUrl = 'https://lukens-wp8w.onrender.com';
-    console.log('🌐 Using default API URL:', defaultUrl);
-    return defaultUrl;
+    // For developer safety, default to local unless explicitly overridden.
+    console.log('🌐 Using default API URL (local):', localUrl);
+    return localUrl;
   })(),
 };
 

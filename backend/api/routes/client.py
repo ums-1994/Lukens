@@ -3,6 +3,7 @@ Client role routes - Viewing proposals, commenting, approving/rejecting, signing
 """
 from flask import Blueprint, request, jsonify
 import os
+import json
 import traceback
 from psycopg2 import sql
 import psycopg2.extras
@@ -323,6 +324,15 @@ def get_client_proposals():
             if engagement_select_parts:
                 engagement_select_sql = ', ' + ', '.join(engagement_select_parts)
 
+            released_status_where = """
+                (
+                    LOWER(COALESCE(p.status, '')) LIKE '%%sent to client%%'
+                    OR LOWER(COALESCE(p.status, '')) LIKE '%%released%%'
+                    OR LOWER(COALESCE(p.status, '')) LIKE '%%sent for signature%%'
+                    OR LOWER(COALESCE(p.status, '')) LIKE '%%signed%%'
+                )
+            """
+
             query = f"""
                 SELECT DISTINCT
                     p.id,
@@ -350,6 +360,7 @@ def get_client_proposals():
                     OR ci.access_token = %s
                     OR (%s IS NOT NULL AND p.id = %s)
                 )
+                AND {released_status_where}
                 ORDER BY p.updated_at DESC
             """
 
@@ -425,10 +436,15 @@ def get_client_proposal_details(proposal_id):
 
             if 'user_id' in columns:
                 owner_select_expr = 'p.user_id'
-                user_join_clause = 'LEFT JOIN users u ON p.user_id = u.username'
+                user_join_clause = (
+                    "LEFT JOIN users u ON ("
+                    "u.username = p.user_id::text "
+                    "OR u.id::text = p.user_id::text"
+                    ")"
+                )
             elif 'owner_id' in columns:
                 owner_select_expr = 'p.owner_id'
-                user_join_clause = 'LEFT JOIN users u ON p.owner_id = u.id'
+                user_join_clause = 'LEFT JOIN users u ON u.id::text = p.owner_id::text'
             else:
                 owner_select_expr = 'NULL'
                 user_join_clause = 'LEFT JOIN users u ON 1 = 0'
@@ -466,6 +482,15 @@ def get_client_proposal_details(proposal_id):
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
+
+            status_lower = str((proposal.get('status') if isinstance(proposal, dict) else '') or '').strip().lower()
+            if not (
+                'sent to client' in status_lower
+                or 'released' in status_lower
+                or 'sent for signature' in status_lower
+                or 'signed' in status_lower
+            ):
+                return {'detail': 'Proposal not yet released to client', 'status': proposal.get('status')}, 403
 
             proposal_dict = dict(proposal)
 
@@ -1064,6 +1089,140 @@ def fetch_client_proposals(username=None):
             return proposals, 200
     except Exception as e:
         return {'detail': str(e)}, 500
+
+
+@bp.post("/client/proposals/<int:proposal_id>/sign_token")
+def client_sign_proposal_token(proposal_id=None):
+    """Sign a proposal as client using a share token (client portal)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        token = (data.get('token') or '').strip()
+        signer_name = (data.get('signer_name') or '').strip()
+        if not token:
+            return {'detail': 'Token is required'}, 400
+        if not signer_name:
+            return {'detail': 'Signer name is required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            inv_info = _get_invitation_column_info(cursor)
+            token_col = inv_info['token_col']
+            email_col = inv_info['email_col']
+            expires_col = inv_info['expires_col']
+            if not token_col or not email_col:
+                return {'detail': 'Client invitations not configured'}, 500
+
+            expires_select = (
+                sql.Identifier(expires_col)
+                if expires_col
+                else sql.SQL('NULL::timestamp')
+            )
+            cursor.execute(
+                sql.SQL(
+                    """
+                    SELECT proposal_id, {email_col} as invited_email, {expires_col} as expires_at
+                    FROM collaboration_invitations
+                    WHERE {token_col} = %s
+                    """
+                ).format(
+                    email_col=sql.Identifier(email_col),
+                    expires_col=expires_select,
+                    token_col=sql.Identifier(token_col),
+                ),
+                (token,),
+            )
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+
+            if invitation.get('expires_at') and datetime.now() > invitation['expires_at']:
+                return {'detail': 'Access token has expired'}, 403
+
+            token_proposal_id = invitation.get('proposal_id')
+            if token_proposal_id is not None and str(token_proposal_id) != str(proposal_id):
+                return {'detail': 'Token is not valid for this proposal'}, 403
+
+            signer_email = (invitation.get('invited_email') or '').strip() or None
+
+            cursor.execute("SELECT status FROM proposals WHERE id = %s", (proposal_id,))
+            prow = cursor.fetchone()
+            if not prow:
+                return {'detail': 'Proposal not found'}, 404
+
+            old_status = prow.get('status') if isinstance(prow, dict) else None
+
+            cursor.execute(
+                """UPDATE proposals
+                   SET status = 'Client Signed', updated_at = NOW()
+                   WHERE id = %s""",
+                (proposal_id,),
+            )
+
+            # Optional: record signature details
+            try:
+                cursor.execute("SELECT to_regclass(%s)", ("public.proposal_signatures",))
+                has_signatures = cursor.fetchone().get('to_regclass') is not None
+            except Exception:
+                has_signatures = False
+
+            if has_signatures:
+                try:
+                    cursor.execute(
+                        """UPDATE proposal_signatures
+                           SET signer_name = %s,
+                               signer_email = COALESCE(%s, signer_email),
+                               status = 'signed',
+                               signed_at = NOW()
+                           WHERE proposal_id = %s""",
+                        (signer_name, signer_email, proposal_id),
+                    )
+                except Exception:
+                    pass
+
+            # Log activity
+            try:
+                metadata = json.dumps({'signer_name': signer_name, 'signer_email': signer_email})
+                cursor.execute(
+                    """
+                    INSERT INTO proposal_client_activity
+                    (proposal_id, client_id, event_type, metadata, created_at)
+                    VALUES (%s, NULL, %s, %s::jsonb, NOW())
+                    """,
+                    (proposal_id, 'sign', metadata),
+                )
+            except Exception:
+                pass
+
+            conn.commit()
+
+            if old_status and old_status != 'Client Signed':
+                try:
+                    log_status_change(proposal_id, None, old_status, 'Client Signed')
+                except Exception:
+                    pass
+
+            return {'success': True, 'detail': 'Proposal signed by client'}, 200
+
+    except Exception as e:
+        print(f"❌ Error signing proposal by token: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post("/api/client/proposals/<int:proposal_id>/sign_token")
+def client_sign_proposal_token_api(proposal_id):
+    return client_sign_proposal_token(proposal_id)
+
+
+@bp.get("/api/client/proposals")
+def get_client_proposals_api():
+    return get_client_proposals()
+
+
+@bp.get("/api/client/proposals/<int:proposal_id>")
+def get_client_proposal_details_api(proposal_id):
+    return get_client_proposal_details(proposal_id)
 
 @bp.get("/client/proposals/<int:proposal_id>")
 @token_required

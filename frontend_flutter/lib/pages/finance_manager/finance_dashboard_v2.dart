@@ -12,14 +12,14 @@ import '../creator/blank_document_editor_page.dart';
 import 'finance_client_management_page.dart';
 
 /// Simplified Finance dashboard that uses real proposal data from `/api/proposals`.
-class FinanceDashboardPage extends StatefulWidget {
-  const FinanceDashboardPage({Key? key}) : super(key: key);
+class FinanceDashboardMetricsPage extends StatefulWidget {
+  const FinanceDashboardMetricsPage({Key? key}) : super(key: key);
 
   @override
-  State<FinanceDashboardPage> createState() => _FinanceDashboardPageState();
+  State<FinanceDashboardMetricsPage> createState() => _FinanceDashboardMetricsPageState();
 }
 
-class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
+class _FinanceDashboardMetricsPageState extends State<FinanceDashboardMetricsPage> {
   bool _isLoading = false;
   String _statusFilter = 'all'; // all, pending, approved, other
   final TextEditingController _searchController = TextEditingController();
@@ -509,7 +509,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                                   _buildTable(tableRows),
                                 ] else ...[
                                   Expanded(
-                                    child: ClientManagementPage(),
+                                    child: FinanceClientManagementPage(),
                                   ),
                                 ],
                                 const SizedBox(height: 24),
@@ -717,12 +717,14 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
               () => setState(() => _currentTab = 'proposals'),
             ),
           ),
-          const SizedBox(height: 10),
-          navIcon(
-            icon: Icons.business,
-            active: _currentTab == 'clients',
-            tooltip: 'Client Management',
-            onTap: () => setState(() => _currentTab = 'clients'),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _buildTabButton(
+              'Clients',
+              Icons.business,
+              _currentTab == 'clients',
+              () => setState(() => _currentTab = 'clients'),
+            ),
           ),
         ],
       ),

@@ -65,10 +65,9 @@ class ApiService {
       }
     }
 
-    // Default to Render backend (production)
-    print(
-        '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+    // Default to local backend to avoid accidentally calling production.
+    print('🌐 ApiService: Using default local API URL: http://127.0.0.1:8000');
+    return 'http://127.0.0.1:8000';
   }
 
   // Get headers with Firebase token

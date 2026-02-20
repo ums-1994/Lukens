@@ -112,6 +112,41 @@ class AppState extends ChangeNotifier {
     return headers;
   }
 
+  String _formatGovernanceError(Map<String, dynamic> data,
+      {String fallback = 'Request blocked'}) {
+    try {
+      final govRaw = data['governance'];
+      if (govRaw is! Map) {
+        return (data['detail'] ?? data['message'] ?? fallback).toString();
+      }
+
+      final gov = govRaw.cast<String, dynamic>();
+      final score = gov['readiness_score'];
+      final missingRequired = (gov['missing_required'] is List)
+          ? (gov['missing_required'] as List)
+          : const [];
+      final blockReasons = (gov['block_reasons'] is List)
+          ? (gov['block_reasons'] as List)
+          : const [];
+
+      final parts = <String>[];
+      parts.add('Blocked by governance');
+      if (score != null) {
+        parts.add('Readiness: ${score.toString()}%');
+      }
+      if (missingRequired.isNotEmpty) {
+        parts.add('Missing required: ${missingRequired.take(6).join(', ')}');
+      }
+      if (blockReasons.isNotEmpty) {
+        parts.add('Reasons: ${blockReasons.take(3).join(' • ')}');
+      }
+
+      return parts.join('\n');
+    } catch (_) {
+      return (data['detail'] ?? data['message'] ?? fallback).toString();
+    }
+  }
+
   // Headers for multipart/form-data requests (file uploads)
   // Don't include Content-Type - it's set automatically by MultipartRequest
   Map<String, String> get _multipartHeaders {
@@ -713,7 +748,8 @@ class AppState extends ChangeNotifier {
           if (region != null && region.isNotEmpty) 'region': region,
           if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
         },
       );
 
@@ -738,7 +774,8 @@ class AppState extends ChangeNotifier {
     String? department,
   }) async {
     try {
-      final uri = Uri.parse("$baseUrl/api/analytics/collaboration-load").replace(
+      final uri =
+          Uri.parse("$baseUrl/api/analytics/collaboration-load").replace(
         queryParameters: {
           if (startDate != null) 'start_date': startDate,
           if (endDate != null) 'end_date': endDate,
@@ -748,7 +785,8 @@ class AppState extends ChangeNotifier {
           if (client != null && client.isNotEmpty) 'client': client,
           if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
         },
       );
 
@@ -786,7 +824,8 @@ class AppState extends ChangeNotifier {
           if (client != null && client.isNotEmpty) 'client': client,
           if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
           if (limit != null) 'limit': limit.toString(),
         },
       );
@@ -822,7 +861,8 @@ class AppState extends ChangeNotifier {
           if (client != null && client.isNotEmpty) 'client': client,
           if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
         },
       );
 
@@ -906,7 +946,11 @@ class AppState extends ChangeNotifier {
       );
       if (r.statusCode >= 400) {
         final data = jsonDecode(r.body);
-        return data["detail"] ?? "Approval failed";
+        if (data is Map) {
+          return _formatGovernanceError(data.cast<String, dynamic>(),
+              fallback: 'Approval failed');
+        }
+        return "Approval failed";
       }
       await fetchProposals();
       await fetchDashboard();
@@ -945,7 +989,11 @@ class AppState extends ChangeNotifier {
       );
       if (r.statusCode >= 400) {
         final data = jsonDecode(r.body);
-        return data["detail"] ?? "Send to client failed";
+        if (data is Map) {
+          return _formatGovernanceError(data.cast<String, dynamic>(),
+              fallback: 'Send to client failed');
+        }
+        return "Send to client failed";
       }
       await fetchProposals();
       await fetchDashboard();
@@ -1116,7 +1164,7 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> clientDashboardStats = {};
 
   Future<void> fetchClientProposals() async {
-    final r = await http.get(Uri.parse("$baseUrl/client/proposals"),
+    final r = await http.get(Uri.parse("$baseUrl/api/client/proposals"),
         headers: _headers);
     clientProposals = jsonDecode(r.body);
     notifyListeners();
@@ -1130,7 +1178,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> getClientProposal(String proposalId) async {
-    final r = await http.get(Uri.parse("$baseUrl/client/proposals/$proposalId"),
+    final r = await http.get(Uri.parse("$baseUrl/api/client/proposals/$proposalId"),
         headers: _headers);
     if (r.statusCode == 200) {
       return jsonDecode(r.body);
@@ -1173,11 +1221,13 @@ class AppState extends ChangeNotifier {
           if (endDate != null) 'end_date': endDate,
           if (status != null && status.isNotEmpty) 'status': status,
           if (owner != null && owner.isNotEmpty) 'owner': owner,
-          if (proposalType != null && proposalType.isNotEmpty) 'proposal_type': proposalType,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
           if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
         },
       );
       final r = await http.get(uri, headers: _headers);
@@ -1193,7 +1243,7 @@ class AppState extends ChangeNotifier {
   Future<String?> clientSignProposal(
       String proposalId, String signerName) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/client/proposals/$proposalId/sign"),
+      Uri.parse("$baseUrl/api/client/proposals/$proposalId/sign"),
       headers: _headers,
       body: jsonEncode({"signer_name": signerName}),
     );

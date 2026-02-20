@@ -4698,105 +4698,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
               ),
             ],
-            ];
+          );
 
-            final statusWidgets = <Widget>[
-              const SizedBox(width: 16),
-              GestureDetector(
-                onTap: _showVersionHistory,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _isSaving
-                        ? Colors.blue.withOpacity(0.1)
-                        : (_hasUnsavedChanges
-                            ? Colors.orange.withOpacity(0.1)
-                            : Colors.green.withOpacity(0.1)),
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                      color: _isSaving
-                          ? Colors.blue
-                          : (_hasUnsavedChanges
-                              ? Colors.orange
-                              : Colors.green),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_isSaving)
-                        const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.blue),
-                          ),
-                        )
-                      else
-                        Icon(
-                          _hasUnsavedChanges
-                              ? Icons.pending
-                              : Icons.check_circle,
-                          size: 14,
-                          color:
-                              _hasUnsavedChanges ? Colors.orange : Colors.green,
-                        ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _isSaving
-                            ? 'Saving...'
-                            : (_hasUnsavedChanges
-                                ? 'Unsaved changes'
-                                : (_lastSaved == null
-                                    ? 'Not Saved'
-                                    : 'Saved')),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: _isSaving
-                              ? Colors.blue[800]
-                              : (_hasUnsavedChanges
-                                  ? Colors.orange[800]
-                                  : Colors.green[800]),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                onPressed: _showVersionHistory,
-                icon: const Icon(Icons.history, size: 16),
-                label: Text('v$_currentVersionNumber'),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF00BCD4)),
-                  foregroundColor: const Color(0xFF00BCD4),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-            ];
+          if (compact) {
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: row,
+            );
+          }
 
-            final row = Row(children: [...baseActions, ...statusWidgets]);
-
-            if (compact) {
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: row,
-              );
-            }
-
-            return row;
-          },
-        );
+          return row;
+        },
+      ),
+    );
   }
 
   Widget _buildToolbar() {

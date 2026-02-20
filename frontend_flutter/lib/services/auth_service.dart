@@ -61,9 +61,9 @@ class AuthService {
       }
     }
 
-    // Default to Render backend (production)
-    print('🌐 Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+    // Default to local backend to avoid accidentally calling production.
+    print('🌐 Using default local API URL: http://127.0.0.1:8000');
+    return 'http://127.0.0.1:8000';
   }
   static String? _token;
   static Map<String, dynamic>? _currentUser;

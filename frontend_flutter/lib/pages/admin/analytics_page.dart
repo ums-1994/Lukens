@@ -181,13 +181,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         builder: (context) {
           return Dialog(
             backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                 child: Container(
-                  constraints: const BoxConstraints(maxWidth: 980, maxHeight: 720),
+                  constraints:
+                      const BoxConstraints(maxWidth: 980, maxHeight: 720),
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -212,7 +214,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                           Expanded(
                             child: Text(
                               'Completion Rates: Low Readiness',
-                              style: PremiumTheme.titleLarge.copyWith(color: Colors.white),
+                              style: PremiumTheme.titleLarge
+                                  .copyWith(color: Colors.white),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -244,13 +247,29 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             itemBuilder: (context, i) {
                               final p = (low[i] as Map).cast<String, dynamic>();
                               final id = (p['proposal_id'] ?? '').toString();
-                              final title = (p['title'] ?? 'Untitled').toString();
+                              final title =
+                                  (p['title'] ?? 'Untitled').toString();
                               final clientName = (p['client'] ?? '').toString();
                               final status = (p['status'] ?? '').toString();
                               final score = (p['readiness_score'] is num)
                                   ? (p['readiness_score'] as num).toInt()
-                                  : int.tryParse((p['readiness_score'] ?? '').toString()) ?? 0;
-                              final issues = (p['readiness_issues'] as List?) ?? const [];
+                                  : int.tryParse((p['readiness_score'] ?? '')
+                                          .toString()) ??
+                                      0;
+                              final issues =
+                                  (p['readiness_issues'] as List?) ?? const [];
+                              final missingRequired =
+                                  (p['missing_required'] as List?) ?? const [];
+
+                              String subtitle;
+                              if (missingRequired.isNotEmpty) {
+                                subtitle =
+                                    'Missing required: ${missingRequired.take(3).join(', ')}';
+                              } else {
+                                subtitle = issues.isEmpty
+                                    ? ''
+                                    : (issues.take(2).join(' • '));
+                              }
 
                               return InkWell(
                                 onTap: () {
@@ -261,17 +280,20 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                   );
                                 },
                                 child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 12),
                                   child: Row(
                                     children: [
                                       Expanded(
                                         flex: 4,
                                         child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Text(
                                               title,
-                                              style: PremiumTheme.bodyMedium.copyWith(
+                                              style: PremiumTheme.bodyMedium
+                                                  .copyWith(
                                                 color: Colors.white,
                                                 fontWeight: FontWeight.w600,
                                               ),
@@ -279,10 +301,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                             ),
                                             const SizedBox(height: 4),
                                             Text(
-                                              issues.isEmpty
-                                                  ? ''
-                                                  : (issues.take(2).join(' • ')),
-                                              style: PremiumTheme.bodySmall.copyWith(
+                                              issues.isEmpty ? '' : subtitle,
+                                              style: PremiumTheme.bodySmall
+                                                  .copyWith(
                                                 color: Colors.white70,
                                               ),
                                               overflow: TextOverflow.ellipsis,
@@ -294,7 +315,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                         flex: 3,
                                         child: Text(
                                           clientName.isEmpty ? '-' : clientName,
-                                          style: PremiumTheme.bodyMedium.copyWith(
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
                                             color: Colors.white70,
                                           ),
                                           overflow: TextOverflow.ellipsis,
@@ -304,7 +326,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                         flex: 2,
                                         child: Text(
                                           status.isEmpty ? '-' : status,
-                                          style: PremiumTheme.bodyMedium.copyWith(
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
                                             color: Colors.white70,
                                           ),
                                           overflow: TextOverflow.ellipsis,
@@ -314,7 +337,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                         child: Text(
                                           '$score%',
                                           textAlign: TextAlign.right,
-                                          style: PremiumTheme.bodyMedium.copyWith(
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
                                             color: score >= 90
                                                 ? PremiumTheme.success
                                                 : score >= 60
@@ -415,7 +439,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     }
 
     Widget stageHeader(String stage, int count) {
-      final active = (_pipelineStageFilter ?? '').toLowerCase() == stage.toLowerCase();
+      final active =
+          (_pipelineStageFilter ?? '').toLowerCase() == stage.toLowerCase();
       return InkWell(
         onTap: () {
           setState(() {
@@ -449,7 +474,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.black.withValues(alpha: 0.25),
                   borderRadius: BorderRadius.circular(999),
@@ -552,7 +578,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
     Widget stageColumn(Map<String, dynamic> stage) {
       final stageName = (stage['stage'] ?? '').toString();
-      final count = (stage['count'] is num) ? (stage['count'] as num).toInt() : 0;
+      final count =
+          (stage['count'] is num) ? (stage['count'] as num).toInt() : 0;
       final proposals = (stage['proposals'] as List?) ?? [];
       final cards = <Map<String, dynamic>>[];
       for (final p in proposals) {
@@ -601,11 +628,13 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.10),
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.18)),
                   ),
                   child: Text(
                     'Filtered: ${_pipelineStageFilter!}',
@@ -634,7 +663,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               return SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: SizedBox(
-                  width: math.max(constraints.maxWidth, 260.0 * stages.length + 20.0 * (stages.length - 1)),
+                  width: math.max(constraints.maxWidth,
+                      260.0 * stages.length + 20.0 * (stages.length - 1)),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -680,7 +710,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
     final maxValue = points.fold<double>(
       0,
-      (p, e) => math.max(p, (e['views'] is num) ? (e['views'] as num).toDouble() : 0.0),
+      (p, e) => math.max(
+          p, (e['views'] is num) ? (e['views'] as num).toDouble() : 0.0),
     );
     final yMax = maxValue == 0 ? 1.0 : maxValue * 1.2;
     final spots = <FlSpot>[
@@ -824,14 +855,16 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final ttsSamples = n(timeToSign['samples']);
     final avgDaysRaw = timeToSign['avg_days'];
     final avgDays = (avgDaysRaw is num) ? avgDaysRaw.toDouble() : null;
-    final avgDaysLabel = avgDays == null ? '--' : '${avgDays.toStringAsFixed(1)} days';
+    final avgDaysLabel =
+        avgDays == null ? '--' : '${avgDays.toStringAsFixed(1)} days';
 
     final conversion = (data?['conversion'] as Map?) ?? {};
     final released = n(conversion['released']);
     final signed = n(conversion['signed']);
     final rateRaw = conversion['rate_percent'];
     final rate = (rateRaw is num) ? rateRaw.toDouble() : null;
-    final conversionLabel = rate == null ? '--' : '${rate.toStringAsFixed(1)}% ($signed/$released)';
+    final conversionLabel =
+        rate == null ? '--' : '${rate.toStringAsFixed(1)}% ($signed/$released)';
 
     Widget statChip(String label, String value, Color color) {
       return Container(
@@ -859,9 +892,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           spacing: 10,
           runSpacing: 10,
           children: [
-            statChip('Views', viewsTotal.toString(), Colors.white.withValues(alpha: 0.9)),
-            statChip('Unique Clients', uniqueClients.toString(), PremiumTheme.cyan),
-            statChip('Time Spent', _formatDurationSeconds(timeSpentSeconds), PremiumTheme.teal),
+            statChip('Views', viewsTotal.toString(),
+                Colors.white.withValues(alpha: 0.9)),
+            statChip(
+                'Unique Clients', uniqueClients.toString(), PremiumTheme.cyan),
+            statChip('Time Spent', _formatDurationSeconds(timeSpentSeconds),
+                PremiumTheme.teal),
             statChip('Sessions', sessionsCount.toString(), PremiumTheme.info),
             statChip('Conversion', conversionLabel, PremiumTheme.success),
             statChip('Avg Time To Sign', avgDaysLabel, PremiumTheme.purple),
@@ -993,7 +1029,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         );
       }
 
-      final maxVal = points.fold<int>(0, (p, e) => math.max(p, n(e['interactions'])));
+      final maxVal =
+          points.fold<int>(0, (p, e) => math.max(p, n(e['interactions'])));
       final squares = points.take(28).toList();
 
       Color cellColor(int v) {
@@ -1035,7 +1072,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             spacing: 10,
             runSpacing: 10,
             children: [
-              statChip('Interactions', interactions, Colors.white.withValues(alpha: 0.9)),
+              statChip('Interactions', interactions,
+                  Colors.white.withValues(alpha: 0.9)),
               statChip('Comments', comments, PremiumTheme.teal),
               statChip('Versions', versions, PremiumTheme.purple),
               statChip('Approvals', approvals, PremiumTheme.success),
@@ -1051,7 +1089,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 child: Text(
                   'Reviewer turnaround: ${fmtDays(turnaroundAvgDays)}'
                   ' (${turnaroundSamples.toString()} sample${turnaroundSamples == 1 ? '' : 's'})',
-                  style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+                  style:
+                      PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -1110,7 +1149,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                       _openProposalFromAnalytics(id: id, title: title);
                     },
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 10),
                       child: Row(
                         children: [
                           Expanded(
@@ -1128,7 +1168,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             flex: 3,
                             child: Text(
                               client.isEmpty ? '-' : client,
-                              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+                              style: PremiumTheme.bodyMedium
+                                  .copyWith(color: Colors.white70),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -1136,7 +1177,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                             flex: 2,
                             child: Text(
                               status.isEmpty ? '-' : status,
-                              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+                              style: PremiumTheme.bodyMedium
+                                  .copyWith(color: Colors.white70),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -1151,7 +1193,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                     color: isHighLoad
                                         ? PremiumTheme.warning
                                         : Colors.white70,
-                                    fontWeight: isHighLoad ? FontWeight.w700 : FontWeight.w500,
+                                    fontWeight: isHighLoad
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
                                   ),
                                   textAlign: TextAlign.right,
                                 ),
@@ -1198,7 +1242,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   final title = (row['title'] ?? 'Untitled').toString();
                   final value = n(row['interactions']);
                   return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     child: Row(
                       children: [
                         Expanded(
@@ -1426,13 +1471,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         builder: (context) {
           return Dialog(
             backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                 child: Container(
-                  constraints: const BoxConstraints(maxWidth: 980, maxHeight: 720),
+                  constraints:
+                      const BoxConstraints(maxWidth: 980, maxHeight: 720),
                   padding: const EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -1457,7 +1504,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                           Expanded(
                             child: Text(
                               'Risk Gate: $riskStatus',
-                              style: PremiumTheme.titleLarge.copyWith(color: Colors.white),
+                              style: PremiumTheme.titleLarge
+                                  .copyWith(color: Colors.white),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -1475,19 +1523,24 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 startDate: startDate,
                                 endDate: endDate,
                                 owner: owner.isEmpty ? null : owner,
-                                proposalType: proposalType.isEmpty ? null : proposalType,
+                                proposalType:
+                                    proposalType.isEmpty ? null : proposalType,
                                 client: client.isEmpty ? null : client,
                                 industry: industry.isEmpty ? null : industry,
                                 scope: _cycleTimeScope,
-                                department: department.isEmpty ? null : department,
+                                department:
+                                    department.isEmpty ? null : department,
                                 limit: 250,
                               ),
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return const Center(child: CircularProgressIndicator());
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                  child: CircularProgressIndicator());
                             }
                             final data = snapshot.data;
-                            final proposals = (data?['proposals'] as List?) ?? [];
+                            final proposals =
+                                (data?['proposals'] as List?) ?? [];
 
                             if (proposals.isEmpty) {
                               return Center(
@@ -1507,10 +1560,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               itemBuilder: (context, i) {
                                 final p = proposals[i];
                                 final id = (p['proposal_id'] ?? '').toString();
-                                final title = (p['proposal_title'] ?? 'Untitled').toString();
-                                final clientName = (p['client'] ?? '').toString();
-                                final status = (p['proposal_status'] ?? '').toString();
-                                final risk = (p['risk_status'] ?? 'NONE').toString();
+                                final title =
+                                    (p['proposal_title'] ?? 'Untitled')
+                                        .toString();
+                                final clientName =
+                                    (p['client'] ?? '').toString();
+                                final status =
+                                    (p['proposal_status'] ?? '').toString();
+                                final risk =
+                                    (p['risk_status'] ?? 'NONE').toString();
                                 final score = p['risk_score'];
                                 final readiness = p['readiness_score'];
                                 final issuesCount = p['issues_count'];
@@ -1525,14 +1583,16 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                     );
                                   },
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 12),
                                     child: Row(
                                       children: [
                                         Expanded(
                                           flex: 4,
                                           child: Text(
                                             title,
-                                            style: PremiumTheme.bodyMedium.copyWith(
+                                            style: PremiumTheme.bodyMedium
+                                                .copyWith(
                                               color: Colors.white,
                                               fontWeight: FontWeight.w600,
                                             ),
@@ -1542,8 +1602,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                         Expanded(
                                           flex: 3,
                                           child: Text(
-                                            clientName.isEmpty ? '-' : clientName,
-                                            style: PremiumTheme.bodyMedium.copyWith(
+                                            clientName.isEmpty
+                                                ? '-'
+                                                : clientName,
+                                            style: PremiumTheme.bodyMedium
+                                                .copyWith(
                                               color: Colors.white70,
                                             ),
                                             overflow: TextOverflow.ellipsis,
@@ -1554,7 +1617,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                           flex: 2,
                                           child: Text(
                                             status.isEmpty ? '-' : status,
-                                            style: PremiumTheme.bodyMedium.copyWith(
+                                            style: PremiumTheme.bodyMedium
+                                                .copyWith(
                                               color: Colors.white70,
                                             ),
                                             overflow: TextOverflow.ellipsis,
@@ -1564,11 +1628,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                           flex: 2,
                                           child: Text(
                                             risk,
-                                            style: PremiumTheme.bodyMedium.copyWith(
+                                            style: PremiumTheme.bodyMedium
+                                                .copyWith(
                                               color: canRelease
                                                   ? Colors.white70
                                                   : PremiumTheme.error,
-                                              fontWeight: canRelease ? FontWeight.w500 : FontWeight.w700,
+                                              fontWeight: canRelease
+                                                  ? FontWeight.w500
+                                                  : FontWeight.w700,
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
@@ -1576,11 +1643,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                         SizedBox(
                                           width: 160,
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.end,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
                                             children: [
                                               Text(
-                                                score == null ? '-' : score.toString(),
-                                                style: PremiumTheme.bodyMedium.copyWith(
+                                                score == null
+                                                    ? '-'
+                                                    : score.toString(),
+                                                style: PremiumTheme.bodyMedium
+                                                    .copyWith(
                                                   color: Colors.white70,
                                                 ),
                                                 overflow: TextOverflow.ellipsis,
@@ -1589,8 +1660,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                               const SizedBox(height: 2),
                                               Text(
                                                 'Ready: ${readiness ?? '--'}%  •  Issues: ${issuesCount ?? 0}',
-                                                style: PremiumTheme.bodySmall.copyWith(
-                                                  color: Colors.white.withValues(alpha: 0.55),
+                                                style: PremiumTheme.bodySmall
+                                                    .copyWith(
+                                                  color: Colors.white
+                                                      .withValues(alpha: 0.55),
                                                 ),
                                                 overflow: TextOverflow.ellipsis,
                                                 textAlign: TextAlign.right,
@@ -1726,7 +1799,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             chip('PASS', counts['PASS'] ?? 0, PremiumTheme.success),
             chip('REVIEW', counts['REVIEW'] ?? 0, PremiumTheme.warning),
             chip('BLOCK', counts['BLOCK'] ?? 0, PremiumTheme.error),
-            chip('NONE', counts['NONE'] ?? 0, Colors.white.withValues(alpha: 0.7)),
+            chip('NONE', counts['NONE'] ?? 0,
+                Colors.white.withValues(alpha: 0.7)),
           ],
         ),
         const SizedBox(height: 12),
@@ -2416,8 +2490,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final s = statusLower.trim();
     if (s.isEmpty || s.contains('draft')) return 'Draft';
     if (s.contains('signed') || s.contains('won')) return 'Signed';
-    if (s.contains('sent to client') || s.contains('released')) return 'Released';
-    if (s.contains('review') || (s.contains('pending') && s.contains('ceo')) || s.contains('approved')) {
+    if (s.contains('sent to client') || s.contains('released'))
+      return 'Released';
+    if (s.contains('review') ||
+        (s.contains('pending') && s.contains('ceo')) ||
+        s.contains('approved')) {
       return 'In Review';
     }
     return null;
@@ -2508,7 +2585,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               child: Container(
                                 height: 16,
                                 decoration: BoxDecoration(
-                                  color: stageColor(stage).withValues(alpha: 0.75),
+                                  color:
+                                      stageColor(stage).withValues(alpha: 0.75),
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                               ),
@@ -2539,9 +2617,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   Widget _buildCompletionRateGauge(Map<String, dynamic>? data) {
-    final totals = (data?['totals'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
-    final total = (totals['total'] is num) ? (totals['total'] as num).toInt() : 0;
-    final passed = (totals['passed'] is num) ? (totals['passed'] as num).toInt() : 0;
+    final totals = (data?['totals'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final total =
+        (totals['total'] is num) ? (totals['total'] as num).toInt() : 0;
+    final passed =
+        (totals['passed'] is num) ? (totals['passed'] as num).toInt() : 0;
     final passRateRaw = totals['pass_rate'];
     int passRate = 0;
     if (passRateRaw is num) {
@@ -2555,12 +2636,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         onTap: () => _showCompletionRatesDialog(data),
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final maxW = constraints.maxWidth.isFinite
-                ? constraints.maxWidth
-                : 180.0;
-            final maxH = constraints.maxHeight.isFinite
-                ? constraints.maxHeight
-                : 180.0;
+            final maxW =
+                constraints.maxWidth.isFinite ? constraints.maxWidth : 180.0;
+            final maxH =
+                constraints.maxHeight.isFinite ? constraints.maxHeight : 180.0;
             final size = math.max(48.0, math.min(180.0, math.min(maxW, maxH)));
             final compact = size < 140;
 
@@ -2791,7 +2870,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                   final actions = Wrap(
                                     spacing: 12,
                                     runSpacing: 12,
-                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    crossAxisAlignment:
+                                        WrapCrossAlignment.center,
                                     children: [
                                       _buildGlassDropdown(),
                                       _buildGlassButton(
@@ -2817,7 +2897,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
                                   if (compact) {
                                     return Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           'Analytics Dashboard',
@@ -2827,7 +2908,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                         const SizedBox(height: 8),
                                         Text(
                                           'Comprehensive business intelligence and performance metrics',
-                                          style: PremiumTheme.bodyLarge.copyWith(
+                                          style:
+                                              PremiumTheme.bodyLarge.copyWith(
                                             color: PremiumTheme.textSecondary,
                                           ),
                                         ),
@@ -2853,7 +2935,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                           const SizedBox(height: 8),
                                           Text(
                                             'Comprehensive business intelligence and performance metrics',
-                                            style: PremiumTheme.bodyLarge.copyWith(
+                                            style:
+                                                PremiumTheme.bodyLarge.copyWith(
                                               color: PremiumTheme.textSecondary,
                                             ),
                                           ),
@@ -2873,7 +2956,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                   if (compact) {
                                     return Column(
                                       children: [
-                                        for (int i = 0; i < metrics.length; i++) ...[
+                                        for (int i = 0;
+                                            i < metrics.length;
+                                            i++) ...[
                                           _buildGlassMetricCard(
                                             metrics[i].title,
                                             metrics[i].value,
@@ -2890,7 +2975,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
                                   return Row(
                                     children: [
-                                      for (int i = 0; i < metrics.length; i++) ...[
+                                      for (int i = 0;
+                                          i < metrics.length;
+                                          i++) ...[
                                         Expanded(
                                           child: _buildGlassMetricCard(
                                             metrics[i].title,
@@ -2919,14 +3006,22 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 children: [
                                   Expanded(
                                     child: FutureBuilder<Map<String, dynamic>?>(
-                                      key: ValueKey('pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
+                                      key: ValueKey(
+                                          'pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
                                       future: _fetchPipelineBundle(),
                                       builder: (context, snapshot) {
-                                        final waiting = snapshot.connectionState == ConnectionState.waiting;
+                                        final waiting =
+                                            snapshot.connectionState ==
+                                                ConnectionState.waiting;
                                         final hasError = snapshot.hasError;
                                         final bundle = snapshot.data;
-                                        final pipelineData = (bundle?['pipeline'] as Map?)?.cast<String, dynamic>();
-                                        final completionData = (bundle?['completion_rates'] as Map?)?.cast<String, dynamic>();
+                                        final pipelineData =
+                                            (bundle?['pipeline'] as Map?)
+                                                ?.cast<String, dynamic>();
+                                        final completionData =
+                                            (bundle?['completion_rates']
+                                                    as Map?)
+                                                ?.cast<String, dynamic>();
 
                                         Widget pipelineBody;
                                         if (waiting) {
@@ -2937,18 +3032,24 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                           pipelineBody = Center(
                                             child: Text(
                                               'Failed to load pipeline view.',
-                                              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+                                              style: PremiumTheme.bodyMedium
+                                                  .copyWith(
+                                                      color: Colors.white70),
                                             ),
                                           );
                                         } else if (pipelineData == null) {
                                           pipelineBody = Center(
                                             child: Text(
                                               'Failed to load pipeline view.',
-                                              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+                                              style: PremiumTheme.bodyMedium
+                                                  .copyWith(
+                                                      color: Colors.white70),
                                             ),
                                           );
                                         } else {
-                                          pipelineBody = _buildProposalPipelineView(pipelineData);
+                                          pipelineBody =
+                                              _buildProposalPipelineView(
+                                                  pipelineData);
                                         }
 
                                         Widget completionBody;
@@ -2956,19 +3057,25 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                           completionBody = const Center(
                                             child: CircularProgressIndicator(),
                                           );
-                                        } else if (hasError || completionData == null) {
+                                        } else if (hasError ||
+                                            completionData == null) {
                                           completionBody = Center(
                                             child: Text(
                                               'Failed to load completion rates.',
-                                              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+                                              style: PremiumTheme.bodyMedium
+                                                  .copyWith(
+                                                      color: Colors.white70),
                                             ),
                                           );
                                         } else {
-                                          completionBody = _buildCompletionRateGauge(completionData);
+                                          completionBody =
+                                              _buildCompletionRateGauge(
+                                                  completionData);
                                         }
 
                                         return Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
                                           children: [
                                             Expanded(
                                               flex: 2,
@@ -3021,17 +3128,21 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               _buildGlassChartCard(
                                 'Risk Gate',
                                 FutureBuilder<Map<String, dynamic>?>(
-                                  key: ValueKey('risk_gate_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                  key: ValueKey(
+                                      'risk_gate_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
                                   future: _fetchRiskGateSummary(),
                                   builder: (context, snapshot) {
-                                    if (snapshot.connectionState == ConnectionState.waiting) {
-                                      return const Center(child: CircularProgressIndicator());
+                                    if (snapshot.connectionState ==
+                                        ConnectionState.waiting) {
+                                      return const Center(
+                                          child: CircularProgressIndicator());
                                     }
                                     if (snapshot.hasError) {
                                       return Center(
                                         child: Text(
                                           'Failed to load risk gate summary.',
-                                          style: PremiumTheme.bodyMedium.copyWith(
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
                                             color: Colors.white70,
                                           ),
                                         ),
@@ -3047,23 +3158,28 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               _buildGlassChartCard(
                                 'Collaboration Load',
                                 FutureBuilder<Map<String, dynamic>?>(
-                                  key: ValueKey('collab_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                  key: ValueKey(
+                                      'collab_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
                                   future: _fetchCollaborationLoad(),
                                   builder: (context, snapshot) {
-                                    if (snapshot.connectionState == ConnectionState.waiting) {
-                                      return const Center(child: CircularProgressIndicator());
+                                    if (snapshot.connectionState ==
+                                        ConnectionState.waiting) {
+                                      return const Center(
+                                          child: CircularProgressIndicator());
                                     }
                                     if (snapshot.hasError) {
                                       return Center(
                                         child: Text(
                                           'Failed to load collaboration metrics.',
-                                          style: PremiumTheme.bodyMedium.copyWith(
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
                                             color: Colors.white70,
                                           ),
                                         ),
                                       );
                                     }
-                                    return _buildCollaborationLoadCard(snapshot.data);
+                                    return _buildCollaborationLoadCard(
+                                        snapshot.data);
                                   },
                                 ),
                                 height: 360,
@@ -3072,23 +3188,28 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               _buildGlassChartCard(
                                 'Client Engagement',
                                 FutureBuilder<Map<String, dynamic>?>(
-                                  key: ValueKey('engagement_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                  key: ValueKey(
+                                      'engagement_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
                                   future: _fetchClientEngagement(),
                                   builder: (context, snapshot) {
-                                    if (snapshot.connectionState == ConnectionState.waiting) {
-                                      return const Center(child: CircularProgressIndicator());
+                                    if (snapshot.connectionState ==
+                                        ConnectionState.waiting) {
+                                      return const Center(
+                                          child: CircularProgressIndicator());
                                     }
                                     if (snapshot.hasError) {
                                       return Center(
                                         child: Text(
                                           'Failed to load client engagement.',
-                                          style: PremiumTheme.bodyMedium.copyWith(
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
                                             color: Colors.white70,
                                           ),
                                         ),
                                       );
                                     }
-                                    return _buildClientEngagementCard(snapshot.data);
+                                    return _buildClientEngagementCard(
+                                        snapshot.data);
                                   },
                                 ),
                                 height: 360,
@@ -3974,7 +4095,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Auto', style: TextStyle(color: Colors.white, fontSize: 12)),
+              const Text('Auto',
+                  style: TextStyle(color: Colors.white, fontSize: 12)),
               const SizedBox(width: 6),
               Switch(
                 value: _cycleTimeAutoRefresh,

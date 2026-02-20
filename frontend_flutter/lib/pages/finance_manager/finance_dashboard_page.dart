@@ -15,14 +15,14 @@ import '../../widgets/footer.dart';
 ///
 /// This page intentionally uses only real data loaded via [AppState.fetchProposals]
 /// (which calls the backend `/api/proposals` endpoint). No mock data is used.
-class FinanceDashboardPage extends StatefulWidget {
-  const FinanceDashboardPage({Key? key}) : super(key: key);
+class FinanceDashboardReviewPage extends StatefulWidget {
+  const FinanceDashboardReviewPage({Key? key}) : super(key: key);
 
   @override
-  State<FinanceDashboardPage> createState() => _FinanceDashboardPageState();
+  State<FinanceDashboardReviewPage> createState() => _FinanceDashboardReviewPageState();
 }
 
-class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
+class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage> {
   bool _isLoading = false;
   String _statusFilter = 'all'; // all, pending, approved, other
   final TextEditingController _searchController = TextEditingController();
@@ -864,6 +864,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     final client = (p['client_name'] ?? p['client'] ?? 'Unknown').toString();
     final status = (p['status'] ?? 'Draft').toString();
     final amount = _extractAmount(p);
+    final lower = status.toLowerCase().trim();
+    final proposalId = p['id']?.toString();
+    final canSubmitToApprover = proposalId != null &&
+        (lower == 'pending finance' ||
+            lower == 'finance in progress' ||
+            lower.contains('pending finance'));
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
@@ -895,12 +901,36 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             flex: 2,
             child: Align(
               alignment: Alignment.centerRight,
-              child: Text(
-                _formatCurrency(amount),
-                style: PremiumTheme.bodyMedium.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _formatCurrency(amount),
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (canSubmitToApprover) ...[
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () async {
+                        final idToSubmit = proposalId;
+                        if (idToSubmit == null || idToSubmit.isEmpty) return;
+                        final app = context.read<AppState>();
+                        await app.updateProposalStatus(
+                            idToSubmit, 'Pending Approval');
+                        await app.fetchDashboard();
+                      },
+                      child: Text(
+                        'Submit',
+                        style: PremiumTheme.bodyMedium
+                            .copyWith(color: PremiumTheme.teal),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),

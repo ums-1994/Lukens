@@ -170,7 +170,7 @@ app.register_blueprint(shared_bp, url_prefix='/api')
 app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
-app.register_blueprint(client_bp)
+app.register_blueprint(client_bp, url_prefix='/api')
 app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
@@ -570,7 +570,13 @@ def init_pg_schema():
         conn = _pg_conn()
         cursor = conn.cursor()
         
-        # Users table
+        def _is_dev_mode_for_seed():
+            return (
+                os.getenv('FLASK_ENV', '').lower() == 'development'
+                or os.getenv('DEBUG', '').lower() in ('1', 'true', 'yes')
+                or os.getenv('DEV_BYPASS_AUTH', '').lower() in ('1', 'true', 'yes')
+            )
+        
         cursor.execute('''CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
@@ -1065,7 +1071,13 @@ def init_pg_schema():
                          ON proposal_client_session(session_start)''')
 
         _seed_default_content_if_empty(cursor)
-        
+
+        try:
+            from api.utils.dev_seed import ensure_dev_seeded
+            ensure_dev_seeded(cursor, is_dev_mode=_is_dev_mode_for_seed())
+        except Exception as e:
+            print(f"[WARN] DEV_AUTO_SEED failed (continuing without seed): {e}")
+         
         conn.commit()
         release_pg_conn(conn)
         print("[OK] PostgreSQL schema initialized successfully")
@@ -2019,6 +2031,26 @@ def log_client_activity():
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
 
+            try:
+                cursor.execute(
+                    """
+                    SELECT status
+                    FROM proposals
+                    WHERE id = %s
+                    """,
+                    (proposal['id'],),
+                )
+                srow = cursor.fetchone() or {}
+                current_status = srow.get('status') if isinstance(srow, dict) else (srow[0] if srow else None)
+                status_lower = str(current_status or '').strip().lower()
+                if status_lower not in {'sent to client', 'released', 'sent for signature', 'signed', 'client signed'}:
+                    return {
+                        'detail': 'Proposal not yet released to client',
+                        'status': current_status,
+                    }, 403
+            except Exception:
+                pass
+
             client_id = None
             try:
                 cursor.execute(
@@ -2115,6 +2147,20 @@ def start_client_session():
                 (proposal['id'], client_id),
             )
             row = cursor.fetchone()
+
+            try:
+                import json as json_module
+                cursor.execute(
+                    """
+                    INSERT INTO proposal_client_activity
+                    (proposal_id, client_id, event_type, metadata, created_at)
+                    VALUES (%s, %s, 'open', %s::jsonb, NOW())
+                    """,
+                    (proposal['id'], client_id, json_module.dumps({'source': 'client_portal', 'session_id': row.get('id')})),
+                )
+            except Exception:
+                pass
+
             conn.commit()
             return {
                 'success': True,
@@ -3377,9 +3423,18 @@ def client_decline_proposal(username, proposal_id):
 @token_required
 def track_client_view(username, proposal_id):
     try:
-        return {'detail': 'View tracked'}, 200
+        return {
+            'detail': 'View tracked',
+            'message': 'Client engagement metrics are recorded from the client portal (token-based sessions) after approval/release.',
+        }, 200
     except Exception as e:
         return {'detail': str(e)}, 500
+
+
+@app.post("/api/proposals/<int:proposal_id>/client_view")
+@token_required
+def track_client_view_api(username, proposal_id):
+    return track_client_view(username, proposal_id)
 
 @app.get("/proposals/pending_approval")
 @token_required
@@ -3519,7 +3574,7 @@ def request_esign(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.get("/client/proposals")
+@app.get("/legacy/client/proposals")
 @token_required
 def fetch_client_proposals(username):
     try:
@@ -3541,11 +3596,11 @@ def fetch_client_proposals(username):
                 'status': row[4],
                 'created_at': row[5].isoformat() if row[5] else None
             })
-            return proposals, 200
+        return proposals, 200
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.get("/client/proposals/<int:proposal_id>")
+@app.get("/legacy/client/proposals/<int:proposal_id>")
 @token_required
 def get_client_proposal(username, proposal_id):
     try:
@@ -3573,7 +3628,7 @@ def get_client_proposal(username, proposal_id):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/client/proposals/<int:proposal_id>/sign")
+@app.post("/legacy/client/proposals/<int:proposal_id>/sign")
 @token_required
 def client_sign_proposal(username, proposal_id):
     try:

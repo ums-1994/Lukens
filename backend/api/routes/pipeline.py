@@ -415,6 +415,11 @@ def completion_rates(username=None, user_id=None, email=None):
     cursor = conn.cursor()
 
     try:
+        try:
+            from api.utils.governance import evaluate_governance
+        except Exception:
+            evaluate_governance = None
+
         pass_threshold_raw = request.args.get("pass_threshold")
         pass_threshold = 60
         if pass_threshold_raw is not None:
@@ -718,7 +723,23 @@ def completion_rates(username=None, user_id=None, email=None):
             if not sections:
                 sections = _extract_sections_from_content(content_raw)
 
-            score, issues = _sections_readiness(sections)
+            if evaluate_governance is not None:
+                gov = evaluate_governance(
+                    template_key=proposal_type or None,
+                    sections_raw=sections,
+                    content_raw=content_raw,
+                    risk_gate_status=None,
+                    risk_gate_overridden=None,
+                    pass_threshold=pass_threshold,
+                )
+                score = gov.score
+                issues = gov.issues
+                missing_required = gov.missing_required
+                required_sections = gov.required_sections
+            else:
+                score, issues = _sections_readiness(sections)
+                missing_required = []
+                required_sections = []
             ok = int(score) >= int(pass_threshold)
             if ok:
                 passed += 1
@@ -737,6 +758,8 @@ def completion_rates(username=None, user_id=None, email=None):
                     "updated_at": updated_at.isoformat() if updated_at else None,
                     "readiness_score": int(score),
                     "readiness_issues": issues,
+                    "required_sections": required_sections,
+                    "missing_required": missing_required,
                 }
             )
 

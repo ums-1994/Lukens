@@ -24,7 +24,6 @@ def create_proposal(username=None, user_id=None, email=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
-
             # If token_required already provided a numeric user_id, trust it directly.
             # The Firebase flow guarantees this id comes from a committed INSERT
             # even if this connection can't see the users row yet due to
@@ -663,6 +662,20 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
+
+            # Determine requester role (finance/admin may have broader access)
+            requester_role = None
+            try:
+                if user_id:
+                    cursor.execute('SELECT role FROM users WHERE id = %s', (user_id,))
+                    role_row = cursor.fetchone()
+                    if role_row:
+                        requester_role = role_row[0]
+            except Exception:
+                requester_role = None
+
+            requester_role = (requester_role or '').strip().lower()
+            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
 
             # Determine ownership column based on actual schema
             cursor.execute(
