@@ -836,11 +836,25 @@ class ProposalItem extends StatelessWidget {
     return date.toString();
   }
 
+  String _statusKey(String? status) {
+    return (status ?? '').toString().toLowerCase().trim();
+  }
+
+  String _statusLabel(String? status) {
+    final s = _statusKey(status);
+    if (s == 'pending ceo approval' || s == 'pending approval') {
+      return 'Pending Approval';
+    }
+    if (s.isEmpty) return 'Unknown';
+    return status!.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final status = (proposal['status'] ?? '').toString().toLowerCase().trim();
+    final statusKey = _statusKey(proposal['status']?.toString());
+    final displayStatus = _statusLabel(proposal['status']?.toString());
     Color statusColor;
-    switch (status) {
+    switch (statusKey) {
       case 'draft':
         statusColor = PremiumTheme.purple;
         break;
@@ -901,7 +915,7 @@ class ProposalItem extends StatelessWidget {
                 decoration: BoxDecoration(
                     color: statusBgColor,
                     borderRadius: BorderRadius.circular(20)),
-                child: Text(proposal['status'] ?? 'Unknown',
+                child: Text(displayStatus,
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -909,8 +923,7 @@ class ProposalItem extends StatelessWidget {
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () {
-                if ((proposal['status'] ?? '').toString().toLowerCase() ==
-                    'draft') {
+                if (statusKey == 'draft') {
                   Navigator.pushNamed(context, '/compose', arguments: proposal)
                       .then((_) {
                     if (onRefresh != null) onRefresh!();
