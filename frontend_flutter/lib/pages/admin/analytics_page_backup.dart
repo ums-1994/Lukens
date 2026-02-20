@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
@@ -74,9 +76,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
-  bool _isAdminSidebarCollapsed = true;
-  String _adminCurrentPage = 'Analytics';
-
   @override
   void initState() {
     super.initState();
@@ -99,6 +98,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final role = (user?['role'] ?? '').toString().toLowerCase().trim();
       final isAdmin = role == 'admin' || role == 'ceo';
       app.setCurrentNavLabel(isAdmin ? 'Analytics' : 'Analytics (My Pipeline)');
+      if (isAdmin) {
+        app.setAdminNavLabel('Analytics');
+      }
     });
   }
 
@@ -2724,13 +2726,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             if (isAdmin)
               Material(
                 child: AdminSidebar(
-                  isCollapsed: _isAdminSidebarCollapsed,
-                  currentPage: _adminCurrentPage,
-                  onToggle: _toggleAdminSidebar,
+                  isCollapsed: app.isAdminSidebarCollapsed,
+                  currentPage: app.adminNavLabel,
+                  onToggle: app.toggleAdminSidebar,
                   onSelect: (label) {
-                    if (label != 'Sign Out') {
-                      setState(() => _adminCurrentPage = label);
-                    }
+                    if (label != 'Sign Out') app.setAdminNavLabel(label);
                     _navigateAdminToPage(context, label);
                   },
                 ),
@@ -4202,10 +4202,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         Navigator.pushReplacementNamed(context, '/login');
         break;
     }
-  }
-
-  void _toggleAdminSidebar() {
-    setState(() => _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed);
   }
 
   void _navigateAdminToPage(BuildContext context, String label) {

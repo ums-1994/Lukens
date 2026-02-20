@@ -1497,6 +1497,10 @@ class AppState extends ChangeNotifier {
     proposals = [];
     currentProposal = null;
     dashboardCounts = {};
+    _isSidebarCollapsed = false;
+    _currentNavLabel = 'Dashboard';
+    _isAdminSidebarCollapsed = true;
+    _adminNavLabel = 'Dashboard';
 
     // IMPORTANT: Sync logout with AuthService
     AuthService.logout();
@@ -1507,9 +1511,13 @@ class AppState extends ChangeNotifier {
   // Navigation and sidebar state management
   bool _isSidebarCollapsed = false;
   String _currentNavLabel = 'Dashboard';
+  bool _isAdminSidebarCollapsed = true;
+  String _adminNavLabel = 'Dashboard';
 
   bool get isSidebarCollapsed => _isSidebarCollapsed;
   String get currentNavLabel => _currentNavLabel;
+  bool get isAdminSidebarCollapsed => _isAdminSidebarCollapsed;
+  String get adminNavLabel => _adminNavLabel;
 
   void toggleSidebar() {
     _isSidebarCollapsed = !_isSidebarCollapsed;
@@ -1518,6 +1526,23 @@ class AppState extends ChangeNotifier {
 
   void setCurrentNavLabel(String label) {
     _currentNavLabel = label;
+    notifyListeners();
+  }
+
+  void toggleAdminSidebar() {
+    _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed;
+    notifyListeners();
+  }
+
+  void setAdminSidebarCollapsed(bool collapsed) {
+    if (_isAdminSidebarCollapsed == collapsed) return;
+    _isAdminSidebarCollapsed = collapsed;
+    notifyListeners();
+  }
+
+  void setAdminNavLabel(String label) {
+    if (_adminNavLabel == label) return;
+    _adminNavLabel = label;
     notifyListeners();
   }
 }

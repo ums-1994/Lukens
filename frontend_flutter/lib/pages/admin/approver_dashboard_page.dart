@@ -30,14 +30,20 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   final ScrollController _scrollController = ScrollController();
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
-  bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
-  String _currentPage = 'Dashboard';
   int _highRiskCount = 0;
   int _approvedThisMonthCount = 0;
   int _sentToClientCount = 0;
   int _clientApprovedCount = 0;
   List<Map<String, dynamic>> _recentApprovals = [];
+
+  bool get _isSidebarCollapsed =>
+      context.read<AppState>().isAdminSidebarCollapsed;
+  set _isSidebarCollapsed(bool value) =>
+      context.read<AppState>().setAdminSidebarCollapsed(value);
+
+  String get _currentPage => context.read<AppState>().adminNavLabel;
+  set _currentPage(String value) => context.read<AppState>().setAdminNavLabel(value);
 
   @override
   void initState() {
@@ -49,6 +55,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _enforceAccessAndLoad();
+      if (!mounted) return;
+      context.read<AppState>().setAdminNavLabel('Dashboard');
     });
   }
 
@@ -315,11 +323,11 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                       children: [
                         Material(
                           child: AdminSidebar(
-                            isCollapsed: _isSidebarCollapsed,
-                            currentPage: _currentPage,
-                            onToggle: _toggleSidebar,
+                            isCollapsed: app.isAdminSidebarCollapsed,
+                            currentPage: app.adminNavLabel,
+                            onToggle: app.toggleAdminSidebar,
                             onSelect: (label) {
-                              setState(() => _currentPage = label);
+                              app.setAdminNavLabel(label);
                               _navigateToPage(context, label);
                             },
                           ),
@@ -1051,14 +1059,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   }
 
   void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
+    context.read<AppState>().toggleAdminSidebar();
   }
 
   Widget _buildPendingApprovalsList() {

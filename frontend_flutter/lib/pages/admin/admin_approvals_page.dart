@@ -32,9 +32,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   final ScrollController _scrollController = ScrollController();
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
-  bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
-  String _currentPage = 'Approvals';
 
   // Admin approvals inbox state
   List<Map<String, dynamic>> _allProposals = [];
@@ -43,6 +41,14 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   String _activeFilter = 'all'; // all, pending, approved, rejected
   String _searchQuery = '';
   bool _initialArgsApplied = false;
+
+  bool get _isSidebarCollapsed =>
+      context.read<AppState>().isAdminSidebarCollapsed;
+  set _isSidebarCollapsed(bool value) =>
+      context.read<AppState>().setAdminSidebarCollapsed(value);
+
+  String get _currentPage => context.read<AppState>().adminNavLabel;
+  set _currentPage(String value) => context.read<AppState>().setAdminNavLabel(value);
 
   static const Color _adminBlockBase = Color(0xFF252525);
 
@@ -99,6 +105,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _enforceAccessAndLoad();
+      if (!mounted) return;
+      context.read<AppState>().setAdminNavLabel('Approvals');
     });
   }
 
@@ -118,9 +126,13 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           filter == 'all') {
         setState(() {
           _activeFilter = filter!;
-          if (filter == 'pending') _currentPage = 'Approvals';
-          if (filter == 'approved') _currentPage = 'History';
         });
+        final app = context.read<AppState>();
+        if (filter == 'approved') {
+          app.setAdminNavLabel('History');
+        } else {
+          app.setAdminNavLabel('Approvals');
+        }
       }
     }
   }
@@ -370,11 +382,11 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
                       children: [
                         Material(
                           child: AdminSidebar(
-                            isCollapsed: _isSidebarCollapsed,
-                            currentPage: _currentPage,
-                            onToggle: _toggleSidebar,
+                            isCollapsed: app.isAdminSidebarCollapsed,
+                            currentPage: app.adminNavLabel,
+                            onToggle: app.toggleAdminSidebar,
                             onSelect: (label) {
-                              setState(() => _currentPage = label);
+                              app.setAdminNavLabel(label);
                               _navigateToPage(context, label);
                             },
                           ),
@@ -756,14 +768,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
+    context.read<AppState>().toggleAdminSidebar();
   }
 
   Widget _buildApprovalsToolbar() {

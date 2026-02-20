@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
 import 'dart:convert';
+import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
@@ -32,8 +34,6 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   bool _isSubmittingComment = false;
   bool _showVersions = false;
   final ScrollController _scrollController = ScrollController();
-  bool _isAdminSidebarCollapsed = true;
-  String _adminCurrentPage = 'Approvals';
 
   void _safeSetState(VoidCallback fn) {
     if (!mounted) return;
@@ -44,6 +44,10 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   void initState() {
     super.initState();
     _loadProposal();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AppState>().setAdminNavLabel('Approvals');
+    });
   }
 
   @override
@@ -921,6 +925,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = context.watch<AppState>();
     final role = (AuthService.currentUser?['role'] ?? '')
         .toString()
         .toLowerCase()
@@ -1373,14 +1378,12 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           if (isAdmin)
             Material(
               child: AdminSidebar(
-                isCollapsed: _isAdminSidebarCollapsed,
-                currentPage: _adminCurrentPage,
-                onToggle: () => setState(() {
-                  _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed;
-                }),
+                isCollapsed: appState.isAdminSidebarCollapsed,
+                currentPage: appState.adminNavLabel,
+                onToggle: appState.toggleAdminSidebar,
                 onSelect: (label) {
                   if (label != 'Sign Out') {
-                    setState(() => _adminCurrentPage = label);
+                    appState.setAdminNavLabel(label);
                   }
                   _navigateAdminToPage(context, label);
                 },
