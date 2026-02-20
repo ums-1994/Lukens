@@ -1,9 +1,33 @@
-# Core dependencies (required)
-numpy>=1.21.0
+# Risk Gate Engine Requirements
+# Core dependencies for the Risk Gate analysis system
 
-# Optional dependencies for enhanced functionality
-# Install with: pip install -r requirements.txt[optional]
-PyPDF2>=3.0.0              # PDF text extraction
-python-docx>=0.8.11         # DOCX text extraction
-sentence-transformers>=2.2.0  # Embeddings for semantic analysis
-chromadb>=0.4.0              # Vector database for template matching
+# Data Processing
+numpy>=1.21.0
+pandas>=1.3.0
+
+# Machine Learning & AI
+torch>=1.9.0
+transformers>=4.20.0
+sentence-transformers>=2.2.0
+
+# Vector Database
+chromadb>=0.4.0
+
+# Text Processing
+nltk>=3.7
+spacy>=3.4.0
+
+# File Processing
+PyPDF2>=3.0.0
+python-docx>=0.8.11
+
+# Retry Logic
+tenacity>=8.0.0
+
+# Logging & Utilities
+python-dotenv>=0.19.0
+
+fastapi
+uvicorn
+python-multipart
+huggingface_hub
