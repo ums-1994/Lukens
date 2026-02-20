@@ -374,7 +374,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                         ),
                         child: ElevatedButton(
                           onPressed: () {
-                            Navigator.pushNamed(context, '/register');
+                            Navigator.pushNamed(context, '/login');
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFD72638),
@@ -389,7 +389,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                             elevation: 0,
                           ),
                           child: const Text(
-                            'Get Started',
+                            'GET STARTED',
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w600,
@@ -414,7 +414,7 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
                           ),
                         ),
                         child: const Text(
-                          'Learn More',
+                          'LEARN MORE',
                           style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w400,
@@ -442,9 +442,8 @@ class _AnimatedLandingPageV2State extends State<AnimatedLandingPageV2>
           child: Container(
             decoration: const BoxDecoration(
               image: DecorationImage(
-                image: AssetImage(
-                    'assets/images/Khonology Landing Page - Frame 6.png'),
-                fit: BoxFit.cover,
+                image: AssetImage('assets/images/Background-Dark..png'),
+                fit: BoxFit.fill,
                 alignment: Alignment.center,
               ),
             ),
