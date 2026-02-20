@@ -108,7 +108,8 @@ class AdminSidebar extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              // Push nav items down to align with page titles.
+              const SizedBox(height: 44),
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
