@@ -3,12 +3,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
-import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/app_side_nav.dart';
 import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
