@@ -11,6 +11,7 @@ import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
+import '../../widgets/admin/admin_sidebar.dart';
 import 'package:intl/intl.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
@@ -313,7 +314,15 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                     child: Row(
                       children: [
                         Material(
-                          child: _buildSidebar(context),
+                          child: AdminSidebar(
+                            isCollapsed: _isSidebarCollapsed,
+                            currentPage: _currentPage,
+                            onToggle: _toggleSidebar,
+                            onSelect: (label) {
+                              setState(() => _currentPage = label);
+                              _navigateToPage(context, label);
+                            },
+                          ),
                         ),
                         SizedBox(width: compact ? 16 : 24),
                         Expanded(

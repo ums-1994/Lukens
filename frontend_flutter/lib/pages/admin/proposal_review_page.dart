@@ -5,6 +5,7 @@ import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/header.dart';
+import '../../widgets/admin/admin_sidebar.dart';
 import 'package:intl/intl.dart';
 
 class ProposalReviewPage extends StatefulWidget {
@@ -31,6 +32,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   bool _isSubmittingComment = false;
   bool _showVersions = false;
   final ScrollController _scrollController = ScrollController();
+  bool _isAdminSidebarCollapsed = true;
+  String _adminCurrentPage = 'Approvals';
 
   void _safeSetState(VoidCallback fn) {
     if (!mounted) return;
@@ -918,6 +921,375 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
   @override
   Widget build(BuildContext context) {
+    final role = (AuthService.currentUser?['role'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim();
+    final isAdmin = role == 'admin' || role == 'ceo';
+
+    Widget mainContent = _isLoading
+        ? const Center(child: CircularProgressIndicator())
+        : _error != null
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.error_outline,
+                        size: 64, color: Colors.red[300]),
+                    const SizedBox(height: 16),
+                    Text(
+                      _error!,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: _loadProposal,
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              )
+            : _proposal == null
+                ? const Center(
+                    child: Text('Proposal not found',
+                        style: TextStyle(color: Colors.white)),
+                  )
+                : Row(
+                    children: [
+                      // Main content area
+                      Expanded(
+                        child: SingleChildScrollView(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Proposal header
+                              GlassContainer(
+                                borderRadius: 20,
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _proposal!['title'] ?? 'Untitled',
+                                      style: PremiumTheme.titleLarge
+                                          .copyWith(color: Colors.white),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        _buildInfoChip(
+                                          Icons.business,
+                                          _proposal!['client_name'] ??
+                                              'Unknown Client',
+                                        ),
+                                        const SizedBox(width: 12),
+                                        if (_proposal!['budget'] != null)
+                                          _buildInfoChip(
+                                            Icons.attach_money,
+                                            'R${_proposal!['budget']}',
+                                          ),
+                                        const SizedBox(width: 12),
+                                        _buildInfoChip(
+                                          Icons.calendar_today,
+                                          _proposal!['updated_at'] != null
+                                              ? DateFormat('dd MMM yyyy').format(
+                                                  DateTime.parse(
+                                                      _proposal!['updated_at']),
+                                                )
+                                              : 'Unknown date',
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+
+                              // Proposal content
+                              GlassContainer(
+                                borderRadius: 20,
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Proposal Content',
+                                      style: PremiumTheme.bodyLarge.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: _buildStructuredDocumentPreview(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+
+                              // Versions section
+                              if (_showVersions) ...[
+                                if (_versions.isEmpty)
+                                  GlassContainer(
+                                    borderRadius: 20,
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Versions',
+                                          style: PremiumTheme.bodyLarge.copyWith(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        const Padding(
+                                          padding: EdgeInsets.all(16),
+                                          child: Text(
+                                            'No versions available yet',
+                                            style:
+                                                TextStyle(color: Colors.white54),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  )
+                                else
+                                  GlassContainer(
+                                    borderRadius: 20,
+                                    padding: const EdgeInsets.all(24),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Versions (${_versions.length})',
+                                          style: PremiumTheme.bodyLarge.copyWith(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 16),
+                                        ..._versions.map((version) => Padding(
+                                              padding: const EdgeInsets.only(
+                                                  bottom: 12),
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.all(12),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.white
+                                                      .withValues(alpha: 0.1),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
+                                                        children: [
+                                                          Text(
+                                                            'Version ${version['version_number']}',
+                                                            style:
+                                                                const TextStyle(
+                                                              color:
+                                                                  Colors.white,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w600,
+                                                            ),
+                                                          ),
+                                                          if (version[
+                                                                  'description'] !=
+                                                              null)
+                                                            Text(
+                                                              version[
+                                                                  'description'],
+                                                              style: const TextStyle(
+                                                                color: Colors
+                                                                    .white70,
+                                                                fontSize: 12,
+                                                              ),
+                                                            ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    Text(
+                                                      version['created_at'] !=
+                                                              null
+                                                          ? DateFormat(
+                                                                  'dd MMM yyyy HH:mm')
+                                                              .format(DateTime
+                                                                  .parse(version[
+                                                                      'created_at']))
+                                                          : '',
+                                                      style: const TextStyle(
+                                                        color: Colors.white70,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            )),
+                                      ],
+                                    ),
+                                  ),
+                                const SizedBox(height: 24),
+                              ],
+
+                              // Comments section
+                              GlassContainer(
+                                borderRadius: 20,
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Comments (${_comments.length})',
+                                      style: PremiumTheme.bodyLarge.copyWith(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 16),
+
+                                    // Add comment
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Colors.white.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: TextField(
+                                              controller: _commentController,
+                                              style: const TextStyle(
+                                                  color: Colors.white),
+                                              decoration:
+                                                  const InputDecoration(
+                                                hintText: 'Add a comment...',
+                                                hintStyle: TextStyle(
+                                                    color: Colors.white54),
+                                                border: InputBorder.none,
+                                              ),
+                                              maxLines: 3,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          ElevatedButton(
+                                            onPressed: _isSubmittingComment
+                                                ? null
+                                                : _submitComment,
+                                            child: _isSubmittingComment
+                                                ? const SizedBox(
+                                                    width: 16,
+                                                    height: 16,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                                  )
+                                                : const Text('Post'),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 16),
+
+                                    // Comments list
+                                    if (_comments.isEmpty)
+                                      const Padding(
+                                        padding: EdgeInsets.all(16),
+                                        child: Text(
+                                          'No comments yet',
+                                          style:
+                                              TextStyle(color: Colors.white54),
+                                        ),
+                                      )
+                                    else
+                                      ..._comments.map((comment) => Padding(
+                                            padding: const EdgeInsets.only(
+                                                bottom: 12),
+                                            child: Container(
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.1),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Row(
+                                                    children: [
+                                                      Text(
+                                                        comment['author'] ??
+                                                            'Unknown',
+                                                        style: const TextStyle(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                      const Spacer(),
+                                                      if (comment[
+                                                              'created_at'] !=
+                                                          null)
+                                                        Text(
+                                                          DateFormat(
+                                                                  'dd MMM yyyy HH:mm')
+                                                              .format(DateTime
+                                                                  .parse(comment[
+                                                                      'created_at'])),
+                                                          style:
+                                                              const TextStyle(
+                                                            color:
+                                                                Colors.white70,
+                                                            fontSize: 12,
+                                                          ),
+                                                        ),
+                                                    ],
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  Text(
+                                                    comment['comment'] ?? '',
+                                                    style: const TextStyle(
+                                                        color: Colors.white),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          )),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A0E27),
       appBar: AppBar(
@@ -996,383 +1368,58 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           ],
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.error_outline,
-                          size: 64, color: Colors.red[300]),
-                      const SizedBox(height: 16),
-                      Text(
-                        _error!,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadProposal,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                )
-              : _proposal == null
-                  ? const Center(
-                      child: Text('Proposal not found',
-                          style: TextStyle(color: Colors.white)),
-                    )
-                  : Row(
-                      children: [
-                        // Main content area
-                        Expanded(
-                          child: SingleChildScrollView(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Proposal header
-                                GlassContainer(
-                                  borderRadius: 20,
-                                  padding: const EdgeInsets.all(24),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        _proposal!['title'] ?? 'Untitled',
-                                        style: PremiumTheme.titleLarge
-                                            .copyWith(color: Colors.white),
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Row(
-                                        children: [
-                                          _buildInfoChip(
-                                            Icons.business,
-                                            _proposal!['client_name'] ??
-                                                'Unknown Client',
-                                          ),
-                                          const SizedBox(width: 12),
-                                          if (_proposal!['budget'] != null)
-                                            _buildInfoChip(
-                                              Icons.attach_money,
-                                              'R${_proposal!['budget']}',
-                                            ),
-                                          const SizedBox(width: 12),
-                                          _buildInfoChip(
-                                            Icons.calendar_today,
-                                            _proposal!['updated_at'] != null
-                                                ? DateFormat('dd MMM yyyy')
-                                                    .format(DateTime.parse(
-                                                        _proposal![
-                                                            'updated_at']))
-                                                : 'Unknown date',
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-
-                                // Proposal content
-                                GlassContainer(
-                                  borderRadius: 20,
-                                  padding: const EdgeInsets.all(24),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Proposal Content',
-                                        style: PremiumTheme.bodyLarge.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 16),
-                                      Container(
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.all(16),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                        child:
-                                            _buildStructuredDocumentPreview(),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 24),
-
-                                // Versions section
-                                if (_showVersions) ...[
-                                  if (_versions.isEmpty)
-                                    GlassContainer(
-                                      borderRadius: 20,
-                                      padding: const EdgeInsets.all(24),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Versions',
-                                            style:
-                                                PremiumTheme.bodyLarge.copyWith(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          const Padding(
-                                            padding: EdgeInsets.all(16),
-                                            child: Text(
-                                              'No versions available yet',
-                                              style: TextStyle(
-                                                color: Colors.white54,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    )
-                                  else
-                                    GlassContainer(
-                                      borderRadius: 20,
-                                      padding: const EdgeInsets.all(24),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'Versions (${_versions.length})',
-                                            style:
-                                                PremiumTheme.bodyLarge.copyWith(
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          ..._versions.map((version) => Padding(
-                                                padding: const EdgeInsets.only(
-                                                    bottom: 12),
-                                                child: Container(
-                                                  padding:
-                                                      const EdgeInsets.all(12),
-                                                  decoration: BoxDecoration(
-                                                    color: Colors.white
-                                                        .withValues(alpha: 0.1),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            8),
-                                                  ),
-                                                  child: Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: [
-                                                            Text(
-                                                              'Version ${version['version_number']}',
-                                                              style:
-                                                                  const TextStyle(
-                                                                color: Colors
-                                                                    .white,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w600,
-                                                              ),
-                                                            ),
-                                                            if (version[
-                                                                    'description'] !=
-                                                                null)
-                                                              Text(
-                                                                version[
-                                                                    'description'],
-                                                                style:
-                                                                    TextStyle(
-                                                                  color: Colors
-                                                                      .white70,
-                                                                  fontSize: 12,
-                                                                ),
-                                                              ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      Text(
-                                                        version['created_at'] !=
-                                                                null
-                                                            ? DateFormat(
-                                                                    'dd MMM yyyy HH:mm')
-                                                                .format(DateTime
-                                                                    .parse(version[
-                                                                        'created_at']))
-                                                            : '',
-                                                        style: TextStyle(
-                                                          color: Colors.white70,
-                                                          fontSize: 12,
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              )),
-                                        ],
-                                      ),
-                                    ),
-                                  const SizedBox(height: 24),
-                                ],
-
-                                // Comments section
-                                GlassContainer(
-                                  borderRadius: 20,
-                                  padding: const EdgeInsets.all(24),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Comments (${_comments.length})',
-                                        style: PremiumTheme.bodyLarge.copyWith(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 16),
-
-                                      // Add comment
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.1),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: TextField(
-                                                controller: _commentController,
-                                                style: const TextStyle(
-                                                    color: Colors.white),
-                                                decoration:
-                                                    const InputDecoration(
-                                                  hintText: 'Add a comment...',
-                                                  hintStyle: TextStyle(
-                                                      color: Colors.white54),
-                                                  border: InputBorder.none,
-                                                ),
-                                                maxLines: 3,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            ElevatedButton(
-                                              onPressed: _isSubmittingComment
-                                                  ? null
-                                                  : _submitComment,
-                                              child: _isSubmittingComment
-                                                  ? const SizedBox(
-                                                      width: 16,
-                                                      height: 16,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                      ),
-                                                    )
-                                                  : const Text('Post'),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-
-                                      const SizedBox(height: 16),
-
-                                      // Comments list
-                                      if (_comments.isEmpty)
-                                        const Padding(
-                                          padding: EdgeInsets.all(16),
-                                          child: Text(
-                                            'No comments yet',
-                                            style: TextStyle(
-                                              color: Colors.white54,
-                                            ),
-                                          ),
-                                        )
-                                      else
-                                        ..._comments.map((comment) => Padding(
-                                              padding: const EdgeInsets.only(
-                                                  bottom: 12),
-                                              child: Container(
-                                                padding:
-                                                    const EdgeInsets.all(12),
-                                                decoration: BoxDecoration(
-                                                  color: Colors.white
-                                                      .withValues(alpha: 0.1),
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child: Column(
-                                                  crossAxisAlignment:
-                                                      CrossAxisAlignment.start,
-                                                  children: [
-                                                    Row(
-                                                      children: [
-                                                        Text(
-                                                          comment['author'] ??
-                                                              'Unknown',
-                                                          style:
-                                                              const TextStyle(
-                                                            color: Colors.white,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                          ),
-                                                        ),
-                                                        const Spacer(),
-                                                        if (comment[
-                                                                'created_at'] !=
-                                                            null)
-                                                          Text(
-                                                            DateFormat(
-                                                                    'dd MMM yyyy HH:mm')
-                                                                .format(DateTime
-                                                                    .parse(comment[
-                                                                        'created_at'])),
-                                                            style: TextStyle(
-                                                              color: Colors
-                                                                  .white70,
-                                                              fontSize: 12,
-                                                            ),
-                                                          ),
-                                                      ],
-                                                    ),
-                                                    const SizedBox(height: 8),
-                                                    Text(
-                                                      comment['comment'] ?? '',
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                      ),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            )),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+      body: Row(
+        children: [
+          if (isAdmin)
+            Material(
+              child: AdminSidebar(
+                isCollapsed: _isAdminSidebarCollapsed,
+                currentPage: _adminCurrentPage,
+                onToggle: () => setState(() {
+                  _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed;
+                }),
+                onSelect: (label) {
+                  if (label != 'Sign Out') {
+                    setState(() => _adminCurrentPage = label);
+                  }
+                  _navigateAdminToPage(context, label);
+                },
+              ),
+            ),
+          Expanded(child: mainContent),
+        ],
+      ),
     );
+  }
+
+  void _navigateAdminToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/approver_dashboard');
+        break;
+      case 'Approvals':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'pending'},
+        );
+        break;
+      case 'Analytics':
+        Navigator.pushReplacementNamed(context, '/analytics');
+        break;
+      case 'History':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'approved'},
+        );
+        break;
+      case 'Sign Out':
+        AuthService.logout();
+        Navigator.pushNamedAndRemoveUntil(
+            context, '/login', (Route<dynamic> route) => false);
+        break;
+    }
   }
 
   Widget _buildInfoChip(IconData icon, String label) {

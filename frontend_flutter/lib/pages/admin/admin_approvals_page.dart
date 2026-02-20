@@ -12,6 +12,7 @@ import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
+import '../../widgets/admin/admin_sidebar.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
@@ -33,7 +34,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
-  String _currentPage = 'Admin Approvals';
+  String _currentPage = 'Approvals';
 
   // Admin approvals inbox state
   List<Map<String, dynamic>> _allProposals = [];
@@ -367,7 +368,17 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
                   Expanded(
                     child: Row(
                       children: [
-                        Material(child: _buildSidebar(context)),
+                        Material(
+                          child: AdminSidebar(
+                            isCollapsed: _isSidebarCollapsed,
+                            currentPage: _currentPage,
+                            onToggle: _toggleSidebar,
+                            onSelect: (label) {
+                              setState(() => _currentPage = label);
+                              _navigateToPage(context, label);
+                            },
+                          ),
+                        ),
                         const SizedBox(width: 24),
                         Expanded(
                           child: _adminFrostedBlock(
@@ -1694,7 +1705,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           );
         }
         break;
-      case 'Logout':
+      case 'Sign Out':
         AuthService.logout();
         Navigator.pushNamedAndRemoveUntil(
             context, '/login', (Route<dynamic> route) => false);
