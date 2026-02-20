@@ -370,28 +370,28 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             ),
           ),
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildHeader(app),
-                  const SizedBox(height: 24),
-                  Expanded(
-                    child: Row(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Material(
+                  child: AdminSidebar(
+                    isCollapsed: app.isAdminSidebarCollapsed,
+                    currentPage: app.adminNavLabel,
+                    onToggle: app.toggleAdminSidebar,
+                    onSelect: (label) {
+                      app.setAdminNavLabel(label);
+                      _navigateToPage(context, label);
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Material(
-                          child: AdminSidebar(
-                            isCollapsed: app.isAdminSidebarCollapsed,
-                            currentPage: app.adminNavLabel,
-                            onToggle: app.toggleAdminSidebar,
-                            onSelect: (label) {
-                              app.setAdminNavLabel(label);
-                              _navigateToPage(context, label);
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 24),
+                        _buildHeader(app),
+                        const SizedBox(height: 24),
                         Expanded(
                           child: _adminFrostedBlock(
                             radius: 32,
@@ -421,8 +421,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
                       ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],

@@ -311,28 +311,28 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             ),
           ),
           SafeArea(
-            child: Padding(
-              padding: EdgeInsets.all(compact ? 16 : 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildHeader(app),
-                  SizedBox(height: compact ? 16 : 24),
-                  Expanded(
-                    child: Row(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Material(
+                  child: AdminSidebar(
+                    isCollapsed: app.isAdminSidebarCollapsed,
+                    currentPage: app.adminNavLabel,
+                    onToggle: app.toggleAdminSidebar,
+                    onSelect: (label) {
+                      app.setAdminNavLabel(label);
+                      _navigateToPage(context, label);
+                    },
+                  ),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.all(compact ? 16 : 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Material(
-                          child: AdminSidebar(
-                            isCollapsed: app.isAdminSidebarCollapsed,
-                            currentPage: app.adminNavLabel,
-                            onToggle: app.toggleAdminSidebar,
-                            onSelect: (label) {
-                              app.setAdminNavLabel(label);
-                              _navigateToPage(context, label);
-                            },
-                          ),
-                        ),
-                        SizedBox(width: compact ? 16 : 24),
+                        _buildHeader(app),
+                        SizedBox(height: compact ? 16 : 24),
                         Expanded(
                           child: _buildDarkGlass(
                             borderRadius: 32,
@@ -388,8 +388,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                       ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],

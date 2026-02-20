@@ -55,88 +55,99 @@ class AdminSidebar extends StatelessWidget {
           ),
         ),
       ),
-      child: Column(
-        children: [
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: InkWell(
-              onTap: onToggle,
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                height: 44,
-                decoration: BoxDecoration(
-                  color: _adminBase.withValues(alpha: 0.25),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Avoid RenderFlex overflows during the width animation by basing the
+          // "collapsed vs expanded" layout on the *current* width.
+          final effectiveCollapsed = constraints.maxWidth < 160;
+
+          return Column(
+            children: [
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: InkWell(
+                  onTap: onToggle,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.10),
-                    width: 1,
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: _adminBase.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.10),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: effectiveCollapsed
+                          ? MainAxisAlignment.center
+                          : MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (!effectiveCollapsed)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: Text(
+                              'Navigation',
+                              style: TextStyle(color: Colors.white, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        Padding(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: effectiveCollapsed ? 0 : 8),
+                          child: Icon(
+                            effectiveCollapsed
+                                ? Icons.keyboard_arrow_right
+                                : Icons.keyboard_arrow_left,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                child: Row(
-                  mainAxisAlignment:
-                      isCollapsed ? MainAxisAlignment.center : MainAxisAlignment.spaceBetween,
-                  children: [
-                    if (!isCollapsed)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          'Navigation',
-                          style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final item in _items)
+                        _AdminSidebarNavItem(
+                          label: item.label,
+                          assetPath: item.assetPath,
+                          isActive: currentPage == item.label,
+                          isCollapsed: effectiveCollapsed,
+                          onTap: () => onSelect(item.label),
+                          accent: _adminAccent,
+                          base: _adminBase,
                         ),
-                      ),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: isCollapsed ? 0 : 8),
-                      child: Icon(
-                        isCollapsed
-                            ? Icons.keyboard_arrow_right
-                            : Icons.keyboard_arrow_left,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
+                      const SizedBox(height: 20),
+                    ],
+                  ),
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  for (final item in _items)
-                    _AdminSidebarNavItem(
-                      label: item.label,
-                      assetPath: item.assetPath,
-                      isActive: currentPage == item.label,
-                      isCollapsed: isCollapsed,
-                      onTap: () => onSelect(item.label),
-                      accent: _adminAccent,
-                      base: _adminBase,
-                    ),
-                  const SizedBox(height: 20),
-                ],
+              if (!effectiveCollapsed)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  height: 1,
+                  color: const Color(0xFF2C3E50),
+                ),
+              const SizedBox(height: 12),
+              _AdminSidebarNavItem(
+                label: bottomLabel,
+                assetPath: 'assets/images/Logout_KhonoBuzz.png',
+                isActive: false,
+                isCollapsed: effectiveCollapsed,
+                onTap: () => onSelect(bottomLabel),
+                accent: _adminAccent,
+                base: _adminBase,
               ),
-            ),
-          ),
-          if (!isCollapsed)
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 16),
-              height: 1,
-              color: const Color(0xFF2C3E50),
-            ),
-          const SizedBox(height: 12),
-          _AdminSidebarNavItem(
-            label: bottomLabel,
-            assetPath: 'assets/images/Logout_KhonoBuzz.png',
-            isActive: false,
-            isCollapsed: isCollapsed,
-            onTap: () => onSelect(bottomLabel),
-            accent: _adminAccent,
-            base: _adminBase,
-          ),
-          const SizedBox(height: 20),
-        ],
+              const SizedBox(height: 20),
+            ],
+          );
+        },
       ),
     );
   }

@@ -2718,44 +2718,45 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final userName = _getUserName(app.currentUser);
     final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : 'U';
     return Scaffold(
-      body: Container(
-        color: Colors.transparent,
-        height: MediaQuery.of(context).size.height,
-        child: Row(
-          children: [
-            if (isAdmin)
-              Material(
-                child: AdminSidebar(
-                  isCollapsed: app.isAdminSidebarCollapsed,
-                  currentPage: app.adminNavLabel,
-                  onToggle: app.toggleAdminSidebar,
-                  onSelect: (label) {
-                    if (label != 'Sign Out') app.setAdminNavLabel(label);
-                    _navigateAdminToPage(context, label);
+      body: SafeArea(
+        child: Container(
+          color: Colors.transparent,
+          height: MediaQuery.of(context).size.height,
+          child: Row(
+            children: [
+              if (isAdmin)
+                Material(
+                  child: AdminSidebar(
+                    isCollapsed: app.isAdminSidebarCollapsed,
+                    currentPage: app.adminNavLabel,
+                    onToggle: app.toggleAdminSidebar,
+                    onSelect: (label) {
+                      if (label != 'Sign Out') app.setAdminNavLabel(label);
+                      _navigateAdminToPage(context, label);
+                    },
+                  ),
+                )
+              else
+                // Creator navigation for non-admin users
+                Consumer<AppState>(
+                  builder: (context, app, _) {
+                    return AppSideNav(
+                      isCollapsed: app.isSidebarCollapsed,
+                      currentLabel: app.currentNavLabel,
+                      isAdmin: false,
+                      onToggle: app.toggleSidebar,
+                      onSelect: (label) {
+                        app.setCurrentNavLabel(label);
+                        _navigateToPage(context, label);
+                      },
+                    );
                   },
                 ),
-              )
-            else
-              // Creator navigation for non-admin users
-              Consumer<AppState>(
-                builder: (context, app, _) {
-                  return AppSideNav(
-                    isCollapsed: app.isSidebarCollapsed,
-                    currentLabel: app.currentNavLabel,
-                    isAdmin: false,
-                    onToggle: app.toggleSidebar,
-                    onSelect: (label) {
-                      app.setCurrentNavLabel(label);
-                      _navigateToPage(context, label);
-                    },
-                  );
-                },
-              ),
 
-            // Main Content Area
-            Expanded(
-              child: Column(
-                children: [
+              // Main Content Area
+              Expanded(
+                child: Column(
+                  children: [
                   Container(
                     height: 70,
                     decoration: BoxDecoration(
@@ -2858,17 +2859,17 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                       ),
                     ),
                   ),
-                  Expanded(
-                    child: CustomScrollbar(
-                      controller: _scrollController,
-                      child: SingleChildScrollView(
+                    Expanded(
+                      child: CustomScrollbar(
                         controller: _scrollController,
-                        padding: const EdgeInsets.only(right: 24),
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                        child: SingleChildScrollView(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.only(right: 24),
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                               LayoutBuilder(
                                 builder: (context, constraints) {
                                   final compact = constraints.maxWidth < 900;
@@ -3229,16 +3230,17 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               _buildGlassPerformanceTable(
                                   analytics.recentProposals),
                               const SizedBox(height: 32),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
