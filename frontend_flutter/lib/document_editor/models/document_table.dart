@@ -1,13 +1,16 @@
 class DocumentTable {
+  final String id;
   String type; // 'text' or 'price'
   List<List<String>> cells;
   double vatRate; // For price tables (default 15%)
 
   DocumentTable({
+    String? id,
     this.type = 'text',
     List<List<String>>? cells,
     this.vatRate = 0.15,
-  }) : cells = cells ??
+  })  : id = id ?? DateTime.now().microsecondsSinceEpoch.toString(),
+        cells = cells ??
             [
               ['Header 1', 'Header 2', 'Header 3'],
               ['Row 1 Col 1', 'Row 1 Col 2', 'Row 1 Col 3'],
@@ -199,12 +202,14 @@ class DocumentTable {
   }
 
   Map<String, dynamic> toJson() => {
+        'id': id,
         'type': type,
         'cells': cells,
         'vatRate': vatRate,
       };
 
   factory DocumentTable.fromJson(Map<String, dynamic> json) => DocumentTable(
+        id: json['id']?.toString(),
         type: json['type'] as String? ?? 'text',
         cells: (json['cells'] as List<dynamic>?)
             ?.map((row) =>

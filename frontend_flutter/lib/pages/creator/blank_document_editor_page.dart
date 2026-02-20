@@ -5182,6 +5182,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       isSelected: isSelected,
       readOnly: widget.readOnly,
       canDelete: _sections.length > 1,
+      onReorderBlocks: (int oldIndex, int newIndex) {
+        setState(() {
+          if (newIndex > oldIndex) {
+            newIndex -= 1;
+          }
+          final item = section.blockOrder.removeAt(oldIndex);
+          section.blockOrder.insert(newIndex, item);
+        });
+      },
       onHoverChanged: (hovered) {
         setState(() {
           _hoveredSectionIndex = hovered ? index : -1;
@@ -5207,15 +5216,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       onDelete: () => _deleteSection(index),
       getContentTextStyle: _getContentTextStyle,
       getTextAlignment: _getTextAlignment,
-      onReorderTables: (int oldIndex, int newIndex) {
-        setState(() {
-          if (newIndex > oldIndex) {
-            newIndex -= 1;
-          }
-          final table = section.tables.removeAt(oldIndex);
-          section.tables.insert(newIndex, table);
-        });
-      },
       buildInteractiveTable: (int tableIndex, DocumentTable table) =>
           _buildInteractiveTable(
         index,
@@ -5223,9 +5223,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         table,
         key: ValueKey('table_${index}_$tableIndex'),
       ),
-      onRemoveInlineImage: (imageIndex) {
+      onRemoveInlineImage: (imageId) {
         setState(() {
-          _sections[index].inlineImages.removeAt(imageIndex);
+          _sections[index].inlineImages.removeWhere((img) => img.id == imageId);
+          _sections[index].blockOrder.removeWhere((k) => k == 'image:$imageId');
         });
       },
     );
