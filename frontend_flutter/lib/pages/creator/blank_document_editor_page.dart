@@ -7,10 +7,12 @@ import 'package:file_picker/file_picker.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
+import '../../services/client_service.dart';
 import '../../services/asset_service.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
+import '../../widgets/header.dart';
 import 'governance_panel.dart';
 // Import models from document_editor
 import '../../document_editor/models/document_section.dart';
@@ -24,6 +26,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalTitle;
   final String? initialTitle;
   final Map<String, dynamic>? aiGeneratedSections;
+  final String? initialCoverImageUrl;
   final bool readOnly; // For approver view-only mode
   final bool
       isCollaborator; // For collaborator mode - hide navigation, show only editor
@@ -35,6 +38,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.proposalTitle,
     this.initialTitle,
     this.aiGeneratedSections,
+    this.initialCoverImageUrl,
     this.readOnly = false, // Default to editable
     this.isCollaborator = false, // Default to false
     this.requireVersionDescription = false,
@@ -49,6 +53,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   late TextEditingController _titleController;
   late TextEditingController _clientNameController;
   late TextEditingController _clientEmailController;
+  List<Map<String, dynamic>> _clients = [];
+  bool _isLoadingClients = false;
+  int? _selectedClientId;
   bool _isSaving = false;
   DateTime? _lastSaved;
   List<DocumentSection> _sections = [];
@@ -60,6 +67,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   List<String> _uploadedImages = [];
   List<Map<String, dynamic>> _libraryImages = [];
   bool _isLoadingLibraryImages = false;
+  String? _headerLogoUrl;
+  String? _footerLogoUrl;
+  String _headerLogoPosition = 'left'; // 'left', 'center', 'right'
+  double _headerLogoDragDelta = 0; // track drag distance
+  String _footerLogoPosition = 'left'; // 'left', 'center', 'right'
+  String _footerPageNumberPosition = 'center';
+  String _footerProposalIdPosition = 'right';
+  double _footerLogoDragDelta = 0;
+  double _footerPageNumberDragDelta = 0;
+  double _footerProposalIdDragDelta = 0;
+  String? _headerBackgroundImageUrl;
   String _signatureSearchQuery = '';
   String _uploadTabSelected = 'this_document'; // 'this_document' or 'library'
   bool _showSectionsSidebar = false; // Toggle sections sidebar visibility
@@ -163,8 +181,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     } else if (widget.proposalId == null) {
       // Only create initial section for new documents without AI content
       final initialSection = DocumentSection(
-        title: 'Untitled Section',
+        title: widget.initialCoverImageUrl != null ? '' : 'Untitled Section',
         content: '',
+        backgroundImageUrl: widget.initialCoverImageUrl,
+        sectionType: widget.initialCoverImageUrl != null ? 'cover' : 'content',
+        isCoverPage: widget.initialCoverImageUrl != null,
       );
       _sections.add(initialSection);
 
@@ -185,6 +206,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Get auth token and load existing data if editing
     _initializeAuth();
+  }
+
+  bool _isTruthy(dynamic value) {
+    if (value is bool) return value;
+    if (value is int) return value == 1;
+    if (value is String) {
+      final v = value.trim().toLowerCase();
+      return v == 'true' || v == '1' || v == 't' || v == 'yes';
+    }
+    return false;
   }
 
   Future<void> _initializeAuth() async {
@@ -223,9 +254,93 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       // Load images from content library
       _loadLibraryImages();
+
+      // Load clients for dropdown
+      await _loadClients();
     } catch (e) {
       print('❌ Error initializing auth: $e');
     }
+  }
+
+  Future<void> _loadClients() async {
+    if (_isLoadingClients) return;
+
+    setState(() => _isLoadingClients = true);
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      final clients = await ClientService.getClients(token);
+      if (!mounted) return;
+
+      setState(() {
+        _clients = List<Map<String, dynamic>>.from(clients);
+
+        if (_selectedClientId == null) {
+          final currentName = _clientNameController.text.trim();
+          if (currentName.isNotEmpty) {
+            for (final c in _clients) {
+              final name = (c['company_name'] ?? c['name'] ?? '').toString();
+              if (name.trim().toLowerCase() == currentName.toLowerCase()) {
+                _selectedClientId = _tryParseClientId(c);
+                break;
+              }
+            }
+          }
+        }
+      });
+    } catch (e) {
+      print('❌ Error loading clients: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingClients = false);
+    }
+  }
+
+  int? _tryParseClientId(Map<String, dynamic> client) {
+    final raw = client['id'] ?? client['client_id'] ?? client['clientId'];
+    if (raw is int) return raw;
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  String _getClientDisplayName(Map<String, dynamic> client) {
+    final name = (client['company_name'] ?? client['name'] ?? '').toString();
+    final email = (client['email'] ?? '').toString();
+    final cleanName = name.trim();
+    if (cleanName.isNotEmpty) return cleanName;
+    return email.trim().isNotEmpty ? email.trim() : 'Client';
+  }
+
+  void _onClientSelected(int? clientId) {
+    if (clientId == null) {
+      setState(() {
+        _selectedClientId = null;
+      });
+      _onContentChanged();
+      return;
+    }
+
+    Map<String, dynamic>? selected;
+    for (final c in _clients) {
+      final id = _tryParseClientId(c);
+      if (id == clientId) {
+        selected = c;
+        break;
+      }
+    }
+
+    if (selected == null) return;
+
+    final name =
+        (selected['company_name'] ?? selected['name'] ?? '').toString();
+    final email = (selected['email'] ?? '').toString();
+
+    setState(() {
+      _selectedClientId = clientId;
+      _clientNameController.text = name;
+      _clientEmailController.text = email;
+    });
+
+    _onContentChanged();
   }
 
   Future<String?> _promptForChangeDescription() async {
@@ -319,6 +434,23 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     'public_id': item['public_id'],
                   })
               .toList();
+
+          // Ensure Khonology logo is always available in the library
+          const khonologyLogoUrl =
+              'https://res.cloudinary.com/dhy0jccgg/image/upload/v1770161902/3_circle_logo_jnzrqq.jpg';
+          final alreadyHasLogo = _libraryImages.any((img) {
+            final value = img['content'];
+            return value is String && value.trim() == khonologyLogoUrl;
+          });
+          if (!alreadyHasLogo) {
+            _libraryImages.insert(0, {
+              'id': -1,
+              'label': 'Khonology Logo',
+              'content': khonologyLogoUrl,
+              'public_id': null,
+            });
+          }
+
           _isLoadingLibraryImages = false;
         });
 
@@ -340,12 +472,36 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       print('🔄 Loading proposal content for ID $proposalId...');
 
-      // Get all proposals and find the one we need
-      final proposals = await ApiService.getProposals(token);
-      final proposal = proposals.firstWhere(
-        (p) => p['id'] == proposalId,
-        orElse: () => <String, dynamic>{},
-      );
+      Map<String, dynamic> proposal = <String, dynamic>{};
+
+      // First, try to fetch this proposal directly by ID (works for admins too)
+      try {
+        final response = await http.get(
+          Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+        );
+
+        if (response.statusCode == 200) {
+          final data = json.decode(response.body);
+          if (data is Map<String, dynamic>) {
+            proposal = Map<String, dynamic>.from(data);
+          }
+        }
+      } catch (e) {
+        print('⚠️ Error fetching proposal $proposalId by ID: $e');
+      }
+
+      // Fallback: get proposals list and search by ID (creator view behaviour).
+      if (proposal.isEmpty) {
+        final proposals = await ApiService.getProposals(token);
+        proposal = proposals.firstWhere(
+          (p) => p['id'] == proposalId,
+          orElse: () => <String, dynamic>{},
+        );
+      }
 
       if (proposal.isEmpty) {
         print('⚠️ Proposal $proposalId not found');
@@ -357,23 +513,36 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         _proposalData = Map<String, dynamic>.from(proposal);
       });
 
+      // Always set basic fields even if content is missing or not JSON
+      setState(() {
+        _proposalStatus = proposal['status'] ?? 'draft';
+        _clientNameController.text = (proposal['client_name'] ?? '').toString();
+        _clientEmailController.text =
+            (proposal['client_email'] ?? '').toString();
+        _titleController.text =
+            (proposal['title'] ?? 'Untitled Document').toString();
+      });
+
       // Parse the content JSON
       if (proposal['content'] != null) {
         try {
-          final contentData = json.decode(proposal['content']);
+          final dynamic rawContent = proposal['content'];
+          final dynamic contentData = rawContent is String
+              ? json.decode(rawContent)
+              : (rawContent is Map
+                  ? Map<String, dynamic>.from(rawContent)
+                  : null);
+
+          if (contentData == null) {
+            throw Exception('Unsupported content format');
+          }
 
           setState(() {
             // Set title
-            _titleController.text = contentData['title'] ??
-                proposal['title'] ??
-                'Untitled Document';
-
-            // Load proposal status
-            _proposalStatus = proposal['status'] ?? 'draft';
-
-            // Load client information
-            _clientNameController.text = proposal['client_name'] ?? '';
-            _clientEmailController.text = proposal['client_email'] ?? '';
+            _titleController.text = (contentData['title'] ??
+                    proposal['title'] ??
+                    'Untitled Document')
+                .toString();
 
             // Clear existing sections
             for (var section in _sections) {
@@ -388,21 +557,29 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             final List<dynamic> savedSections = contentData['sections'] ?? [];
             if (savedSections.isNotEmpty) {
               for (var sectionData in savedSections) {
+                final String sectionTypeRaw =
+                    (sectionData['sectionType'] ?? 'content').toString();
+                final String sectionTypeNormalized =
+                    sectionTypeRaw.trim().toLowerCase();
+                final bool isCover = _isTruthy(sectionData['isCoverPage']) ||
+                    sectionTypeNormalized == 'cover';
                 final newSection = DocumentSection(
-                  title: sectionData['title'] ?? 'Untitled Section',
+                  title: (sectionData['title'] ??
+                          (isCover ? '' : 'Untitled Section'))
+                      .toString(),
                   content: sectionData['content'] ?? '',
                   backgroundColor: sectionData['backgroundColor'] != null
                       ? Color(sectionData['backgroundColor'] as int)
                       : Colors.white,
                   backgroundImageUrl:
                       sectionData['backgroundImageUrl'] as String?,
-                  sectionType:
-                      sectionData['sectionType'] as String? ?? 'content',
-                  isCoverPage: sectionData['isCoverPage'] as bool? ?? false,
+                  sectionType: sectionTypeRaw,
+                  isCoverPage: isCover,
                   inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
-                      ?.map((img) =>
-                          InlineImage.fromJson(img as Map<String, dynamic>))
-                      .toList(),
+                          ?.map((img) =>
+                              InlineImage.fromJson(img as Map<String, dynamic>))
+                          .toList() ??
+                      [],
                   tables: (sectionData['tables'] as List<dynamic>?)
                           ?.map((tableData) {
                         try {
@@ -446,12 +623,61 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             if (contentData['metadata'] != null) {
               final metadata = contentData['metadata'];
               _selectedCurrency = metadata['currency'] ?? _selectedCurrency;
+              _headerLogoUrl = metadata['headerLogoUrl'] as String?;
+              _footerLogoUrl = metadata['footerLogoUrl'] as String?;
+              _headerLogoPosition =
+                  (metadata['headerLogoPosition'] as String?) ?? 'left';
+              _footerLogoPosition =
+                  (metadata['footerLogoPosition'] as String?) ?? 'left';
+              _footerPageNumberPosition =
+                  (metadata['footerPageNumberPosition'] as String?) ?? 'center';
+              _footerProposalIdPosition =
+                  (metadata['footerProposalIdPosition'] as String?) ?? 'right';
+              _headerBackgroundImageUrl =
+                  metadata['headerBackgroundImageUrl'] as String?;
             }
           });
 
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
+
+          // Fallback: treat content as plain text so editor is never blank
+          final String fallbackText = proposal['content']?.toString() ?? '';
+          setState(() {
+            for (var section in _sections) {
+              section.controller.dispose();
+              section.titleController.dispose();
+              section.contentFocus.dispose();
+              section.titleFocus.dispose();
+            }
+            _sections.clear();
+
+            final fallbackSection = DocumentSection(
+              title: 'Content',
+              content: fallbackText,
+            );
+            _sections.add(fallbackSection);
+            fallbackSection.controller.addListener(_onContentChanged);
+            fallbackSection.titleController.addListener(_onContentChanged);
+            fallbackSection.contentFocus.addListener(() => setState(() {}));
+            fallbackSection.titleFocus.addListener(() => setState(() {}));
+          });
+        }
+      } else {
+        // If backend returned no content, ensure we still have an editable section
+        if (_sections.isEmpty) {
+          setState(() {
+            final fallbackSection = DocumentSection(
+              title: 'Content',
+              content: '',
+            );
+            _sections.add(fallbackSection);
+            fallbackSection.controller.addListener(_onContentChanged);
+            fallbackSection.titleController.addListener(_onContentChanged);
+            fallbackSection.contentFocus.addListener(() => setState(() {}));
+            fallbackSection.titleFocus.addListener(() => setState(() {}));
+          });
         }
       }
     } catch (e) {
@@ -811,6 +1037,64 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  Future<void> _pickHeaderLogo() async {
+    final selectedModule = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => const ContentLibrarySelectionDialog(
+        parentFolderLabel: 'Header_Footer',
+        imagesOnly: true,
+        dialogTitle: 'Select Header/Footer Image',
+      ),
+    );
+
+    if (selectedModule == null) return;
+
+    final content = selectedModule['content'] ?? '';
+    final isUrl = content is String &&
+        (content.startsWith('http://') || content.startsWith('https://'));
+
+    if (isUrl) {
+      await _handleImageForBranding(content as String);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select an image item for the header logo.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Future<void> _pickFooterLogo() async {
+    final selectedModule = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (context) => const ContentLibrarySelectionDialog(
+        parentFolderLabel: 'Header_Footer',
+        imagesOnly: true,
+        dialogTitle: 'Select Header/Footer Image',
+      ),
+    );
+
+    if (selectedModule == null) return;
+
+    final content = selectedModule['content'] ?? '';
+    final isUrl = content is String &&
+        (content.startsWith('http://') || content.startsWith('https://'));
+
+    if (isUrl) {
+      await _handleImageForBranding(content as String);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select an image item for the footer logo.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   void _createSnippet(int index) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -819,6 +1103,84 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  Future<void> _handleImageForBranding(String imageUrl) async {
+    if (imageUrl.isEmpty) return;
+
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Use Image'),
+        content: const Text(
+          'How would you like to use this image? You can set it as a header logo, footer logo, header background, or insert it into the page.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'header'),
+            child: const Text('Header Logo'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'footer'),
+            child: const Text('Footer Logo'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'header_background'),
+            child: const Text('Header Background'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'page'),
+            child: const Text('Insert into Page'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null) return;
+
+    if (choice == 'header') {
+      setState(() {
+        _headerLogoUrl = imageUrl;
+      });
+      _onContentChanged();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Header logo updated'),
+          backgroundColor: Color(0xFF27AE60),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } else if (choice == 'footer') {
+      setState(() {
+        _footerLogoUrl = imageUrl;
+      });
+      _onContentChanged();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Footer logo updated'),
+          backgroundColor: Color(0xFF27AE60),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } else if (choice == 'header_background') {
+      setState(() {
+        _headerBackgroundImageUrl = imageUrl;
+      });
+      _onContentChanged();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Header background updated'),
+          backgroundColor: Color(0xFF27AE60),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } else if (choice == 'page') {
+      _addImageToSection(imageUrl);
+    }
   }
 
   Widget _buildAIAnalysisIcon() {
@@ -901,7 +1263,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(),
+      builder: (context) => const ContentLibrarySelectionDialog(
+        textOnly: true,
+        dialogTitle: 'Insert Text Block',
+      ),
     ).then((selectedModule) {
       if (selectedModule != null && _selectedSectionIndex < _sections.length) {
         // Insert the selected library content into the current section
@@ -2010,11 +2375,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         });
 
         if (mounted) {
+          // Show success message and navigate back to My Proposals
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('✅ Proposal sent for approval successfully!'),
               backgroundColor: Color(0xFF2ECC71),
+              duration: Duration(seconds: 2),
             ),
+          );
+
+          // Close the editor and return to the My Proposals page
+          // Using pushNamedAndRemoveUntil ensures the proposals list is visible
+          // and the compose/editor route is removed from the stack.
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/proposals',
+            (route) => false,
           );
         }
       } else {
@@ -2083,6 +2458,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         'currency': _selectedCurrency,
         'version': _currentVersionNumber,
         'last_modified': DateTime.now().toIso8601String(),
+        'headerLogoUrl': _headerLogoUrl,
+        'footerLogoUrl': _footerLogoUrl,
+        'headerLogoPosition': _headerLogoPosition,
+        'footerLogoPosition': _footerLogoPosition,
+        'footerPageNumberPosition': _footerPageNumberPosition,
+        'footerProposalIdPosition': _footerProposalIdPosition,
+        'headerBackgroundImageUrl': _headerBackgroundImageUrl,
       }
     };
     return json.encode(documentData);
@@ -2355,15 +2737,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // Restore sections
     final List<dynamic> savedSections = version['sections'] ?? [];
     for (var sectionData in savedSections) {
+      final String sectionTypeRaw =
+          (sectionData['sectionType'] ?? 'content').toString();
+      final String sectionTypeNormalized = sectionTypeRaw.trim().toLowerCase();
+      final bool isCover = _isTruthy(sectionData['isCoverPage']) ||
+          sectionTypeNormalized == 'cover';
       final newSection = DocumentSection(
-        title: sectionData['title'] ?? 'Untitled Section',
+        title: (sectionData['title'] ?? (isCover ? '' : 'Untitled Section'))
+            .toString(),
         content: sectionData['content'] ?? '',
         backgroundColor: sectionData['backgroundColor'] != null
             ? Color(sectionData['backgroundColor'] as int)
             : Colors.white,
         backgroundImageUrl: sectionData['backgroundImageUrl'] as String?,
-        sectionType: sectionData['sectionType'] as String? ?? 'content',
-        isCoverPage: sectionData['isCoverPage'] as bool? ?? false,
+        sectionType: sectionTypeRaw,
+        isCoverPage: isCover,
         inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
             ?.map((img) => InlineImage.fromJson(img as Map<String, dynamic>))
             .toList(),
@@ -4070,28 +4458,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
           const SizedBox(width: 12),
-          // Collaboration / Share button
-          OutlinedButton.icon(
-            onPressed: () => _showCollaborationDialog(),
-            icon: Icon(
-              _isCollaborating ? Icons.people : Icons.person_add,
-              size: 16,
-            ),
-            label: Text(_isCollaborating
-                ? 'Collaborators (${_collaborators.length})'
-                : 'Share'),
-            style: OutlinedButton.styleFrom(
-              side: BorderSide(
-                color: _isCollaborating ? Colors.green : Colors.grey,
-              ),
-              foregroundColor: _isCollaborating ? Colors.green : Colors.black87,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(4),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
           // Comments button
           OutlinedButton.icon(
             onPressed: () {
@@ -4116,62 +4482,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          // More Actions menu (Share, Archive, etc.)
-          if (_savedProposalId != null)
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, size: 20),
-              onSelected: (value) async {
-                switch (value) {
-                  case 'share':
-                    _showCollaborationDialog();
-                    break;
-                  case 'archive':
-                    await _archiveProposal();
-                    break;
-                  case 'restore':
-                    await _restoreProposal();
-                    break;
-                }
-              },
-              itemBuilder: (context) {
-                final isArchived = _proposalStatus?.toLowerCase() == 'archived';
-                return [
-                  const PopupMenuItem(
-                    value: 'share',
-                    child: Row(
-                      children: [
-                        Icon(Icons.person_add_alt_1_outlined, size: 18),
-                        SizedBox(width: 8),
-                        Text('Share / Collaborate'),
-                      ],
-                    ),
-                  ),
-                  if (!isArchived)
-                    const PopupMenuItem(
-                      value: 'archive',
-                      child: Row(
-                        children: [
-                          Icon(Icons.archive_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Archive Proposal'),
-                        ],
-                      ),
-                    )
-                  else
-                    const PopupMenuItem(
-                      value: 'restore',
-                      child: Row(
-                        children: [
-                          Icon(Icons.unarchive_outlined, size: 18),
-                          SizedBox(width: 8),
-                          Text('Restore Proposal'),
-                        ],
-                      ),
-                    ),
-                ];
-              },
-            ),
           const SizedBox(width: 12),
           // Status Badge
           if (_proposalStatus != null && _proposalStatus != 'draft')
@@ -4284,6 +4594,292 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  Widget? _buildHeaderLogoWidget() {
+    if (_headerLogoUrl == null || _headerLogoUrl!.trim().isEmpty) {
+      return null;
+    }
+
+    return GestureDetector(
+      onHorizontalDragUpdate: (details) {
+        _headerLogoDragDelta += details.delta.dx;
+      },
+      onHorizontalDragEnd: (details) {
+        const threshold = 8.0;
+        if (_headerLogoDragDelta.abs() < threshold) {
+          _headerLogoDragDelta = 0;
+          return;
+        }
+
+        setState(() {
+          if (_headerLogoDragDelta > 0) {
+            // Dragged to the right: move alignment rightwards
+            if (_headerLogoPosition == 'left') {
+              _headerLogoPosition = 'center';
+            } else if (_headerLogoPosition == 'center') {
+              _headerLogoPosition = 'right';
+            }
+          } else {
+            // Dragged to the left: move alignment leftwards
+            if (_headerLogoPosition == 'right') {
+              _headerLogoPosition = 'center';
+            } else if (_headerLogoPosition == 'center') {
+              _headerLogoPosition = 'left';
+            }
+          }
+          _headerLogoDragDelta = 0;
+        });
+      },
+      child: SizedBox(
+        height: 32,
+        child: Image.network(
+          _headerLogoUrl!,
+          fit: BoxFit.contain,
+        ),
+      ),
+    );
+  }
+
+  Alignment _alignmentForFooterPosition(String position) {
+    switch (position) {
+      case 'left':
+        return Alignment.centerLeft;
+      case 'right':
+        return Alignment.centerRight;
+      case 'center':
+      default:
+        return Alignment.center;
+    }
+  }
+
+  String _moveFooterPosition(String current, bool moveRight) {
+    if (moveRight) {
+      if (current == 'left') return 'center';
+      if (current == 'center') return 'right';
+      return 'right';
+    } else {
+      if (current == 'right') return 'center';
+      if (current == 'center') return 'left';
+      return 'left';
+    }
+  }
+
+  /// Build a small footer widget showing the proposal ID, if available.
+  ///
+  /// Uses the persisted backend ID when present; otherwise falls back to the
+  /// widget's proposalId if it's a non-temporary value. Hidden for new/unsaved
+  /// documents and temporary IDs.
+  Widget? _buildProposalIdFooterWidget() {
+    // Prefer the saved backend proposal ID
+    String? idText;
+    if (_savedProposalId != null) {
+      idText = _savedProposalId.toString();
+    } else if (widget.proposalId != null) {
+      final raw = widget.proposalId!.trim();
+      // Skip temporary IDs like "temp-123" from the wizard
+      if (raw.isNotEmpty && !raw.toLowerCase().startsWith('temp-')) {
+        idText = raw;
+      }
+    }
+
+    if (idText == null || idText.isEmpty) {
+      return null;
+    }
+
+    return Text(
+      'Proposal ID: $idText',
+      style: TextStyle(
+        fontSize: 11,
+        color: Colors.grey[600],
+        fontWeight: FontWeight.w500,
+      ),
+    );
+  }
+
+  Widget? _buildFooterLogoWidgetDraggable(bool enableDragging) {
+    if (_footerLogoUrl == null || _footerLogoUrl!.trim().isEmpty) {
+      return null;
+    }
+
+    final logo = SizedBox(
+      width: 80,
+      height: 32,
+      child: Image.network(
+        _footerLogoUrl!,
+        fit: BoxFit.contain,
+      ),
+    );
+
+    if (!enableDragging) {
+      return Align(
+        alignment: _alignmentForFooterPosition(_footerLogoPosition),
+        child: logo,
+      );
+    }
+
+    return Align(
+      alignment: _alignmentForFooterPosition(_footerLogoPosition),
+      child: GestureDetector(
+        onTap: _pickFooterLogo,
+        onHorizontalDragUpdate: (details) {
+          _footerLogoDragDelta += details.delta.dx;
+        },
+        onHorizontalDragEnd: (details) {
+          const threshold = 8.0;
+          if (_footerLogoDragDelta.abs() < threshold) {
+            _footerLogoDragDelta = 0;
+            return;
+          }
+
+          setState(() {
+            final moveRight = _footerLogoDragDelta > 0;
+            _footerLogoPosition =
+                _moveFooterPosition(_footerLogoPosition, moveRight);
+            _footerLogoDragDelta = 0;
+          });
+
+          _onContentChanged();
+        },
+        child: logo,
+      ),
+    );
+  }
+
+  Widget _buildFooterPageNumberWidgetDraggable(
+    int pageNumber,
+    int totalPages,
+    bool enableDragging,
+  ) {
+    final pageChip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey[100]!.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[300]!),
+      ),
+      child: Text(
+        'Page $pageNumber of $totalPages',
+        style: TextStyle(
+          fontSize: 11,
+          color: Colors.grey[600],
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+
+    if (!enableDragging) {
+      return Align(
+        alignment: _alignmentForFooterPosition(_footerPageNumberPosition),
+        child: pageChip,
+      );
+    }
+
+    return Align(
+      alignment: _alignmentForFooterPosition(_footerPageNumberPosition),
+      child: GestureDetector(
+        onHorizontalDragUpdate: (details) {
+          _footerPageNumberDragDelta += details.delta.dx;
+        },
+        onHorizontalDragEnd: (details) {
+          const threshold = 8.0;
+          if (_footerPageNumberDragDelta.abs() < threshold) {
+            _footerPageNumberDragDelta = 0;
+            return;
+          }
+
+          setState(() {
+            final moveRight = _footerPageNumberDragDelta > 0;
+            _footerPageNumberPosition = _moveFooterPosition(
+              _footerPageNumberPosition,
+              moveRight,
+            );
+            _footerPageNumberDragDelta = 0;
+          });
+
+          _onContentChanged();
+        },
+        child: pageChip,
+      ),
+    );
+  }
+
+  Widget? _buildDraggableProposalIdFooterWidget(bool enableDragging) {
+    final proposalIdWidget = _buildProposalIdFooterWidget();
+    if (proposalIdWidget == null) {
+      return null;
+    }
+
+    if (!enableDragging) {
+      return Align(
+        alignment: _alignmentForFooterPosition(_footerProposalIdPosition),
+        child: proposalIdWidget,
+      );
+    }
+
+    return Align(
+      alignment: _alignmentForFooterPosition(_footerProposalIdPosition),
+      child: GestureDetector(
+        onHorizontalDragUpdate: (details) {
+          _footerProposalIdDragDelta += details.delta.dx;
+        },
+        onHorizontalDragEnd: (details) {
+          const threshold = 8.0;
+          if (_footerProposalIdDragDelta.abs() < threshold) {
+            _footerProposalIdDragDelta = 0;
+            return;
+          }
+
+          setState(() {
+            final moveRight = _footerProposalIdDragDelta > 0;
+            _footerProposalIdPosition = _moveFooterPosition(
+              _footerProposalIdPosition,
+              moveRight,
+            );
+            _footerProposalIdDragDelta = 0;
+          });
+
+          _onContentChanged();
+        },
+        child: proposalIdWidget,
+      ),
+    );
+  }
+
+  Widget _buildDraggableFooter({
+    required int pageNumber,
+    required int totalPages,
+    required bool showDivider,
+    required bool enableDragging,
+  }) {
+    final logo = _buildFooterLogoWidgetDraggable(enableDragging);
+    final pageWidget = _buildFooterPageNumberWidgetDraggable(
+      pageNumber,
+      totalPages,
+      enableDragging,
+    );
+    final proposalWidget =
+        _buildDraggableProposalIdFooterWidget(enableDragging);
+
+    return Container(
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: showDivider
+            ? const Border(
+                top: BorderSide(color: Color(0xFFE5E7EB)),
+              )
+            : null,
+      ),
+      child: Stack(
+        children: [
+          if (logo != null) logo,
+          pageWidget,
+          if (proposalWidget != null) proposalWidget,
+        ],
+      ),
+    );
+  }
+
   List<Widget> _buildA4Pages() {
     // A4 dimensions: 210mm x 297mm (aspect ratio 0.707)
     // Using larger width of 900px for better visibility
@@ -4295,12 +4891,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _sections.length,
       (index) {
         final section = _sections[index];
+        final headerLogoWidget = _buildHeaderLogoWidget();
+        final isCover = section.isCoverPage ||
+            section.sectionType.trim().toLowerCase() == 'cover';
         return Container(
           width: pageWidth,
-          constraints: const BoxConstraints(
-            minHeight: 600,
-            maxHeight: pageHeight,
-          ),
+          height: pageHeight,
           margin: const EdgeInsets.only(bottom: 32),
           decoration: BoxDecoration(
             color: section.backgroundImageUrl == null
@@ -4310,10 +4906,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ? DecorationImage(
                     image: NetworkImage(section.backgroundImageUrl!),
                     fit: BoxFit.cover,
-                    opacity: 0.7, // Background image visibility
+                    opacity: isCover ? 1.0 : 0.7, // Full-bleed cover image
                   )
                 : null,
-            borderRadius: BorderRadius.circular(4),
+            borderRadius:
+                isCover ? BorderRadius.zero : BorderRadius.circular(4),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.15),
@@ -4327,38 +4924,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ],
           ),
-          child: Stack(
-            children: [
-              SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.all(60),
-                  child: _buildSectionContent(index),
-                ),
-              ),
-              // Page number indicator at bottom
-              Positioned(
-                bottom: 20,
-                right: 60,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100]!.withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey[300]!),
-                  ),
-                  child: Text(
-                    'Page ${index + 1} of ${_sections.length}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
+          child: isCover
+              ? const SizedBox.expand()
+              : Column(
+                  children: [
+                    DocumentHeader(
+                      title: null,
+                      subtitle: null,
+                      leading: _headerLogoPosition == 'left'
+                          ? headerLogoWidget
+                          : null,
+                      center: _headerLogoPosition == 'center'
+                          ? headerLogoWidget
+                          : null,
+                      trailing: _headerLogoPosition == 'right'
+                          ? headerLogoWidget
+                          : null,
+                      backgroundImageUrl: _headerBackgroundImageUrl,
+                      onTap: _pickHeaderLogo,
                     ),
-                  ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 60,
+                            vertical: 24,
+                          ),
+                          child: _buildSectionContent(index),
+                        ),
+                      ),
+                    ),
+                    _buildDraggableFooter(
+                      pageNumber: index + 1,
+                      totalPages: _sections.length,
+                      showDivider: true,
+                      enableDragging: true,
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
         );
       },
     );
@@ -5586,6 +6189,40 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             color: Color(0xFF1A1A1A),
           ),
         ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<int?>(
+          value: _selectedClientId,
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text('Select client'),
+            ),
+            ..._clients.map((c) {
+              final id = _tryParseClientId(c);
+              if (id == null) {
+                return null;
+              }
+              return DropdownMenuItem<int?>(
+                value: id,
+                child: Text(
+                  _getClientDisplayName(c),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              );
+            }).whereType<DropdownMenuItem<int?>>(),
+          ],
+          onChanged: _isLoadingClients ? null : _onClientSelected,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: 'Client',
+            isDense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
         const SizedBox(height: 20),
         // Template Style Button
         Material(
@@ -6593,7 +7230,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: InkWell(
                     onTap: () {
-                      _addImageToSection(_uploadedImages[index]);
+                      _handleImageForBranding(_uploadedImages[index]);
                     },
                     borderRadius: BorderRadius.circular(6),
                     child: Container(
@@ -6702,7 +7339,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   padding: const EdgeInsets.only(bottom: 12),
                   child: InkWell(
                     onTap: () {
-                      _addImageToSection(_libraryImages[index]['content']);
+                      _handleImageForBranding(
+                        _libraryImages[index]['content']?.toString() ?? '',
+                      );
                     },
                     borderRadius: BorderRadius.circular(6),
                     child: Container(
@@ -8067,13 +8706,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             ..._sections.asMap().entries.map((entry) {
                               final index = entry.key;
                               final section = entry.value;
+
+                              // Match A4 layout used in _buildA4Pages
+                              const double pageWidth = 900;
+                              const double pageHeight = 1273;
+                              final headerLogoWidget = _buildHeaderLogoWidget();
+                              final isCover = section.isCoverPage ||
+                                  section.sectionType.trim().toLowerCase() ==
+                                      'cover';
+
                               return Container(
-                                width: 850,
-                                margin: const EdgeInsets.only(bottom: 40),
-                                padding: const EdgeInsets.all(60),
-                                constraints: const BoxConstraints(
-                                  minHeight: 800,
-                                ),
+                                width: pageWidth,
+                                height: pageHeight,
+                                margin: const EdgeInsets.only(bottom: 32),
                                 decoration: BoxDecoration(
                                   color: section.backgroundImageUrl == null
                                       ? section.backgroundColor
@@ -8083,10 +8728,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                           image: NetworkImage(
                                               section.backgroundImageUrl!),
                                           fit: BoxFit.cover,
-                                          opacity: 0.7,
+                                          opacity: isCover ? 1.0 : 0.7,
                                         )
                                       : null,
-                                  borderRadius: BorderRadius.circular(4),
+                                  borderRadius: isCover
+                                      ? BorderRadius.zero
+                                      : BorderRadius.circular(4),
                                   boxShadow: [
                                     BoxShadow(
                                       color:
@@ -8096,69 +8743,97 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                     ),
                                   ],
                                 ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    // Section title
-                                    Text(
-                                      section.titleController.text.isEmpty
-                                          ? 'Untitled Section'
-                                          : section.titleController.text,
-                                      style: const TextStyle(
-                                        fontSize: 24,
-                                        fontWeight: FontWeight.w700,
-                                        color: Color(0xFF1A3A52),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 24),
-                                    // Section content
-                                    Text(
-                                      section.controller.text.isEmpty
-                                          ? '(No content in this section)'
-                                          : section.controller.text,
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        color: Color(0xFF1A1A1A),
-                                        height: 1.8,
-                                        letterSpacing: 0.2,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 20),
-                                    if (section.tables.isNotEmpty) ...[
-                                      ...section.tables
-                                          .map((table) =>
-                                              _buildReadOnlyTable(table))
-                                          .toList(),
-                                      const SizedBox(height: 12),
-                                    ],
-                                    // Page indicator
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 12,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Colors.grey[100],
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          border: Border.all(
-                                            color: Colors.grey[300]!,
+                                child: isCover
+                                    ? const SizedBox.expand()
+                                    : Column(
+                                        children: [
+                                          DocumentHeader(
+                                            title: null,
+                                            subtitle: null,
+                                            leading:
+                                                _headerLogoPosition == 'left'
+                                                    ? headerLogoWidget
+                                                    : null,
+                                            center:
+                                                _headerLogoPosition == 'center'
+                                                    ? headerLogoWidget
+                                                    : null,
+                                            trailing:
+                                                _headerLogoPosition == 'right'
+                                                    ? headerLogoWidget
+                                                    : null,
+                                            backgroundImageUrl:
+                                                _headerBackgroundImageUrl,
+                                            showDivider: false,
                                           ),
-                                        ),
-                                        child: Text(
-                                          'Page ${index + 1} of ${_sections.length}',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey[600],
-                                            fontWeight: FontWeight.w500,
+                                          Expanded(
+                                            child: SingleChildScrollView(
+                                              child: Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 60,
+                                                  vertical: 24,
+                                                ),
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    // Section title
+                                                    Text(
+                                                      section.titleController
+                                                              .text.isEmpty
+                                                          ? 'Untitled Section'
+                                                          : section
+                                                              .titleController
+                                                              .text,
+                                                      style: const TextStyle(
+                                                        fontSize: 24,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color:
+                                                            Color(0xFF1A3A52),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 24),
+                                                    // Section content
+                                                    Text(
+                                                      section.controller.text
+                                                              .isEmpty
+                                                          ? '(No content in this section)'
+                                                          : section
+                                                              .controller.text,
+                                                      style: const TextStyle(
+                                                        fontSize: 14,
+                                                        color:
+                                                            Color(0xFF1A1A1A),
+                                                        height: 1.8,
+                                                        letterSpacing: 0.2,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 20),
+                                                    if (section
+                                                        .tables.isNotEmpty) ...[
+                                                      ...section.tables
+                                                          .map((table) =>
+                                                              _buildReadOnlyTable(
+                                                                  table))
+                                                          .toList(),
+                                                      const SizedBox(
+                                                          height: 12),
+                                                    ],
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
                                           ),
-                                        ),
+                                          _buildDraggableFooter(
+                                            pageNumber: index + 1,
+                                            totalPages: _sections.length,
+                                            showDivider: false,
+                                            enableDragging: false,
+                                          ),
+                                        ],
                                       ),
-                                    ),
-                                  ],
-                                ),
                               );
                             }).toList(),
                           ],

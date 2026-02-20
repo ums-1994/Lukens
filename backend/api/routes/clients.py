@@ -2,10 +2,12 @@
 Client management routes
 """
 from flask import Blueprint, request, jsonify
+import json
 import os
 import secrets
 import traceback
 import hashlib
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import psycopg2.extras
@@ -494,6 +496,10 @@ def get_clients(username=None):
 
             user_id = user_row['id']
 
+            cursor.execute("SELECT role FROM users WHERE username = %s", (username,))
+            role_row = cursor.fetchone() or {}
+            user_role = (role_row.get('role') or '').lower().strip()
+
             # Check which columns exist in the clients table
             cursor.execute("""
                 SELECT column_name 
@@ -535,6 +541,14 @@ def get_clients(username=None):
                 select_fields.append('budget_range')
             if 'timeline' in available_columns:
                 select_fields.append('timeline')
+            if 'holding_information' in available_columns:
+                select_fields.append('holding_information')
+            if 'address' in available_columns:
+                select_fields.append('address')
+            if 'client_contact_email' in available_columns:
+                select_fields.append('client_contact_email')
+            if 'client_contact_mobile' in available_columns:
+                select_fields.append('client_contact_mobile')
             if 'additional_info' in available_columns:
                 select_fields.append('additional_info')
             if 'status' in available_columns:
@@ -558,15 +572,33 @@ def get_clients(username=None):
                     print(f"[ERROR] Invalid user_id type: {type(user_id)} = {user_id}")
                     return jsonify({"error": "Invalid user ID"}), 400
             
-            query = f"""
-                SELECT {', '.join(select_fields)}
-                FROM clients
-                WHERE created_by = %s OR created_by IS NULL
-                ORDER BY {order_by}
-            """
+            if user_role == 'manager':
+                query = f"""
+                    SELECT {', '.join(select_fields)}
+                    FROM clients
+                    ORDER BY {order_by}
+                """
+                query_params = ()
+            else:
+                if 'created_by' in available_columns:
+                    query = f"""
+                        SELECT {', '.join(select_fields)}
+                        FROM clients
+                        WHERE created_by = %s OR created_by IS NULL
+                        ORDER BY {order_by}
+                    """
+                    query_params = (user_id,)
+                else:
+                    # Older schemas may not have created_by; fall back to returning all clients
+                    query = f"""
+                        SELECT {', '.join(select_fields)}
+                        FROM clients
+                        ORDER BY {order_by}
+                    """
+                    query_params = ()
             
             try:
-                cursor.execute(query, (user_id,))
+                cursor.execute(query, query_params)
                 clients = cursor.fetchall()
             except Exception as query_error:
                 print(f"[ERROR] Query execution failed: {type(query_error).__name__}: {query_error}")
@@ -589,6 +621,202 @@ def get_clients(username=None):
 
     except Exception as exc:
         print(f"[ERROR] Error fetching clients: {type(exc).__name__}: {exc}")
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@bp.post("/clients")
+@token_required
+def create_client(username=None):
+    """Create a client (finance/admin)"""
+    try:
+        data = request.json or {}
+        company_name = (data.get('company_name') or '').strip()
+        contact_person = (data.get('contact_person') or '').strip()
+        email = (data.get('email') or '').strip()
+        phone = (data.get('phone') or '').strip()
+        holding_information = (data.get('holding_information') or '').strip()
+        address = (data.get('address') or '').strip()
+        client_contact_email = (data.get('client_contact_email') or '').strip()
+        client_contact_mobile = (data.get('client_contact_mobile') or '').strip()
+
+        if not company_name or not email:
+            return jsonify({"error": "Company name and email are required"}), 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='clients'
+                """
+            )
+            clients_columns = {
+                (row[0] if isinstance(row, tuple) else row.get('column_name'))
+                for row in cursor.fetchall()
+            }
+            clients_columns = {c for c in clients_columns if c}
+
+            cursor.execute("SELECT id, role FROM users WHERE username = %s", (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({"error": "User not found"}), 404
+
+            user_id = user_row['id']
+            user_role = (user_row.get('role') or '').lower().strip()
+            allowed_roles = {'finance', 'admin', 'ceo'}
+            is_finance_variant = user_role.startswith('finance') or user_role.replace(' ', '_').startswith('finance_')
+            if user_role not in allowed_roles and not is_finance_variant:
+                return jsonify({"error": "Insufficient permissions"}), 403
+
+            additional_info = None
+            if 'additional_info' in clients_columns:
+                additional_info_obj = {
+                    'holding_information': holding_information or None,
+                    'address': address or None,
+                    'client_contact_email': client_contact_email or None,
+                    'client_contact_mobile': client_contact_mobile or None,
+                }
+                additional_info_obj = {
+                    k: v for k, v in additional_info_obj.items() if v is not None
+                }
+                # Serialize to JSON for compatibility with both json/jsonb and text columns
+                additional_info = json.dumps(additional_info_obj) if additional_info_obj else None
+
+            insert_fields = ['email']
+            insert_values = [email]
+            update_set_parts = []
+
+            if 'company_name' in clients_columns:
+                insert_fields.insert(0, 'company_name')
+                insert_values.insert(0, company_name)
+                update_set_parts.append('company_name = EXCLUDED.company_name')
+
+            if 'name' in clients_columns:
+                # Older schemas often use `name` as the primary non-null field
+                insert_fields.insert(0, 'name')
+                insert_values.insert(0, company_name)
+                update_set_parts.append('name = EXCLUDED.name')
+
+            if not update_set_parts:
+                # Ensure ON CONFLICT has at least one assignment
+                update_set_parts.append('email = EXCLUDED.email')
+
+            if 'status' in clients_columns:
+                insert_fields.append('status')
+                insert_values.append('active')
+                update_set_parts.append('status = EXCLUDED.status')
+
+            if 'token' in clients_columns:
+                # Use UUID format for compatibility with schemas where token is a UUID column
+                token_value = str(uuid.uuid4())
+                insert_fields.append('token')
+                insert_values.append(token_value)
+                # Preserve existing token if the client already exists
+                update_set_parts.append('token = COALESCE(clients.token, EXCLUDED.token)')
+
+            if 'created_by' in clients_columns:
+                insert_fields.append('created_by')
+                insert_values.append(user_id)
+
+            if 'contact_person' in clients_columns:
+                insert_fields.insert(1, 'contact_person')
+                insert_values.insert(1, contact_person or None)
+                update_set_parts.insert(1, 'contact_person = EXCLUDED.contact_person')
+
+            if 'phone' in clients_columns:
+                insert_fields.insert(2, 'phone')
+                insert_values.insert(2, phone or None)
+                update_set_parts.insert(2, 'phone = EXCLUDED.phone')
+
+            if 'holding_information' in clients_columns:
+                insert_fields.append('holding_information')
+                insert_values.append(holding_information or None)
+                update_set_parts.append(
+                    'holding_information = EXCLUDED.holding_information'
+                )
+
+            if 'address' in clients_columns:
+                insert_fields.append('address')
+                insert_values.append(address or None)
+                update_set_parts.append('address = EXCLUDED.address')
+
+            if 'client_contact_email' in clients_columns:
+                insert_fields.append('client_contact_email')
+                insert_values.append(client_contact_email or None)
+                update_set_parts.append(
+                    'client_contact_email = EXCLUDED.client_contact_email'
+                )
+
+            if 'client_contact_mobile' in clients_columns:
+                insert_fields.append('client_contact_mobile')
+                insert_values.append(client_contact_mobile or None)
+                update_set_parts.append(
+                    'client_contact_mobile = EXCLUDED.client_contact_mobile'
+                )
+
+            if 'additional_info' in clients_columns:
+                insert_fields.append('additional_info')
+                insert_values.append(additional_info)
+                update_set_parts.append(
+                    'additional_info = COALESCE(EXCLUDED.additional_info, clients.additional_info)'
+                )
+
+            if 'updated_at' in clients_columns:
+                update_set_parts.append('updated_at = CURRENT_TIMESTAMP')
+
+            returning_fields = ['id', 'email']
+            if 'company_name' in clients_columns:
+                returning_fields.insert(1, 'company_name')
+            if 'name' in clients_columns:
+                returning_fields.insert(1, 'name')
+            if 'token' in clients_columns:
+                returning_fields.append('token')
+            if 'status' in clients_columns:
+                returning_fields.append('status')
+            if 'created_at' in clients_columns:
+                returning_fields.append('created_at')
+            if 'updated_at' in clients_columns:
+                returning_fields.append('updated_at')
+            if 'contact_person' in clients_columns:
+                returning_fields.insert(2, 'contact_person')
+            if 'phone' in clients_columns:
+                returning_fields.insert(4, 'phone')
+            if 'holding_information' in clients_columns:
+                returning_fields.append('holding_information')
+            if 'address' in clients_columns:
+                returning_fields.append('address')
+            if 'client_contact_email' in clients_columns:
+                returning_fields.append('client_contact_email')
+            if 'client_contact_mobile' in clients_columns:
+                returning_fields.append('client_contact_mobile')
+            if 'additional_info' in clients_columns:
+                returning_fields.insert(3, 'additional_info')
+
+            cursor.execute(
+                f"""
+                INSERT INTO clients ({', '.join(insert_fields)})
+                VALUES ({', '.join(['%s'] * len(insert_fields))})
+                ON CONFLICT (email) DO UPDATE SET
+                    {', '.join(update_set_parts)}
+                RETURNING {', '.join(returning_fields)}
+                """,
+                tuple(insert_values),
+            )
+            client = cursor.fetchone()
+            conn.commit()
+
+            result = dict(client) if client else {}
+            for key, value in result.items():
+                if isinstance(value, datetime):
+                    result[key] = value.isoformat()
+
+            return jsonify({"success": True, "client": result}), 201
+
+    except Exception as exc:
+        print(f"[ERROR] Error creating client: {exc}")
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500
 
@@ -623,6 +851,222 @@ def get_client(username=None, client_id=None):
 
     except Exception as exc:
         print(f"[ERROR] Error fetching client: {exc}")
+        return jsonify({"error": str(exc)}), 500
+
+
+@bp.patch("/clients/<int:client_id>")
+@token_required
+def update_client(username=None, client_id=None):
+    """Update a client (finance/admin)"""
+    try:
+        data = request.json or {}
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute("SELECT id, role FROM users WHERE username = %s", (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({"error": "User not found"}), 404
+
+            user_role = (user_row.get('role') or '').lower().strip()
+            allowed_roles = {'finance', 'admin', 'ceo'}
+            is_finance_variant = user_role.startswith('finance') or user_role.replace(' ', '_').startswith('finance_')
+            if user_role not in allowed_roles and not is_finance_variant:
+                return jsonify({"error": "Insufficient permissions"}), 403
+
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name='clients'
+                """
+            )
+            clients_columns = {
+                (row[0] if isinstance(row, tuple) else row.get('column_name'))
+                for row in cursor.fetchall()
+            }
+            clients_columns = {c for c in clients_columns if c}
+
+            cursor.execute("SELECT * FROM clients WHERE id = %s", (client_id,))
+            existing = cursor.fetchone()
+            if not existing:
+                return jsonify({"error": "Client not found"}), 404
+
+            # Partial update: only update fields present in request.
+            if ('company_name' in data or 'name' in data) and not (
+                (data.get('company_name') or data.get('name') or '').strip()
+            ):
+                return jsonify({"error": "Company name cannot be empty"}), 400
+
+            if 'email' in data and not (data.get('email') or '').strip():
+                return jsonify({"error": "Email cannot be empty"}), 400
+
+            update_set_parts = []
+            update_values = []
+
+            if 'company_name' in clients_columns and 'company_name' in data:
+                update_set_parts.append('company_name = %s')
+                update_values.append((data.get('company_name') or '').strip())
+            if 'name' in clients_columns and ('name' in data or 'company_name' in data):
+                update_set_parts.append('name = %s')
+                update_values.append((data.get('name') or data.get('company_name') or '').strip())
+            if 'email' in clients_columns and 'email' in data:
+                update_set_parts.append('email = %s')
+                update_values.append((data.get('email') or '').strip())
+            if 'contact_person' in clients_columns and 'contact_person' in data:
+                update_set_parts.append('contact_person = %s')
+                update_values.append((data.get('contact_person') or '').strip() or None)
+            if 'phone' in clients_columns and 'phone' in data:
+                update_set_parts.append('phone = %s')
+                update_values.append((data.get('phone') or '').strip() or None)
+            if 'holding_information' in clients_columns and 'holding_information' in data:
+                update_set_parts.append('holding_information = %s')
+                update_values.append((data.get('holding_information') or '').strip() or None)
+            if 'address' in clients_columns and 'address' in data:
+                update_set_parts.append('address = %s')
+                update_values.append((data.get('address') or '').strip() or None)
+            if 'client_contact_email' in clients_columns and 'client_contact_email' in data:
+                update_set_parts.append('client_contact_email = %s')
+                update_values.append((data.get('client_contact_email') or '').strip() or None)
+            if 'client_contact_mobile' in clients_columns and 'client_contact_mobile' in data:
+                update_set_parts.append('client_contact_mobile = %s')
+                update_values.append((data.get('client_contact_mobile') or '').strip() or None)
+
+            if 'additional_info' in clients_columns and any(
+                k in data
+                for k in [
+                    'holding_information',
+                    'address',
+                    'client_contact_email',
+                    'client_contact_mobile',
+                ]
+            ):
+                existing_additional = existing.get('additional_info')
+                if isinstance(existing_additional, str):
+                    try:
+                        existing_additional = json.loads(existing_additional)
+                    except Exception:
+                        existing_additional = {}
+                if not isinstance(existing_additional, dict):
+                    existing_additional = {}
+
+                if 'holding_information' in data:
+                    v = (data.get('holding_information') or '').strip() or None
+                    if v is None:
+                        existing_additional.pop('holding_information', None)
+                    else:
+                        existing_additional['holding_information'] = v
+
+                if 'address' in data:
+                    v = (data.get('address') or '').strip() or None
+                    if v is None:
+                        existing_additional.pop('address', None)
+                    else:
+                        existing_additional['address'] = v
+
+                if 'client_contact_email' in data:
+                    v = (data.get('client_contact_email') or '').strip() or None
+                    if v is None:
+                        existing_additional.pop('client_contact_email', None)
+                    else:
+                        existing_additional['client_contact_email'] = v
+
+                if 'client_contact_mobile' in data:
+                    v = (data.get('client_contact_mobile') or '').strip() or None
+                    if v is None:
+                        existing_additional.pop('client_contact_mobile', None)
+                    else:
+                        existing_additional['client_contact_mobile'] = v
+
+                update_set_parts.append('additional_info = %s')
+                update_values.append(
+                    json.dumps(existing_additional) if existing_additional else None
+                )
+
+            if 'updated_at' in clients_columns:
+                update_set_parts.append('updated_at = CURRENT_TIMESTAMP')
+
+            if not update_set_parts:
+                return jsonify({"error": "No valid fields provided to update"}), 400
+
+            update_values.append(client_id)
+
+            returning_fields = ['id']
+            for col in [
+                'company_name', 'name', 'email', 'contact_person', 'phone',
+                'holding_information', 'address', 'client_contact_email',
+                'client_contact_mobile', 'additional_info', 'status',
+                'created_at', 'updated_at'
+            ]:
+                if col in clients_columns:
+                    returning_fields.append(col)
+
+            cursor.execute(
+                f"""
+                UPDATE clients
+                SET {', '.join(update_set_parts)}
+                WHERE id = %s
+                RETURNING {', '.join(returning_fields)}
+                """,
+                tuple(update_values),
+            )
+            updated = cursor.fetchone()
+            conn.commit()
+
+            if not updated:
+                return jsonify({"error": "Client not found"}), 404
+
+            result = dict(updated)
+            for key, value in result.items():
+                if isinstance(value, datetime):
+                    result[key] = value.isoformat()
+
+            return jsonify({"success": True, "client": result}), 200
+
+    except Exception as exc:
+        print(f"[ERROR] Error updating client: {exc}")
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@bp.delete("/clients/<int:client_id>")
+@token_required
+def delete_client(username=None, client_id=None):
+    """Delete a client (finance/admin)"""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute("SELECT id, role FROM users WHERE username = %s", (username,))
+            user_row = cursor.fetchone()
+            if not user_row:
+                return jsonify({"error": "User not found"}), 404
+
+            user_role = (user_row.get('role') or '').lower().strip()
+            allowed_roles = {'finance', 'admin', 'ceo'}
+            is_finance_variant = user_role.startswith('finance') or user_role.replace(' ', '_').startswith('finance_')
+            if user_role not in allowed_roles and not is_finance_variant:
+                return jsonify({"error": "Insufficient permissions"}), 403
+
+            try:
+                cursor.execute("DELETE FROM clients WHERE id = %s", (client_id,))
+                conn.commit()
+            except psycopg2.IntegrityError as ie:
+                conn.rollback()
+                return jsonify({
+                    "error": "Client cannot be deleted because it is referenced by other records",
+                    "detail": str(ie),
+                }), 409
+
+            if cursor.rowcount == 0:
+                return jsonify({"error": "Client not found"}), 404
+
+            return jsonify({"success": True, "message": "Client deleted"}), 200
+
+    except Exception as exc:
+        print(f"[ERROR] Error deleting client: {exc}")
+        traceback.print_exc()
         return jsonify({"error": str(exc)}), 500
 
 

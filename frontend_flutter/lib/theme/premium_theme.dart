@@ -165,6 +165,12 @@ class PremiumTheme {
     color: textSecondary,
   );
 
+  static const bodySmall = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.normal,
+    color: textSecondary,
+  );
+
   static const labelMedium = TextStyle(
     fontSize: 12,
     fontWeight: FontWeight.w500,
@@ -240,54 +246,103 @@ class PremiumStatCard extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: PremiumTheme.statCard(gradient),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxH = constraints.maxHeight;
+          final compact = maxH.isFinite && maxH < 110;
+          final tight = maxH.isFinite && maxH < 80;
+
+          final padding = EdgeInsets.all(tight ? 10 : (compact ? 14 : 24));
+          final valueStyle = PremiumTheme.displayMedium.copyWith(
+            fontSize: tight ? 18 : (compact ? 24 : 32),
+            color: Colors.white,
+          );
+          final titleStyle = PremiumTheme.bodyMedium.copyWith(
+            color: Colors.white.withValues(alpha: 0.9),
+            fontWeight: FontWeight.w500,
+            fontSize: tight ? 11 : (compact ? 12 : 14),
+          );
+          final subtitleStyle = PremiumTheme.labelMedium.copyWith(
+            color: Colors.white.withValues(alpha: 0.7),
+            fontSize: tight ? 10 : 12,
+          );
+
+          Widget iconWidget() {
+            if (icon == null) return const SizedBox.shrink();
+            return Container(
+              padding: EdgeInsets.all(tight ? 6 : 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: Colors.white, size: tight ? 16 : 20),
+            );
+          }
+
+          if (tight) {
+            return Container(
+              padding: padding,
+              decoration: PremiumTheme.statCard(gradient),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title, style: titleStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 4),
+                        Text(value, style: valueStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ],
+                    ),
+                  ),
+                  if (icon != null) iconWidget(),
+                ],
+              ),
+            );
+          }
+
+          return Container(
+            padding: padding,
+            decoration: PremiumTheme.statCard(gradient),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    title,
-                    style: PremiumTheme.bodyMedium.copyWith(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontWeight: FontWeight.w500,
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: titleStyle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
+                    if (icon != null) iconWidget(),
+                  ],
                 ),
-                if (icon != null)
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(icon, color: Colors.white, size: 20),
+                SizedBox(height: compact ? 10 : 16),
+                Text(
+                  value,
+                  style: valueStyle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (subtitle != null && !compact) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle!,
+                    style: subtitleStyle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                ],
               ],
             ),
-            const SizedBox(height: 16),
-            Text(
-              value,
-              style: PremiumTheme.displayMedium.copyWith(
-                fontSize: 32,
-                color: Colors.white,
-              ),
-            ),
-            if (subtitle != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                subtitle!,
-                style: PremiumTheme.labelMedium.copyWith(
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
-              ),
-            ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }

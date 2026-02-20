@@ -7,9 +7,73 @@ import psycopg2.extras
 import psycopg2.pool
 from contextlib import contextmanager
 
+from urllib.parse import urlparse, parse_qs
+
+from dotenv import load_dotenv
+
 # PostgreSQL connection pool
 _pg_pool = None
 _db_initialized = False
+
+
+# Load environment variables from .env so DATABASE_URL works when this module
+# is imported directly (e.g., python -c ... from the backend folder).
+load_dotenv()
+
+
+def _build_db_config_from_env():
+    database_url = os.getenv('DATABASE_URL')
+    if database_url:
+        parsed = urlparse(database_url)
+
+        # Accept common Postgres URL scheme variants.
+        # psycopg2 uses a standard Postgres DSN; SQLAlchemy URLs may include a driver.
+        scheme = (parsed.scheme or '').lower()
+        if scheme.startswith('postgresql+'):
+            scheme = 'postgresql'
+
+        if scheme not in ('postgres', 'postgresql'):
+            raise ValueError(
+                'DATABASE_URL must start with postgres:// or postgresql:// '
+                '(optionally with a driver like postgresql+psycopg2://)'
+            )
+
+        db_config = {
+            'host': parsed.hostname,
+            'database': (parsed.path or '').lstrip('/'),
+            'user': parsed.username,
+            'password': parsed.password,
+            'port': parsed.port or 5432,
+        }
+
+        query = parse_qs(parsed.query or '')
+        sslmode_from_url = (query.get('sslmode') or [None])[0]
+
+        ssl_mode = sslmode_from_url or os.getenv('DB_SSLMODE')
+        if not ssl_mode:
+            if os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
+                ssl_mode = 'require'
+            elif db_config.get('host') and 'render.com' in db_config['host'].lower():
+                ssl_mode = 'require'
+            else:
+                ssl_mode = 'prefer'
+
+        if ssl_mode:
+            db_config['sslmode'] = ssl_mode
+
+        missing = [k for k in ('host', 'database', 'user') if not db_config.get(k)]
+        if missing:
+            raise ValueError(f"DATABASE_URL missing required parts: {', '.join(missing)}")
+
+        return db_config
+
+    return {
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'database': os.getenv('DB_NAME', 'proposal_db'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', ''),
+        'port': int(os.getenv('DB_PORT', '5432')),
+    }
 
 
 def get_pg_pool():
@@ -17,21 +81,12 @@ def get_pg_pool():
     global _pg_pool
     if _pg_pool is None:
         try:
-            db_config = {
-                'host': os.getenv('DB_HOST', 'localhost'),
-                'database': os.getenv('DB_NAME', 'proposal_db'),
-                'user': os.getenv('DB_USER', 'postgres'),
-                'password': os.getenv('DB_PASSWORD', ''),
-                'port': int(os.getenv('DB_PORT', '5432')),
-            }
+            db_config = _build_db_config_from_env()
             
             # Add SSL mode for external connections (like Render)
             # Check if host contains 'render.com' or SSL is explicitly required
-            ssl_mode = os.getenv('DB_SSLMODE', 'prefer')
-            if 'render.com' in db_config['host'].lower() or os.getenv('DB_REQUIRE_SSL', 'false').lower() == 'true':
-                ssl_mode = 'require'
-                db_config['sslmode'] = ssl_mode
-                print(f"[*] Using SSL mode: {ssl_mode} for external connection")
+            if 'sslmode' in db_config:
+                print(f"[*] Using SSL mode: {db_config['sslmode']} for external connection")
             
             print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
             _pg_pool = psycopg2.pool.SimpleConnectionPool(
@@ -97,7 +152,13 @@ def release_pg_conn(conn):
                 cursor.close()
                 
                 # Connection is clean and valid, return to pool
-                get_pg_pool().putconn(conn)
+                try:
+                    get_pg_pool().putconn(conn)
+                except psycopg2.pool.PoolError:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
             except (psycopg2.OperationalError, psycopg2.InterfaceError):
                 # Connection is corrupted, close it instead of returning to pool
                 print(f"[WARN] Connection corrupted, closing instead of returning to pool")
@@ -184,6 +245,54 @@ def init_pg_schema():
         except Exception as e:
             print(f"[WARN] Could not add client_email column to proposals (may already exist or be incompatible): {e}")
 
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS opportunity_id VARCHAR(50)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add opportunity_id column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS engagement_stage VARCHAR(50)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add engagement_stage column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS engagement_opened_at TIMESTAMP
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add engagement_opened_at column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS engagement_target_close_at TIMESTAMP
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add engagement_target_close_at column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals 
+                ADD COLUMN IF NOT EXISTS client_id INTEGER
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add client_id column to proposals (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                CREATE INDEX IF NOT EXISTS idx_proposals_client_id
+                ON proposals(client_id)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not create idx_proposals_client_id index (may already exist or be incompatible): {e}")
+
         # Content library table
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (
         id SERIAL PRIMARY KEY,
@@ -231,6 +340,16 @@ def init_pg_schema():
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
+
+        # Ensure proposals.client_id has a foreign key to clients.id
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals
+                ADD CONSTRAINT proposals_client_id_fkey
+                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add proposals.client_id foreign key constraint (may already exist or be incompatible): {e}")
         
         # Add company_name column if it doesn't exist (migration for existing databases)
         try:
@@ -264,6 +383,14 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add contact_person column (may already exist): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE clients
+                ADD COLUMN IF NOT EXISTS region VARCHAR(80)
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add region column (may already exist): {e}")
 
         # Proposal versions table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_versions (
@@ -310,6 +437,48 @@ def init_pg_schema():
         FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
         FOREIGN KEY (invited_by) REFERENCES users(id)
         )''')
+
+        # Risk Gate runs + override audit trail
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS risk_gate_runs (
+            id SERIAL PRIMARY KEY,
+            proposal_id INTEGER NOT NULL,
+            requested_by VARCHAR(255),
+            status VARCHAR(20) NOT NULL,
+            risk_score INTEGER NOT NULL,
+            issues JSONB NOT NULL DEFAULT '[]'::jsonb,
+            kb_citations JSONB NOT NULL DEFAULT '[]'::jsonb,
+            redaction_summary JSONB,
+            overridden BOOLEAN NOT NULL DEFAULT FALSE,
+            override_reason TEXT,
+            overridden_by VARCHAR(255),
+            overridden_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_risk_gate_runs_proposal_id
+               ON risk_gate_runs(proposal_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS risk_gate_overrides (
+            id SERIAL PRIMARY KEY,
+            run_id INTEGER NOT NULL,
+            override_reason TEXT NOT NULL,
+            approved_by VARCHAR(255) NOT NULL,
+            approved_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (run_id) REFERENCES risk_gate_runs(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_risk_gate_overrides_run_id
+               ON risk_gate_overrides(run_id, approved_at DESC)'''
+        )
 
         # Suggested changes table
         cursor.execute('''CREATE TABLE IF NOT EXISTS suggested_changes (

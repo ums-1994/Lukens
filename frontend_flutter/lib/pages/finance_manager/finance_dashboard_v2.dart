@@ -6,6 +6,7 @@ import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
+import 'finance_client_management_page.dart';
 
 /// Simplified Finance dashboard that uses real proposal data from `/api/proposals`.
 class FinanceDashboardPage extends StatefulWidget {
@@ -20,6 +21,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   String _statusFilter = 'all'; // all, pending, approved, other
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  String _currentTab = 'proposals'; // 'proposals' or 'clients'
 
   @override
   void initState() {
@@ -187,34 +189,38 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
-                      child: CustomScrollbar(
-                        controller: _scrollController,
-                        child: RefreshIndicator(
-                          onRefresh: _loadData,
-                          color: PremiumTheme.teal,
-                          child: SingleChildScrollView(
-                            controller: _scrollController,
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                _buildSummaryRow(
-                                  totalCount: totalCount,
-                                  pendingCount: pendingCount,
-                                  approvedCount: approvedCount,
-                                  totalAmount: totalAmount,
+                      child: _currentTab == 'proposals'
+                          ? CustomScrollbar(
+                              controller: _scrollController,
+                              child: RefreshIndicator(
+                                onRefresh: _loadData,
+                                color: PremiumTheme.teal,
+                                child: SingleChildScrollView(
+                                  controller: _scrollController,
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      _buildSummaryRow(
+                                        totalCount: totalCount,
+                                        pendingCount: pendingCount,
+                                        approvedCount: approvedCount,
+                                        totalAmount: totalAmount,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      _buildFilters(),
+                                      const SizedBox(height: 16),
+                                      _buildTable(proposals),
+                                      const SizedBox(height: 24),
+                                      const Footer(),
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(height: 16),
-                                _buildFilters(),
-                                const SizedBox(height: 16),
-                                _buildTable(proposals),
-                                const SizedBox(height: 24),
-                                const Footer(),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
+                              ),
+                            )
+                          : const FinanceClientManagementPage(),
                     ),
                   ),
                 ],
@@ -330,6 +336,40 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   }
 
   Widget _buildSidebar() {
+    Widget navIcon({
+      required IconData icon,
+      required bool active,
+      required VoidCallback onTap,
+      String? tooltip,
+    }) {
+      final child = InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: active
+                ? PremiumTheme.teal.withOpacity(0.18)
+                : Colors.white.withOpacity(0.04),
+            border: Border.all(
+              color: active
+                  ? PremiumTheme.teal.withOpacity(0.9)
+                  : Colors.white.withOpacity(0.06),
+            ),
+          ),
+          child: Icon(
+            icon,
+            color: active ? PremiumTheme.teal : Colors.white70,
+          ),
+        ),
+      );
+
+      if (tooltip == null) return child;
+      return Tooltip(message: tooltip, child: child);
+    }
+
     return Container(
       width: 90,
       decoration: BoxDecoration(
@@ -349,13 +389,21 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         ),
       ),
       child: Column(
-        children: const [
-          SizedBox(height: 16),
-          Icon(Icons.account_balance, color: Colors.white),
-          SizedBox(height: 8),
-          Icon(Icons.receipt_long, color: Colors.white70),
-          SizedBox(height: 8),
-          Icon(Icons.trending_up, color: Colors.white70),
+        children: [
+          const SizedBox(height: 16),
+          navIcon(
+            icon: Icons.description,
+            active: _currentTab == 'proposals',
+            tooltip: 'Proposals',
+            onTap: () => setState(() => _currentTab = 'proposals'),
+          ),
+          const SizedBox(height: 10),
+          navIcon(
+            icon: Icons.business,
+            active: _currentTab == 'clients',
+            tooltip: 'Client Management',
+            onTap: () => setState(() => _currentTab = 'clients'),
+          ),
         ],
       ),
     );
@@ -521,7 +569,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
           final statusDropdown = Expanded(
             child: DropdownButtonFormField<String>(
-              value: _statusFilter,
+              initialValue: _statusFilter,
               dropdownColor: PremiumTheme.darkBg1,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(

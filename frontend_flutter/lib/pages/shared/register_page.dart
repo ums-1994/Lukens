@@ -4,6 +4,7 @@ import '../../services/firebase_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/role_service.dart';
 import '../../api.dart';
+import '../../config/app_constants.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -148,7 +149,8 @@ class _RegisterPageState extends State<RegisterPage>
       // Map role selection to backend role format
       String role;
       if (_selectedRole == 'Finance Manager') {
-        role = 'finance manager';
+        // Use canonical backend role
+        role = 'finance_manager';
       } else if (_selectedRole == 'Admin') {
         role = 'admin';
       } else {
@@ -268,8 +270,16 @@ class _RegisterPageState extends State<RegisterPage>
         setState(() => _isLoading = false);
 
         if (userProfile != null) {
+          // Normalize roles for comparison (handle space vs underscore differences)
+          final backendRole = (userProfile['role']?.toString() ?? '')
+              .toLowerCase()
+              .trim()
+              .replaceAll(' ', '_');
+          final requestedRoleNormalized =
+              role.toLowerCase().trim().replaceAll(' ', '_');
+
           // Update role in backend if needed
-          if (userProfile['role'] != role) {
+          if (backendRole != requestedRoleNormalized) {
             // Role might need to be updated in backend
             print(
                 '⚠️ Role mismatch: backend has "${userProfile['role']}", requested "$role"');
@@ -289,39 +299,27 @@ class _RegisterPageState extends State<RegisterPage>
 
           await appState.init();
 
-          // Redirect based on user role
-          final userRole =
-              (userProfile['role']?.toString() ?? '').toLowerCase().trim();
-          String dashboardRoute;
+          // Redirect based on user role using RoleService
+          final rawRole = userProfile['role']?.toString() ?? '';
+          final userRole = rawRole.toLowerCase().trim();
+          final currentRole = roleService.currentRole;
 
           print('🔍 User role from backend: "$userRole"');
           print('🔍 Requested role: "$role"');
+          print('🔍 Frontend mapped role: $currentRole');
 
-          // Check both the backend role and the requested role
-          final requestedRole = role.toLowerCase().trim();
-          final isAdmin = userRole == 'admin' ||
-              userRole == 'ceo' ||
-              requestedRole == 'admin';
-          final isFinance = userRole == 'finance' ||
-              userRole == 'finance manager' ||
-              userRole == 'financial manager' ||
-              userRole == 'finance_manager' ||
-              userRole == 'financial_manager' ||
-              requestedRole == 'finance' ||
-              requestedRole == 'finance manager' ||
-              requestedRole == 'financial manager' ||
-              requestedRole == 'finance_manager' ||
-              requestedRole == 'financial_manager';
+          String dashboardRoute;
 
-          if (isAdmin) {
+          if (currentRole == UserRole.approver ||
+              currentRole == UserRole.admin) {
             dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Approval Dashboard');
-          } else if (isFinance) {
+            print('✅ Routing to Admin/Approver Dashboard (from RoleService)');
+          } else if (currentRole == UserRole.finance) {
             dashboardRoute = '/finance_dashboard';
-            print('✅ Routing to Finance Dashboard');
+            print('✅ Routing to Finance Dashboard (from RoleService)');
           } else {
             dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard');
+            print('✅ Routing to Creator Dashboard (from RoleService)');
           }
 
           ScaffoldMessenger.of(context).showSnackBar(
@@ -418,6 +416,28 @@ class _RegisterPageState extends State<RegisterPage>
                 vertical: 40,
               ),
               child: _buildRegistrationCard(isMobile),
+            ),
+          ),
+
+          // Version overlay at bottom
+          Positioned(
+            bottom: 20,
+            right: 20,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFF333333), width: 1),
+              ),
+              child: Text(
+                AppConstants.fullVersion,
+                style: const TextStyle(
+                  color: Color(0xFF9CA3AF),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ),
           ),
         ],
