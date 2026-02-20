@@ -2760,25 +2760,33 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 final email = client['email'] ?? '';
                 return DropdownMenuItem<Map<String, dynamic>>(
                   value: client,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        name,
-                        style: PremiumTheme.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (email.isNotEmpty)
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 40),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         Text(
-                          email,
+                          name,
                           style: PremiumTheme.bodyMedium.copyWith(
-                            color: PremiumTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
                             fontSize: 12,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                    ],
+                        if (email.isNotEmpty)
+                          Text(
+                            email,
+                            style: PremiumTheme.bodyMedium.copyWith(
+                              color: PremiumTheme.textSecondary,
+                              fontSize: 10,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
                   ),
                 );
               }),
@@ -3236,19 +3244,24 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       );
     }
 
-    final status = _riskAssessment['status'] ?? 'PASS';
-    final riskLevel = status; // Map Risk Gate status to UI display
+    // Extract data from Hugging Face analysis
+    final hfAnalysis = _riskAssessment['hf_analysis'] as Map<String, dynamic>? ?? {};
+    final analysis = hfAnalysis['analysis'] as Map<String, dynamic>? ?? {};
+    final compoundRisk = analysis['compound_risk'] as Map<String, dynamic>? ?? {};
     final riskScore = _riskAssessment['risk_score'] ?? 0;
-    final issues = List<Map<String, dynamic>>.from(
-      _riskAssessment['issues'] ?? const [],
-    );
-    final kbCitations = List<Map<String, dynamic>>.from(
-      _riskAssessment['kb_citations'] ?? const [],
-    );
+    final status = _riskAssessment['status'] ?? 'At Risk';
+    final summary = _riskAssessment['summary'] ?? 'Risk analysis completed';
+    final issues = List<Map<String, dynamic>>.from(_riskAssessment['issues'] ?? const []);
+    
+    // Get detailed issues from Hugging Face response
+    final hfIssues = List<Map<String, dynamic>>.from(analysis['issues'] ?? []);
+    final recommendations = List<String>.from(hfAnalysis['recommendations'] ?? []);
+    final riskLevel = hfAnalysis['risk_level'] ?? 'medium';
+    final isBlocked = hfAnalysis['release_blocked'] ?? false;
 
     Color riskColor = PremiumTheme.success;
-    if (riskLevel == 'REVIEW') riskColor = Colors.orange;
-    if (riskLevel == 'BLOCK') riskColor = PremiumTheme.error;
+    if (riskLevel == 'high' || status == 'Blocked') riskColor = PremiumTheme.error;
+    if (riskLevel == 'medium' || status == 'At Risk') riskColor = Colors.orange;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3269,7 +3282,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      Icons.warning_amber_rounded,
+                      isBlocked ? Icons.block : Icons.warning_amber_rounded,
                       color: riskColor,
                       size: 32,
                     ),
@@ -3280,50 +3293,87 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Risk Level: $riskLevel',
+                          'Risk Level: ${status.toString().toUpperCase()}',
                           style: PremiumTheme.titleMedium.copyWith(
                             color: riskColor,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Risk Score: ${riskScore.toStringAsFixed(0)}/100',
+                          'Risk Score: ${riskScore.toStringAsFixed(0)}%',
                           style: PremiumTheme.bodyMedium,
                         ),
+                        if (compoundRisk['score'] != null)
+                          Text(
+                            'Compound Risk: ${(compoundRisk['score'] as num).toStringAsFixed(1)}/10',
+                            style: PremiumTheme.bodySmall.copyWith(
+                              color: riskColor,
+                            ),
+                          ),
                       ],
                     ),
                   ),
                 ],
               ),
+              if (summary.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Risk Summary',
+                        style: PremiumTheme.bodySmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        summary,
+                        style: PremiumTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
+        
         const SizedBox(height: 16),
-        if (issues.isNotEmpty) ...[
+        
+        // Missing Sections
+        if (hfIssues.isNotEmpty) ...[
           Text(
-            'Flagged Issues',
+            'Detected Issues (${hfIssues.length})',
             style: PremiumTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
-          ...issues.map<Widget>((issue) {
-            final title = issue['title']?.toString() ??
-                issue['section']?.toString() ??
-                'Issue';
+          ...hfIssues.map<Widget>((issue) {
+            final type = issue['type']?.toString() ?? 'unknown';
+            final severity = issue['severity']?.toString() ?? 'medium';
             final description = issue['description']?.toString() ?? '';
-            final action = issue['recommendation']?.toString() ?? '';
-            final severity = issue['severity']?.toString().toLowerCase() ?? '';
-
-            final kbTitle = kbCitations.isNotEmpty
-                ? (kbCitations.first['title']?.toString() ?? '')
-                : '';
+            final location = issue['location']?.toString() ?? '';
 
             Color iconColor = PremiumTheme.info;
             if (severity == 'critical' || severity == 'high') {
               iconColor = PremiumTheme.error;
             } else if (severity == 'medium') {
               iconColor = Colors.orange;
+            }
+
+            IconData issueIcon = Icons.info_outline;
+            if (type == 'structural') {
+              issueIcon = Icons.build_outlined;
+            } else if (type == 'clause') {
+              issueIcon = Icons.gavel_outlined;
             }
 
             return Padding(
@@ -3337,10 +3387,17 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.flag_outlined,
-                          color: iconColor,
-                          size: 20,
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: iconColor.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            issueIcon,
+                            color: iconColor,
+                            size: 20,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -3348,154 +3405,115 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                title,
-                                style: PremiumTheme.bodyLarge.copyWith(
+                                location.isEmpty 
+                                    ? _formatSectionTitle(description)
+                                    : _formatSectionTitle(location),
+                                style: PremiumTheme.bodyMedium.copyWith(
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              if (description.isNotEmpty) ...[
-                                const SizedBox(height: 6),
-                                Text(
-                                  description,
-                                  style: PremiumTheme.bodyMedium,
+                              const SizedBox(height: 4),
+                              Text(
+                                description,
+                                style: PremiumTheme.bodySmall.copyWith(
+                                  color: PremiumTheme.textSecondary,
                                 ),
-                              ],
-                              if (action.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Text(
-                                  'Recommendation:',
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  action,
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    color: PremiumTheme.textSecondary,
-                                  ),
-                                ),
-                              ],
-                              if (kbTitle.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Text(
-                                  'KB citation:',
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  kbTitle,
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    color: PremiumTheme.textSecondary,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ],
                           ),
                         ),
-                        if (action.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          IconButton(
-                            tooltip: 'Copy fix',
-                            onPressed: () async {
-                              await Clipboard.setData(
-                                ClipboardData(text: action),
-                              );
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Fix copied'),
-                                  ),
-                                );
-                              }
-                            },
-                            icon: const Icon(Icons.copy, size: 18),
-                          ),
-                        ],
                       ],
                     ),
                   ],
                 ),
               ),
             );
-          }),
-          const SizedBox(height: 4),
+          }).toList(),
         ],
-        // KB Citations
-        if (kbCitations.isNotEmpty) ...[
+        
+        // Recommendations
+        if (recommendations.isNotEmpty) ...[
+          const SizedBox(height: 16),
           Text(
-            'KB Citations',
+            'Recommendations',
             style: PremiumTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
-          ...kbCitations.map<Widget>((citation) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: GlassContainer(
-                  borderRadius: 16,
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+          GlassContainer(
+            borderRadius: 16,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ...recommendations.map<Widget>((rec) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.library_books_outlined,
-                            color: PremiumTheme.info,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  citation['title']?.toString() ?? 'KB Clause',
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Category: ${citation['category']?.toString() ?? ''}',
-                                  style: PremiumTheme.labelMedium.copyWith(
-                                    color: PremiumTheme.textSecondary,
-                                  ),
-                                ),
-                                if (citation['recommended_text']
-                                        ?.toString()
-                                        .isNotEmpty ==
-                                    true) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Recommended:',
-                                    style: PremiumTheme.labelMedium.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    citation['recommended_text'],
-                                    style: PremiumTheme.bodyMedium,
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 16,
+                        color: PremiumTheme.teal,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          rec,
+                          style: PremiumTheme.bodySmall,
+                        ),
                       ),
                     ],
                   ),
-                ),
-              )),
-          const SizedBox(height: 4),
+                )).toList(),
+              ],
+            ),
+          ),
         ],
+        
+        const SizedBox(height: 16),
+        
+        // Action Buttons
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _runRiskAssessment,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Re-run Analysis'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: PremiumTheme.teal,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ),
+            if (isBlocked) ...[
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _handleRiskGateOverride(),
+                  icon: const Icon(Icons.security),
+                  label: const Text('Override Risk'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
       ],
     );
+  }
+
+  String _formatSectionTitle(String section) {
+    return section
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
   }
 
   // Internal Approval Builder
