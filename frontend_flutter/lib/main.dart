@@ -20,7 +20,7 @@ import 'pages/creator/client_management_page.dart';
 import 'pages/admin/approver_dashboard_page.dart';
 import 'pages/admin/admin_approvals_page.dart';
 import 'pages/admin/proposal_review_page.dart';
-import 'pages/finance_manager/finance_dashboard_page.dart';
+import 'pages/finance_manager/finance_dashboard_v2.dart';
 import 'pages/finance_manager/finance_client_management_page.dart';
 import 'pages/finance_manager/finance_add_client_page.dart';
 import 'pages/finance_manager/finance_onboarding_page.dart';
@@ -83,48 +83,31 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (context) => AppState()),
         ChangeNotifierProvider(create: (context) => RoleService()),
       ],
-      child: Consumer<AppState>(
-        builder: (context, app, _) {
-          return MaterialApp(
-            title: 'Lukens',
-            debugShowCheckedModeBanner: false,
-            themeMode: app.themeMode,
-            theme: ThemeData(
-              useMaterial3: true,
-              brightness: Brightness.light,
-              colorSchemeSeed: Colors.blue,
-              textTheme: GoogleFonts.poppinsTextTheme(),
-              scaffoldBackgroundColor: Colors.transparent,
-            ),
-            darkTheme: ThemeData(
-              useMaterial3: true,
-              brightness: Brightness.dark,
-              colorSchemeSeed: Colors.blue,
-              textTheme: GoogleFonts.poppinsTextTheme(),
-              scaffoldBackgroundColor: Colors.transparent,
-            ),
-            builder: (context, child) {
-              return Stack(
-                children: [
-                  Positioned.fill(
-                    child: Image.asset(
-                      'assets/images/Global BG.jpg',
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  if (app.isLightMode)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.white.withValues(alpha: 0.65),
-                      ),
-                    ),
-                  if (child != null) child,
-                ],
-              );
-            },
-            home: const AuthWrapper(),
-            onGenerateRoute: (settings) {
-              print('🔍 onGenerateRoute - Route name: ${settings.name}');
+      child: MaterialApp(
+        title: 'Lukens',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          useMaterial3: true,
+          colorSchemeSeed: Colors.blue,
+          textTheme: GoogleFonts.poppinsTextTheme(),
+          scaffoldBackgroundColor: Colors.transparent,
+        ),
+        builder: (context, child) {
+          return Stack(
+            children: [
+              Positioned.fill(
+                child: Image.asset(
+                  'assets/images/Global BG.jpg',
+                  fit: BoxFit.cover,
+                ),
+              ),
+              if (child != null) child,
+            ],
+          );
+        },
+        home: const AuthWrapper(),
+        onGenerateRoute: (settings) {
+          print('🔍 onGenerateRoute - Route name: ${settings.name}');
 
           // Handle collaboration routes with token
           if (settings.name == '/collaborate' ||
@@ -232,26 +215,6 @@ class MyApp extends StatelessWidget {
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
             String? token = uri.queryParameters['token'];
-
-            // Flutter web hash routing puts query params after '#', so also scan
-            // fragment/hash for token.
-            if (token == null || token.isEmpty) {
-              final hash = web.window.location.hash;
-              if (hash.contains('token=')) {
-                final tokenMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
-                if (tokenMatch != null) {
-                  token = tokenMatch.group(1);
-                }
-              }
-            }
-
-            // Final fallback: scan full URL.
-            if (token == null || token.isEmpty) {
-              final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
-              if (urlMatch != null) {
-                token = urlMatch.group(1);
-              }
-            }
 
             if (token != null && token.isNotEmpty) {
               print('✅ Token found for client proposals');
@@ -437,36 +400,9 @@ class MyApp extends StatelessWidget {
           '/proposal_review': (context) {
             final args = ModalRoute.of(context)?.settings.arguments
                 as Map<String, dynamic>?;
-            final roleService = Provider.of<RoleService>(context, listen: false);
-            final canReview = roleService.isApprover() || roleService.isAdmin();
-
-            final proposalId = args?['id']?.toString() ?? '';
-            final proposalTitle = args?['title']?.toString();
-
-            if (!canReview) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!context.mounted) return;
-                if (proposalId.isNotEmpty) {
-                  Navigator.pushReplacementNamed(
-                    context,
-                    '/compose',
-                    arguments: {
-                      'proposalId': proposalId,
-                      'proposalTitle': proposalTitle,
-                      'readOnly': false,
-                    },
-                  );
-                } else {
-                  Navigator.pushReplacementNamed(context, '/creator_dashboard');
-                }
-              });
-
-              return const SizedBox.shrink();
-            }
-
             return ProposalReviewPage(
-              proposalId: proposalId,
-              proposalTitle: proposalTitle,
+              proposalId: args?['id']?.toString() ?? '',
+              proposalTitle: args?['title']?.toString(),
             );
           },
           '/admin_dashboard': (context) => const ApproverDashboardPage(),
@@ -475,7 +411,13 @@ class MyApp extends StatelessWidget {
           '/collaboration': (context) =>
               const ClientManagementPage(), // Redirected to Client Management
           // '/collaborate' is handled by onGenerateRoute to extract token
-          '/analytics': (context) => const AnalyticsPage(),
+          '/analytics': (context) {
+            final role = context.watch<RoleService>();
+            if (role.isFinance()) {
+              return const FinanceAnalyticsPage();
+            }
+            return const AnalyticsPage();
+          },
           '/approved-proposals': (context) => const ApprovedProposalsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),
           '/settings': (context) => const SettingsPage(),
@@ -488,13 +430,17 @@ class MyApp extends StatelessWidget {
               body: Center(child: Text('Team: $id')),
             );
           },
-          '/workspace': (context) => const HomeShell(),
-        },
-          );
+          '/workspace': (context) {
+            final args = ModalRoute.of(context)!.settings.arguments as Map?;
+            final name = args != null ? (args['workspaceName'] ?? '') : '';
+            return Scaffold(
+              appBar: AppBar(title: const Text('Workspace')),
+              body: Center(child: Text('Workspace: $name')),
+            );
+          },
         },
       ),
     );
-
   }
 }
 
@@ -717,24 +663,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
         uri.path.contains('/client/proposals');
 
     if (isClientProposals) {
-      String? token = uri.queryParameters['token'];
-
-      if (token == null || token.isEmpty) {
-        if (hash.contains('token=')) {
-          final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
-          if (hashMatch != null) {
-            token = hashMatch.group(1);
-          }
-        }
-      }
-
-      if (token == null || token.isEmpty) {
-        final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
-        if (urlMatch != null) {
-          token = urlMatch.group(1);
-        }
-      }
-
+      final token = uri.queryParameters['token'];
       if (token != null && token.isNotEmpty) {
         print('✅ Detected client proposals URL - showing ClientDashboardHome');
         print('📍 Client token: ${token.substring(0, 10)}...');

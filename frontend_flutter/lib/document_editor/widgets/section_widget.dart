@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/document_section.dart';
 import '../models/document_table.dart';
-import '../models/inline_image.dart';
 import 'image_widget.dart';
 
 class SectionWidget extends StatelessWidget {
@@ -22,10 +21,10 @@ class SectionWidget extends StatelessWidget {
   final TextStyle Function() getContentTextStyle;
   final TextAlign Function() getTextAlignment;
 
-  final void Function(int oldIndex, int newIndex) onReorderTables;
+  final void Function(int oldIndex, int newIndex) onReorderBlocks;
   final Widget Function(int tableIndex, DocumentTable table)
       buildInteractiveTable;
-  final void Function(int imageIndex) onRemoveInlineImage;
+  final void Function(String imageId) onRemoveInlineImage;
 
   const SectionWidget({
     super.key,
@@ -43,7 +42,7 @@ class SectionWidget extends StatelessWidget {
     required this.onDelete,
     required this.getContentTextStyle,
     required this.getTextAlignment,
-    required this.onReorderTables,
+    required this.onReorderBlocks,
     required this.buildInteractiveTable,
     required this.onRemoveInlineImage,
   });
@@ -175,60 +174,116 @@ class SectionWidget extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               // Clean content area - text field for writing
-              TextField(
-                focusNode: section.contentFocus,
-                controller: section.controller,
-                maxLines: null,
-                minLines: 15,
-                enabled: !readOnly, // Disable editing in read-only mode
-                style: getContentTextStyle(),
-                textAlign: getTextAlignment(),
-                textAlignVertical: TextAlignVertical.top,
-                decoration: InputDecoration(
-                  hintText: readOnly
-                      ? '' // No hint in read-only mode
-                      : 'Start writing your content here...',
-                  hintStyle: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFFBDC3C7),
-                  ),
-                  border: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.all(8),
-                ),
-              ),
-              // Display tables below text (with drag and drop)
-              if (section.tables.isNotEmpty)
-                ReorderableListView(
-                  padding: EdgeInsets.zero,
-                  primary: false,
-                  buildDefaultDragHandles: false,
-                  shrinkWrap: true,
-                  physics: const ClampingScrollPhysics(),
-                  onReorder: onReorderTables,
-                  children: section.tables.asMap().entries.map((entry) {
-                    final tableIndex = entry.key;
-                    final table = entry.value;
+              ReorderableListView(
+                padding: EdgeInsets.zero,
+                primary: false,
+                buildDefaultDragHandles: false,
+                shrinkWrap: true,
+                physics: const ClampingScrollPhysics(),
+                onReorder: onReorderBlocks,
+                children: section.blockOrder.map((blockKey) {
+                  if (blockKey == 'text') {
                     return KeyedSubtree(
-                      key: ObjectKey(table),
-                      child: buildInteractiveTable(tableIndex, table),
+                      key: const ValueKey('section-text-block'),
+                      child: TextField(
+                        focusNode: section.contentFocus,
+                        controller: section.controller,
+                        maxLines: null,
+                        minLines: 15,
+                        enabled: !readOnly, // Disable editing in read-only mode
+                        style: getContentTextStyle(),
+                        textAlign: getTextAlignment(),
+                        textAlignVertical: TextAlignVertical.top,
+                        decoration: InputDecoration(
+                          hintText: readOnly
+                              ? '' // No hint in read-only mode
+                              : 'Start writing your content here...',
+                          hintStyle: const TextStyle(
+                            fontSize: 14,
+                            color: Color(0xFFBDC3C7),
+                          ),
+                          border: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          contentPadding: const EdgeInsets.all(8),
+                        ),
+                      ),
                     );
-                  }).toList(),
-                )
-              else
-                const SizedBox.shrink(),
-              // Display images below tables
-              ...section.inlineImages.asMap().entries.map((entry) {
-                final imageIndex = entry.key;
-                final InlineImage image = entry.value;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: ImageWidget(
-                    image: image,
-                    onRemove: () => onRemoveInlineImage(imageIndex),
-                  ),
-                );
-              }).toList(),
+                  }
+
+                  if (blockKey.startsWith('table:')) {
+                    final tableId = blockKey.substring('table:'.length);
+                    final tableIndex =
+                        section.tables.indexWhere((t) => t.id == tableId);
+                    if (tableIndex == -1) {
+                      return SizedBox.shrink(
+                          key: ValueKey('missing-$blockKey'));
+                    }
+                    final table = section.tables[tableIndex];
+
+                    return KeyedSubtree(
+                      key: ValueKey('table-${table.id}'),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ReorderableDragStartListener(
+                            index: section.blockOrder.indexOf(blockKey),
+                            child: const Padding(
+                              padding: EdgeInsets.only(top: 20, right: 8),
+                              child: Icon(
+                                Icons.drag_handle,
+                                size: 18,
+                                color: Color(0xFF9CA3AF),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: buildInteractiveTable(tableIndex, table),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  if (blockKey.startsWith('image:')) {
+                    final imageId = blockKey.substring('image:'.length);
+                    final imageIndex = section.inlineImages
+                        .indexWhere((img) => img.id == imageId);
+                    if (imageIndex == -1) {
+                      return SizedBox.shrink(
+                          key: ValueKey('missing-$blockKey'));
+                    }
+                    final image = section.inlineImages[imageIndex];
+                    return KeyedSubtree(
+                      key: ValueKey('image-${image.id}'),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          ReorderableDragStartListener(
+                            index: section.blockOrder.indexOf(blockKey),
+                            child: const Padding(
+                              padding: EdgeInsets.only(top: 12, right: 8),
+                              child: Icon(
+                                Icons.drag_handle,
+                                size: 18,
+                                color: Color(0xFF9CA3AF),
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            child: ImageWidget(
+                              image: image,
+                              onRemove: () => onRemoveInlineImage(imageId),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return SizedBox.shrink(key: ValueKey('unknown-$blockKey'));
+                }).toList(),
+              ),
             ],
           ),
         ),

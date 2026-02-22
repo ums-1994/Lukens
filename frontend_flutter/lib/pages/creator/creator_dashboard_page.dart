@@ -1,5 +1,6 @@
 // ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 
@@ -37,24 +38,6 @@ class _DashboardPageState extends State<DashboardPage>
 
   Timer? _notificationsTimer;
 
-  Future<void> _sendToFinance(Map<String, dynamic> proposal) async {
-    final id = proposal['id']?.toString();
-    if (id == null || id.isEmpty) return;
-
-    try {
-      final app = context.read<AppState>();
-      await app.updateProposalStatus(id, 'Pending Finance');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Sent to Finance.')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to send to Finance.')),
-      );
-    }
-  }
   @override
   void initState() {
     super.initState();
@@ -74,7 +57,6 @@ class _DashboardPageState extends State<DashboardPage>
         app.authToken = AuthService.token;
         app.currentUser = AuthService.currentUser;
       }
-      app.setCurrentNavLabel('Dashboard');
       await _refreshData();
       await _loadRiskData(app);
 
@@ -381,21 +363,6 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  Widget _buildThemeToggleButton(AppState app) {
-    return SizedBox(
-      width: 44,
-      height: 44,
-      child: IconButton(
-        tooltip: app.isLightMode ? 'Switch to dark mode' : 'Switch to light mode',
-        icon: Icon(
-          app.isLightMode ? Icons.dark_mode : Icons.light_mode,
-          color: Colors.white,
-        ),
-        onPressed: app.toggleThemeMode,
-      ),
-    );
-  }
-
   void _showNotificationsSheet(AppState app) {
     showModalBottomSheet(
       context: context,
@@ -632,7 +599,7 @@ class _DashboardPageState extends State<DashboardPage>
           return decoded.cast<String, dynamic>();
         }
       } catch (e) {
-        debugPrint('âš ï¸ Failed to decode notification metadata: $e');
+        debugPrint('⚠️ Failed to decode notification metadata: $e');
       }
     }
     return <String, dynamic>{};
@@ -1577,7 +1544,7 @@ class _DashboardPageState extends State<DashboardPage>
       try {
         await app.markNotificationRead(notificationId);
       } catch (e) {
-        debugPrint('âš ï¸ Failed to mark notification as read: $e');
+        debugPrint('⚠️ Failed to mark notification as read: $e');
       }
     }
 
@@ -1644,8 +1611,8 @@ class _DashboardPageState extends State<DashboardPage>
     if (_riskItems.isEmpty) {
       return GlassContainer(
         borderRadius: 24,
-        gradientStart: PremiumTheme.teal.withValues(alpha: 0.3),
-        gradientEnd: PremiumTheme.info.withValues(alpha: 0.2),
+        gradientStart: PremiumTheme.teal.withOpacity(0.3),
+        gradientEnd: PremiumTheme.info.withOpacity(0.2),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1654,7 +1621,7 @@ class _DashboardPageState extends State<DashboardPage>
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.teal.withValues(alpha: 0.2),
+                    color: PremiumTheme.teal.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(
@@ -1700,7 +1667,7 @@ class _DashboardPageState extends State<DashboardPage>
                     Icon(
                       Icons.verified_user,
                       size: 48,
-                      color: PremiumTheme.teal.withValues(alpha: 0.7),
+                      color: PremiumTheme.teal.withOpacity(0.7),
                     ),
                     const SizedBox(height: 12),
                     Text(
@@ -1726,8 +1693,8 @@ class _DashboardPageState extends State<DashboardPage>
 
     return GlassContainer(
       borderRadius: 24,
-      gradientStart: PremiumTheme.orange.withValues(alpha: 0.3),
-      gradientEnd: PremiumTheme.error.withValues(alpha: 0.2),
+      gradientStart: PremiumTheme.orange.withOpacity(0.3),
+      gradientEnd: PremiumTheme.error.withOpacity(0.2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1736,7 +1703,7 @@ class _DashboardPageState extends State<DashboardPage>
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: PremiumTheme.orange.withValues(alpha: 0.2),
+                  color: PremiumTheme.orange.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
@@ -1768,7 +1735,7 @@ class _DashboardPageState extends State<DashboardPage>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.orange.withValues(alpha: 0.2),
+                    color: PremiumTheme.orange.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -1865,13 +1832,13 @@ class _DashboardPageState extends State<DashboardPage>
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: severity == 'high'
-                      ? PremiumTheme.error.withValues(alpha: 0.2)
-                      : PremiumTheme.orange.withValues(alpha: 0.2),
+                      ? PremiumTheme.error.withOpacity(0.2)
+                      : PremiumTheme.orange.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: severity == 'high'
-                        ? PremiumTheme.error.withValues(alpha: 0.3)
-                        : PremiumTheme.orange.withValues(alpha: 0.3),
+                        ? PremiumTheme.error.withOpacity(0.3)
+                        : PremiumTheme.orange.withOpacity(0.3),
                     width: 1,
                   ),
                 ),
@@ -2068,8 +2035,8 @@ class _DashboardPageState extends State<DashboardPage>
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
                   color: isActive
-                      ? Colors.white.withValues(alpha: 0.3)
-                      : PremiumTheme.teal.withValues(alpha: 0.2),
+                      ? Colors.white.withOpacity(0.3)
+                      : PremiumTheme.teal.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -2093,12 +2060,6 @@ class _DashboardPageState extends State<DashboardPage>
     final title = proposal['title'] ?? 'Untitled';
     final subtitle = 'Last modified: ${_formatDate(proposal['updated_at'])}';
     final isSentToClient = status.toLowerCase() == 'sent to client';
-    final lowerStatus = status.toLowerCase().trim();
-    final canSendToFinance = lowerStatus != 'pending finance' &&
-        lowerStatus != 'finance in progress' &&
-        lowerStatus != 'pending approval' &&
-        lowerStatus != 'sent to client' &&
-        lowerStatus != 'signed';
     final clientName = proposal['client_name'] ?? proposal['client'] ?? '';
 
     return Container(
@@ -2124,10 +2085,10 @@ class _DashboardPageState extends State<DashboardPage>
                     width: 40,
                     height: 40,
                     decoration: BoxDecoration(
-                      color: PremiumTheme.info.withValues(alpha: 0.2),
+                      color: PremiumTheme.info.withOpacity(0.2),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: PremiumTheme.info.withValues(alpha: 0.3),
+                        color: PremiumTheme.info.withOpacity(0.3),
                         width: 1,
                       ),
                     ),
@@ -2167,7 +2128,7 @@ class _DashboardPageState extends State<DashboardPage>
                           if (isSentToClient) ...[
                             const SizedBox(width: 8),
                             Text(
-                              'â€¢',
+                              '•',
                               style: PremiumTheme.bodyMedium.copyWith(
                                 fontSize: 13,
                               ),
@@ -2212,10 +2173,10 @@ class _DashboardPageState extends State<DashboardPage>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.2),
+                  color: statusColor.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: statusColor.withValues(alpha: 0.3),
+                    color: statusColor.withOpacity(0.3),
                     width: 1,
                   ),
                 ),
@@ -2228,17 +2189,6 @@ class _DashboardPageState extends State<DashboardPage>
                   ),
                 ),
               ),
-              if (canSendToFinance) ...[
-                const SizedBox(width: 8),
-                TextButton.icon(
-                  onPressed: () => _sendToFinance(proposal),
-                  icon: const Icon(Icons.send, size: 18),
-                  label: const Text('Send to Finance'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: PremiumTheme.teal,
-                  ),
-                ),
-              ],
               if (isSentToClient) ...[
                 const SizedBox(width: 8),
                 IconButton(

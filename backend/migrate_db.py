@@ -10,80 +10,12 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-def _build_db_config_from_env():
-    """
-    Build a psycopg2.connect()-compatible config from either:
-    - DATABASE_URL (preferred), or
-    - DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD
-
-    This keeps migrations consistent with the runtime app, and prevents Render
-    deployments from accidentally falling back to localhost when only DATABASE_URL
-    is set.
-    """
-    database_url = os.getenv("DATABASE_URL")
-    if database_url:
-        from urllib.parse import urlparse, parse_qs
-
-        parsed = urlparse(database_url)
-        scheme = (parsed.scheme or "").lower()
-        if scheme.startswith("postgresql+"):
-            scheme = "postgresql"
-        if scheme not in ("postgres", "postgresql"):
-            raise ValueError(
-                "DATABASE_URL must start with postgres:// or postgresql:// "
-                "(optionally with a driver like postgresql+psycopg2://)"
-            )
-
-        db_config = {
-            "host": parsed.hostname,
-            "database": (parsed.path or "").lstrip("/"),
-            "user": parsed.username,
-            "password": parsed.password,
-            "port": parsed.port or 5432,
-        }
-
-        query = parse_qs(parsed.query or "")
-        sslmode_from_url = (query.get("sslmode") or [None])[0]
-
-        ssl_mode = sslmode_from_url or os.getenv("DB_SSLMODE")
-        if not ssl_mode:
-            if os.getenv("DB_REQUIRE_SSL", "false").lower() == "true":
-                ssl_mode = "require"
-            elif db_config.get("host") and "render.com" in (db_config["host"] or "").lower():
-                ssl_mode = "require"
-            else:
-                ssl_mode = "prefer"
-
-        if ssl_mode:
-            db_config["sslmode"] = ssl_mode
-
-        missing = [k for k in ("host", "database", "user") if not db_config.get(k)]
-        if missing:
-            raise ValueError(f"DATABASE_URL missing required parts: {', '.join(missing)}")
-
-        return db_config
-
-    return {
-        "host": os.getenv("DB_HOST", "localhost"),
-        "port": int(os.getenv("DB_PORT", "5432")),
-        "database": os.getenv("DB_NAME", "proposal_sow_builder"),
-        "user": os.getenv("DB_USER", "postgres"),
-        "password": os.getenv("DB_PASSWORD", ""),
-        "sslmode": os.getenv("DB_SSLMODE", "prefer"),
-    }
-
 def run_migration():
     """Run the database schema migration"""
     print("=" * 60)
     print("🔄 RUNNING DATABASE MIGRATION")
     print("=" * 60)
-    db_config = _build_db_config_from_env()
-    print(
-        "🔗 Connecting to: "
-        f"{db_config.get('host')}:{db_config.get('port')}/{db_config.get('database')}"
-    )
-    if db_config.get("sslmode"):
-        print(f"🔒 SSL mode: {db_config.get('sslmode')}")
+    print(f"🔗 Connecting to: {os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'proposal_sow_builder')}")
     
     try:
         # Import the schema initialization function
@@ -115,9 +47,15 @@ def check_tables():
     """Quick check of tables after migration"""
     try:
         import psycopg2
-
-        db_config = _build_db_config_from_env()
-        conn = psycopg2.connect(**db_config)
+        
+        conn = psycopg2.connect(
+            host=os.getenv('DB_HOST', 'localhost'),
+            port=os.getenv('DB_PORT', '5432'),
+            database=os.getenv('DB_NAME', 'proposal_sow_builder'),
+            user=os.getenv('DB_USER', 'postgres'),
+            password=os.getenv('DB_PASSWORD', ''),
+            sslmode=os.getenv('DB_SSLMODE', 'prefer')
+        )
         
         cursor = conn.cursor()
         cursor.execute("""

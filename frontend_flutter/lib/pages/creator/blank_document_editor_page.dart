@@ -837,6 +837,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         }
                       }).toList() ??
                       [],
+                  blockOrder: (sectionData['blockOrder'] as List<dynamic>?)
+                      ?.map((e) => e.toString())
+                      .toList(),
                 );
                 _sections.add(newSection);
 
@@ -1240,13 +1243,35 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     final original = _sections[index];
 
-    final duplicatedTables = original.tables
-        .map((table) => DocumentTable.fromJson(table.toJson()))
-        .toList();
+    final duplicatedTables = <DocumentTable>[];
+    final tableIdMap = <String, String>{};
+    for (final table in original.tables) {
+      final duplicated = DocumentTable.fromJson(table.toJson());
+      duplicatedTables.add(duplicated);
+      tableIdMap[table.id] = duplicated.id;
+    }
 
-    final duplicatedImages = original.inlineImages
-        .map((img) => InlineImage.fromJson(img.toJson()))
-        .toList();
+    final duplicatedImages = <InlineImage>[];
+    final imageIdMap = <String, String>{};
+    for (final img in original.inlineImages) {
+      final duplicated = InlineImage.fromJson(img.toJson());
+      duplicatedImages.add(duplicated);
+      imageIdMap[img.id] = duplicated.id;
+    }
+
+    final duplicatedBlockOrder = original.blockOrder.map((k) {
+      if (k.startsWith('table:')) {
+        final oldId = k.substring('table:'.length);
+        final newId = tableIdMap[oldId];
+        return newId == null ? k : 'table:$newId';
+      }
+      if (k.startsWith('image:')) {
+        final oldId = k.substring('image:'.length);
+        final newId = imageIdMap[oldId];
+        return newId == null ? k : 'image:$newId';
+      }
+      return k;
+    }).toList();
 
     final newSection = DocumentSection(
       title: '${original.title} (Copy)',
@@ -1257,6 +1282,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       isCoverPage: original.isCoverPage,
       inlineImages: duplicatedImages,
       tables: duplicatedTables,
+      blockOrder: duplicatedBlockOrder,
     );
 
     setState(() {
@@ -1596,6 +1622,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               currentSection.tables.insertAll(0, tablesToInsert);
             } else {
               currentSection.tables.addAll(tablesToInsert);
+            }
+
+            for (final t in tablesToInsert) {
+              final key = 'table:${t.id}';
+              if (!currentSection.blockOrder.contains(key)) {
+                currentSection.blockOrder.add(key);
+              }
             }
           }
         });
@@ -2750,7 +2783,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           .map((section) => {
                 'title': section.titleController.text,
                 'content': section.controller.text,
-                'backgroundColor': section.backgroundColor.value,
+                'backgroundColor': section.backgroundColor.value.toString(),
                 'backgroundImageUrl': section.backgroundImageUrl,
                 'sectionType': section.sectionType,
                 'isCoverPage': section.isCoverPage,
@@ -2758,6 +2791,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     section.inlineImages.map((img) => img.toJson()).toList(),
                 'tables':
                     section.tables.map((table) => table.toJson()).toList(),
+                'blockOrder': section.blockOrder,
               })
           .toList(),
       'metadata': {
@@ -3012,7 +3046,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           .map((section) => {
                 'title': section.titleController.text,
                 'content': section.controller.text,
-                'backgroundColor': section.backgroundColor.value,
+                'backgroundColor': section.backgroundColor.value.toString(),
                 'backgroundImageUrl': section.backgroundImageUrl,
                 'sectionType': section.sectionType,
                 'isCoverPage': section.isCoverPage,
@@ -3020,6 +3054,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     section.inlineImages.map((img) => img.toJson()).toList(),
                 'tables':
                     section.tables.map((table) => table.toJson()).toList(),
+                'blockOrder': section.blockOrder,
               })
           .toList(),
       'change_description': changeDescription,
@@ -3086,7 +3121,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             .toString(),
         content: sectionData['content'] ?? '',
         backgroundColor: sectionData['backgroundColor'] != null
-            ? Color(sectionData['backgroundColor'] as int)
+            ? Color(int.parse(sectionData['backgroundColor']))
             : Colors.white,
         backgroundImageUrl: sectionData['backgroundImageUrl'] as String?,
         sectionType: sectionTypeRaw,
@@ -3106,6 +3141,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               }
             }).toList() ??
             [],
+        blockOrder: (sectionData['blockOrder'] as List<dynamic>?)
+            ?.map((e) => e.toString())
+            .toList(),
       );
       _sections.add(newSection);
     }
@@ -4690,42 +4728,67 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                     SizedBox(
                       width: 80,
-                      child: TextField(
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                        onChanged: (value) {
-                          // Price value input - ready for future use
-                          setState(() {});
-                        },
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                        decoration: InputDecoration(
-                          hintText: '0.00',
-                          hintStyle: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[400],
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide:
-                                BorderSide(color: Colors.grey[300]!, width: 1),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF00BCD4),
-                              width: 1,
+                      child: isFinanceRole
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: Colors.grey[300]!,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Text(
+                                _computePricingTotal().toStringAsFixed(2),
+                                textAlign: TextAlign.left,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            )
+                          : TextField(
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              onChanged: (value) {
+                                // Price value input - ready for future use
+                                setState(() {});
+                              },
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1A1A),
+                              ),
+                              decoration: InputDecoration(
+                                hintText: '0.00',
+                                hintStyle: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[400],
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                  borderSide: BorderSide(
+                                      color: Colors.grey[300]!, width: 1),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                  borderSide: const BorderSide(
+                                    color: Color(0xFF00BCD4),
+                                    width: 1,
+                                  ),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 8,
+                                ),
+                              ),
                             ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
                     ),
                   ],
                 ),
@@ -4746,7 +4809,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       border: Border.all(
                         color: _isSaving
                             ? Colors.blue
-                            : (_hasUnsavedChanges ? Colors.orange : Colors.green),
+                            : (_hasUnsavedChanges
+                                ? Colors.orange
+                                : Colors.green),
                         width: 1,
                       ),
                     ),
@@ -4759,8 +4824,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             height: 14,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.blue),
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.blue),
                             ),
                           )
                         else
@@ -4779,7 +4844,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               ? 'Saving...'
                               : (_hasUnsavedChanges
                                   ? 'Unsaved changes'
-                                  : (_lastSaved == null ? 'Not Saved' : 'Saved')),
+                                  : (_lastSaved == null
+                                      ? 'Not Saved'
+                                      : 'Saved')),
                           style: TextStyle(
                             fontSize: 12,
                             color: _isSaving
@@ -4803,8 +4870,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFF00BCD4)),
                     foregroundColor: const Color(0xFF00BCD4),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(4),
                     ),
@@ -4844,8 +4911,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                     foregroundColor:
                         _isCollaborating ? Colors.green : Colors.black87,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(4),
                     ),
@@ -4870,8 +4937,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFF00BCD4)),
                     foregroundColor: const Color(0xFF00BCD4),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(4),
                     ),
@@ -4938,8 +5005,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 // Status Badge
                 if (_proposalStatus != null && _proposalStatus != 'draft')
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: _getStatusColor(_proposalStatus!),
                       borderRadius: BorderRadius.circular(12),
@@ -4993,8 +5060,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   label: const Text('Preview'),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Colors.grey),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(4),
                     ),
@@ -5548,14 +5615,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       onDelete: isFinanceRole ? () {} : () => _deleteSection(index),
       getContentTextStyle: _getContentTextStyle,
       getTextAlignment: _getTextAlignment,
-      onReorderTables: (int oldIndex, int newIndex) {
+      onReorderBlocks: (int oldIndex, int newIndex) {
         if (isFinanceRole) {
           setState(() {
             if (newIndex > oldIndex) {
               newIndex -= 1;
             }
-            final table = section.tables.removeAt(oldIndex);
-            section.tables.insert(newIndex, table);
+            if (oldIndex < 0 || oldIndex >= section.blockOrder.length) return;
+            if (newIndex < 0 || newIndex > section.blockOrder.length) return;
+            final item = section.blockOrder.removeAt(oldIndex);
+            section.blockOrder.insert(newIndex, item);
           });
         }
       },
@@ -5577,10 +5646,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           table,
         );
       },
-      onRemoveInlineImage: (imageIndex) {
+      onRemoveInlineImage: (imageId) {
         if (isFinanceRole) return;
         setState(() {
-          _sections[index].inlineImages.removeAt(imageIndex);
+          final imgIndex = _sections[index]
+              .inlineImages
+              .indexWhere((img) => img.id == imageId);
+          if (imgIndex == -1) return;
+          _sections[index].inlineImages.removeAt(imgIndex);
+          _sections[index].blockOrder.removeWhere((k) => k == 'image:$imageId');
         });
       },
     );
@@ -5679,14 +5753,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   child: InkWell(
                     onTap: () {
                       setState(() {
-                        _sections[sectionIndex]
+                        if (imageIndex < 0 ||
+                            imageIndex >=
+                                _sections[sectionIndex].inlineImages.length) {
+                          return;
+                        }
+                        final img = _sections[sectionIndex]
                             .inlineImages
                             .removeAt(imageIndex);
+                        _sections[sectionIndex]
+                            .blockOrder
+                            .removeWhere((k) => k == 'image:${img.id}');
                       });
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Image removed'),
-                          backgroundColor: Colors.orange,
+                          backgroundColor: Colors.green,
                         ),
                       );
                     },
@@ -5924,7 +6006,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           size: 18, color: Colors.red),
                       onPressed: () {
                         setState(() {
-                          _sections[sectionIndex].tables.removeAt(tableIndex);
+                          final table = _sections[sectionIndex]
+                              .tables
+                              .removeAt(tableIndex);
+                          _sections[sectionIndex]
+                              .blockOrder
+                              .removeWhere((k) => k == 'table:${table.id}');
                         });
                       },
                       tooltip: 'Delete Table',
@@ -6511,7 +6598,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         section.backgroundColor = Colors.white;
       } else if (choice == 'inline') {
         // Add as inline image
-        section.inlineImages.add(InlineImage(url: imageUrl));
+        final img = InlineImage(url: imageUrl);
+        section.inlineImages.add(img);
+        final key = 'image:${img.id}';
+        if (!section.blockOrder.contains(key)) {
+          section.blockOrder.add(key);
+        }
       }
     });
 
@@ -6580,9 +6672,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     setState(() {
       final section = _sections[_selectedSectionIndex];
       if (tableType == 'price') {
-        section.tables.add(DocumentTable.priceTable());
+        final t = DocumentTable.priceTable();
+        section.tables.add(t);
+        final key = 'table:${t.id}';
+        if (!section.blockOrder.contains(key)) {
+          section.blockOrder.add(key);
+        }
       } else {
-        section.tables.add(DocumentTable());
+        final t = DocumentTable();
+        section.tables.add(t);
+        final key = 'table:${t.id}';
+        if (!section.blockOrder.contains(key)) {
+          section.blockOrder.add(key);
+        }
       }
     });
 

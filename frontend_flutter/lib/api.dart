@@ -3,26 +3,43 @@
 import 'dart:convert';
 import 'dart:js' as js;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:web/web.dart' as web;
 import 'services/auth_service.dart';
 import 'config/api_config.dart';
 
 // Get API URL from JavaScript config or use AuthService.baseUrl/Render default
 String get baseUrl {
-  // Align with AuthService: always use Render backend by default so
-  // authentication and uploads share the same token/host
-  return AuthService.baseUrl;
-}
-
-String get _apiBaseUrl => baseUrl;
-
-class AppState extends ChangeNotifier {
-  AppState() {
-    _loadThemeMode();
+  // Prefer explicit config injected into the web page when available
+  if (kIsWeb) {
+    try {
+      // Try to get from window.APP_CONFIG.API_URL
+      final config = js.context['APP_CONFIG'];
+      if (config != null) {
+        final configObj = config as js.JsObject;
+        final apiUrl = configObj['API_URL'];
+        if (apiUrl != null && apiUrl.toString().isNotEmpty) {
+          return apiUrl.toString().replaceAll('"', '');
+        }
+      }
+      // Fallback: try window.REACT_APP_API_URL
+      final envUrl = js.context['REACT_APP_API_URL'];
+      if (envUrl != null && envUrl.toString().isNotEmpty) {
+        return envUrl.toString().replaceAll('"', '');
+      }
+    } catch (e) {
+      print('⚠️ Could not read API URL from config: $e');
+    }
   }
 
+  // Default URLs based on environment
+  if (kDebugMode) {
+    return 'https://lukens-wp8w.onrender.com';
+  }
+  // Production default (Render backend URL)
+  return 'https://lukens-wp8w.onrender.com';
+}
+
+class AppState extends ChangeNotifier {
   List<dynamic> templates = [];
   List<dynamic> contentBlocks = [];
   List<dynamic> proposals = [];
@@ -31,57 +48,7 @@ class AppState extends ChangeNotifier {
   List<dynamic> notifications = [];
   int unreadNotifications = 0;
 
-  bool isSidebarCollapsed = true;
-  String currentNavLabel = 'Dashboard';
-
-  ThemeMode themeMode = ThemeMode.dark;
-
-  bool get isLightMode => themeMode == ThemeMode.light;
-
-  void toggleThemeMode() {
-    themeMode = isLightMode ? ThemeMode.dark : ThemeMode.light;
-    _persistThemeMode();
-    notifyListeners();
-  }
-
-  static const String _themeModeStorageKey = 'lukens_theme_mode';
-
-  void _loadThemeMode() {
-    if (!kIsWeb) return;
-    try {
-      final stored = web.window.localStorage.getItem(_themeModeStorageKey);
-      if (stored == 'light') {
-        themeMode = ThemeMode.light;
-      } else if (stored == 'dark') {
-        themeMode = ThemeMode.dark;
-      }
-    } catch (_) {
-      // Ignore storage errors
-    }
-  }
-
-  void _persistThemeMode() {
-    if (!kIsWeb) return;
-    try {
-      web.window.localStorage.setItem(
-        _themeModeStorageKey,
-        themeMode == ThemeMode.light ? 'light' : 'dark',
-      );
-    } catch (_) {
-      // Ignore storage errors
-    }
-  }
-
-  void toggleSidebar() {
-    isSidebarCollapsed = !isSidebarCollapsed;
-    notifyListeners();
-  }
-
-  void setCurrentNavLabel(String label) {
-    if (currentNavLabel == label) return;
-    currentNavLabel = label;
-    notifyListeners();
-  }
+  String get _apiBaseUrl => '$baseUrl/api';
 
   Future<void> init() async {
     // IMPORTANT: Sync token from AuthService on startup
@@ -113,41 +80,6 @@ class AppState extends ChangeNotifier {
       headers["Authorization"] = "Bearer $token";
     }
     return headers;
-  }
-
-  String _formatGovernanceError(Map<String, dynamic> data,
-      {String fallback = 'Request blocked'}) {
-    try {
-      final govRaw = data['governance'];
-      if (govRaw is! Map) {
-        return (data['detail'] ?? data['message'] ?? fallback).toString();
-      }
-
-      final gov = govRaw.cast<String, dynamic>();
-      final score = gov['readiness_score'];
-      final missingRequired = (gov['missing_required'] is List)
-          ? (gov['missing_required'] as List)
-          : const [];
-      final blockReasons = (gov['block_reasons'] is List)
-          ? (gov['block_reasons'] as List)
-          : const [];
-
-      final parts = <String>[];
-      parts.add('Blocked by governance');
-      if (score != null) {
-        parts.add('Readiness: ${score.toString()}%');
-      }
-      if (missingRequired.isNotEmpty) {
-        parts.add('Missing required: ${missingRequired.take(6).join(', ')}');
-      }
-      if (blockReasons.isNotEmpty) {
-        parts.add('Reasons: ${blockReasons.take(3).join(' • ')}');
-      }
-
-      return parts.join('\n');
-    } catch (_) {
-      return (data['detail'] ?? data['message'] ?? fallback).toString();
-    }
   }
 
   // Headers for multipart/form-data requests (file uploads)
@@ -535,7 +467,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> createProposal(String title, String client,
-      {String? templateKey, dynamic clientId, double? budget}) async {
+      {String? templateKey, dynamic clientId}) async {
     try {
       final r = await http.post(
         Uri.parse("$baseUrl/api/proposals"),
@@ -545,7 +477,6 @@ class AppState extends ChangeNotifier {
           "client": client,
           "template_key": templateKey,
           if (clientId != null) "client_id": clientId,
-          if (budget != null) "budget": budget,
         }),
       );
       final p = jsonDecode(r.body);
@@ -579,10 +510,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> updateProposalStatus(String proposalId, String status) async {
     try {
-      http.Response r;
-
-      // Prefer the canonical API route (registered under /api)
-      r = await http.patch(
+      final r = await http.patch(
         Uri.parse("$baseUrl/api/proposals/$proposalId/status"),
         headers: _headers,
         body: jsonEncode({"status": status}),
@@ -718,7 +646,8 @@ class AppState extends ChangeNotifier {
           if (region != null && region.isNotEmpty) 'region': region,
           if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
           if (resolvedStage != null) 'stage': resolvedStage,
           if (stageFilter != null && stageFilter.isNotEmpty)
             'stage_filter': stageFilter,
@@ -837,7 +766,8 @@ class AppState extends ChangeNotifier {
         if (region != null && region.isNotEmpty) 'region': region,
         if (industry != null && industry.isNotEmpty) 'industry': industry,
         if (scope != null && scope.isNotEmpty) 'scope': scope,
-        if (department != null && department.isNotEmpty) 'department': department,
+        if (department != null && department.isNotEmpty)
+          'department': department,
         if (limit != null) 'limit': limit.toString(),
       };
 
@@ -880,7 +810,8 @@ class AppState extends ChangeNotifier {
         if (region != null && region.isNotEmpty) 'region': region,
         if (industry != null && industry.isNotEmpty) 'industry': industry,
         if (scope != null && scope.isNotEmpty) 'scope': scope,
-        if (department != null && department.isNotEmpty) 'department': department,
+        if (department != null && department.isNotEmpty)
+          'department': department,
       };
 
       final analyticsUri = Uri.parse("$baseUrl/api/analytics/risk-gate-summary")
@@ -969,11 +900,7 @@ class AppState extends ChangeNotifier {
       );
       if (r.statusCode >= 400) {
         final data = jsonDecode(r.body);
-        if (data is Map) {
-          return _formatGovernanceError(data.cast<String, dynamic>(),
-              fallback: 'Approval failed');
-        }
-        return "Approval failed";
+        return data["detail"] ?? "Approval failed";
       }
       await fetchProposals();
       await fetchDashboard();
@@ -1012,11 +939,7 @@ class AppState extends ChangeNotifier {
       );
       if (r.statusCode >= 400) {
         final data = jsonDecode(r.body);
-        if (data is Map) {
-          return _formatGovernanceError(data.cast<String, dynamic>(),
-              fallback: 'Send to client failed');
-        }
-        return "Send to client failed";
+        return data["detail"] ?? "Send to client failed";
       }
       await fetchProposals();
       await fetchDashboard();
@@ -1187,7 +1110,7 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> clientDashboardStats = {};
 
   Future<void> fetchClientProposals() async {
-    final r = await http.get(Uri.parse("$baseUrl/api/client/proposals"),
+    final r = await http.get(Uri.parse("$baseUrl/client/proposals"),
         headers: _headers);
     clientProposals = jsonDecode(r.body);
     notifyListeners();
@@ -1201,7 +1124,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, dynamic>?> getClientProposal(String proposalId) async {
-    final r = await http.get(Uri.parse("$baseUrl/api/client/proposals/$proposalId"),
+    final r = await http.get(Uri.parse("$baseUrl/client/proposals/$proposalId"),
         headers: _headers);
     if (r.statusCode == 200) {
       return jsonDecode(r.body);
@@ -1271,7 +1194,7 @@ class AppState extends ChangeNotifier {
   Future<String?> clientSignProposal(
       String proposalId, String signerName) async {
     final r = await http.post(
-      Uri.parse("$baseUrl/api/client/proposals/$proposalId/sign"),
+      Uri.parse("$baseUrl/client/proposals/$proposalId/sign"),
       headers: _headers,
       body: jsonEncode({"signer_name": signerName}),
     );
@@ -1585,10 +1508,6 @@ class AppState extends ChangeNotifier {
     proposals = [];
     currentProposal = null;
     dashboardCounts = {};
-    _isSidebarCollapsed = false;
-    _currentNavLabel = 'Dashboard';
-    _isAdminSidebarCollapsed = true;
-    _adminNavLabel = 'Dashboard';
 
     // IMPORTANT: Sync logout with AuthService
     AuthService.logout();
@@ -1599,13 +1518,9 @@ class AppState extends ChangeNotifier {
   // Navigation and sidebar state management
   bool _isSidebarCollapsed = false;
   String _currentNavLabel = 'Dashboard';
-  bool _isAdminSidebarCollapsed = true;
-  String _adminNavLabel = 'Dashboard';
 
   bool get isSidebarCollapsed => _isSidebarCollapsed;
   String get currentNavLabel => _currentNavLabel;
-  bool get isAdminSidebarCollapsed => _isAdminSidebarCollapsed;
-  String get adminNavLabel => _adminNavLabel;
 
   void toggleSidebar() {
     _isSidebarCollapsed = !_isSidebarCollapsed;
@@ -1614,23 +1529,6 @@ class AppState extends ChangeNotifier {
 
   void setCurrentNavLabel(String label) {
     _currentNavLabel = label;
-    notifyListeners();
-  }
-
-  void toggleAdminSidebar() {
-    _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed;
-    notifyListeners();
-  }
-
-  void setAdminSidebarCollapsed(bool collapsed) {
-    if (_isAdminSidebarCollapsed == collapsed) return;
-    _isAdminSidebarCollapsed = collapsed;
-    notifyListeners();
-  }
-
-  void setAdminNavLabel(String label) {
-    if (_adminNavLabel == label) return;
-    _adminNavLabel = label;
     notifyListeners();
   }
 }
