@@ -1,22 +1,29 @@
+export 'analytics_page_backup.dart';
+
+/*
+// This file intentionally re-exports the stable implementation.
+//
+// The previous in-file implementation had become corrupted (parse errors),
+// which caused cascading analyzer errors (including "missing build()").
+export 'analytics_page_backup.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:math' as math;
 import 'dart:ui';
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-import 'package:web/web.dart' as web;
-
+import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../services/auth_service.dart';
-import '../../services/asset_service.dart';
+import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/app_side_nav.dart';
 import '../../widgets/custom_scrollbar.dart';
-import '../../services/role_service.dart';
+import '../../widgets/app_side_nav.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -42,11 +49,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   final TextEditingController _globalOwnerCtrl = TextEditingController();
   final TextEditingController _globalProposalTypeCtrl = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  static const String _currencySymbol = 'R';
-  final NumberFormat _currencyFormatter =
-      NumberFormat.currency(symbol: _currencySymbol, decimalDigits: 0);
-  final NumberFormat _compactCurrencyFormatter =
-      NumberFormat.compactCurrency(symbol: _currencySymbol, decimalDigits: 1);
 
   @override
   void initState() {
@@ -2833,25 +2835,142 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             Expanded(
               child: Row(
                 children: [
-                  Consumer<AppState>(
-                    builder: (context, app, _) {
-                      final user = AuthService.currentUser ?? app.currentUser;
-                      final role =
-                          (user?['role'] ?? '').toString().toLowerCase().trim();
-                      final isAdmin = role == 'admin' || role == 'ceo';
-                      return AppSideNav(
-                        isCollapsed: app.isSidebarCollapsed,
-                        currentLabel: app.currentNavLabel,
-                        isAdmin: isAdmin,
-                        isLightMode: app.isLightMode,
-                        onToggleThemeMode: app.toggleThemeMode,
-                        onToggle: app.toggleSidebar,
-                        onSelect: (label) {
-                          app.setCurrentNavLabel(label);
-                          _navigateToPage(context, label);
-                        },
-                      );
-                    },
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    width: _isSidebarCollapsed ? 90.0 : 250.0,
+                    color: const Color(0xFF34495E),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 16),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: InkWell(
+                              onTap: _toggleSidebar,
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2C3E50),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: _isSidebarCollapsed
+                                      ? MainAxisAlignment.center
+                                      : MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    if (!_isSidebarCollapsed)
+                                      const Padding(
+                                        padding: EdgeInsets.symmetric(
+                                            horizontal: 12),
+                                        child: Text(
+                                          'Navigation',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: _isSidebarCollapsed ? 0 : 8,
+                                      ),
+                                      child: Icon(
+                                        _isSidebarCollapsed
+                                            ? Icons.keyboard_arrow_right
+                                            : Icons.keyboard_arrow_left,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (isAdminUser) ...[
+                            _buildNavItem(
+                              'Dashboard',
+                              'assets/images/Dahboard.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Approvals',
+                              'assets/images/Time Allocation_Approval_Blue.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Analytics',
+                              'assets/images/analytics.png',
+                              true,
+                              context,
+                            ),
+                          ] else ...[
+                            _buildNavItem(
+                              'Dashboard',
+                              'assets/images/Dahboard.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'My Proposals',
+                              'assets/images/My_Proposals.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Templates',
+                              'assets/images/content_library.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Content Library',
+                              'assets/images/content_library.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Client Management',
+                              'assets/images/collaborations.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Approved Proposals',
+                              'assets/images/Time Allocation_Approval_Blue.png',
+                              false,
+                              context,
+                            ),
+                            _buildNavItem(
+                              'Analytics (My Pipeline)',
+                              'assets/images/analytics.png',
+                              true,
+                              context,
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          if (!_isSidebarCollapsed)
+                            Container(
+                              margin:
+                                  const EdgeInsets.symmetric(horizontal: 16),
+                              height: 1,
+                              color: const Color(0xFF2C3E50),
+                            ),
+                          const SizedBox(height: 12),
+                          _buildNavItem(
+                            'Logout',
+                            'assets/images/Logout_KhonoBuzz.png',
+                            false,
+                            context,
+                          ),
+                          const SizedBox(height: 20),
+                        ],
+                      ),
+                    ),
                   ),
                   Expanded(
                     child: CustomScrollbar(
@@ -3239,6 +3358,56 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
+  Widget _buildHeroSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade400, Colors.blue.shade600],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.analytics,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Analytics Dashboard',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              if (isActive)
+                const Icon(Icons.arrow_forward_ios,
+                    size: 12, color: Colors.white),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildGlassDropdown() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
@@ -3284,46 +3453,39 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
-  Widget _buildGlassButton(
-      String label, IconData icon, VoidCallback onPressed) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            border: Border.all(color: const Color(0x33FFFFFF)),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onPressed,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                child: Row(
-                  children: [
-                    Icon(icon, color: Colors.white, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
+  Widget _buildAnalyticsContent() {
+    if (_proposals.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              Icons.analytics_outlined,
+              size: 64,
+              color: Colors.white54,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No proposal data available',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          ),
+            const SizedBox(height: 8),
+            const Text(
+              'Proposal data will appear here once available.',
+              style: TextStyle(color: Colors.white54, fontSize: 14),
+            ),
+          ],
         ),
-      ),
-    );
-  }
+      );
+    }
 
   Widget _buildGlassMetricCard(
     String title,
@@ -4214,122 +4376,24 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
-      case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
-        break;
-      case 'Approvals':
-        Navigator.pushReplacementNamed(context, '/admin_approvals');
-        break;
-      case 'My Proposals':
-        Navigator.pushReplacementNamed(context, '/proposals');
-        break;
-      case 'Templates':
-        Navigator.pushReplacementNamed(context, '/templates');
-        break;
-      case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/client_management');
-        break;
-      case 'Approved Proposals':
-        Navigator.pushReplacementNamed(context, '/approved_proposals');
-        break;
-      case 'Analytics (My Pipeline)':
-        break;
-      case 'Logout':
-        Navigator.pushReplacementNamed(context, '/login');
-        break;
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'signed':
+      case 'approved':
+        return Colors.green;
+      case 'in review':
+      case 'pending':
+        return Colors.orange;
+      case 'draft':
+        return Colors.grey;
+      default:
+        return Colors.blue;
     }
   }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return 'No date';
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
 }
-
-class _AnalyticsSnapshot {
-  final double totalPipelineValue;
-  final int totalProposals;
-  final int activeProposals;
-  final double averageDealSize;
-  final double winRate;
-  final double lossRate;
-  final Map<String, int> statusCounts;
-  final List<_MonthlyPoint> monthlyPoints;
-  final List<_ProposalPerformanceRow> recentProposals;
-  final double? revenueChangePercent;
-  final double? activeChangePercent;
-  final double? conversionChangePercent;
-  final double? averageDealChangePercent;
-
-  const _AnalyticsSnapshot({
-    required this.totalPipelineValue,
-    required this.totalProposals,
-    required this.activeProposals,
-    required this.averageDealSize,
-    required this.winRate,
-    required this.lossRate,
-    required this.statusCounts,
-    required this.monthlyPoints,
-    required this.recentProposals,
-    required this.revenueChangePercent,
-    required this.activeChangePercent,
-    required this.conversionChangePercent,
-    required this.averageDealChangePercent,
-  });
-}
-
-class _MonthlyPoint {
-  final DateTime month;
-  double revenue;
-  int proposals;
-  int wins;
-  int losses;
-
-  _MonthlyPoint(this.month)
-      : revenue = 0,
-        proposals = 0,
-        wins = 0,
-        losses = 0;
-
-  String get label => DateFormat('MMM').format(month);
-}
-
-class _ProposalPerformanceRow {
-  final String title;
-  final double? value;
-  final String valueLabel;
-  final String status;
-  final int daysOpen;
-  final double probability;
-  final Color statusColor;
-  final DateTime? updatedAt;
-
-  _ProposalPerformanceRow({
-    required this.title,
-    required this.value,
-    required this.valueLabel,
-    required this.status,
-    required this.daysOpen,
-    required this.probability,
-    required this.statusColor,
-    required this.updatedAt,
-  });
-
-  String get probabilityLabel => '${(probability * 100).round()}%';
-}
-
-class _MetricCardData {
-  final String title;
-  final String value;
-  final String change;
-  final bool isPositive;
-  final String subtitle;
-
-  const _MetricCardData({
-    required this.title,
-    required this.value,
-    required this.change,
-    required this.isPositive,
-    required this.subtitle,
-  });
-}
+*/

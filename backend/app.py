@@ -63,7 +63,7 @@ except ImportError:
     # DocuSign SDK missing: warn user (emoji-friendly message)
     print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
-from flask import Flask, request, jsonify, send_file, Response, send_from_directory
+from flask import Flask, request, jsonify, send_file, Response, send_from_directory, has_request_context
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -80,21 +80,30 @@ load_dotenv(dotenv_path=Path(__file__).with_name('.env'))
 
 app = Flask(__name__)
 
-# CORS:
-# - Flutter web dev server uses a random localhost port (e.g. http://localhost:51704)
-# - When credentials are enabled, we must NOT reply with "*" for Access-Control-Allow-Origin
-_CORS_ALLOWED_ORIGINS = [
-    # Production
-    r"^https://proposals2025\.netlify\.app$",
-    # Local dev (any port)
-    r"^http://localhost:\d+$",
-    r"^http://127\.0\.0\.1:\d+$",
-    # Some documented local ports (keep explicit)
-    r"^http://localhost:5173$",
-    r"^http://localhost:5000$",
-    r"^http://localhost:8081$",
-    r"^http://localhost:8083$",
+# Flask-Cors origin matching is strict unless you provide regex objects.
+# Use compiled regexes so localhost dev ports (Flutter web) are allowed.
+_cors_origins = [
+    "https://proposals2025.netlify.app",
+    # Allow Flutter web dev server ports (e.g. http://localhost:56886)
+    re.compile(r"^http://localhost(:\d+)?$"),
+    re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
+    # Common local dev ports
+    "http://localhost:5173",
+    "http://localhost:5000",
+    "http://localhost:8081",
 ]
+
+# Also allow a configured frontend origin (Render/Netlify/custom domain).
+# FRONTEND_URL may contain a path; CORS needs just the origin.
+try:
+    _frontend_url = (os.getenv("FRONTEND_URL") or "").strip()
+    if _frontend_url:
+        parsed_frontend = urlparse(_frontend_url)
+        if parsed_frontend.scheme and parsed_frontend.netloc:
+            _cors_origins.append(f"{parsed_frontend.scheme}://{parsed_frontend.netloc}")
+except Exception:
+    # Never fail app startup due to CORS parsing.
+    pass
 
 CORS(
     app,
@@ -251,8 +260,16 @@ def _build_db_config_from_env():
         from urllib.parse import urlparse, parse_qs
 
         parsed = urlparse(database_url)
-        if parsed.scheme not in ('postgres', 'postgresql'):
-            raise ValueError('DATABASE_URL must start with postgres:// or postgresql://')
+        # Accept common Postgres URL scheme variants.
+        # psycopg2 uses a standard Postgres DSN; SQLAlchemy URLs may include a driver.
+        scheme = (parsed.scheme or '').lower()
+        if scheme.startswith('postgresql+'):
+            scheme = 'postgresql'
+        if scheme not in ('postgres', 'postgresql'):
+            raise ValueError(
+                'DATABASE_URL must start with postgres:// or postgresql:// '
+                '(optionally with a driver like postgresql+psycopg2://)'
+            )
 
         db_config = {
             'host': parsed.hostname,
@@ -320,23 +337,19 @@ def get_pg_pool():
     if _pg_pool is None:
         import psycopg2.pool
         try:
-            local_fallback_env_set = any(
-                os.getenv(k)
-                for k in (
-                    'LOCAL_DB_HOST',
-                    'LOCAL_DB_NAME',
-                    'LOCAL_DB_USER',
-                    'LOCAL_DB_PASSWORD',
-                    'LOCAL_DB_PORT',
+            db_config = _build_db_config_from_env()
+            # Helpful hint for a common Render misconfiguration:
+            # Render "Internal Database URL" hosts often look like "dpg-xxxx-a" (no dots).
+            # That value won't resolve outside Render's internal network; in that case you
+            # must use the External Database URL / full host like "dpg-xxxx-a.<region>-postgres.render.com".
+            host = (db_config.get('host') or '').strip()
+            if host.startswith('dpg-') and '.' not in host:
+                print(
+                    "[WARN] DB host looks like a Render internal hostname without a domain "
+                    f"({host!r}). If this service is not on Render's private network, "
+                    "set DATABASE_URL to the External Database URL (with a full *.render.com hostname) "
+                    "or set DB_HOST to the full hostname."
                 )
-            )
-            prefer_local = os.getenv('DB_PREFER_LOCAL', 'true').lower() == 'true'
-            if local_fallback_env_set and prefer_local:
-                db_config = _build_local_fallback_db_config()
-                print("[*] DB config source: LOCAL_DB_*")
-            else:
-                db_config = _build_db_config_from_env()
-                print("[*] DB config source: DATABASE_URL/DB_*")
             if 'sslmode' in db_config:
                 print(f"[*] Using SSL mode: {db_config['sslmode']} for external connection")
             print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
@@ -1070,6 +1083,16 @@ def init_pg_schema():
 def init_db():
     """Initialize PostgreSQL schema on first request"""
     global _db_initialized
+    # If someone calls init_db() manually (e.g., from __main__ or a script),
+    # Flask's request proxy won't be available. Handle that gracefully.
+    if not has_request_context():
+        if _db_initialized:
+            return
+        print("[*] Initializing PostgreSQL schema (no request context)...")
+        init_pg_schema()
+        _db_initialized = True
+        print("[OK] Database schema initialized successfully")
+        return
     # Skip initialization for CORS preflight requests to avoid non-2xx responses
     # which will cause browsers to block the request due to failed preflight.
     if request.method == 'OPTIONS':
@@ -7571,7 +7594,12 @@ def initialize_database():
 if __name__ == '__main__':
     # When running with 'python app.py'
     try:
-        init_db()  # Initialize database before running
+        # Initialize schema up-front for local runs. Don't call init_db() here
+        # because it expects a Flask request context.
+        print("[*] Initializing PostgreSQL schema (startup)...")
+        init_pg_schema()
+        _db_initialized = True
+        print("[OK] Database schema initialized successfully")
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
     app.run(debug=True, host='0.0.0.0', port=8000)

@@ -17,7 +17,11 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 fastapi-mail==1.4.1
 email-validator==2.1.0
-psycopg2-binary==2.9.9
+# psycopg2-binary doesn't reliably ship wheels for Python 3.13 on Windows,
+# causing local installs to fail and the app to crash on `import psycopg2`.
+# Use psycopg v3 on Python 3.13+, and keep psycopg2 for older runtimes.
+psycopg2-binary==2.9.9; python_version < "3.13"
+psycopg[binary]>=3.2.0; python_version >= "3.13"
 cloudinary==1.36.0
 
 # Document extraction

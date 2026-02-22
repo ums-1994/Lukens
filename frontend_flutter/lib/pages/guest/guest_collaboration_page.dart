@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+// ignore_for_file: unused_field, unused_element, unused_local_variable
+
+import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
@@ -109,7 +111,8 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
         if (_accessToken != null) 'collab_token': _accessToken!,
       }..removeWhere((k, v) => v == null);
 
-      final uri = Uri.parse('$baseUrl/users/search?${Uri(queryParameters: params).query}');
+      final uri = Uri.parse(
+          '$baseUrl/users/search?${Uri(queryParameters: params).query}');
       final resp = await http.get(uri);
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body) as List<dynamic>;

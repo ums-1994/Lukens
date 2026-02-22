@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
+
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
@@ -2716,7 +2718,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         Directionality(
           textDirection: TextDirection.ltr,
           child: DropdownButtonFormField<Map<String, dynamic>>(
-            value: _selectedClient,
+            initialValue: _selectedClient,
             style: PremiumTheme.bodyMedium.copyWith(
               color: PremiumTheme.textPrimary,
             ),

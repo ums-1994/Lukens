@@ -1,13 +1,12 @@
-﻿import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter/material.dart';
 
-import '../../api.dart';
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
+import 'package:provider/provider.dart';
+import '../../api.dart';
+import '../../widgets/custom_scrollbar.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/app_side_nav.dart';
-import '../../widgets/custom_scrollbar.dart';
-import '../../widgets/footer.dart';
 
 class ProposalsPage extends StatefulWidget {
   const ProposalsPage({super.key});
@@ -23,6 +22,69 @@ class _ProposalsPageState extends State<ProposalsPage>
   List<Map<String, dynamic>> proposals = [];
   bool _isLoading = true;
   String? _token;
+
+  void _navigateToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/dashboard');
+        break;
+      case 'My Proposals':
+        // Already on proposals page
+        break;
+      case 'Templates':
+        Navigator.pushReplacementNamed(context, '/templates');
+        break;
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/client_management');
+        break;
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        break;
+      case 'Analytics (My Pipeline)':
+        Navigator.pushReplacementNamed(context, '/analytics');
+        break;
+      case 'Logout':
+        _handleLogout(context);
+        break;
+    }
+  }
+
+  void _handleLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                final app = context.read<dynamic>();
+                app.logout();
+                AuthService.logout();
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   final ScrollController _scrollController = ScrollController();
   bool _hasLoadedOnce = false;
 
@@ -156,7 +218,8 @@ class _ProposalsPageState extends State<ProposalsPage>
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF3498DB).withValues(alpha: 0.1),
+                            color:
+                                const Color(0xFF3498DB).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
@@ -220,7 +283,8 @@ class _ProposalsPageState extends State<ProposalsPage>
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF2ECC71).withValues(alpha: 0.1),
+                            color:
+                                const Color(0xFF2ECC71).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
@@ -317,36 +381,40 @@ class _ProposalsPageState extends State<ProposalsPage>
         bottom: false,
         child: Container(
           color: Colors.transparent,
-          child: Column(
+          child: Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-                child: _buildHeader(context, app, userRole),
+              // Consistent Sidebar using AppSideNav
+              Consumer<AppState>(
+                builder: (context, app, child) {
+                  final role = (app.currentUser?['role'] ?? '')
+                      .toString()
+                      .toLowerCase()
+                      .trim();
+                  final isAdmin = role == 'admin' || role == 'ceo';
+                  return AppSideNav(
+                    isCollapsed: app.isSidebarCollapsed,
+                    currentLabel: app.currentNavLabel,
+                    isAdmin: isAdmin,
+                    onToggle: app.toggleSidebar,
+                    onSelect: (label) {
+                      app.setCurrentNavLabel(label);
+                      _navigateToPage(context, label);
+                    },
+                  );
+                },
               ),
+
+              // Main Content Area
               Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                child: Column(
                   children: [
-                    Consumer<AppState>(
-                      builder: (context, app, _) {
-                        final user = AuthService.currentUser ?? app.currentUser;
-                        final role =
-                            (user?['role'] ?? '').toString().toLowerCase().trim();
-                        final isAdmin = role == 'admin' || role == 'ceo';
-                        return AppSideNav(
-                          isCollapsed: app.isSidebarCollapsed,
-                          currentLabel: app.currentNavLabel,
-                          isAdmin: isAdmin,
-                          isLightMode: app.isLightMode,
-                          onToggleThemeMode: app.toggleThemeMode,
-                          onToggle: app.toggleSidebar,
-                          onSelect: (label) {
-                            app.setCurrentNavLabel(label);
-                            _navigateToPage(context, label);
-                          },
-                        );
-                      },
+                    // Header
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+                      child: _buildHeader(context, app, userRole),
                     ),
+
+                    // Content Area
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
@@ -372,10 +440,6 @@ class _ProposalsPageState extends State<ProposalsPage>
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: const Footer(),
-              ),
             ],
           ),
         ),
@@ -391,9 +455,8 @@ class _ProposalsPageState extends State<ProposalsPage>
       gradientEnd: const Color(0xFF1D4350),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 640;
-
-          final title = Column(
+          final isNarrow = constraints.maxWidth < 760;
+          final titleBlock = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               Text(
@@ -412,24 +475,31 @@ class _ProposalsPageState extends State<ProposalsPage>
             ],
           );
 
-          final userControls = Row(
+          // Ensure the header never overflows when the sidebar expands/collapses.
+          final maxNameWidth = (constraints.maxWidth - 56 - 12 - 40 - 24)
+              .clamp(140.0, isNarrow ? double.infinity : 240.0);
+
+          final userBlock = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               ClipOval(
                 child: Image.asset(
                   'assets/images/User_Profile.png',
-                  width: 64,
-                  height: 64,
+                  width: 56,
+                  height: 56,
                   fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(width: 12),
-              Flexible(
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxNameWidth),
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       _getUserName(app.currentUser),
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
@@ -438,18 +508,20 @@ class _ProposalsPageState extends State<ProposalsPage>
                     ),
                     Text(
                       userRole,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style:
                           const TextStyle(color: Colors.white70, fontSize: 12),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, color: Colors.white),
                 onSelected: (value) {
                   if (value == 'logout') {
-                    _handleLogout(context, app);
+                    _handleLogout(context);
                   }
                 },
                 itemBuilder: (BuildContext context) => [
@@ -468,22 +540,22 @@ class _ProposalsPageState extends State<ProposalsPage>
             ],
           );
 
-          if (!isNarrow) {
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                title,
-                userControls,
+                titleBlock,
+                const SizedBox(height: 14),
+                userBlock,
               ],
             );
           }
 
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          return Row(
             children: [
-              title,
-              const SizedBox(height: 12),
-              userControls,
+              Expanded(child: titleBlock),
+              const SizedBox(width: 16),
+              userBlock,
             ],
           );
         },
@@ -733,64 +805,6 @@ class _ProposalsPageState extends State<ProposalsPage>
             ),
         ],
       ),
-    );
-  }
-
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
-      case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/home');
-        break;
-      case 'My Proposals':
-        // Already on proposals page
-        break;
-      case 'Templates':
-        // Templates functionality - redirect to content library for now
-        Navigator.pushReplacementNamed(context, '/templates');
-        break;
-      case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/client_management');
-        break;
-      case 'Approved Proposals':
-        Navigator.pushReplacementNamed(context, '/approved_proposals');
-        break;
-      case 'Analytics (My Pipeline)':
-        Navigator.pushReplacementNamed(context, '/analytics');
-        break;
-      case 'Logout':
-        _handleLogout(context, context.read<AppState>());
-        break;
-    }
-  }
-
-  void _handleLogout(BuildContext context, AppState app) {
-    // Show confirmation dialog
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
     );
   }
 

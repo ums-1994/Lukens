@@ -475,13 +475,8 @@ class MyApp extends StatelessWidget {
           '/collaboration': (context) =>
               const ClientManagementPage(), // Redirected to Client Management
           // '/collaborate' is handled by onGenerateRoute to extract token
-          '/analytics': (context) {
-            final role = context.watch<RoleService>();
-            if (role.isFinance()) {
-              return const FinanceAnalyticsPage();
-            }
-            return const AnalyticsPage();
-          },
+          '/analytics': (context) => const AnalyticsPage(),
+          '/approved-proposals': (context) => const ApprovedProposalsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),
           '/settings': (context) => const SettingsPage(),
           '/test-signature': (context) => const TestSignaturePage(),

@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
@@ -24,23 +26,43 @@ class ApiService {
   static String get baseUrl {
     if (kIsWeb) {
       try {
+        // If the user explicitly overrides the API URL for local dev, honor it.
+        final explicitAppUrl = js.context['APP_API_URL'];
+        if (explicitAppUrl != null &&
+            explicitAppUrl.toString().trim().isNotEmpty) {
+          final url = explicitAppUrl.toString().replaceAll('"', '').trim();
+          print('🌐 ApiService: Using API URL from APP_API_URL: $url');
+          return url;
+        }
+
+        final explicitEnvUrl = js.context['REACT_APP_API_URL'];
+        if (explicitEnvUrl != null &&
+            explicitEnvUrl.toString().trim().isNotEmpty) {
+          final url = explicitEnvUrl.toString().replaceAll('"', '').trim();
+          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
+          return url;
+        }
+
         // Try to get from window.APP_CONFIG.API_URL
         final config = globalContext.getProperty('APP_CONFIG'.toJS);
         if (!config.isUndefinedOrNull) {
           final apiUrl = (config as JSObject).getProperty('API_URL'.toJS);
           if (!apiUrl.isUndefinedOrNull) {
             final url = apiUrl.toString().replaceAll('"', '').trim();
-            if (url.isNotEmpty) {
-              print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
-              return url;
+            // Guard against stale cached config defaulting to localhost when backend is on Render.
+            final hostname = html.window.location.hostname;
+            final isLocalHost = hostname == 'localhost' || hostname == '127.0.0.1';
+            final isLocalApi = url.contains('127.0.0.1:5000') || url.contains('localhost:5000');
+            if (isLocalHost && isLocalApi) {
+              const renderUrl = 'https://lukens-wp8w.onrender.com';
+              print(
+                  '⚠️ ApiService: APP_CONFIG API_URL points to local backend ($url) while running on localhost. Falling back to Render: $renderUrl');
+              return renderUrl;
             }
+
+            print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
+            return url;
           }
-        }
-        // Fallback: try window.REACT_APP_API_URL
-        final envUrl = _readGlobalString('REACT_APP_API_URL');
-        if (envUrl != null) {
-          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $envUrl');
-          return envUrl;
         }
       } catch (e) {
         print('⚠️ ApiService: Could not read API URL from config: $e');

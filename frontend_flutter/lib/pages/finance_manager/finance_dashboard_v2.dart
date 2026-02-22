@@ -1202,8 +1202,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            Colors.black.withOpacity(0.35),
-            Colors.black.withOpacity(0.18),
+            Colors.black.withValues(alpha: 0.3),
+            Colors.black.withValues(alpha: 0.2),
           ],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -1763,14 +1763,16 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
               onChanged: (_) => setState(() {}),
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
-                hintText: 'Search proposals or clientsâ€¦',
-                hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
+                hintText: 'Search proposals or clients…',
+                hintStyle:
+                    TextStyle(color: Colors.white.withValues(alpha: 0.55)),
                 prefixIcon: const Icon(Icons.search, color: Colors.white70),
                 filled: true,
                 fillColor: Colors.white.withValues(alpha: 0.04),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                  borderSide:
+                      BorderSide(color: Colors.white.withValues(alpha: 0.08)),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1787,12 +1789,14 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
                 labelText: 'Status',
-                labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
+                labelStyle:
+                    TextStyle(color: Colors.white.withValues(alpha: 0.8)),
                 filled: true,
                 fillColor: Colors.white.withValues(alpha: 0.04),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                  borderSide:
+                      BorderSide(color: Colors.white.withValues(alpha: 0.08)),
                 ),
               ),
               items: const [

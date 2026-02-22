@@ -1,3 +1,4 @@
+
 class DocumentTable {
   String type; // 'text' or 'price'
   List<List<String>> cells;

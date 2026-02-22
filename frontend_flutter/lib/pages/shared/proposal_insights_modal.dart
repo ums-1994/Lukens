@@ -171,7 +171,7 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
 
   Widget _buildActivityTab() {
     final events = _analytics?['events'] as List? ?? [];
-    
+
     if (events.isEmpty) {
       return const Center(
         child: Column(
@@ -313,7 +313,7 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
 
   Widget _buildAnalyticsTab() {
     final analytics = _analytics?['analytics'] as Map<String, dynamic>? ?? {};
-    
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -395,7 +395,8 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
     );
   }
 
-  Widget _buildStatCard(String label, String value, IconData icon, Color color) {
+  Widget _buildStatCard(
+      String label, String value, IconData icon, Color color) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -521,5 +522,3 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
     return '${hours}h ${mins}m';
   }
 }
-
-
