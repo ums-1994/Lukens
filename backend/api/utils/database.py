@@ -344,6 +344,45 @@ def init_pg_schema():
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
 
+        try:
+            cursor.execute("""
+                ALTER TABLE proposals
+                DROP CONSTRAINT IF EXISTS proposals_status_check;
+            """)
+
+            cursor.execute("""
+                ALTER TABLE proposals
+                ADD CONSTRAINT proposals_status_check
+                CHECK (
+                    status IN (
+                        'draft',
+                        'Draft',
+                        'submitted',
+                        'Submitted',
+                        'approved',
+                        'Approved',
+                        'rejected',
+                        'Rejected',
+                        'archived',
+                        'Archived',
+                        'Pending CEO Approval',
+                        'Pending Approval',
+                        'Pricing In Progress',
+                        'Priced',
+                        'Sent to Client',
+                        'Sent for Signature',
+                        'In Review',
+                        'Signed',
+                        'signed',
+                        'Client Signed',
+                        'Client Approved',
+                        'Client Declined'
+                    ) OR status IS NULL
+                );
+            """)
+        except Exception as e:
+            print(f"[WARN] Could not update proposals_status_check constraint: {e}")
+
         # Ensure client_email column exists for storing client contact email
         try:
             cursor.execute('''

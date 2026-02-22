@@ -1020,17 +1020,16 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     switch (status) {
       case 'draft':
         return 'Draft';
+      case 'in review':
+        return 'In Review';
       case 'pending':
       case 'pending approval':
-        return 'Pending Approval';
       case 'pending ceo approval':
-        return 'Pending CEO Approval';
+        return 'Pending Approval';
       case 'sent':
         return 'Sent';
       case 'sent to client':
         return 'Sent to Client';
-      case 'approved':
-        return 'Approved';
       case 'signed':
         return 'Signed';
       case 'client signed':

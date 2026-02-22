@@ -956,40 +956,6 @@ def reject_proposal(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.patch("/proposals/<int:proposal_id>/status")
-@token_required
-def update_proposal_status(username=None, proposal_id=None):
-    """Update proposal status (for approvers)"""
-    try:
-        data = request.get_json()
-        status = data.get('status')
-        
-        if not status:
-            return {'detail': 'Status is required'}, 400
-        
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-
-            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
-            srow = cursor.fetchone()
-            old_status = srow[0] if srow else None
-
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            urow = cursor.fetchone()
-            actor_id = urow[0] if urow else None
-
-            cursor.execute(
-                '''UPDATE proposals SET status = %s, updated_at = NOW() WHERE id = %s''',
-                (status, proposal_id)
-            )
-            conn.commit()
-
-            if old_status is not None and status is not None and str(old_status) != str(status):
-                log_status_change(proposal_id, actor_id, old_status, status)
-            return {'detail': 'Status updated'}, 200
-    except Exception as e:
-        return {'detail': str(e)}, 500
-
 
 
 

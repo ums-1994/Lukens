@@ -495,7 +495,9 @@ class AppState extends ChangeNotifier {
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
     if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
-      return 'Pending CEO Approval';
+      return 'Pending Approval';
+    if (lowerStatus.contains('pending') && lowerStatus.contains('approval'))
+      return 'Pending Approval';
     if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
       return 'Sent to Client';
     if (lowerStatus == 'signed' ||
@@ -582,23 +584,17 @@ class AppState extends ChangeNotifier {
         headers: _headers,
         body: jsonEncode({"status": status}),
       );
-
-      // Backwards compatibility: some deployments exposed routes without /api
-      if (r.statusCode == 404) {
-        r = await http.patch(
-          Uri.parse("$baseUrl/proposals/$proposalId/status"),
-          headers: _headers,
-          body: jsonEncode({"status": status}),
+      if (r.statusCode != 200) {
+        throw Exception(
+          'Failed to update proposal status (${r.statusCode}): ${r.body}',
         );
       }
 
-      if (r.statusCode == 200) {
-        await fetchProposals();
-        await fetchDashboard();
-        notifyListeners();
-      }
+      await fetchProposals();
+      notifyListeners();
     } catch (e) {
       print('Error updating proposal status: $e');
+      rethrow;
     }
   }
 

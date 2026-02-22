@@ -625,75 +625,46 @@ def init_pg_schema():
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
 
+        # Ensure the status CHECK constraint supports the full workflow.
+        # This is critical for production (Render) where the constraint may already exist.
         try:
-            cursor.execute(
-                '''
+            cursor.execute("""
                 ALTER TABLE proposals
-                ADD COLUMN IF NOT EXISTS client_email VARCHAR(255)
-            '''
-            )
-        except Exception as e:
-            print(f"[WARN] Could not add client_email column to proposals (may already exist or be incompatible): {e}")
+                DROP CONSTRAINT IF EXISTS proposals_status_check;
+            """)
 
-        try:
-            cursor.execute(
-                '''
+            cursor.execute("""
                 ALTER TABLE proposals
-                ADD COLUMN IF NOT EXISTS opportunity_id VARCHAR(50)
-            '''
-            )
+                ADD CONSTRAINT proposals_status_check
+                CHECK (
+                    status IN (
+                        'draft',
+                        'Draft',
+                        'submitted',
+                        'Submitted',
+                        'approved',
+                        'Approved',
+                        'rejected',
+                        'Rejected',
+                        'archived',
+                        'Archived',
+                        'Pending CEO Approval',
+                        'Pending Approval',
+                        'Pricing In Progress',
+                        'Priced',
+                        'Sent to Client',
+                        'Sent for Signature',
+                        'In Review',
+                        'Signed',
+                        'signed',
+                        'Client Signed',
+                        'Client Approved',
+                        'Client Declined'
+                    ) OR status IS NULL
+                );
+            """)
         except Exception as e:
-            print(f"[WARN] Could not add opportunity_id column to proposals (may already exist or be incompatible): {e}")
-
-        try:
-            cursor.execute(
-                '''
-                ALTER TABLE proposals
-                ADD COLUMN IF NOT EXISTS engagement_stage VARCHAR(50)
-            '''
-            )
-        except Exception as e:
-            print(f"[WARN] Could not add engagement_stage column to proposals (may already exist or be incompatible): {e}")
-
-        try:
-            cursor.execute(
-                '''
-                ALTER TABLE proposals
-                ADD COLUMN IF NOT EXISTS engagement_opened_at TIMESTAMP
-            '''
-            )
-        except Exception as e:
-            print(f"[WARN] Could not add engagement_opened_at column to proposals (may already exist or be incompatible): {e}")
-
-        try:
-            cursor.execute(
-                '''
-                ALTER TABLE proposals
-                ADD COLUMN IF NOT EXISTS engagement_target_close_at TIMESTAMP
-            '''
-            )
-        except Exception as e:
-            print(f"[WARN] Could not add engagement_target_close_at column to proposals (may already exist or be incompatible): {e}")
-
-        try:
-            cursor.execute(
-                '''
-                ALTER TABLE proposals
-                ADD COLUMN IF NOT EXISTS client_id INTEGER
-            '''
-            )
-        except Exception as e:
-            print(f"[WARN] Could not add client_id column to proposals (may already exist or be incompatible): {e}")
-
-        try:
-            cursor.execute(
-                '''
-                CREATE INDEX IF NOT EXISTS idx_proposals_client_id
-                ON proposals(client_id)
-            '''
-            )
-        except Exception as e:
-            print(f"[WARN] Could not create idx_proposals_client_id index (may already exist or be incompatible): {e}")
+            print(f"[WARN] Could not update proposals_status_check constraint: {e}")
 
         # Risk Gate runs + override audit trail
         cursor.execute(

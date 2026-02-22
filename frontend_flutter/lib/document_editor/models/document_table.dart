@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 class DocumentTable {
   String type; // 'text' or 'price'
   List<List<String>> cells;
@@ -57,17 +55,138 @@ class DocumentTable {
     }
   }
 
+  int? _findHeaderIndex(List<String> headers, List<String> needles) {
+    if (headers.isEmpty) return null;
+    for (var i = 0; i < headers.length; i++) {
+      final h = headers[i].toLowerCase().trim();
+      for (final n in needles) {
+        if (h == n || h.contains(n)) return i;
+      }
+    }
+    return null;
+  }
+
+  int _fallbackIndex(int? index, int fallback) {
+    return index ?? fallback;
+  }
+
+  int getPriceQuantityColumnIndex() {
+    final headers = cells.isNotEmpty ? cells[0] : <String>[];
+    return _fallbackIndex(
+      _findHeaderIndex(headers, ['quantity', 'qty', 'qnty', 'units']),
+      2,
+    );
+  }
+
+  int getPriceUnitPriceColumnIndex() {
+    final headers = cells.isNotEmpty ? cells[0] : <String>[];
+    return _fallbackIndex(
+      _findHeaderIndex(headers, ['unit price', 'price', 'rate', 'unit cost']),
+      3,
+    );
+  }
+
+  int getPriceTotalColumnIndex() {
+    final headers = cells.isNotEmpty ? cells[0] : <String>[];
+    return _fallbackIndex(
+      _findHeaderIndex(headers, ['total', 'amount', 'line total']),
+      4,
+    );
+  }
+
+  int getResolvedPriceTotalColumnIndex() {
+    final base = getPriceTotalColumnIndex();
+    if (cells.length < 2) return base;
+    return _resolveNumericColumnIndex(cells[1], base);
+  }
+
+  int _resolveNumericColumnIndex(List<String> row, int preferredIndex) {
+    if (preferredIndex < 0) return preferredIndex;
+    if (preferredIndex >= row.length) return preferredIndex;
+
+    final preferred = row[preferredIndex].trim();
+    final preferredNumber = double.tryParse(preferred);
+
+    if (preferredNumber != null) {
+      return preferredIndex;
+    }
+
+    // Common library-table pattern: a placeholder/label column followed by the numeric column.
+    if (preferredIndex + 1 < row.length) {
+      final next = row[preferredIndex + 1].trim();
+      if (double.tryParse(next) != null) {
+        return preferredIndex + 1;
+      }
+    }
+
+    return preferredIndex;
+  }
+
+  void recalculatePriceRowTotal(int rowIndex) {
+    if (type != 'price') return;
+    if (cells.isEmpty || rowIndex <= 0 || rowIndex >= cells.length) return;
+
+    final qtyCol = getPriceQuantityColumnIndex();
+    final unitCol = getPriceUnitPriceColumnIndex();
+    final totalCol = getPriceTotalColumnIndex();
+
+    final row = cells[rowIndex];
+    if (row.isEmpty) return;
+
+    final resolvedUnitCol = unitCol < row.length
+        ? _resolveNumericColumnIndex(row, unitCol)
+        : unitCol;
+    final resolvedTotalCol = totalCol < row.length
+        ? _resolveNumericColumnIndex(row, totalCol)
+        : totalCol;
+
+    if (row.length <= resolvedTotalCol) return;
+
+    final qty = qtyCol < row.length ? double.tryParse(row[qtyCol]) ?? 0.0 : 0.0;
+    final unit = resolvedUnitCol < row.length
+        ? double.tryParse(row[resolvedUnitCol]) ?? 0.0
+        : 0.0;
+
+    row[resolvedTotalCol] = (qty * unit).toStringAsFixed(2);
+  }
+
   double getSubtotal() {
     if (type != 'price' || cells.length < 2) return 0.0;
+
+    final headers = cells.isNotEmpty ? cells[0] : <String>[];
+    final qtyCol = _fallbackIndex(
+      _findHeaderIndex(headers, ['quantity', 'qty', 'qnty', 'units']),
+      2,
+    );
+    final unitCol = _fallbackIndex(
+      _findHeaderIndex(headers, ['unit price', 'price', 'rate', 'unit cost']),
+      3,
+    );
+    final totalCol = _fallbackIndex(
+      _findHeaderIndex(headers, ['total', 'amount', 'line total']),
+      4,
+    );
 
     double subtotal = 0.0;
     for (var i = 1; i < cells.length; i++) {
       final row = cells[i];
-      if (row.length >= 5) {
-        final total = double.tryParse(row[4]) ?? 0.0;
-        subtotal += total;
+
+      double rowTotal = 0.0;
+      if (totalCol < row.length) {
+        rowTotal = double.tryParse(row[totalCol]) ?? 0.0;
       }
+
+      if (rowTotal == 0.0) {
+        final qty =
+            qtyCol < row.length ? double.tryParse(row[qtyCol]) ?? 0.0 : 0.0;
+        final unit =
+            unitCol < row.length ? double.tryParse(row[unitCol]) ?? 0.0 : 0.0;
+        rowTotal = qty * unit;
+      }
+
+      subtotal += rowTotal;
     }
+
     return subtotal;
   }
 
