@@ -43,6 +43,12 @@ build/
 # Exception: Allow frontend_flutter/build/web for Render deployment
 !frontend_flutter/build/web/
 
+# Virtual environments
+.venv/
+**/.venv/
+backend/.venv312/
+frontend_flutter/.venv/
+
 # Logs
 *.log
 npm-debug.log*
@@ -124,4 +130,3 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-e
