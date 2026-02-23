@@ -847,11 +847,13 @@ class AppState extends ChangeNotifier {
       final legacyUri = Uri.parse("$baseUrl/api/risk-gate/summary")
           .replace(queryParameters: queryParameters);
 
-      final r1 = await http.get(analyticsUri, headers: _headers);
-      if (r1.statusCode == 200) return jsonDecode(r1.body);
+      // The backend exposes this as /api/risk-gate/summary.
+      // /api/analytics/risk-gate-summary may not exist (and can return 405).
+      final rLegacy = await http.get(legacyUri, headers: _headers);
+      if (rLegacy.statusCode == 200) return jsonDecode(rLegacy.body);
 
-      final r2 = await http.get(legacyUri, headers: _headers);
-      if (r2.statusCode == 200) return jsonDecode(r2.body);
+      final rAnalytics = await http.get(analyticsUri, headers: _headers);
+      if (rAnalytics.statusCode == 200) return jsonDecode(rAnalytics.body);
     } catch (e) {
       print('Error fetching risk gate summary: $e');
     }
