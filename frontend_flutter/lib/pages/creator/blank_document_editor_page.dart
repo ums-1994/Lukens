@@ -9,7 +9,9 @@ import 'package:file_picker/file_picker.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
+import '../../services/client_service.dart';
 import '../../services/asset_service.dart';
+import '../../services/role_service.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
@@ -54,6 +56,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   late TextEditingController _titleController;
   late TextEditingController _clientNameController;
   late TextEditingController _clientEmailController;
+  List<Map<String, dynamic>> _clients = [];
+  bool _isLoadingClients = false;
+  int? _selectedClientId;
   bool _isSaving = false;
   DateTime? _lastSaved;
   List<DocumentSection> _sections = [];
@@ -206,6 +211,123 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _initializeAuth();
   }
 
+  Future<void> _sendToFinance() async {
+    // First save the document
+    if (_hasUnsavedChanges) {
+      await _saveToBackend();
+    }
+
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the document before sending to Finance'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Send to Finance'),
+        content: const Text(
+          'This will move the proposal to Pricing In Progress so Finance can add pricing and tables.\n\nDo you want to continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pricing In Progress',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pricing In Progress';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Sent to Finance for pricing'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/creator_dashboard',
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send to Finance: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _startPricingFinance() async {
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the document before starting pricing'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pricing In Progress',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pricing In Progress';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Pricing started'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to start pricing: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   bool _isTruthy(dynamic value) {
     if (value is bool) return value;
     if (value is int) return value == 1;
@@ -252,9 +374,197 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       // Load images from content library
       _loadLibraryImages();
+
+      // Load clients for dropdown
+      await _loadClients();
     } catch (e) {
       print('❌ Error initializing auth: $e');
     }
+  }
+
+  Future<void> _submitForApprovalFinance() async {
+    // First save the document
+    if (_hasUnsavedChanges) {
+      await _saveToBackend();
+    }
+
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Please save the document before submitting for approval'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Submit for Approval'),
+        content: const Text(
+          'This will move the proposal to Pending Approval so Admin can review it.\n\nDo you want to continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pending Approval',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pending Approval';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Submitted for admin approval'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/finance_dashboard',
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to submit for approval: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _loadClients() async {
+    if (_isLoadingClients) return;
+
+    setState(() => _isLoadingClients = true);
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      final clients = await ClientService.getClients(token);
+      if (!mounted) return;
+
+      setState(() {
+        _clients = List<Map<String, dynamic>>.from(clients);
+
+        if (_selectedClientId == null) {
+          final currentName = _clientNameController.text.trim();
+          if (currentName.isNotEmpty) {
+            for (final c in _clients) {
+              final name = _extractClientName(c);
+              if (name.trim().toLowerCase() == currentName.toLowerCase()) {
+                _selectedClientId = _tryParseClientId(c);
+
+                final email = _extractClientEmail(c).trim();
+                if (email.isNotEmpty &&
+                    _clientEmailController.text.trim().isEmpty) {
+                  _clientEmailController.text = email;
+                }
+                break;
+              }
+            }
+          }
+        }
+      });
+    } catch (e) {
+      print('❌ Error loading clients: $e');
+    } finally {
+      if (mounted) setState(() => _isLoadingClients = false);
+    }
+  }
+
+  int? _tryParseClientId(Map<String, dynamic> client) {
+    final raw = client['id'] ?? client['client_id'] ?? client['clientId'];
+    if (raw is int) return raw;
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  String _extractClientName(Map<String, dynamic> client) {
+    return (client['company_name'] ??
+            client['companyName'] ??
+            client['name'] ??
+            client['client_name'] ??
+            client['clientName'] ??
+            '')
+        .toString();
+  }
+
+  String _extractClientEmail(Map<String, dynamic> client) {
+    return (client['email'] ??
+            client['email_address'] ??
+            client['client_email'] ??
+            client['clientEmail'] ??
+            client['client_contact_email'] ??
+            client['contact_email'] ??
+            client['contactEmail'] ??
+            '')
+        .toString();
+  }
+
+  String _getClientDisplayName(Map<String, dynamic> client) {
+    final name = _extractClientName(client);
+    final email = _extractClientEmail(client);
+    final cleanName = name.trim();
+    if (cleanName.isNotEmpty) return cleanName;
+    return email.trim().isNotEmpty ? email.trim() : 'Client';
+  }
+
+  void _onClientSelected(int? clientId) {
+    if (clientId == null) {
+      setState(() {
+        _selectedClientId = null;
+      });
+      _onContentChanged();
+      return;
+    }
+
+    Map<String, dynamic>? selected;
+    for (final c in _clients) {
+      final id = _tryParseClientId(c);
+      if (id == clientId) {
+        selected = c;
+        break;
+      }
+    }
+
+    if (selected == null) return;
+
+    final name = _extractClientName(selected);
+    final email = _extractClientEmail(selected);
+
+    setState(() {
+      _selectedClientId = clientId;
+      _clientNameController.text = name;
+      _clientEmailController.text = email;
+    });
+
+    _onContentChanged();
   }
 
   Future<String?> _promptForChangeDescription() async {
@@ -2068,8 +2378,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Status helper methods
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return const Color(0xFFF39C12); // Orange
+    }
+    switch (s) {
+      case 'pending approval':
         return const Color(0xFFF39C12); // Orange
       case 'sent to client':
         return const Color(0xFF3498DB); // Blue
@@ -2083,8 +2397,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   IconData _getStatusIcon(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return Icons.pending;
+    }
+    switch (s) {
+      case 'pending approval':
         return Icons.pending;
       case 'sent to client':
         return Icons.send;
@@ -2098,14 +2416,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   String _getStatusLabel(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return 'Pending Approval';
+    }
+    switch (s) {
+      case 'pending approval':
         return 'Pending Approval';
       case 'sent to client':
         return 'Sent to Client';
       case 'approved':
         return 'Approved';
-      case 'rejected':
+      case 'signed':
         return 'Rejected';
       default:
         return status;
@@ -2226,6 +2548,32 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ),
       );
       return;
+    }
+
+    // If user already selected a client in the dropdown, ensure fields are filled
+    if (_selectedClientId != null &&
+        (_clientNameController.text.trim().isEmpty ||
+            _clientEmailController.text.trim().isEmpty)) {
+      Map<String, dynamic>? selected;
+      for (final c in _clients) {
+        final id = _tryParseClientId(c);
+        if (id == _selectedClientId) {
+          selected = c;
+          break;
+        }
+      }
+
+      if (selected != null) {
+        final name = _extractClientName(selected).trim();
+        final email = _extractClientEmail(selected).trim();
+
+        if (name.isNotEmpty && _clientNameController.text.trim().isEmpty) {
+          _clientNameController.text = name;
+        }
+        if (email.isNotEmpty && _clientEmailController.text.trim().isEmpty) {
+          _clientEmailController.text = email;
+        }
+      }
     }
 
     // Check if client information is provided
@@ -4147,458 +4495,379 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildTopHeader() {
+    final isFinanceRole = context.watch<RoleService>().isFinance();
+    final isManagerRole = context.watch<RoleService>().isCreator();
+    final statusKey = (_proposalStatus ?? '').toString().toLowerCase().trim();
+    final isDraftStatus = statusKey.isEmpty || statusKey == 'draft';
+    final isPricingStatus = statusKey == 'pricing in progress';
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // When the sidebar opens/closes the available width changes; keep this
-          // header responsive to avoid RenderFlex overflows.
-          final isNarrow = constraints.maxWidth < 1100;
-
-          final titleAndBadge = Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.grey[300]!, width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.edit,
-                          size: 16, color: Color(0xFF00BCD4)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _titleController,
-                          enabled: !widget
-                              .readOnly, // Disable editing in read-only mode
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A1A),
-                          ),
-                          decoration: InputDecoration(
-                            hintText: widget.readOnly
-                                ? '' // No hint in read-only mode
-                                : 'Click to edit document title...',
-                            hintStyle: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w400,
-                              color: Color(0xFFBDC3C7),
-                            ),
-                            border: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            contentPadding: EdgeInsets.zero,
-                            isDense: true,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // View Only badge (show in read-only mode)
-              if (widget.readOnly) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF39C12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.visibility, size: 12, color: Colors.white),
-                      SizedBox(width: 4),
-                      Text(
-                        'View Only',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          );
-
-          final actions = SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          // Title and badge
+          Expanded(
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
-                // Price
-                Row(
-                  children: [
-                    Text(
-                      '${_getCurrencySymbol()} ',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1A1A),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 80,
-                      child: TextField(
-                        keyboardType:
-                            const TextInputType.numberWithOptions(decimal: true),
-                        onChanged: (value) {
-                          // Price value input - ready for future use
-                          setState(() {});
-                        },
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                        decoration: InputDecoration(
-                          hintText: '0.00',
-                          hintStyle: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[400],
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide:
-                                BorderSide(color: Colors.grey[300]!, width: 1),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF00BCD4),
-                              width: 1,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 16),
-                // Save status with version info
-                GestureDetector(
-                  onTap: _showVersionHistory,
+                Expanded(
                   child: Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: _isSaving
-                          ? Colors.blue.withOpacity(0.1)
-                          : (_hasUnsavedChanges
-                              ? Colors.orange.withOpacity(0.1)
-                              : Colors.green.withOpacity(0.1)),
+                      color: Colors.grey[50],
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.grey[300]!, width: 1),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.edit,
+                            size: 16, color: Color(0xFF00BCD4)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: TextField(
+                            controller: _titleController,
+                            enabled: !widget
+                                .readOnly, // Disable editing in read-only mode
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                            decoration: InputDecoration(
+                              hintText: widget.readOnly
+                                  ? '' // No hint in read-only mode
+                                  : 'Click to edit document title...',
+                              hintStyle: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFFBDC3C7),
+                              ),
+                              border: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              contentPadding: EdgeInsets.zero,
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // View Only badge (show in read-only mode)
+                if (widget.readOnly) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF39C12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(Icons.visibility, size: 12, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text(
+                          'View Only',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 24),
+          // Price
+          Row(
+            children: [
+              Text(
+                '${_getCurrencySymbol()} ',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+              SizedBox(
+                width: 80,
+                child: TextField(
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  onChanged: (value) {
+                    // Price value input - ready for future use
+                    setState(() {});
+                  },
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                  decoration: InputDecoration(
+                    hintText: '0.00',
+                    hintStyle: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[400],
+                    ),
+                    border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                        color: _isSaving
-                            ? Colors.blue
-                            : (_hasUnsavedChanges ? Colors.orange : Colors.green),
+                      borderSide:
+                          BorderSide(color: Colors.grey[300]!, width: 1),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(4),
+                      borderSide: const BorderSide(
+                        color: Color(0xFF00BCD4),
                         width: 1,
                       ),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_isSaving)
-                          const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.blue),
-                            ),
-                          )
-                        else
-                          Icon(
-                            _hasUnsavedChanges
-                                ? Icons.pending
-                                : Icons.check_circle,
-                            size: 14,
-                            color: _hasUnsavedChanges
-                                ? Colors.orange
-                                : Colors.green,
-                          ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _isSaving
-                              ? 'Saving...'
-                              : (_hasUnsavedChanges
-                                  ? 'Unsaved changes'
-                                  : (_lastSaved == null ? 'Not Saved' : 'Saved')),
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: _isSaving
-                                ? Colors.blue[800]
-                                : (_hasUnsavedChanges
-                                    ? Colors.orange[800]
-                                    : Colors.green[800]),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                // Version history button
-                OutlinedButton.icon(
-                  onPressed: _showVersionHistory,
-                  icon: const Icon(Icons.history, size: 16),
-                  label: Text('v$_currentVersionNumber'),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFF00BCD4)),
-                    foregroundColor: const Color(0xFF00BCD4),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Save and Close button
-                ElevatedButton.icon(
-                  onPressed: _saveAndClose,
-                  icon: const Icon(Icons.save, size: 16),
-                  label: const Text('Save and Close'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00BCD4),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 10),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Collaboration / Share button
-                OutlinedButton.icon(
-                  onPressed: () => _showCollaborationDialog(),
-                  icon: Icon(
-                    _isCollaborating ? Icons.people : Icons.person_add,
-                    size: 16,
-                  ),
-                  label: Text(_isCollaborating
-                      ? 'Collaborators (${_collaborators.length})'
-                      : 'Share'),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(
-                      color: _isCollaborating ? Colors.green : Colors.grey,
-                    ),
-                    foregroundColor:
-                        _isCollaborating ? Colors.green : Colors.black87,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Comments button
-                OutlinedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      _showCommentsPanel = !_showCommentsPanel;
-                    });
-
-                    // Load comments when panel is opened
-                    if (_showCommentsPanel && _savedProposalId != null) {
-                      _loadCommentsFromDatabase(_savedProposalId!);
-                    }
-                  },
-                  icon: const Icon(Icons.comment, size: 16),
-                  label: Text(
-                      'Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFF00BCD4)),
-                    foregroundColor: const Color(0xFF00BCD4),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // More Actions menu (Share, Archive, etc.)
-                if (_savedProposalId != null)
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, size: 20),
-                    onSelected: (value) async {
-                      switch (value) {
-                        case 'share':
-                          _showCollaborationDialog();
-                          break;
-                        case 'archive':
-                          await _archiveProposal();
-                          break;
-                        case 'restore':
-                          await _restoreProposal();
-                          break;
-                      }
-                    },
-                    itemBuilder: (context) {
-                      final isArchived =
-                          _proposalStatus?.toLowerCase() == 'archived';
-                      return [
-                        const PopupMenuItem(
-                          value: 'share',
-                          child: Row(
-                            children: [
-                              Icon(Icons.person_add_alt_1_outlined, size: 18),
-                              SizedBox(width: 8),
-                              Text('Share / Collaborate'),
-                            ],
-                          ),
-                        ),
-                        if (!isArchived)
-                          const PopupMenuItem(
-                            value: 'archive',
-                            child: Row(
-                              children: [
-                                Icon(Icons.archive_outlined, size: 18),
-                                SizedBox(width: 8),
-                                Text('Archive Proposal'),
-                              ],
-                            ),
-                          )
-                        else
-                          const PopupMenuItem(
-                            value: 'restore',
-                            child: Row(
-                              children: [
-                                Icon(Icons.unarchive_outlined, size: 18),
-                                SizedBox(width: 8),
-                                Text('Restore Proposal'),
-                              ],
-                            ),
-                          ),
-                      ];
-                    },
-                  ),
-                const SizedBox(width: 12),
-                // Status Badge
-                if (_proposalStatus != null && _proposalStatus != 'draft')
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(_proposalStatus!),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(_getStatusIcon(_proposalStatus!),
-                            size: 14, color: Colors.white),
-                        const SizedBox(width: 6),
-                        Text(
-                          _getStatusLabel(_proposalStatus!),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (_proposalStatus != null && _proposalStatus != 'draft')
-                  const SizedBox(width: 12),
-                // Send for Approval button
-                if (_proposalStatus == null || _proposalStatus == 'draft')
-                  ElevatedButton.icon(
-                    onPressed: _sendForApproval,
-                    icon: const Icon(Icons.send, size: 16),
-                    label: const Text('Send for Approval'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2ECC71),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
-                if (_proposalStatus == null || _proposalStatus == 'draft')
-                  const SizedBox(width: 12),
-                // Action buttons
-                OutlinedButton.icon(
-                  onPressed: _showPreview,
-                  icon: const Icon(Icons.visibility, size: 16),
-                  label: const Text('Preview'),
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Colors.grey),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 8),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // User initials
-                Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00BCD4),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Center(
-                    child: Text(
-                      _getUserInitials(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-
-          if (isNarrow) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                titleAndBadge,
-                const SizedBox(height: 12),
-                actions,
-              ],
-            );
-          }
-
-          return Row(
-            children: [
-              Expanded(child: titleAndBadge),
-              const SizedBox(width: 24),
-              Flexible(child: actions),
+              ),
             ],
-          );
-        },
+          ),
+          const SizedBox(width: 16),
+          // Save status with version info
+          GestureDetector(
+            onTap: _showVersionHistory,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: _isSaving
+                    ? Colors.blue.withOpacity(0.1)
+                    : (_hasUnsavedChanges
+                        ? Colors.orange.withOpacity(0.1)
+                        : Colors.green.withOpacity(0.1)),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: _isSaving
+                      ? Colors.blue
+                      : (_hasUnsavedChanges ? Colors.orange : Colors.green),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_isSaving)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                      ),
+                    )
+                  else
+                    Icon(
+                      _hasUnsavedChanges ? Icons.pending : Icons.check_circle,
+                      size: 14,
+                      color: _hasUnsavedChanges ? Colors.orange : Colors.green,
+                    ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _isSaving
+                        ? 'Saving...'
+                        : (_hasUnsavedChanges
+                            ? 'Unsaved changes'
+                            : (_lastSaved == null ? 'Not Saved' : 'Saved')),
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _isSaving
+                          ? Colors.blue[800]
+                          : (_hasUnsavedChanges
+                              ? Colors.orange[800]
+                              : Colors.green[800]),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Version history button
+          OutlinedButton.icon(
+            onPressed: _showVersionHistory,
+            icon: const Icon(Icons.history, size: 16),
+            label: Text('v$_currentVersionNumber'),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFF00BCD4)),
+              foregroundColor: const Color(0xFF00BCD4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Save and Close button
+          ElevatedButton.icon(
+            onPressed: _saveAndClose,
+            icon: const Icon(Icons.save, size: 16),
+            label: const Text('Save and Close'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF00BCD4),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Comments button
+          OutlinedButton.icon(
+            onPressed: () {
+              setState(() {
+                _showCommentsPanel = !_showCommentsPanel;
+              });
+
+              // Load comments when panel is opened
+              if (_showCommentsPanel && _savedProposalId != null) {
+                _loadCommentsFromDatabase(_savedProposalId!);
+              }
+            },
+            icon: const Icon(Icons.comment, size: 16),
+            label: Text(
+                'Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFF00BCD4)),
+              foregroundColor: const Color(0xFF00BCD4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Status Badge
+          if (_proposalStatus != null && _proposalStatus != 'draft')
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _getStatusColor(_proposalStatus!),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(_getStatusIcon(_proposalStatus!),
+                      size: 14, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Text(
+                    _getStatusLabel(_proposalStatus!),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (_proposalStatus != null && _proposalStatus != 'draft')
+            const SizedBox(width: 12),
+          // Send for Approval button
+          if (isManagerRole && isDraftStatus)
+            ElevatedButton.icon(
+              onPressed: _sendToFinance,
+              icon: const Icon(Icons.send, size: 16),
+              label: const Text('Send to Finance'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (isManagerRole && isDraftStatus) const SizedBox(width: 12),
+
+          if (isFinanceRole && isDraftStatus)
+            ElevatedButton.icon(
+              onPressed: _startPricingFinance,
+              icon: const Icon(Icons.play_arrow, size: 16),
+              label: const Text('Start Pricing'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (isFinanceRole && isDraftStatus) const SizedBox(width: 12),
+
+          if (isFinanceRole && isPricingStatus)
+            ElevatedButton.icon(
+              onPressed: _submitForApprovalFinance,
+              icon: const Icon(Icons.send, size: 16),
+              label: const Text('Submit for Approval'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (isFinanceRole && isPricingStatus) const SizedBox(width: 12),
+          // Action buttons
+          OutlinedButton.icon(
+            onPressed: _showPreview,
+            icon: const Icon(Icons.visibility, size: 16),
+            label: const Text('Preview'),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Colors.grey),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // User initials
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: const Color(0xFF00BCD4),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Center(
+              child: Text(
+                _getUserInitials(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -5066,12 +5335,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final section = _sections[index];
     final isHovered = _hoveredSectionIndex == index;
     final isSelected = _selectedSectionIndex == index;
+
+    final isFinanceRole = context.watch<RoleService>().isFinance();
+    final isManagerRole = context.watch<RoleService>().isCreator();
+    final financeTextLocked = isFinanceRole;
+
     return SectionWidget(
       section: section,
       isHovered: isHovered,
       isSelected: isSelected,
-      readOnly: widget.readOnly,
-      canDelete: _sections.length > 1,
+      readOnly: widget.readOnly || financeTextLocked,
+      canDelete: !isFinanceRole && (_sections.length > 1),
       onHoverChanged: (hovered) {
         setState(() {
           _hoveredSectionIndex = hovered ? index : -1;
@@ -5080,40 +5354,60 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       onTap: () {
         setState(() => _selectedSectionIndex = index);
       },
-      onInsertBelow: () => _insertSection(index),
-      onInsertFromLibrary: () {
-        setState(() {
-          _selectedSectionIndex = index;
-        });
-        _addFromLibrary();
-      },
-      onShowAIAssistant: () {
-        setState(() {
-          _selectedSectionIndex = index;
-        });
-        _showAIAssistantDialog();
-      },
-      onDuplicate: () => _duplicateSection(index),
-      onDelete: () => _deleteSection(index),
+      onInsertBelow: isFinanceRole ? () {} : () => _insertSection(index),
+      onInsertFromLibrary: isFinanceRole
+          ? () {}
+          : () {
+              setState(() {
+                _selectedSectionIndex = index;
+              });
+              _addFromLibrary();
+            },
+      onShowAIAssistant: isFinanceRole
+          ? () {}
+          : () {
+              setState(() {
+                _selectedSectionIndex = index;
+              });
+              _showAIAssistantDialog();
+            },
+      onDuplicate: isFinanceRole ? () {} : () => _duplicateSection(index),
+      onDelete: isFinanceRole ? () {} : () => _deleteSection(index),
       getContentTextStyle: _getContentTextStyle,
       getTextAlignment: _getTextAlignment,
       onReorderTables: (int oldIndex, int newIndex) {
-        setState(() {
-          if (newIndex > oldIndex) {
-            newIndex -= 1;
-          }
-          final table = section.tables.removeAt(oldIndex);
-          section.tables.insert(newIndex, table);
-        });
+        if (isFinanceRole) {
+          setState(() {
+            if (newIndex > oldIndex) {
+              newIndex -= 1;
+            }
+            final table = section.tables.removeAt(oldIndex);
+            section.tables.insert(newIndex, table);
+          });
+        }
       },
-      buildInteractiveTable: (int tableIndex, DocumentTable table) =>
-          _buildInteractiveTable(
-        index,
-        tableIndex,
-        table,
-        key: ValueKey('table_${index}_$tableIndex'),
-      ),
+      buildInteractiveTable: (int tableIndex, DocumentTable table) {
+        // Finance can edit pricing tables; Manager can view tables but not edit.
+        if (isFinanceRole) {
+          return _buildInteractiveTable(
+            index,
+            tableIndex,
+            table,
+            key: ValueKey('table_${index}_$tableIndex'),
+          );
+        }
+        if (isManagerRole) {
+          return _buildReadOnlyTable(table);
+        }
+        return _buildInteractiveTable(
+          index,
+          tableIndex,
+          table,
+          key: ValueKey('table_${index}_$tableIndex'),
+        );
+      },
       onRemoveInlineImage: (imageIndex) {
+        if (isFinanceRole) return;
         setState(() {
           _sections[index].inlineImages.removeAt(imageIndex);
         });
@@ -6223,6 +6517,40 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<int?>(
+          value: _selectedClientId,
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child: Text('Select client'),
+            ),
+            ..._clients.map((c) {
+              final id = _tryParseClientId(c);
+              if (id == null) {
+                return null;
+              }
+              return DropdownMenuItem<int?>(
+                value: id,
+                child: Text(
+                  _getClientDisplayName(c),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              );
+            }).whereType<DropdownMenuItem<int?>>(),
+          ],
+          onChanged: _isLoadingClients ? null : _onClientSelected,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: 'Client',
+            isDense: true,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
         ),
         const SizedBox(height: 20),

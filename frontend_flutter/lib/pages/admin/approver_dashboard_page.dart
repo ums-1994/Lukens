@@ -812,8 +812,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  'Pending CEO Approval',
+                const Text(
+                  'Pending Approval',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: compact ? 18 : 20,

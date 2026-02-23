@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
-from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification
+from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification, resolve_user_id
 
 bp = Blueprint('approver', __name__)
 
@@ -357,8 +357,11 @@ def approve_proposal(username=None, proposal_id=None):
                 # Notify proposal creator about approval
                 try:
                     if creator:
+                        creator_id = resolve_user_id(cursor, creator)
+                        if not creator_id:
+                            raise RuntimeError(f"Could not resolve proposal creator identifier: {creator}")
                         create_notification(
-                            user_id=creator,
+                            user_id=creator_id,
                             notification_type='proposal_approved',
                             title='Proposal Approved',
                             message=f"Your proposal '{display_title}' for {client_name or 'Client'} has been approved by {approver_name}.",
@@ -808,28 +811,6 @@ def reject_proposal(username=None, proposal_id=None):
     except Exception as e:
         print(f"[ERROR] Error rejecting proposal: {e}")
         traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@bp.patch("/proposals/<int:proposal_id>/status")
-@token_required
-def update_proposal_status(username=None, proposal_id=None):
-    """Update proposal status (for approvers)"""
-    try:
-        data = request.get_json()
-        status = data.get('status')
-        
-        if not status:
-            return {'detail': 'Status is required'}, 400
-        
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                '''UPDATE proposals SET status = %s, updated_at = NOW() WHERE id = %s''',
-                (status, proposal_id)
-            )
-            conn.commit()
-            return {'detail': 'Status updated'}, 200
-    except Exception as e:
         return {'detail': str(e)}, 500
 
 

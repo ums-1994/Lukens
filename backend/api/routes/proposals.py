@@ -3,15 +3,36 @@ Proposal management routes
 Extracted from app.py for better organization
 """
 from flask import Blueprint, request, jsonify
+from typing import Optional
 from api.utils.decorators import token_required, admin_required
 from api.utils.database import get_db_connection
-from api.utils.helpers import resolve_user_id
+from api.utils.helpers import resolve_user_id, create_notification
 from api.utils.email import send_email
 import json
 import psycopg2.extras
 import traceback
 
 bp = Blueprint('proposals', __name__)
+
+
+def _role_key(raw_role: Optional[str]) -> str:
+    return (raw_role or '').strip().lower()
+
+
+def _normalize_status_key(raw_status: Optional[str]) -> str:
+    return (raw_status or '').strip().lower()
+
+
+def _is_finance_role(role_key: str) -> bool:
+    return role_key.startswith('finance') or role_key == 'finance'
+
+
+def _is_admin_role(role_key: str) -> bool:
+    return role_key in ['admin', 'ceo']
+
+
+def _is_manager_role(role_key: str) -> bool:
+    return role_key in ['manager', 'creator', 'user'] or not role_key
 
 
 @bp.post("/proposals")
@@ -196,6 +217,24 @@ def create_proposal(username=None, user_id=None, email=None):
                 'status': row_dict.get('status', status),
             }
 
+            try:
+                proposal_id = new_proposal.get('id')
+                proposal_title = new_proposal.get('title') or title
+                if proposal_id is not None and user_id is not None:
+                    create_notification(
+                        user_id=user_id,
+                        notification_type='proposal_created',
+                        title='Proposal Created',
+                        message=f"Your proposal '{proposal_title}' was created.",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'proposal_id': proposal_id,
+                            'proposal_title': proposal_title,
+                        },
+                    )
+            except Exception as notif_err:
+                print(f"⚠️ Failed to create proposal_created notification: {notif_err}")
+
             if 'client' in row_dict:
                 new_proposal['client_name'] = row_dict.get('client') or ''
                 new_proposal['client'] = row_dict.get('client') or ''
@@ -258,6 +297,20 @@ def get_proposals(username=None, user_id=None, email=None):
             
             print(f"🔍 Looking for proposals for user {username} (user_id: {user_id}, email: {email})")
             
+            # Determine requester role (to support finance/admin behaviours)
+            requester_role = None
+            try:
+                if user_id:
+                    cursor.execute('SELECT role FROM users WHERE id = %s', (user_id,))
+                    role_row = cursor.fetchone()
+                    if role_row:
+                        requester_role = role_row[0]
+            except Exception:
+                requester_role = None
+
+            requester_role = (requester_role or '').strip().lower()
+            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+
             # Prefer the user_id provided by the Firebase-aware token_required decorator.
             # That decorator either looked up the existing user or auto-created them
             # and returns a trusted numeric user_id, even if this connection can't
@@ -310,7 +363,7 @@ def get_proposals(username=None, user_id=None, email=None):
                         retry_delay = min(retry_delay * 1.3, 1.0)
 
             user_id = resolved_user_id
-            if not user_id:
+            if not user_id and not is_finance:
                 print(f"⚠️ Could not resolve numeric ID for {username or email}, returning empty list")
                 return jsonify([]), 200
             
@@ -323,8 +376,41 @@ def get_proposals(username=None, user_id=None, email=None):
             existing_columns = [row[0] for row in cursor.fetchall()]
             print(f"📋 Available columns in proposals table: {existing_columns}")
             
-            # Build query dynamically based on available columns
-            if 'owner_id' in existing_columns:
+            # Finance users can see all proposals
+            if is_finance:
+                select_cols = ['id', 'title', 'content', 'status']
+                if 'owner_id' in existing_columns:
+                    select_cols.append('owner_id')
+                elif 'user_id' in existing_columns:
+                    select_cols.append('user_id')
+                if 'client' in existing_columns:
+                    select_cols.append('client')
+                elif 'client_name' in existing_columns:
+                    select_cols.append('client_name')
+                if 'client_email' in existing_columns:
+                    select_cols.append('client_email')
+                if 'budget' in existing_columns:
+                    select_cols.append('budget')
+                if 'timeline_days' in existing_columns:
+                    select_cols.append('timeline_days')
+                if 'created_at' in existing_columns:
+                    select_cols.append('created_at')
+                if 'updated_at' in existing_columns:
+                    select_cols.append('updated_at')
+                if 'template_key' in existing_columns:
+                    select_cols.append('template_key')
+                if 'sections' in existing_columns:
+                    select_cols.append('sections')
+                if 'pdf_url' in existing_columns:
+                    select_cols.append('pdf_url')
+
+                query = f'''SELECT {', '.join(select_cols)}
+                     FROM proposals
+                     ORDER BY created_at DESC'''
+                cursor.execute(query)
+
+            # Build query dynamically based on available columns for non-finance users
+            elif 'owner_id' in existing_columns:
                 select_cols = ['id', 'owner_id', 'title', 'content', 'status']
                 if 'client' in existing_columns:
                     select_cols.append('client')
@@ -517,13 +603,43 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
 
             user_id = resolved_user_id
 
-            cursor.execute(
-                f"SELECT {owner_col} FROM proposals WHERE id = %s",
-                (proposal_id,),
-            )
-            proposal = cursor.fetchone()
-            if not proposal or str(proposal[0]) != str(user_id):
-                return jsonify({'detail': 'Proposal not found or access denied'}), 404
+            # Determine requester role (to support finance/admin behaviours)
+            requester_role = None
+            try:
+                cursor.execute('SELECT role FROM users WHERE id = %s', (user_id,))
+                role_row = cursor.fetchone()
+                if role_row:
+                    requester_role = role_row[0]
+            except Exception:
+                requester_role = None
+
+            requester_role = (requester_role or '').strip().lower()
+            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+
+            # Finance users can only update pricing-related fields.
+            # We enforce this server-side so Finance cannot modify scope/content/client metadata.
+            if is_finance:
+                for forbidden in [
+                    'title',
+                    'content',
+                    'client',
+                    'client_name',
+                    'client_email',
+                    'client_id',
+                    'timeline_days',
+                    # Status transitions must go through the dedicated status endpoint
+                    'status',
+                ]:
+                    data.pop(forbidden, None)
+
+            if not is_finance:
+                cursor.execute(
+                    f"SELECT {owner_col} FROM proposals WHERE id = %s",
+                    (proposal_id,),
+                )
+                proposal = cursor.fetchone()
+                if not proposal or str(proposal[0]) != str(user_id):
+                    return jsonify({'detail': 'Proposal not found or access denied'}), 404
             
             updates = ['updated_at = NOW()']
             params = []
@@ -541,7 +657,7 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 except Exception:
                     sections_json = str(data['sections'])
                 params.append(sections_json)
-            if 'status' in data:
+            if 'status' in data and not is_finance:
                 updates.append('status = %s')
                 params.append(data['status'])
             # Determine client / metadata columns safely based on schema
@@ -551,16 +667,24 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             elif 'client_name' in existing_columns:
                 client_col = 'client_name'
 
-            if client_col and ('client_name' in data or 'client' in data):
+            if client_col and ('client_name' in data or 'client' in data) and not is_finance:
                 updates.append(f"{client_col} = %s")
                 params.append(data.get('client_name') or data.get('client'))
-            if 'client_email' in data and 'client_email' in existing_columns:
+            if (
+                'client_email' in data
+                and 'client_email' in existing_columns
+                and not is_finance
+            ):
                 updates.append('client_email = %s')
                 params.append(data['client_email'])
             if 'budget' in data and 'budget' in existing_columns:
                 updates.append('budget = %s')
                 params.append(data['budget'])
-            if 'timeline_days' in data and 'timeline_days' in existing_columns:
+            if (
+                'timeline_days' in data
+                and 'timeline_days' in existing_columns
+                and not is_finance
+            ):
                 updates.append('timeline_days = %s')
                 params.append(data['timeline_days'])
             
@@ -573,6 +697,102 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
     except Exception as e:
         print(f"❌ Error updating proposal {proposal_id}: {e}")
         import traceback
+        traceback.print_exc()
+        return jsonify({'detail': str(e)}), 500
+
+
+@bp.patch("/proposals/<int:proposal_id>/status")
+@token_required
+def update_proposal_status(username=None, proposal_id=None, user_id=None, email=None):
+    """Update proposal status with RBAC/state-machine enforcement (Option B workflow)."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        requested_status = data.get('status')
+        if not requested_status:
+            return jsonify({'detail': 'Status is required'}), 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            resolved_user_id = user_id
+            if not resolved_user_id:
+                resolved_user_id = resolve_user_id(cursor, username or email)
+            if not resolved_user_id:
+                return jsonify({'detail': 'User not found'}), 400
+
+            cursor.execute('SELECT role FROM users WHERE id = %s', (resolved_user_id,))
+            role_row = cursor.fetchone()
+            role_key = _role_key(role_row[0] if role_row else None)
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            proposal_row = cursor.fetchone()
+            if not proposal_row:
+                return jsonify({'detail': 'Proposal not found'}), 404
+
+            current_key = _normalize_status_key(proposal_row[0])
+            target_key = _normalize_status_key(str(requested_status))
+
+            # Normalize common variants
+            if current_key == '':
+                current_key = 'draft'
+            if target_key == 'pending ceo approval':
+                target_key = 'pending approval'
+
+            # Option B workflow:
+            # Manager: Draft -> Pricing In Progress
+            # Finance: Pricing In Progress -> Pending Approval
+            # Admin: Pending Approval -> Approved/Rejected
+            allowed = False
+
+            if _is_manager_role(role_key):
+                if current_key == 'draft' and target_key == 'pricing in progress':
+                    allowed = True
+                # Allow returning to draft from rejected
+                if current_key == 'rejected' and target_key == 'draft':
+                    allowed = True
+
+            if _is_finance_role(role_key):
+                if current_key in ['draft', 'pricing in progress'] and target_key == 'pricing in progress':
+                    allowed = True
+                if current_key == 'pricing in progress' and target_key == 'pending approval':
+                    allowed = True
+
+            if _is_admin_role(role_key):
+                if current_key == 'pending approval' and target_key in ['approved', 'rejected']:
+                    allowed = True
+                if current_key == 'rejected' and target_key == 'draft':
+                    allowed = True
+
+            if not allowed:
+                return jsonify({
+                    'detail': 'Status transition not allowed',
+                    'current_status': proposal_row[0],
+                    'requested_status': requested_status,
+                    'role': role_key,
+                }), 403
+
+            # Write canonical display values
+            status_to_store = requested_status
+            if target_key == 'draft':
+                status_to_store = 'Draft'
+            elif target_key == 'pricing in progress':
+                status_to_store = 'Pricing In Progress'
+            elif target_key == 'pending approval':
+                status_to_store = 'Pending Approval'
+            elif target_key == 'approved':
+                status_to_store = 'Approved'
+            elif target_key == 'rejected':
+                status_to_store = 'Rejected'
+
+            cursor.execute(
+                '''UPDATE proposals SET status = %s, updated_at = NOW() WHERE id = %s''',
+                (status_to_store, proposal_id),
+            )
+            conn.commit()
+
+            return jsonify({'detail': 'Status updated', 'status': status_to_store}), 200
+    except Exception as e:
+        print(f"❌ Error updating proposal status: {e}")
         traceback.print_exc()
         return jsonify({'detail': str(e)}), 500
 

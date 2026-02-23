@@ -430,7 +430,9 @@ class AppState extends ChangeNotifier {
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
     if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
-      return 'Pending CEO Approval';
+      return 'Pending Approval';
+    if (lowerStatus.contains('pending') && lowerStatus.contains('approval'))
+      return 'Pending Approval';
     if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
       return 'Sent to Client';
     if (lowerStatus == 'signed' ||
@@ -493,7 +495,7 @@ class AppState extends ChangeNotifier {
       String proposalId, Map<String, dynamic> data) async {
     try {
       final r = await http.put(
-        Uri.parse("$baseUrl/proposals/$proposalId"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId"),
         headers: _headers,
         body: jsonEncode(data),
       );
@@ -509,7 +511,7 @@ class AppState extends ChangeNotifier {
   Future<void> updateProposalStatus(String proposalId, String status) async {
     try {
       final r = await http.patch(
-        Uri.parse("$baseUrl/proposals/$proposalId/status"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId/status"),
         headers: _headers,
         body: jsonEncode({"status": status}),
       );
@@ -594,7 +596,8 @@ class AppState extends ChangeNotifier {
           if (region != null && region.isNotEmpty) 'region': region,
           if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
         },
       );
 
@@ -638,10 +641,9 @@ class AppState extends ChangeNotifier {
           if (region != null && region.isNotEmpty) 'region': region,
           if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
-          if (resolvedStage != null) 'stage': resolvedStage,
-          if (stageFilter != null && stageFilter.isNotEmpty)
-            'stage_filter': stageFilter,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+          if (stage != null && stage.isNotEmpty) 'stage': stage,
         },
       );
 

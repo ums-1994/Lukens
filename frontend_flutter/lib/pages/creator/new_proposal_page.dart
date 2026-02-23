@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/api_service.dart';
-import 'blank_document_editor_page.dart';
 
 class NewProposalPage extends StatefulWidget {
   const NewProposalPage({super.key});
@@ -32,7 +31,7 @@ class _NewProposalPageState extends State<NewProposalPage> {
     setState(() => _isLoading = true);
     try {
       final app = context.read<AppState>();
-      await app.createProposal(
+      final created = await app.createProposal(
         _titleController.text.trim(),
         _clientController.text.trim(),
       );
@@ -41,8 +40,14 @@ class _NewProposalPageState extends State<NewProposalPage> {
         const SnackBar(content: Text('Proposal created')),
       );
 
-      // After creating, go to proposals list
-      Navigator.pushReplacementNamed(context, '/proposals');
+      final proposalId = created?['id']?.toString();
+      Navigator.pushReplacementNamed(
+        context,
+        '/finance_dashboard',
+        arguments: {
+          'openProposalId': proposalId,
+        },
+      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error creating proposal: $e')),
@@ -371,22 +376,22 @@ Generate a detailed, professional proposal with all necessary sections.
 
       if (result != null && result['sections'] != null) {
         // Create proposal first
-        await app.createProposal(
+        final created = await app.createProposal(
           _titleController.text.trim(),
           _clientController.text.trim(),
         );
 
         if (!mounted) return;
 
-        // Navigate to blank document editor with AI-generated content
-        Navigator.pushReplacement(
+        final proposalId = created?['id']?.toString();
+        Navigator.pushReplacementNamed(
           context,
-          MaterialPageRoute(
-            builder: (context) => BlankDocumentEditorPage(
-              initialTitle: _titleController.text,
-              aiGeneratedSections: result['sections'] as Map<String, dynamic>,
-            ),
-          ),
+          '/finance_dashboard',
+          arguments: {
+            'openProposalId': proposalId,
+            'aiGeneratedSections': result['sections'] as Map<String, dynamic>,
+            'initialTitle': _titleController.text,
+          },
         );
 
         // Show success message

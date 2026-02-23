@@ -24,7 +24,7 @@ window.APP_CONFIG = {
     // Default based on runtime hostname
     const hostname = (window.location && window.location.hostname) ? window.location.hostname : '';
     const defaultUrl = 'https://lukens-wp8w.onrender.com';
-    console.log('🌐 Using default API URL:', defaultUrl);
+    console.log('🌐 Using default API URL (Backend A):', defaultUrl);
     return defaultUrl;
   })(),
 };
