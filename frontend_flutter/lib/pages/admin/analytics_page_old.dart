@@ -40,6 +40,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   final TextEditingController _globalOwnerCtrl = TextEditingController();
   final TextEditingController _globalProposalTypeCtrl = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'Analytics (My Pipeline)';
   static const String _currencySymbol = 'R';
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: _currencySymbol, decimalDigits: 0);
@@ -61,10 +63,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       setState(() => _cycleTimeRefreshTick++);
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      context.read<AppState>().setCurrentNavLabel('Analytics (My Pipeline)');
-    });
   }
 
   Future<Map<String, dynamic>?> _fetchClientEngagement() async {
@@ -79,7 +77,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
       final region = _globalRegionCtrl.text.trim();
-      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -90,7 +87,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
             region: region.isEmpty ? null : region,
-            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );
@@ -112,7 +108,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
-      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
       final app = context.read<AppState>();
@@ -124,10 +119,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           owner: owner.isEmpty ? null : owner,
           proposalType: proposalType.isEmpty ? null : proposalType,
           client: client.isEmpty ? null : client,
-          industry: industry.isEmpty ? null : industry,
           scope: _cycleTimeScope,
           department: department.isEmpty ? null : department,
-          stageFilter: _pipelineStageFilter,
+          stage: _pipelineStageFilter,
         ),
         app.getCompletionRatesAnalytics(
           startDate: startDate,
@@ -135,7 +129,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           owner: owner.isEmpty ? null : owner,
           proposalType: proposalType.isEmpty ? null : proposalType,
           client: client.isEmpty ? null : client,
-          industry: industry.isEmpty ? null : industry,
           scope: _cycleTimeScope,
           department: department.isEmpty ? null : department,
         ),
@@ -895,7 +888,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
-      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -905,7 +897,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
-            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );
@@ -1412,7 +1403,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
-      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -1422,7 +1412,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
-            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );
@@ -1444,7 +1433,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
-      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -1508,7 +1496,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 proposalType:
                                     proposalType.isEmpty ? null : proposalType,
                                 client: client.isEmpty ? null : client,
-                                industry: industry.isEmpty ? null : industry,
                                 scope: _cycleTimeScope,
                                 department:
                                     department.isEmpty ? null : department,
@@ -2794,12 +2781,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                           (user?['role'] ?? '').toString().toLowerCase().trim();
                       final isAdmin = role == 'admin' || role == 'ceo';
                       return AppSideNav(
-                        isCollapsed: app.isSidebarCollapsed,
-                        currentLabel: app.currentNavLabel,
+                        isCollapsed: _isSidebarCollapsed,
+                        currentLabel: _currentNavLabel,
                         isAdmin: isAdmin,
-                        onToggle: app.toggleSidebar,
+                        onToggle: () => setState(
+                          () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                        ),
                         onSelect: (label) {
-                          app.setCurrentNavLabel(label);
+                          setState(() => _currentNavLabel = label);
                           _navigateToPage(context, label);
                         },
                       );
@@ -3892,14 +3881,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final startDate = start != null ? fmt.format(start) : null;
       final endDate = fmt.format(now);
 
-      final owner = _cycleTimeOwnerCtrl.text.trim().isNotEmpty
-          ? _cycleTimeOwnerCtrl.text.trim()
-          : _globalOwnerCtrl.text.trim();
-      final proposalType = _cycleTimeProposalTypeCtrl.text.trim().isNotEmpty
+      final owner = _cycleTimeScope == 'me'
+          ? AuthService.currentUser?['email']?.toString()
+          : _cycleTimeOwnerCtrl.text.trim();
+      final proposalType = _cycleTimeScope == 'me'
           ? _cycleTimeProposalTypeCtrl.text.trim()
           : _globalProposalTypeCtrl.text.trim();
-      final client = _globalClientCtrl.text.trim();
-      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -3908,8 +3895,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             endDate: endDate,
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
-            client: client.isEmpty ? null : client,
-            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );

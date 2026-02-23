@@ -34,6 +34,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   bool _isSubmittingComment = false;
   bool _showVersions = false;
   final ScrollController _scrollController = ScrollController();
+  bool _isSidebarCollapsed = false;
+  String _currentPage = 'Approvals';
 
   void _safeSetState(VoidCallback fn) {
     if (!mounted) return;
@@ -939,8 +941,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.error_outline,
-                        size: 64, color: Colors.red[300]),
+                    Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
                     const SizedBox(height: 16),
                     Text(
                       _error!,
@@ -999,7 +1000,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                         _buildInfoChip(
                                           Icons.calendar_today,
                                           _proposal!['updated_at'] != null
-                                              ? DateFormat('dd MMM yyyy').format(
+                                              ? DateFormat('dd MMM yyyy')
+                                                  .format(
                                                   DateTime.parse(
                                                       _proposal!['updated_at']),
                                                 )
@@ -1053,7 +1055,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                       children: [
                                         Text(
                                           'Versions',
-                                          style: PremiumTheme.bodyLarge.copyWith(
+                                          style:
+                                              PremiumTheme.bodyLarge.copyWith(
                                             color: Colors.white,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -1063,8 +1066,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                           padding: EdgeInsets.all(16),
                                           child: Text(
                                             'No versions available yet',
-                                            style:
-                                                TextStyle(color: Colors.white54),
+                                            style: TextStyle(
+                                                color: Colors.white54),
                                           ),
                                         ),
                                       ],
@@ -1080,7 +1083,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                       children: [
                                         Text(
                                           'Versions (${_versions.length})',
-                                          style: PremiumTheme.bodyLarge.copyWith(
+                                          style:
+                                              PremiumTheme.bodyLarge.copyWith(
                                             color: Colors.white,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -1123,7 +1127,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                                             Text(
                                                               version[
                                                                   'description'],
-                                                              style: const TextStyle(
+                                                              style:
+                                                                  const TextStyle(
                                                                 color: Colors
                                                                     .white70,
                                                                 fontSize: 12,
@@ -1187,8 +1192,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                               controller: _commentController,
                                               style: const TextStyle(
                                                   color: Colors.white),
-                                              decoration:
-                                                  const InputDecoration(
+                                              decoration: const InputDecoration(
                                                 hintText: 'Add a comment...',
                                                 hintStyle: TextStyle(
                                                     color: Colors.white54),
@@ -1378,13 +1382,13 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           if (isAdmin)
             Material(
               child: AdminSidebar(
-                isCollapsed: appState.isAdminSidebarCollapsed,
-                currentPage: appState.adminNavLabel,
-                onToggle: appState.toggleAdminSidebar,
+                isCollapsed: _isSidebarCollapsed,
+                currentPage: _currentPage,
+                onToggle: () => setState(
+                  () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                ),
                 onSelect: (label) {
-                  if (label != 'Sign Out') {
-                    appState.setAdminNavLabel(label);
-                  }
+                  if (label != 'Sign Out') setState(() => _currentPage = label);
                   _navigateAdminToPage(context, label);
                 },
               ),

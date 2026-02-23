@@ -3426,7 +3426,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final statuses = [
       'Draft',
       'In Review',
-      'Pending Approval',
+      'Pending Ceo Approval',
       'Sent To Client',
       'Signed',
       'Lost',
@@ -3441,10 +3441,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           status.contains('lost') ||
           status.contains('rejected')) {
         lostCount += entry.value;
-      } else if (status == 'pending ceo approval' ||
-          status == 'pending approval') {
-        normalizedCounts['Pending Approval'] =
-            (normalizedCounts['Pending Approval'] ?? 0) + entry.value;
       } else {
         normalizedCounts[entry.key] = entry.value;
       }

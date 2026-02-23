@@ -28,6 +28,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
   final ScrollController _scrollController = ScrollController();
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'Approved Proposals';
 
   @override
   void initState() {
@@ -203,12 +205,14 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                     .trim();
                 final isAdmin = role == 'admin' || role == 'ceo';
                 return AppSideNav(
-                  isCollapsed: app.isSidebarCollapsed,
-                  currentLabel: app.currentNavLabel,
+                  isCollapsed: _isSidebarCollapsed,
+                  currentLabel: _currentNavLabel,
                   isAdmin: isAdmin,
-                  onToggle: app.toggleSidebar,
+                  onToggle: () => setState(
+                    () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                  ),
                   onSelect: (label) {
-                    app.setCurrentNavLabel(label);
+                    setState(() => _currentNavLabel = label);
                     _navigateToPage(context, label);
                   },
                 );

@@ -1493,12 +1493,14 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                         .trim();
                     final isAdmin = role == 'admin' || role == 'ceo';
                     return AppSideNav(
-                      isCollapsed: app.isSidebarCollapsed,
-                      currentLabel: app.currentNavLabel,
+                      isCollapsed: _isSidebarCollapsed,
+                      currentLabel: _currentPage,
                       isAdmin: isAdmin,
-                      onToggle: app.toggleSidebar,
+                      onToggle: () => setState(
+                        () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                      ),
                       onSelect: (label) {
-                        app.setCurrentNavLabel(label);
+                        setState(() => _currentPage = label);
                         _navigateToPage(context, label);
                       },
                     );

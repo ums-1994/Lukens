@@ -26,14 +26,15 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   String _typeFilter = 'all';
   String _statusFilter = 'all';
   bool _isLoading = true;
-  bool _isSidebarCollapsed = true;
-  late AnimationController _animationController;
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'Templates';
   String _currentPage = 'Templates';
+  late AnimationController _animationController;
 
   List<Template> _templates = [];
   List<Template> _filteredTemplates = [];
-  List<Template> _myTemplates = [];
   List<Template> _publicTemplates = [];
+  List<Template> _myTemplates = [];
 
   final Map<String, StatusConfig> _statusConfig = {
     'draft': StatusConfig(
@@ -944,12 +945,17 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                           .trim();
                       final isAdmin = role == 'admin' || role == 'ceo';
                       return AppSideNav(
-                        isCollapsed: app.isSidebarCollapsed,
-                        currentLabel: app.currentNavLabel,
+                        isCollapsed: _isSidebarCollapsed,
+                        currentLabel: _currentNavLabel,
                         isAdmin: isAdmin,
-                        onToggle: app.toggleSidebar,
+                        onToggle: () => setState(
+                          () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                        ),
                         onSelect: (label) {
-                          app.setCurrentNavLabel(label);
+                          setState(() {
+                            _currentNavLabel = label;
+                            _currentPage = label;
+                          });
                           _navigateToPage(context, label);
                         },
                       );

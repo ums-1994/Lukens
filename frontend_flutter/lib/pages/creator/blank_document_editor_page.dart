@@ -1473,6 +1473,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     });
   }
 
+  double _computePricingTotal() {
+    double total = 0;
+    for (final section in _sections) {
+      for (final table in section.tables) {
+        if (table.type == 'price') {
+          total += table.getTotal();
+        }
+      }
+    }
+    return total;
+  }
+
   void _addFromLibrary() {
     if (_sections.isEmpty || _selectedSectionIndex >= _sections.length) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1528,35 +1540,43 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
 
         setState(() {
-          // Insert at cursor position if available, otherwise append
-          final text = controller.text;
-          final selection = controller.selection;
+          final isFinanceRole = context.read<RoleService>().isFinance();
+          if (!isFinanceRole) {
+            // Insert at cursor position if available, otherwise append
+            final text = controller.text;
+            final selection = controller.selection;
 
-          if (selection.isValid &&
-              selection.start >= 0 &&
-              selection.start <= text.length) {
-            // Insert at cursor position
-            final before = text.substring(0, selection.start);
-            final after = text.substring(selection.end);
-            final separator =
-                before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
-            controller.text = '$before$separator$textToInsert$after';
-            // Set cursor after inserted content
-            final newPosition =
-                selection.start + separator.length + textToInsert.length;
-            controller.selection = TextSelection.collapsed(offset: newPosition);
-          } else {
-            // Append to end
-            if (text.isEmpty) {
-              controller.text = textToInsert;
+            if (selection.isValid &&
+                selection.start >= 0 &&
+                selection.start <= text.length) {
+              // Insert at cursor position
+              final before = text.substring(0, selection.start);
+              final after = text.substring(selection.end);
+              final separator =
+                  before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
+              controller.text = '$before$separator$textToInsert$after';
+              // Set cursor after inserted content
+              final newPosition =
+                  selection.start + separator.length + textToInsert.length;
+              controller.selection =
+                  TextSelection.collapsed(offset: newPosition);
             } else {
-              controller.text = '$text\n\n$textToInsert';
+              // Append to end
+              if (text.isEmpty) {
+                controller.text = textToInsert;
+              } else {
+                controller.text = '$text\n\n$textToInsert';
+              }
             }
           }
 
           // Add tables to the section's tables list
           if (tablesToInsert.isNotEmpty) {
-            currentSection.tables.addAll(tablesToInsert);
+            if (isFinanceRole) {
+              currentSection.tables.insertAll(0, tablesToInsert);
+            } else {
+              currentSection.tables.addAll(tablesToInsert);
+            }
           }
         });
 
@@ -2852,6 +2872,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ? 'Untitled Document'
         : _titleController.text;
     final content = _serializeDocumentContent();
+    final isFinanceRole = context.read<RoleService>().isFinance();
+    final computedBudget = _computePricingTotal();
 
     try {
       if (_savedProposalId == null) {
@@ -2907,6 +2929,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ? null
               : _clientEmailController.text.trim(),
           status: _proposalStatus ?? 'draft',
+          budget: isFinanceRole ? computedBudget : null,
         );
         print('✅ Proposal updated: $_savedProposalId');
         print('🔍 Update result: $result');
@@ -3632,13 +3655,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // In collaborator mode, hide navigation sidebar but allow editing
     final isCollaboratorMode = widget.isCollaborator;
+    final hideLeftSidebar = context.watch<RoleService>().isFinance();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Row(
         children: [
           // Left Sidebar (hide in read-only mode AND collaborator mode)
-          if (!isReadOnly && !isCollaboratorMode) _buildLeftSidebar(),
+          if (!isReadOnly && !isCollaboratorMode && !hideLeftSidebar)
+            _buildLeftSidebar(),
           // Sections Sidebar (conditional, hide in read-only mode AND collaborator mode)
           if (!isReadOnly && !isCollaboratorMode && _showSectionsSidebar)
             _buildSectionsSidebar(),
@@ -4598,42 +4623,69 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
               SizedBox(
                 width: 80,
-                child: TextField(
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (value) {
-                    // Price value input - ready for future use
-                    setState(() {});
-                  },
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '0.00',
-                    hintStyle: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[400],
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide:
-                          BorderSide(color: Colors.grey[300]!, width: 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF00BCD4),
-                        width: 1,
+                child: isFinanceRole
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: Colors.grey[300]!,
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          _computePricingTotal().toStringAsFixed(2),
+                          textAlign: TextAlign.left,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      )
+                    : TextField(
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: (value) {
+                          // Price value input - ready for future use
+                          setState(() {});
+                        },
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '0.00',
+                          hintStyle: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[400],
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            borderSide: BorderSide(
+                              color: Colors.grey[300]!,
+                              width: 1,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF00BCD4),
+                              width: 1,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                        ),
                       ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                  ),
-                ),
               ),
             ],
           ),
@@ -5355,14 +5407,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         setState(() => _selectedSectionIndex = index);
       },
       onInsertBelow: isFinanceRole ? () {} : () => _insertSection(index),
-      onInsertFromLibrary: isFinanceRole
-          ? () {}
-          : () {
-              setState(() {
-                _selectedSectionIndex = index;
-              });
-              _addFromLibrary();
-            },
+      onInsertFromLibrary: () {
+        setState(() {
+          _selectedSectionIndex = index;
+        });
+        _addFromLibrary();
+      },
       onShowAIAssistant: isFinanceRole
           ? () {}
           : () {
@@ -5393,7 +5443,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             index,
             tableIndex,
             table,
-            key: ValueKey('table_${index}_$tableIndex'),
           );
         }
         if (isManagerRole) {
@@ -5403,7 +5452,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           index,
           tableIndex,
           table,
-          key: ValueKey('table_${index}_$tableIndex'),
         );
       },
       onRemoveInlineImage: (imageIndex) {
@@ -5665,6 +5713,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Widget _buildTableContainer(int sectionIndex, int tableIndex,
       DocumentTable table, String currencySymbol,
       {Key? key}) {
+    final isFinanceRole = context.watch<RoleService>().isFinance();
+    final totalColIndex =
+        table.type == 'price' ? table.getResolvedPriceTotalColumnIndex() : -1;
+
     return Container(
       key: key,
       margin: const EdgeInsets.symmetric(vertical: 16),
@@ -5691,11 +5743,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 Row(
                   children: [
                     // Drag handle icon (for ReorderableListView)
-                    Icon(
-                      Icons.drag_handle,
-                      size: 18,
-                      color: Colors.grey[600],
-                    ),
+                    if (isFinanceRole)
+                      ReorderableDragStartListener(
+                        index: tableIndex,
+                        child: Icon(
+                          Icons.drag_handle,
+                          size: 18,
+                          color: Colors.grey[600],
+                        ),
+                      )
+                    else
+                      Icon(
+                        Icons.drag_handle,
+                        size: 18,
+                        color: Colors.grey[600],
+                      ),
                     const SizedBox(width: 8),
                     Text(
                       '${table.type == 'price' ? 'Price' : 'Text'} Table',
@@ -5769,43 +5831,57 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   (rowIndex) => DataRow(
                     cells: List.generate(
                       table.cells[rowIndex + 1].length,
-                      (colIndex) => DataCell(
-                        Directionality(
-                          textDirection: TextDirection.ltr,
-                          child: TextField(
+                      (colIndex) {
+                        final isPriceTotalCell =
+                            table.type == 'price' && colIndex == totalColIndex;
+
+                        if (isPriceTotalCell) {
+                          return DataCell(
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Text(
+                                table.cells[rowIndex + 1][colIndex],
+                                textDirection: TextDirection.ltr,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  textBaseline: TextBaseline.alphabetic,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        return DataCell(
+                          Directionality(
                             textDirection: TextDirection.ltr,
-                            textAlign: TextAlign.left,
-                            controller: TextEditingController(
-                              text: table.cells[rowIndex + 1][colIndex],
-                            ),
-                            onChanged: (value) {
-                              setState(() {
-                                table.cells[rowIndex + 1][colIndex] = value;
-                                // Auto-calculate total for price tables
-                                if (table.type == 'price' && colIndex == 2 ||
-                                    colIndex == 3) {
-                                  final qty = double.tryParse(
-                                          table.cells[rowIndex + 1][2]) ??
-                                      0;
-                                  final price = double.tryParse(
-                                          table.cells[rowIndex + 1][3]) ??
-                                      0;
-                                  table.cells[rowIndex + 1][4] =
-                                      (qty * price).toStringAsFixed(2);
-                                }
-                              });
-                            },
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.all(8),
-                            ),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              textBaseline: TextBaseline.alphabetic,
+                            child: TextFormField(
+                              key: ValueKey(
+                                '${table.hashCode}-$rowIndex-$colIndex',
+                              ),
+                              textDirection: TextDirection.ltr,
+                              textAlign: TextAlign.left,
+                              initialValue: table.cells[rowIndex + 1][colIndex],
+                              onChanged: (value) {
+                                setState(() {
+                                  table.cells[rowIndex + 1][colIndex] = value;
+                                  if (table.type == 'price') {
+                                    table
+                                        .recalculatePriceRowTotal(rowIndex + 1);
+                                  }
+                                });
+                              },
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.all(8),
+                              ),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                textBaseline: TextBaseline.alphabetic,
+                              ),
                             ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                   ),
                 ),

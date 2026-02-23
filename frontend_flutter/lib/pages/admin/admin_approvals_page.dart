@@ -42,13 +42,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   String _searchQuery = '';
   bool _initialArgsApplied = false;
 
-  bool get _isSidebarCollapsed =>
-      context.read<AppState>().isAdminSidebarCollapsed;
-  set _isSidebarCollapsed(bool value) =>
-      context.read<AppState>().setAdminSidebarCollapsed(value);
-
-  String get _currentPage => context.read<AppState>().adminNavLabel;
-  set _currentPage(String value) => context.read<AppState>().setAdminNavLabel(value);
+  bool _isSidebarCollapsed = false;
+  String _currentPage = 'Approvals';
 
   static const Color _adminBlockBase = Color(0xFF252525);
 
@@ -105,8 +100,6 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _enforceAccessAndLoad();
-      if (!mounted) return;
-      context.read<AppState>().setAdminNavLabel('Approvals');
     });
   }
 
@@ -127,12 +120,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         setState(() {
           _activeFilter = filter!;
         });
-        final app = context.read<AppState>();
-        if (filter == 'approved') {
-          app.setAdminNavLabel('History');
-        } else {
-          app.setAdminNavLabel('Approvals');
-        }
+        setState(() {
+          _currentPage = filter == 'approved' ? 'History' : 'Approvals';
+        });
       }
     }
   }
@@ -375,11 +365,11 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
               children: [
                 Material(
                   child: AdminSidebar(
-                    isCollapsed: app.isAdminSidebarCollapsed,
-                    currentPage: app.adminNavLabel,
-                    onToggle: app.toggleAdminSidebar,
+                    isCollapsed: _isSidebarCollapsed,
+                    currentPage: _currentPage,
+                    onToggle: _toggleSidebar,
                     onSelect: (label) {
-                      app.setAdminNavLabel(label);
+                      setState(() => _currentPage = label);
                       _navigateToPage(context, label);
                     },
                   ),
@@ -768,7 +758,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   void _toggleSidebar() {
-    context.read<AppState>().toggleAdminSidebar();
+    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
   }
 
   Widget _buildApprovalsToolbar() {
@@ -1254,16 +1244,17 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     switch (status) {
       case 'draft':
         return 'Draft';
-      case 'in review':
-        return 'In Review';
       case 'pending':
       case 'pending approval':
-      case 'pending ceo approval':
         return 'Pending Approval';
+      case 'pending ceo approval':
+        return 'Pending CEO Approval';
       case 'sent':
         return 'Sent';
       case 'sent to client':
         return 'Sent to Client';
+      case 'approved':
+        return 'Approved';
       case 'signed':
         return 'Signed';
       case 'client signed':

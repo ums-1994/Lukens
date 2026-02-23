@@ -37,13 +37,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   int _clientApprovedCount = 0;
   List<Map<String, dynamic>> _recentApprovals = [];
 
-  bool get _isSidebarCollapsed =>
-      context.read<AppState>().isAdminSidebarCollapsed;
-  set _isSidebarCollapsed(bool value) =>
-      context.read<AppState>().setAdminSidebarCollapsed(value);
-
-  String get _currentPage => context.read<AppState>().adminNavLabel;
-  set _currentPage(String value) => context.read<AppState>().setAdminNavLabel(value);
+  bool _isSidebarCollapsed = false;
+  String _currentPage = 'Dashboard';
 
   @override
   void initState() {
@@ -316,11 +311,13 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               children: [
                 Material(
                   child: AdminSidebar(
-                    isCollapsed: app.isAdminSidebarCollapsed,
-                    currentPage: app.adminNavLabel,
-                    onToggle: app.toggleAdminSidebar,
+                    isCollapsed: _isSidebarCollapsed,
+                    currentPage: _currentPage,
+                    onToggle: () => setState(
+                      () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                    ),
                     onSelect: (label) {
-                      app.setAdminNavLabel(label);
+                      setState(() => _currentPage = label);
                       _navigateToPage(context, label);
                     },
                   ),
@@ -658,7 +655,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: _glassBlurSigma, sigmaY: _glassBlurSigma),
+        filter:
+            ImageFilter.blur(sigmaX: _glassBlurSigma, sigmaY: _glassBlurSigma),
         child: Container(
           padding: padding,
           decoration: _darkGlassDecoration(
@@ -685,57 +683,56 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       borderRadius: 18,
       padding: EdgeInsets.all(compact ? 14 : 18),
       child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: compact ? 34 : 38,
-                    height: compact ? 34 : 38,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(icon,
-                        color: accentColor, size: compact ? 18 : 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: PremiumTheme.bodyMedium.copyWith(
-                        color: Colors.white.withValues(alpha: 0.92),
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Text(
-                value,
-                style: PremiumTheme.displayMedium.copyWith(
-                  fontSize: compact ? 24 : 28,
-                  color: accentColor,
-                  letterSpacing: -0.5,
+              Container(
+                width: compact ? 34 : 38,
+                height: compact ? 34 : 38,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  shape: BoxShape.circle,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                child: Icon(icon, color: accentColor, size: compact ? 18 : 20),
               ),
-              const SizedBox(height: 6),
-              Text(
-                subtitle,
-                style: PremiumTheme.bodySmall.copyWith(
-                  color: Colors.white.withValues(alpha: 0.70),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ),
+          const SizedBox(height: 14),
+          Text(
+            value,
+            style: PremiumTheme.displayMedium.copyWith(
+              fontSize: compact ? 24 : 28,
+              color: accentColor,
+              letterSpacing: -0.5,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: PremiumTheme.bodySmall.copyWith(
+              color: Colors.white.withValues(alpha: 0.70),
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 
@@ -813,7 +810,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Pending Approval',
+                  'Pending CEO Approval',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: compact ? 18 : 20,
@@ -943,8 +940,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               color: const Color(0xFF2C3E50),
             ),
           const SizedBox(height: 12),
-          _buildNavItem('Sign Out', 'assets/images/Logout_KhonoBuzz.png', false,
-              context),
+          _buildNavItem(
+              'Sign Out', 'assets/images/Logout_KhonoBuzz.png', false, context),
           const SizedBox(height: 20),
         ],
       ),
@@ -1059,7 +1056,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   }
 
   void _toggleSidebar() {
-    context.read<AppState>().toggleAdminSidebar();
+    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
   }
 
   Widget _buildPendingApprovalsList() {
@@ -1208,8 +1205,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   label: const Text('Reject'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _cardAccent,
-                    side: BorderSide(
-                        color: _cardAccent.withValues(alpha: 0.85)),
+                    side:
+                        BorderSide(color: _cardAccent.withValues(alpha: 0.85)),
                   ),
                 ),
               ],
