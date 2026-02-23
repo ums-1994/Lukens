@@ -276,7 +276,10 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             clientApprovedCount++;
           }
 
-          final isApproved = isClientApproved;
+          final isApproved = isClientApproved ||
+              isSentToClient ||
+              status.contains('sent for signature') ||
+              status.contains('out for signature');
           if (isApproved) {
             final updatedRaw = proposal['updated_at'] ?? proposal['updatedAt'];
             final updatedAt = _parseDate(updatedRaw);

@@ -200,12 +200,42 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       }
 
       // 2) Fetch general proposals for additional context (e.g. history)
-      final proposals = await ApiService.getProposals(token).timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          throw Exception('Request timed out');
-        },
-      );
+      // Use the admin/approver endpoint so admins can see proposals across all users.
+      List<dynamic> proposals = [];
+      try {
+        final allResponse = await http
+            .get(
+              Uri.parse('${ApiService.baseUrl}/api/proposals/all'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer $token',
+              },
+            )
+            .timeout(
+              const Duration(seconds: 10),
+              onTimeout: () {
+                throw Exception('Request timed out');
+              },
+            );
+
+        if (allResponse.statusCode == 200) {
+          final decoded = json.decode(allResponse.body);
+          if (decoded is Map && decoded['proposals'] is List) {
+            proposals = decoded['proposals'] as List;
+          }
+        }
+      } catch (_) {
+        // Fall back to creator-scoped proposals endpoint.
+      }
+
+      if (proposals.isEmpty) {
+        proposals = await ApiService.getProposals(token).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception('Request timed out');
+          },
+        );
+      }
 
       // 3) Combine and categorise proposals into All / Pending / Approved / Rejected
       final List<Map<String, dynamic>> all = [];
@@ -221,8 +251,11 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         seenIds.add(id);
         all.add(proposal);
 
-        final status =
-            (proposal['status'] ?? '').toString().toLowerCase().trim();
+        final status = (proposal['status'] ?? '')
+            .toString()
+            .toLowerCase()
+            .trim()
+            .replaceAll('_', ' ');
 
         // Anything with a pending-style status should surface in Pending
         if (status.contains('pending')) {
@@ -232,8 +265,13 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         // Approved bucket (used both for tab and summary metrics)
         if (status == 'signed' ||
             status == 'client signed' ||
+            status == 'client approved' ||
             status == 'approved' ||
             status == 'released' ||
+            status == 'sent to client' ||
+            status == 'sent for signature' ||
+            status.contains('sent to client') ||
+            status.contains('sent for signature') ||
             status == 'completed') {
           approved.add(proposal);
         }
