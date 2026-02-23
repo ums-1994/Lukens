@@ -1,5 +1,7 @@
-import 'dart:async';
+// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
+
 import 'dart:convert';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import '../../widgets/footer.dart';
@@ -10,7 +12,9 @@ import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../theme/app_colors.dart';
 import '../shared/proposal_insights_modal.dart';
+import '../../widgets/app_side_nav.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -21,7 +25,10 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage>
     with TickerProviderStateMixin {
-  bool _isSidebarCollapsed = true;
+  bool _isLoading = true;
+  bool _hasLoaded = false;
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'Dashboard';
   late AnimationController _animationController;
   String _currentPage = 'Dashboard';
   bool _isRefreshing = false;
@@ -30,8 +37,6 @@ class _DashboardPageState extends State<DashboardPage>
 
   // AI Risk Gate mock data
   List<Map<String, dynamic>> _riskItems = [];
-
-  Timer? _notificationsTimer;
 
   @override
   void initState() {
@@ -54,21 +59,6 @@ class _DashboardPageState extends State<DashboardPage>
       }
       await _refreshData();
       await _loadRiskData(app);
-
-      _notificationsTimer?.cancel();
-      _notificationsTimer = Timer.periodic(
-        const Duration(seconds: 20),
-        (_) async {
-          if (!mounted) return;
-          final app = context.read<AppState>();
-          if (app.authToken == null && AuthService.token != null) {
-            app.authToken = AuthService.token;
-            app.currentUser = AuthService.currentUser;
-          }
-          if (app.authToken == null) return;
-          await app.fetchNotifications();
-        },
-      );
     });
   }
 
@@ -122,9 +112,7 @@ class _DashboardPageState extends State<DashboardPage>
       // Fetch risks for proposals that need review (draft or pending approval)
       final proposalsNeedingReview = app.proposals.where((proposal) {
         final status = (proposal['status'] ?? '').toString().toLowerCase();
-        return status == 'draft' ||
-            status == 'pending ceo approval' ||
-            status == 'pending approval';
+        return status == 'draft' || status == 'pending ceo approval';
       }).toList();
 
       // Analyze risks for each proposal using the AI risk analysis API
@@ -288,10 +276,6 @@ class _DashboardPageState extends State<DashboardPage>
         return status == 'draft' || status.isEmpty;
       }
 
-      if (filter == 'pending_approval') {
-        return status == 'pending ceo approval' || status == 'pending approval';
-      }
-
       // For other statuses, do exact match after normalization
       return status == filter;
     }).toList();
@@ -299,7 +283,6 @@ class _DashboardPageState extends State<DashboardPage>
 
   @override
   void dispose() {
-    _notificationsTimer?.cancel();
     _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -643,234 +626,138 @@ class _DashboardPageState extends State<DashboardPage>
     return Scaffold(
       body: Container(
         color: Colors.transparent,
-        child: Column(
+        child: Row(
           children: [
-            // Header
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      _getHeaderTitle(userRole),
-                      style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                    ),
-                    Row(
-                      children: [
-                        _buildNotificationButton(app),
-                        const SizedBox(width: 20),
-                        ClipOval(
-                          child: Image.asset(
-                            'assets/images/User_Profile.png',
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _getUserName(app.currentUser),
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              userRole,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          icon:
-                              const Icon(Icons.more_vert, color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'logout') {
-                              app.logout();
-                              AuthService.logout();
-                              Navigator.pushNamed(context, '/login');
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => const [
-                            PopupMenuItem<String>(
-                              value: 'logout',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+            // Consistent Sidebar using AppSideNav
+            Consumer<AppState>(
+              builder: (context, app, child) {
+                final role = (app.currentUser?['role'] ?? '')
+                    .toString()
+                    .toLowerCase()
+                    .trim();
+                final isAdmin = role == 'admin' || role == 'ceo';
+                return AppSideNav(
+                  isCollapsed: _isSidebarCollapsed,
+                  currentLabel: _currentNavLabel,
+                  isAdmin: isAdmin,
+                  onToggle: () => setState(
+                    () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                  ),
+                  onSelect: (label) {
+                    setState(() => _currentNavLabel = label);
+                    _navigateToPage(context, label);
+                  },
+                );
+              },
             ),
 
-            // Main Content with Sidebar
+            // Main Content Area
             Expanded(
-              child: Row(
+              child: Column(
                 children: [
-                  // Collapsible Sidebar with Glass Effect
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
+                  // Header
+                  Container(
+                    height: 70,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
                           Colors.black.withOpacity(0.3),
-                          Colors.black.withOpacity(0.2),
+                          Colors.transparent,
                         ],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                      border: Border(
-                        right: BorderSide(
-                          color: PremiumTheme.glassWhiteBorder,
-                          width: 1,
-                        ),
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
                       ),
                     ),
-                    child: SingleChildScrollView(
-                      child: Column(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal:
+                              16), // Reduced padding for better 100% zoom
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const SizedBox(height: 16),
-                          // Toggle button
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                height: 44,
+                          Text(
+                            _getHeaderTitle(userRole),
+                            style: PremiumTheme.titleLarge.copyWith(
+                                fontSize: 18), // Reduced for better 100% zoom
+                          ),
+                          Row(
+                            children: [
+                              _buildNotificationButton(app),
+                              const SizedBox(width: 20),
+                              Container(
+                                width: 48,
+                                height: 48,
                                 decoration: BoxDecoration(
-                                  color: PremiumTheme.glassWhite,
-                                  borderRadius: BorderRadius.circular(12),
+                                  shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: PremiumTheme.glassWhiteBorder,
-                                    width: 1,
+                                    color: const Color(0xFFE9293A)
+                                        .withOpacity(0.3),
+                                    width: 2,
                                   ),
                                 ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal:
-                                              _isSidebarCollapsed ? 0 : 8),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
+                                child: ClipOval(
+                                  child: Image.asset(
+                                    'assets/images/User_Profile.png',
+                                    width: 48,
+                                    height: 48,
+                                    fit: BoxFit.cover,
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(width: 10),
+                              Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _getUserName(app.currentUser),
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    userRole,
+                                    style: const TextStyle(
+                                        color: Colors.white70, fontSize: 12),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(width: 10),
+                              PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert,
+                                    color: Colors.white),
+                                onSelected: (value) {
+                                  if (value == 'logout') {
+                                    app.logout();
+                                    AuthService.logout();
+                                    Navigator.pushNamed(context, '/login');
+                                  }
+                                },
+                                itemBuilder: (BuildContext context) => const [
+                                  PopupMenuItem<String>(
+                                    value: 'logout',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.logout),
+                                        SizedBox(width: 8),
+                                        Text('Logout'),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 12),
-                          // Navigation items
-                          _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              _currentPage == 'Dashboard',
-                              context),
-                          _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png',
-                              _currentPage == 'My Proposals',
-                              context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Templates',
-                              context),
-                          _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Content Library',
-                              context),
-                          _buildNavItem(
-                              'Client Management',
-                              'assets/images/collaborations.png',
-                              _currentPage == 'Client Management',
-                              context),
-                          _buildNavItem(
-                              'Approved Proposals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approved Proposals',
-                              context),
-                          _buildNavItem(
-                              'Analytics (My Pipeline)',
-                              'assets/images/analytics.png',
-                              _currentPage == 'Analytics (My Pipeline)',
-                              context),
-
-                          const SizedBox(height: 20),
-
-                          // Divider
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-
-                          const SizedBox(height: 12),
-
-                          // Logout button
-                          _buildNavItem(
-                              'Logout',
-                              'assets/images/Logout_KhonoBuzz.png',
-                              false,
-                              context),
-                          const SizedBox(height: 20),
                         ],
                       ),
                     ),
                   ),
 
-                  // Content Area
+                  // Scrollable Content
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.all(20),
+                      padding: const EdgeInsets.all(
+                          16), // Reduced padding for better 100% zoom
                       child: CustomScrollbar(
                         controller: _scrollController,
                         child: RefreshIndicator(
@@ -887,15 +774,353 @@ class _DashboardPageState extends State<DashboardPage>
                       ),
                     ),
                   ),
+
+                  // Footer
+                  const Footer(),
                 ],
               ),
             ),
-
-            const Footer(),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildFixedSidebar(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmall =
+        screenWidth < 1200; // Increased breakpoint for better 100% zoom support
+    final effectiveCollapsed = isSmall ? true : _isSidebarCollapsed;
+
+    return AnimatedContainer(
+      duration: AppColors.animationDuration,
+      width: effectiveCollapsed
+          ? AppColors.collapsedWidth
+          : AppColors.expandedWidth,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          decoration: BoxDecoration(
+            color: AppColors.backgroundColor
+                .withValues(alpha: AppColors.backgroundOpacity),
+            border: Border(
+              right: BorderSide(
+                color: AppColors.borderColor,
+                width: 1,
+              ),
+            ),
+          ),
+          child: Column(
+            children: [
+              // Header Section
+              SizedBox(
+                height: AppColors.headerHeight,
+                child: Padding(
+                  padding: AppSpacing.sidebarHeaderPadding,
+                  child: InkWell(
+                    onTap: () {
+                      if (!isSmall) {
+                        setState(
+                            () => _isSidebarCollapsed = !_isSidebarCollapsed);
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      height: AppColors.itemHeight,
+                      decoration: BoxDecoration(
+                        color: AppColors.hoverColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: effectiveCollapsed
+                            ? MainAxisAlignment.center
+                            : MainAxisAlignment.spaceBetween,
+                        children: [
+                          if (!effectiveCollapsed)
+                            Expanded(
+                              child: Text(
+                                'Navigation',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          Icon(
+                            effectiveCollapsed
+                                ? Icons.keyboard_arrow_right
+                                : Icons.keyboard_arrow_left,
+                            color: AppColors.textPrimary,
+                            size: 20,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // Navigation Items
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 8),
+                      _buildSidebarNavItem(
+                        label: 'Dashboard',
+                        assetPath: 'assets/images/Dahboard.png',
+                        isSelected: _currentPage == 'Dashboard',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _navigateToPage(context, 'Dashboard'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'My Proposals',
+                        assetPath: 'assets/images/My_Proposals.png',
+                        isSelected: _currentPage == 'My Proposals',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _navigateToPage(context, 'My Proposals'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Templates',
+                        assetPath: 'assets/images/content_library.png',
+                        isSelected: _currentPage == 'Templates',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _navigateToPage(context, 'Templates'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Content Library',
+                        assetPath: 'assets/images/content_library.png',
+                        isSelected: _currentPage == 'Content Library',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Content Library'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Client Management',
+                        assetPath: 'assets/images/collaborations.png',
+                        isSelected: _currentPage == 'Client Management',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Client Management'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Approved Proposals',
+                        assetPath:
+                            'assets/images/Time Allocation_Approval_Blue.png',
+                        isSelected: _currentPage == 'Approved Proposals',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Approved Proposals'),
+                      ),
+                      _buildSidebarNavItem(
+                        label: 'Analytics (My Pipeline)',
+                        assetPath: 'assets/images/analytics.png',
+                        isSelected: _currentPage == 'Analytics (My Pipeline)',
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () =>
+                            _navigateToPage(context, 'Analytics (My Pipeline)'),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Divider
+                      if (!effectiveCollapsed)
+                        Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          height: 1,
+                          color: AppColors.borderColor,
+                        ),
+                      const SizedBox(height: 12),
+
+                      // Logout
+                      _buildSidebarNavItem(
+                        label: 'Logout',
+                        assetPath: 'assets/images/Logout_KhonoBuzz.png',
+                        isSelected: false,
+                        isCollapsed: effectiveCollapsed,
+                        onTap: () => _handleLogout(context),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarNavItem({
+    required String label,
+    required String assetPath,
+    required bool isSelected,
+    required bool isCollapsed,
+    required VoidCallback onTap,
+    bool showProfileIndicator = false,
+  }) {
+    bool hovering = false;
+
+    return StatefulBuilder(
+      builder: (context, setState) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          child: MouseRegion(
+            onEnter: (_) => setState(() => hovering = true),
+            onExit: (_) => setState(() => hovering = false),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(12),
+              child: AnimatedContainer(
+                duration: AppColors.animationDuration,
+                height: AppColors.itemHeight,
+                decoration: BoxDecoration(
+                  color: _getItemColor(isSelected, hovering, isCollapsed),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: _getItemShadow(isSelected, hovering, isCollapsed),
+                ),
+                child: isCollapsed
+                    ? _buildCollapsedItem(
+                        assetPath, isSelected, showProfileIndicator)
+                    : _buildExpandedItem(label, assetPath, isSelected),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCollapsedItem(
+      String assetPath, bool isSelected, bool showProfileIndicator) {
+    return Center(
+      child: Stack(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            child: ClipOval(
+              child: AssetService.buildImageWidget(
+                isSelected
+                    ? assetPath
+                    : assetPath, // Use red asset when selected and collapsed
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          if (showProfileIndicator)
+            Positioned(
+              top: 0,
+              right: 0,
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: AppColors.activeColor,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.backgroundColor,
+                    width: 1.5,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExpandedItem(String label, String assetPath, bool isSelected) {
+    return Padding(
+      padding: AppSpacing.sidebarItemPadding,
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.transparent,
+              shape: BoxShape.circle,
+            ),
+            child: ClipOval(
+              child: AssetService.buildImageWidget(
+                assetPath, // Always use white asset when expanded
+                fit: BoxFit.contain,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isSelected
+                    ? AppColors.textPrimary
+                    : AppColors.textSecondary,
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          if (isSelected)
+            const Icon(
+              Icons.arrow_forward_ios,
+              size: 12,
+              color: AppColors.textPrimary,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Color _getItemColor(bool isSelected, bool hovering, bool isCollapsed) {
+    if (isCollapsed) {
+      return Colors.transparent; // All items transparent when collapsed
+    }
+
+    if (isSelected) {
+      return AppColors.activeColor;
+    }
+
+    if (hovering) {
+      return AppColors.hoverColor;
+    }
+
+    return Colors.transparent;
+  }
+
+  List<BoxShadow> _getItemShadow(
+      bool isSelected, bool hovering, bool isCollapsed) {
+    if (isCollapsed) {
+      return []; // No shadow when collapsed
+    }
+
+    if (isSelected) {
+      return [
+        BoxShadow(
+          color: AppColors.activeShadowColor,
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    }
+
+    if (hovering) {
+      return [
+        BoxShadow(
+          color: AppColors.hoverShadowColor,
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ];
+    }
+
+    return [];
   }
 
   Widget _buildNavItem(
@@ -1102,10 +1327,8 @@ class _DashboardPageState extends State<DashboardPage>
         _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '0',
             'Active', context),
         _buildStatCard(
-            'Pending Approval',
-            counts['Pending CEO Approval']?.toString() ??
-                counts['Pending Approval']?.toString() ??
-                '0',
+            'Pending CEO Approval',
+            counts['Pending CEO Approval']?.toString() ?? '0',
             'Awaiting Review',
             context),
         _buildStatCard(
@@ -1127,7 +1350,7 @@ class _DashboardPageState extends State<DashboardPage>
       case 'Draft Proposals':
         gradient = PremiumTheme.orangeGradient;
         break;
-      case 'Pending Approval':
+      case 'Pending CEO Approval':
         gradient = PremiumTheme.purpleGradient;
         break;
       case 'Sent to Client':
@@ -1392,7 +1615,8 @@ class _DashboardPageState extends State<DashboardPage>
                     children: [
                       Text(
                         'AI-Powered Compound Risk Gate',
-                        style: PremiumTheme.titleMedium.copyWith(fontSize: 18),
+                        style: PremiumTheme.titleMedium.copyWith(
+                            fontSize: 16), // Reduced for better 100% zoom
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -1473,7 +1697,8 @@ class _DashboardPageState extends State<DashboardPage>
                   children: [
                     Text(
                       'AI-Powered Compound Risk Gate',
-                      style: PremiumTheme.titleMedium.copyWith(fontSize: 18),
+                      style: PremiumTheme.titleMedium.copyWith(
+                          fontSize: 16), // Reduced for better 100% zoom
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -1693,14 +1918,13 @@ class _DashboardPageState extends State<DashboardPage>
                       .length),
               const SizedBox(width: 8),
               _buildFilterTab(
-                  'Pending Approval',
-                  'pending_approval',
-                  proposals.where((p) {
-                    final s = (p['status'] ?? '').toString().toLowerCase();
-                    return s == 'pending ceo approval' ||
-                        s == 'pending approval' ||
-                        s == 'pending_approval';
-                  }).length),
+                  'Pending CEO Approval',
+                  'pending ceo approval',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? '').toString().toLowerCase() ==
+                          'pending ceo approval')
+                      .length),
               const SizedBox(width: 8),
               _buildFilterTab(
                   'Signed',
@@ -1735,7 +1959,6 @@ class _DashboardPageState extends State<DashboardPage>
         else
           ...filteredProposals.take(5).map((proposal) {
             String status = proposal['status'] ?? 'Draft';
-            status = _getStatusLabel(status);
             Color statusColor = _getStatusColor(status);
             Color textColor = _getStatusTextColor(status);
 
@@ -2084,15 +2307,13 @@ class _DashboardPageState extends State<DashboardPage>
         return PremiumTheme.orange;
       case 'in review':
       case 'pending ceo approval':
-      case 'pending approval':
-      case 'pending_approval':
         return PremiumTheme.purple;
       case 'sent to client':
         return PremiumTheme.info;
       case 'signed':
-        return PremiumTheme.success;
+        return PremiumTheme.teal;
       default:
-        return PremiumTheme.textSecondary;
+        return PremiumTheme.orange;
     }
   }
 
@@ -2100,15 +2321,6 @@ class _DashboardPageState extends State<DashboardPage>
     // For the new premium design, we use the same color for text
     // with opacity adjustments in the container
     return _getStatusColor(status);
-  }
-
-  String _getStatusLabel(String status) {
-    final s = status.toLowerCase().trim();
-    if (s == 'pending ceo approval' || s == 'pending approval') {
-      return 'Pending Approval';
-    }
-    if (s == 'pending_approval') return 'Pending Approval';
-    return status;
   }
 
   String _formatDate(dynamic date) {

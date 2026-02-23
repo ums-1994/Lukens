@@ -8,14 +8,14 @@ import '../../widgets/custom_scrollbar.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/app_side_nav.dart';
 
-class ProposalsPage extends StatefulWidget {
-  const ProposalsPage({super.key});
+class ApprovedProposalsPage extends StatefulWidget {
+  const ApprovedProposalsPage({super.key});
 
   @override
-  _ProposalsPageState createState() => _ProposalsPageState();
+  State<ApprovedProposalsPage> createState() => _ApprovedProposalsPageState();
 }
 
-class _ProposalsPageState extends State<ProposalsPage>
+class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     with TickerProviderStateMixin {
   String _filterStatus = 'All Statuses';
   final TextEditingController _searchController = TextEditingController();
@@ -23,7 +23,7 @@ class _ProposalsPageState extends State<ProposalsPage>
   bool _isLoading = true;
   String? _token;
   bool _isSidebarCollapsed = false;
-  String _currentNavLabel = 'My Proposals';
+  String _currentNavLabel = 'Approved Proposals';
 
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
@@ -452,10 +452,10 @@ class _ProposalsPageState extends State<ProposalsPage>
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
       gradientStart: const Color(0xFF1D2B64),
       gradientEnd: const Color(0xFF1D4350),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isNarrow = constraints.maxWidth < 760;
-          final titleBlock = Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               Text(
@@ -472,50 +472,35 @@ class _ProposalsPageState extends State<ProposalsPage>
                 style: TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ],
-          );
-
-          // Ensure the header never overflows when the sidebar expands/collapses.
-          final maxNameWidth = (constraints.maxWidth - 56 - 12 - 40 - 24)
-              .clamp(140.0, isNarrow ? double.infinity : 240.0);
-
-          final userBlock = Row(
-            mainAxisSize: MainAxisSize.min,
+          ),
+          Row(
             children: [
               ClipOval(
                 child: Image.asset(
                   'assets/images/User_Profile.png',
-                  width: 56,
-                  height: 56,
+                  width: 64,
+                  height: 64,
                   fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(width: 12),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxNameWidth),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _getUserName(app.currentUser),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _getUserName(app.currentUser),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
                     ),
-                    Text(
-                      userRole,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 12),
-                    ),
-                  ],
-                ),
+                  ),
+                  Text(
+                    userRole,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, color: Colors.white),
                 onSelected: (value) {
@@ -537,27 +522,8 @@ class _ProposalsPageState extends State<ProposalsPage>
                 ],
               ),
             ],
-          );
-
-          if (isNarrow) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                titleBlock,
-                const SizedBox(height: 14),
-                userBlock,
-              ],
-            );
-          }
-
-          return Row(
-            children: [
-              Expanded(child: titleBlock),
-              const SizedBox(width: 16),
-              userBlock,
-            ],
-          );
-        },
+          ),
+        ],
       ),
     );
   }

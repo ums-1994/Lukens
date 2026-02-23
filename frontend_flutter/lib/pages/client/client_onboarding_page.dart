@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
