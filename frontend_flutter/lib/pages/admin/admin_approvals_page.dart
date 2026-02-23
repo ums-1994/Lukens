@@ -216,10 +216,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
       void addProposal(Map<String, dynamic> proposal) {
         final id = proposal['id']?.toString();
-        if (id != null) {
-          if (seenIds.contains(id)) return;
-          seenIds.add(id);
-        }
+        if (id == null || id.isEmpty) return;
+        if (seenIds.contains(id)) return;
+        seenIds.add(id);
         all.add(proposal);
 
         final status =
@@ -234,6 +233,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         if (status == 'signed' ||
             status == 'client signed' ||
             status == 'approved' ||
+            status == 'released' ||
             status == 'completed') {
           approved.add(proposal);
         }
@@ -1386,7 +1386,14 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         'id': id,
         'title': proposal['title'],
       },
-    );
+    ).then((result) async {
+      if (result == 'approved') {
+        setState(() => _activeFilter = 'approved');
+      } else if (result == 'rejected') {
+        setState(() => _activeFilter = 'rejected');
+      }
+      await _loadData();
+    });
   }
 
   Widget _buildSnapshotMetrics() {
