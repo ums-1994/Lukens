@@ -49,6 +49,29 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   Map<String, dynamic>? _financeMetrics;
   bool _handledInitialOpen = false;
 
+  Future<void> _fetchFinanceMetrics(AppState app) async {
+    if (_isMetricsLoading) return;
+    if (!mounted) return;
+
+    setState(() {
+      _isMetricsLoading = true;
+      _metricsError = null;
+    });
+
+    try {
+      // Metrics endpoint is optional; keep UI usable even if unavailable.
+      _financeMetrics = null;
+    } catch (e) {
+      _metricsError = e.toString();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMetricsLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -446,7 +469,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     final size = MediaQuery.of(context).size;
     final isMobile = size.width < 900;
 
-    final tableRows = queueItems.isNotEmpty ? queueItems : proposals;
+    final tableRows = proposals;
 
     double displayedValue = 0;
     for (final p in tableRows) {
@@ -1935,8 +1958,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     final lower = status.toLowerCase().trim();
     final canSubmitToApprover =
         lower == 'pending finance' || lower == 'finance in progress';
-    final proposalId = p['id']?.toString();
-
     final proposalId = p['id']?.toString();
 
     final row = Padding(

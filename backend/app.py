@@ -78,6 +78,19 @@ from api.utils.ai_safety import AISafetyError
 # Load environment variables
 load_dotenv(dotenv_path=Path(__file__).with_name('.env'))
 
+_CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').strip()
+if _CORS_ALLOWED_ORIGINS:
+    _CORS_ALLOWED_ORIGINS = [
+        item.strip()
+        for item in _CORS_ALLOWED_ORIGINS.split(',')
+        if item.strip()
+    ]
+else:
+    _CORS_ALLOWED_ORIGINS = [
+        r"^http://localhost(?::\d+)?$",
+        r"^http://127\\.0\\.0\\.1(?::\d+)?$",
+    ]
+
 app = Flask(__name__)
 CORS(
     app,
@@ -198,7 +211,11 @@ limiter = Limiter(
 
 @limiter.request_filter
 def _skip_rate_limit_for_options():
-    return request.method == "OPTIONS"
+    if request.method == "OPTIONS":
+        return True
+    if _is_dev_mode():
+        return True
+    return False
 
 app.config['JSON_SORT_KEYS'] = False
 app.config['PROPAGATE_EXCEPTIONS'] = True
@@ -297,6 +314,19 @@ def _build_local_fallback_db_config():
         cfg['sslmode'] = ssl_mode
 
     return cfg
+
+
+local_fallback_env_set = any(
+    os.getenv(k)
+    for k in (
+        'LOCAL_DB_HOST',
+        'LOCAL_DB_NAME',
+        'LOCAL_DB_USER',
+        'LOCAL_DB_PASSWORD',
+        'LOCAL_DB_PORT',
+        'LOCAL_DB_SSLMODE',
+    )
+)
 
 def get_pg_pool():
     global _pg_pool

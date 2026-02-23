@@ -210,8 +210,6 @@ class _AppSideNavState extends State<AppSideNav> {
   }
 
   bool _shouldHideItemForAdmin(String label) {
-    // Hide analytics entry for non-admin users by default.
-    if (!widget.isAdmin && label.toLowerCase().contains('analytics')) return true;
     return false;
   }
 

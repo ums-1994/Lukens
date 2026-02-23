@@ -1,6 +1,7 @@
 // ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'package:provider/provider.dart';
@@ -2969,7 +2970,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           token: token,
           title: title,
           content: content,
-          budget: budget,
+          budget: computedBudget,
           clientName: _clientNameController.text.trim().isEmpty
               ? null
               : _clientNameController.text.trim(),
@@ -3009,7 +3010,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           id: _savedProposalId!,
           title: title,
           content: content,
-          budget: budget,
           clientName: _clientNameController.text.trim().isEmpty
               ? null
               : _clientNameController.text.trim(),
@@ -4076,7 +4076,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           },
         );
       },
-      behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         width: _isSidebarCollapsed ? 90.0 : 250.0,
@@ -4794,8 +4793,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
                 const SizedBox(width: 16),
                 // Save status with version info
-                GestureDetector(
+                InkWell(
                   onTap: _showVersionHistory,
+                  borderRadius: BorderRadius.circular(4),
                   child: Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -4857,8 +4857,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             fontWeight: FontWeight.w500,
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -4933,7 +4933,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   },
                   icon: const Icon(Icons.comment, size: 16),
                   label: Text(
-                      'Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})'),
+                      "Comments (${_comments.where((c) => c['status'] == 'open' && c['parent_id'] == null).length})"),
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0xFF00BCD4)),
                     foregroundColor: const Color(0xFF00BCD4),
@@ -4946,113 +4946,118 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
                 const SizedBox(width: 12),
                 // More Actions menu (Share, Archive, etc.)
-                if (_savedProposalId != null)
-                  PopupMenuButton<String>(
-                    icon: const Icon(Icons.more_vert, size: 20),
-                    onSelected: (value) async {
-                      switch (value) {
-                        case 'share':
-                          _showCollaborationDialog();
-                          break;
-                        case 'archive':
-                          await _archiveProposal();
-                          break;
-                        case 'restore':
-                          await _restoreProposal();
-                          break;
-                      }
-                    },
-                    itemBuilder: (context) {
-                      final isArchived =
-                          _proposalStatus?.toLowerCase() == 'archived';
-                      return [
-                        const PopupMenuItem(
-                          value: 'share',
-                          child: Row(
-                            children: [
-                              Icon(Icons.person_add_alt_1_outlined, size: 18),
-                              SizedBox(width: 8),
-                              Text('Share / Collaborate'),
-                            ],
-                          ),
-                        ),
-                        if (!isArchived)
-                          const PopupMenuItem(
-                            value: 'archive',
-                            child: Row(
-                              children: [
-                                Icon(Icons.archive_outlined, size: 18),
-                                SizedBox(width: 8),
-                                Text('Archive Proposal'),
-                              ],
+                _savedProposalId != null
+                    ? PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, size: 20),
+                        onSelected: (value) async {
+                          switch (value) {
+                            case 'share':
+                              _showCollaborationDialog();
+                              break;
+                            case 'archive':
+                              await _archiveProposal();
+                              break;
+                            case 'restore':
+                              await _restoreProposal();
+                              break;
+                          }
+                        },
+                        itemBuilder: (context) {
+                          final isArchived =
+                              _proposalStatus?.toLowerCase() == 'archived';
+                          return [
+                            const PopupMenuItem(
+                              value: 'share',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.person_add_alt_1_outlined,
+                                      size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Share / Collaborate'),
+                                ],
+                              ),
                             ),
-                          )
-                        else
-                          const PopupMenuItem(
-                            value: 'restore',
-                            child: Row(
-                              children: [
-                                Icon(Icons.unarchive_outlined, size: 18),
-                                SizedBox(width: 8),
-                                Text('Restore Proposal'),
-                              ],
-                            ),
-                          ),
-                      ];
-                    },
-                  ),
+                            if (!isArchived)
+                              const PopupMenuItem(
+                                value: 'archive',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.archive_outlined, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('Archive Proposal'),
+                                  ],
+                                ),
+                              )
+                            else
+                              const PopupMenuItem(
+                                value: 'restore',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.unarchive_outlined, size: 18),
+                                    SizedBox(width: 8),
+                                    Text('Restore Proposal'),
+                                  ],
+                                ),
+                              ),
+                          ];
+                        },
+                      )
+                    : const SizedBox.shrink(),
                 const SizedBox(width: 12),
                 // Status Badge
-                if (_proposalStatus != null && _proposalStatus != 'draft')
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(_proposalStatus!),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(_getStatusIcon(_proposalStatus!),
-                            size: 14, color: Colors.white),
-                        const SizedBox(width: 6),
-                        Text(
-                          _getStatusLabel(_proposalStatus!),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                (_proposalStatus != null && _proposalStatus != 'draft')
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(_proposalStatus!),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _getStatusIcon(_proposalStatus!),
+                              size: 14,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _getStatusLabel(_proposalStatus!),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+                (_proposalStatus != null && _proposalStatus != 'draft')
+                    ? const SizedBox(width: 12)
+                    : const SizedBox.shrink(),
+                // Send for Approval button
+                (_proposalStatus == null || _proposalStatus == 'draft')
+                    ? ElevatedButton.icon(
+                        onPressed: _sendForApproval,
+                        icon: const Icon(Icons.send, size: 16),
+                        label: const Text('Send for Approval'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2ECC71),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
                           ),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 8,
-                        ),
-                      ),
-                    ),
-                  ),
-                if (_proposalStatus != null && _proposalStatus != 'draft')
-                  const SizedBox(width: 12),
-                // Send for Approval button
-                if (_proposalStatus == null || _proposalStatus == 'draft')
-                  ElevatedButton.icon(
-                    onPressed: _sendForApproval,
-                    icon: const Icon(Icons.send, size: 16),
-                    label: const Text('Send for Approval'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF2ECC71),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
-                if (_proposalStatus == null || _proposalStatus == 'draft')
-                  const SizedBox(width: 12),
+                      )
+                    : const SizedBox.shrink(),
+                (_proposalStatus == null || _proposalStatus == 'draft')
+                    ? const SizedBox(width: 12)
+                    : const SizedBox.shrink(),
                 // Action buttons
                 OutlinedButton.icon(
                   onPressed: _showPreview,

@@ -318,6 +318,31 @@ class AIAnalysisService {
     return _getMockAnalysis(proposalData);
   }
 
+  static Map<String, dynamic> _convertToUIFormat(Map<String, dynamic> raw) {
+    final scoreRaw = raw['readiness_score'] ??
+        raw['score'] ??
+        raw['risk_score'] ??
+        raw['overall_score'];
+    final score = (scoreRaw is num)
+        ? scoreRaw.toDouble()
+        : double.tryParse(scoreRaw?.toString() ?? '') ?? 0.0;
+
+    List<dynamic> issues = [];
+    final issuesRaw = raw['issues'] ?? raw['findings'] ?? raw['risks'];
+    if (issuesRaw is List) {
+      issues = issuesRaw;
+    }
+
+    final summary = (raw['summary'] ?? raw['explanation'] ?? '').toString();
+
+    return {
+      'risk_score': score,
+      'issues': issues,
+      'summary': summary,
+      'raw': raw,
+    };
+  }
+
   // Mock analysis (fallback when AI is not configured)
   static Map<String, dynamic> _getMockAnalysis(
       Map<String, dynamic> proposalData) {

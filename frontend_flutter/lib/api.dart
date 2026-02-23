@@ -48,6 +48,34 @@ class AppState extends ChangeNotifier {
   List<dynamic> notifications = [];
   int unreadNotifications = 0;
 
+  // Theme mode state
+  bool _isLightMode = false;
+  bool get isLightMode => _isLightMode;
+  void toggleThemeMode() {
+    _isLightMode = !_isLightMode;
+    notifyListeners();
+  }
+
+  // Admin navigation/sidebar state
+  bool _isAdminSidebarCollapsed = false;
+  bool get isAdminSidebarCollapsed => _isAdminSidebarCollapsed;
+  void setAdminSidebarCollapsed(bool value) {
+    _isAdminSidebarCollapsed = value;
+    notifyListeners();
+  }
+
+  void toggleAdminSidebar() {
+    _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed;
+    notifyListeners();
+  }
+
+  String _adminNavLabel = 'Dashboard';
+  String get adminNavLabel => _adminNavLabel;
+  void setAdminNavLabel(String label) {
+    _adminNavLabel = label;
+    notifyListeners();
+  }
+
   String get _apiBaseUrl => '$baseUrl/api';
 
   Future<void> init() async {

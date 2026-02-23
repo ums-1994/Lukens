@@ -311,98 +311,15 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
   }
 
   // Missing methods
-  List<dynamic> _filtered(List<dynamic> proposals) {
-    return _filteredProposals(proposals);
-  }
-
-  double _sumAmount(List<dynamic> proposals) {
-    return proposals.fold(0.0, (sum, proposal) {
-      if (proposal is Map) {
-        return sum + _extractAmount(proposal);
-      }
-      return sum;
-    });
-  }
-
-  double _avgAmount(List<dynamic> proposals) {
-    if (proposals.isEmpty) return 0.0;
-    return _sumAmount(proposals) / proposals.length;
-  }
-
-  String _formatMoney(double amount) {
-    return _formatCurrency(amount);
-  }
-
-  Future<void> _loadFinanceData() async {
-    await _loadData();
-  }
-
-  void _handleFinanceAction(
-      {required String action, required String proposalId}) {
-    // Handle finance actions (approve, reject, etc.)
-    debugPrint('Finance action: $action for proposal: $proposalId');
-  }
-
-  // Additional missing methods
-  DateTime _extractDate(dynamic proposal) {
-    if (proposal is Map && proposal['created_at'] != null) {
-      return DateTime.parse(proposal['created_at'].toString());
-    }
-    return DateTime.now();
-  }
-
-  bool _matchesFilters(dynamic proposal) {
-    if (proposal is! Map) return false;
-    final status = (proposal['status'] ?? '').toString().toLowerCase();
-    final query = _searchController.text.toLowerCase().trim();
-
-    final matchesStatus = _matchesStatusFilter(status);
-    final matchesSearch = query.isEmpty ||
-        (proposal['title']?.toString().toLowerCase().contains(query) == true) ||
-        (proposal['client_name']?.toString().toLowerCase().contains(query) ==
-            true);
-
-    return matchesStatus && matchesSearch;
-  }
-
-  bool _matchesStatusFilter(String status) {
-    switch (_statusFilter) {
-      case 'pending':
-        return status.contains('pending') || status.contains('review');
-      case 'approved':
-        return status.contains('approved') ||
-            status.contains('signed') ||
-            status.contains('released');
-      case 'other':
-        return !status.contains('pending') &&
-            !status.contains('review') &&
-            !status.contains('approved') &&
-            !status.contains('signed') &&
-            !status.contains('released');
-      case 'all':
-      default:
-        return true;
-    }
-  }
-
-  BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(12),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.05),
-          blurRadius: 10,
-          offset: const Offset(0, 2),
-        ),
-      ],
-    );
-  }
+  // (Removed duplicate helper methods that were reintroduced during merges.)
 
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    _allProposals = app.proposals;
+    _allProposals = app.proposals
+        .whereType<Map>()
+        .map((e) => e.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
     final size = MediaQuery.of(context).size;
     final isMobile = size.width < 900;
 

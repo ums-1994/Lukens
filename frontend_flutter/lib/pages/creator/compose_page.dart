@@ -96,10 +96,10 @@ class _ComposePageState extends State<ComposePage> {
     if (p == null) return;
 
     // Combine all sections into one text
-    final proposalText = (p["sections"] as Map<String, dynamic>?)
-        ?.entries
-        ?.map((e) => "${e.key}: ${e.value}")
-        ?.join("\n\n") ?? "";
+    final sections = p["sections"] as Map<String, dynamic>?;
+    final proposalText = sections == null
+        ? ""
+        : sections.entries.map((e) => "${e.key}: ${e.value}").join("\n\n");
 
     if (proposalText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(

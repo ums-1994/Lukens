@@ -12,7 +12,6 @@ import '../../theme/premium_theme.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/app_side_nav.dart';
 import '../../api.dart';
-import '../../widgets/app_side_nav.dart';
 import 'dart:ui';
 
 class ClientManagementPage extends StatefulWidget {
@@ -547,6 +546,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   isCollapsed: app.isSidebarCollapsed,
                   currentLabel: app.currentNavLabel,
                   isAdmin: isAdmin,
+                  isLightMode: app.isLightMode,
+                  onToggleThemeMode: app.toggleThemeMode,
                   onToggle: app.toggleSidebar,
                   onSelect: (label) {
                     app.setCurrentNavLabel(label);

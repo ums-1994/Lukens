@@ -27,6 +27,9 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   String _statusFilter = 'all';
   bool _isLoading = true;
 
+  bool _isSidebarCollapsed = false;
+  String _currentPage = 'Templates';
+
   List<Template> _templates = [];
   List<Template> _filteredTemplates = [];
   List<Template> _myTemplates = [];
@@ -932,6 +935,8 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                         isCollapsed: app.isSidebarCollapsed,
                         currentLabel: app.currentNavLabel,
                         isAdmin: isAdmin,
+                        isLightMode: app.isLightMode,
+                        onToggleThemeMode: app.toggleThemeMode,
                         onToggle: app.toggleSidebar,
                         onSelect: (label) {
                           app.setCurrentNavLabel(label);

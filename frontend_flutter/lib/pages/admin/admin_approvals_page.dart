@@ -1644,14 +1644,14 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         );
 
         if (response.statusCode == 200) {
-          final blob = web.Blob(
-            [response.bodyBytes.toJS].toJS,
-            web.BlobPropertyBag(type: 'application/pdf'),
+          final blob = html.Blob(
+            [response.bodyBytes],
+            'application/pdf',
           );
-          final url = web.URL.createObjectURL(blob);
-          web.window.open(url, '_blank');
+          final url = html.Url.createObjectUrlFromBlob(blob);
+          html.window.open(url, '_blank');
           Future.delayed(const Duration(minutes: 1), () {
-            web.URL.revokeObjectURL(url);
+            html.Url.revokeObjectUrl(url);
           });
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1699,16 +1699,16 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       buffer.writeln('"$title","$client","$value","$approvedDate","$owner"');
     }
 
-    final blob = web.Blob([buffer.toString().toJS].toJS);
-    final url = web.URL.createObjectURL(blob);
-    final anchor = web.document.createElement('a') as web.HTMLAnchorElement;
+    final blob = html.Blob([buffer.toString()], 'text/csv');
+    final url = html.Url.createObjectUrlFromBlob(blob);
+    final anchor = html.document.createElement('a') as html.AnchorElement;
     anchor.href = url;
     anchor.setAttribute(
       'download',
       'approved_proposals_${DateTime.now().millisecondsSinceEpoch}.csv',
     );
     anchor.click();
-    web.URL.revokeObjectURL(url);
+    html.Url.revokeObjectUrl(url);
   }
 
   double _parseBudget(dynamic value) {
