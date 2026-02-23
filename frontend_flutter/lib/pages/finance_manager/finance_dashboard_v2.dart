@@ -403,12 +403,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             color: active
-                ? PremiumTheme.teal.withOpacity(0.18)
-                : Colors.white.withOpacity(0.04),
+                ? PremiumTheme.teal.withValues(alpha: 0.18)
+                : Colors.white.withValues(alpha: 0.04),
             border: Border.all(
               color: active
-                  ? PremiumTheme.teal.withOpacity(0.9)
-                  : Colors.white.withOpacity(0.06),
+                  ? PremiumTheme.teal.withValues(alpha: 0.9)
+                  : Colors.white.withValues(alpha: 0.06),
             ),
           ),
           child: Icon(
