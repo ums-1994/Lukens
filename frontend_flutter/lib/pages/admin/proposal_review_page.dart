@@ -494,32 +494,101 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     }
   }
 
-  Future<void> _rejectProposal() async {
-    final confirmed = await showDialog<bool>(
+  Future<void> _showRequestChangesDialog() async {
+    final selectedOption = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Reject Proposal'),
-        content: Text(
-          'Are you sure you want to reject "${_proposal?['title'] ?? 'this proposal'}"? '
-          'It will be returned to draft status.',
+        title: const Text('Request Changes'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Who do you want to request changes from?'),
+            const SizedBox(height: 16),
+            ListTile(
+              title: const Text('Manager'),
+              subtitle: const Text('For content and scope changes'),
+              leading: const Icon(Icons.person, color: Colors.blue),
+              onTap: () => Navigator.of(context).pop('manager'),
+            ),
+            ListTile(
+              title: const Text('Finance'),
+              subtitle: const Text('For financial and pricing changes'),
+              leading: const Icon(Icons.attach_money, color: Colors.green),
+              onTap: () => Navigator.of(context).pop('finance'),
+            ),
+          ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
-            child: const Text('Reject'),
           ),
         ],
       ),
     );
 
-    if (confirmed != true) return;
+    if (selectedOption != null) {
+      await _requestChangesFrom(selectedOption);
+    }
+  }
+
+  Future<void> _requestChangesFrom(String target) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+            'Request Changes from ${target == 'manager' ? 'Manager' : 'Finance'}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+                'Are you sure you want to request changes from the ${target == 'manager' ? 'Manager' : 'Finance Manager'}?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _commentController,
+              decoration: InputDecoration(
+                labelText: 'Describe the changes needed',
+                hintText:
+                    'Please provide details about the required changes...',
+                border: const OutlineInputBorder(),
+              ),
+              maxLines: 3,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: target == 'manager' ? Colors.blue : Colors.green,
+            ),
+            child: const Text('Request Changes'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _submitChangeRequest(target);
+    }
+  }
+
+  Future<void> _submitChangeRequest(String target) async {
+    if (_commentController.text.trim().isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please describe the changes needed'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
 
     try {
       final token = AuthService.token;
@@ -529,29 +598,38 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       if (proposalId == null) return;
 
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$proposalId/reject'),
+        Uri.parse(
+            '${ApiService.baseUrl}/api/proposals/$proposalId/request-changes'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
+        body: json.encode({
+          'target': target, // 'manager' or 'finance'
+          'comments': _commentController.text.trim(),
+        }),
       );
 
       if (response.statusCode == 200) {
+        _commentController.clear();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Proposal rejected and returned to draft'),
-              backgroundColor: Colors.orange,
+            SnackBar(
+              content: Text(
+                  '✅ Changes requested from ${target == 'manager' ? 'Manager' : 'Finance Manager'}'),
+              backgroundColor: Colors.green,
             ),
           );
           Navigator.pop(context);
         }
+      } else {
+        throw Exception('Failed to request changes');
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to reject proposal: $e'),
+            content: Text('Failed to request changes: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -1351,11 +1429,11 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
               tooltip: 'Comments (${_comments.length})',
             ),
             ElevatedButton.icon(
-              onPressed: _rejectProposal,
-              icon: const Icon(Icons.close, size: 18),
-              label: const Text('Reject'),
+              onPressed: _showRequestChangesDialog,
+              icon: const Icon(Icons.edit_note, size: 18),
+              label: const Text('Request Changes'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
+                backgroundColor: Colors.orange,
                 foregroundColor: Colors.white,
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

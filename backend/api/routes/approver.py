@@ -722,6 +722,177 @@ def approve_proposal(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@bp.post("/proposals/<int:proposal_id>/request-changes")
+@token_required
+def request_changes(username=None, proposal_id=None):
+    """Request changes from Manager or Finance"""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        target = data.get('target', '')  # 'manager' or 'finance'
+        comments = data.get('comments', '')
+        
+        if target not in ['manager', 'finance']:
+            return {'detail': 'Invalid target. Must be "manager" or "finance"'}, 400
+            
+        if not comments.strip():
+            return {'detail': 'Comments are required when requesting changes'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Get proposal details
+            cursor.execute(
+                """
+                SELECT id, title, status, owner_id, user_id
+                FROM proposals 
+                WHERE id = %s
+                """,
+                (proposal_id,)
+            )
+            proposal = cursor.fetchone()
+            
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            # Update status to indicate changes are requested
+            cursor.execute(
+                """
+                    UPDATE proposals 
+                    SET status = 'Changes Requested', updated_at = NOW() 
+                    WHERE id = %s
+                """,
+                (proposal_id,)
+            )
+            
+            # Get creator/owner ID
+            creator_id = proposal.get('owner_id') or proposal.get('user_id')
+            
+            # Get approver info
+            cursor.execute(
+                """
+                    SELECT id, username, full_name
+                    FROM users
+                    WHERE username = %s
+                """,
+                (username,)
+            )
+            approver = cursor.fetchone()
+            approver_name = (approver.get('full_name') or approver.get('username') or username) if approver else username
+            
+            proposal_title = proposal.get('title', f'Proposal {proposal_id}')
+            
+            # Notify based on target
+            notifications_created = []
+            
+            if target == 'manager':
+                # Get manager/creator user ID
+                if creator_id:
+                    create_notification(
+                        user_id=creator_id,
+                        notification_type='changes_requested',
+                        title='Changes Requested - Coordination Required',
+                        message=f"Admin requested changes for '{proposal_title}'. Please coordinate with Finance Manager to update content and pricing.",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'requested_by': approver_name,
+                            'target': 'manager',
+                            'comments': comments
+                        }
+                    )
+                    notifications_created.append('creator')
+                
+                # Also notify finance if they exist as separate role
+                cursor.execute(
+                    """
+                        SELECT id FROM users 
+                        WHERE role ILIKE '%finance%' OR role ILIKE '%manager%'
+                        LIMIT 1
+                    """
+                )
+                finance_user = cursor.fetchone()
+                if finance_user:
+                    create_notification(
+                        user_id=finance_user['id'],
+                        notification_type='changes_requested',
+                        title='Changes Requested - Finance Coordination',
+                        message=f"Admin requested changes for '{proposal_title}'. Please coordinate with the proposal creator.",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'requested_by': approver_name,
+                            'target': 'finance_coordination',
+                            'comments': comments
+                        }
+                    )
+                    notifications_created.append('finance')
+                    
+            elif target == 'finance':
+                # Notify finance users
+                cursor.execute(
+                    """
+                        SELECT id FROM users 
+                        WHERE role ILIKE '%finance%'
+                    """
+                )
+                finance_users = cursor.fetchall()
+                
+                for finance_user in finance_users:
+                    create_notification(
+                        user_id=finance_user['id'],
+                        notification_type='changes_requested',
+                        title='Financial Changes Requested',
+                        message=f"Admin requested financial changes for '{proposal_title}'. Please update pricing and resubmit.",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'requested_by': approver_name,
+                            'target': 'finance_only',
+                            'comments': comments
+                        }
+                    )
+                
+                # Also notify creator so they know finance is working on it
+                if creator_id:
+                    create_notification(
+                        user_id=creator_id,
+                        notification_type='changes_requested',
+                        title='Financial Changes Requested',
+                        message=f"Admin requested financial changes for '{proposal_title}'. Finance Manager will update pricing.",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'requested_by': approver_name,
+                            'target': 'finance_only',
+                            'comments': comments
+                        }
+                    )
+                    notifications_created.extend(['finance', 'creator'])
+            
+            # Add comment to proposal for audit trail
+            if approver:
+                approver_id = approver['id']
+                cursor.execute(
+                    """
+                        INSERT INTO document_comments 
+                        (proposal_id, comment_text, created_by, status)
+                        VALUES (%s, %s, %s, %s)
+                    """,
+                    (proposal_id, f"Changes requested from {target}: {comments}", approver_id, 'active')
+                )
+            
+            conn.commit()
+            
+            return {
+                'detail': f'Changes requested from {target}',
+                'target': target,
+                'notifications_sent': notifications_created,
+                'proposal_id': proposal_id,
+                'status': 'Changes Requested'
+            }, 200
+            
+    except Exception as e:
+        print(f"[ERROR] Error requesting changes: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
 @bp.post("/proposals/<int:proposal_id>/reject")
 @token_required
 def reject_proposal(username=None, proposal_id=None):
