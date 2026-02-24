@@ -26,14 +26,14 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   String _typeFilter = 'all';
   String _statusFilter = 'all';
   bool _isLoading = true;
-
   bool _isSidebarCollapsed = false;
   String _currentPage = 'Templates';
+  late AnimationController _animationController;
 
   List<Template> _templates = [];
   List<Template> _filteredTemplates = [];
-  List<Template> _myTemplates = [];
   List<Template> _publicTemplates = [];
+  List<Template> _myTemplates = [];
 
   final Map<String, StatusConfig> _statusConfig = {
     'draft': StatusConfig(

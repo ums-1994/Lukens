@@ -1,6 +1,5 @@
 // ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 
@@ -26,7 +25,10 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage>
     with TickerProviderStateMixin {
-  bool _isSidebarCollapsed = true;
+  bool _isLoading = true;
+  bool _hasLoaded = false;
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'Dashboard';
   late AnimationController _animationController;
   String _currentPage = 'Dashboard';
   bool _isRefreshing = false;
@@ -35,8 +37,6 @@ class _DashboardPageState extends State<DashboardPage>
 
   // AI Risk Gate mock data
   List<Map<String, dynamic>> _riskItems = [];
-
-  Timer? _notificationsTimer;
 
   @override
   void initState() {
@@ -59,21 +59,6 @@ class _DashboardPageState extends State<DashboardPage>
       }
       await _refreshData();
       await _loadRiskData(app);
-
-      _notificationsTimer?.cancel();
-      _notificationsTimer = Timer.periodic(
-        const Duration(seconds: 20),
-        (_) async {
-          if (!mounted) return;
-          final app = context.read<AppState>();
-          if (app.authToken == null && AuthService.token != null) {
-            app.authToken = AuthService.token;
-            app.currentUser = AuthService.currentUser;
-          }
-          if (app.authToken == null) return;
-          await app.fetchNotifications();
-        },
-      );
     });
   }
 
@@ -127,9 +112,7 @@ class _DashboardPageState extends State<DashboardPage>
       // Fetch risks for proposals that need review (draft or pending approval)
       final proposalsNeedingReview = app.proposals.where((proposal) {
         final status = (proposal['status'] ?? '').toString().toLowerCase();
-        return status == 'draft' ||
-            status == 'pending ceo approval' ||
-            status == 'pending approval';
+        return status == 'draft' || status == 'pending ceo approval';
       }).toList();
 
       // Analyze risks for each proposal using the AI risk analysis API
@@ -293,10 +276,6 @@ class _DashboardPageState extends State<DashboardPage>
         return status == 'draft' || status.isEmpty;
       }
 
-      if (filter == 'pending_approval') {
-        return status == 'pending ceo approval' || status == 'pending approval';
-      }
-
       // For other statuses, do exact match after normalization
       return status == filter;
     }).toList();
@@ -304,7 +283,6 @@ class _DashboardPageState extends State<DashboardPage>
 
   @override
   void dispose() {
-    _notificationsTimer?.cancel();
     _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -1349,10 +1327,8 @@ class _DashboardPageState extends State<DashboardPage>
         _buildStatCard('Draft Proposals', counts['Draft']?.toString() ?? '0',
             'Active', context),
         _buildStatCard(
-            'Pending Approval',
-            counts['Pending CEO Approval']?.toString() ??
-                counts['Pending Approval']?.toString() ??
-                '0',
+            'Pending CEO Approval',
+            counts['Pending CEO Approval']?.toString() ?? '0',
             'Awaiting Review',
             context),
         _buildStatCard(
@@ -1374,7 +1350,7 @@ class _DashboardPageState extends State<DashboardPage>
       case 'Draft Proposals':
         gradient = PremiumTheme.orangeGradient;
         break;
-      case 'Pending Approval':
+      case 'Pending CEO Approval':
         gradient = PremiumTheme.purpleGradient;
         break;
       case 'Sent to Client':
@@ -1942,14 +1918,13 @@ class _DashboardPageState extends State<DashboardPage>
                       .length),
               const SizedBox(width: 8),
               _buildFilterTab(
-                  'Pending Approval',
-                  'pending_approval',
-                  proposals.where((p) {
-                    final s = (p['status'] ?? '').toString().toLowerCase();
-                    return s == 'pending ceo approval' ||
-                        s == 'pending approval' ||
-                        s == 'pending_approval';
-                  }).length),
+                  'Pending CEO Approval',
+                  'pending ceo approval',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? '').toString().toLowerCase() ==
+                          'pending ceo approval')
+                      .length),
               const SizedBox(width: 8),
               _buildFilterTab(
                   'Signed',
@@ -1984,7 +1959,6 @@ class _DashboardPageState extends State<DashboardPage>
         else
           ...filteredProposals.take(5).map((proposal) {
             String status = proposal['status'] ?? 'Draft';
-            status = _getStatusLabel(status);
             Color statusColor = _getStatusColor(status);
             Color textColor = _getStatusTextColor(status);
 
@@ -2333,15 +2307,13 @@ class _DashboardPageState extends State<DashboardPage>
         return PremiumTheme.orange;
       case 'in review':
       case 'pending ceo approval':
-      case 'pending approval':
-      case 'pending_approval':
         return PremiumTheme.purple;
       case 'sent to client':
         return PremiumTheme.info;
       case 'signed':
-        return PremiumTheme.success;
+        return PremiumTheme.teal;
       default:
-        return PremiumTheme.textSecondary;
+        return PremiumTheme.orange;
     }
   }
 
@@ -2349,15 +2321,6 @@ class _DashboardPageState extends State<DashboardPage>
     // For the new premium design, we use the same color for text
     // with opacity adjustments in the container
     return _getStatusColor(status);
-  }
-
-  String _getStatusLabel(String status) {
-    final s = status.toLowerCase().trim();
-    if (s == 'pending ceo approval' || s == 'pending approval') {
-      return 'Pending Approval';
-    }
-    if (s == 'pending_approval') return 'Pending Approval';
-    return status;
   }
 
   String _formatDate(dynamic date) {

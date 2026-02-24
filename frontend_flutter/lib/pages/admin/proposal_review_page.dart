@@ -10,6 +10,8 @@ import '../../theme/premium_theme.dart';
 import '../../widgets/header.dart';
 import '../../widgets/admin/admin_sidebar.dart';
 import 'package:intl/intl.dart';
+import '../../document_editor/models/document_table.dart';
+import '../../document_editor/widgets/table_widget.dart';
 
 class ProposalReviewPage extends StatefulWidget {
   final String proposalId;
@@ -36,6 +38,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   bool _isSubmittingComment = false;
   bool _showVersions = false;
   final ScrollController _scrollController = ScrollController();
+  bool _isSidebarCollapsed = false;
+  String _currentPage = 'Approvals';
 
   Future<void> _copyClientLink() async {
     final link = _clientLink;
@@ -498,7 +502,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
         final returnedToken = payload?['access_token']?.toString();
         final returnedLink = payload?['client_link']?.toString();
-        final computedLink = (returnedToken != null && returnedToken.trim().isNotEmpty)
+        final computedLink =
+            (returnedToken != null && returnedToken.trim().isNotEmpty)
             ? '${Uri.base.origin}/#/client/proposals?token=${returnedToken.trim()}'
             : (returnedLink?.trim());
         _safeSetState(() {
@@ -638,7 +643,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
               backgroundColor: Colors.orange,
             ),
           );
-          Navigator.pop(context);
+          Navigator.pop(context, 'rejected');
         }
       }
     } catch (e) {
@@ -1000,6 +1005,21 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                       letterSpacing: 0.2,
                                     ),
                                   ),
+                                  if (section['tables'] is List)
+                                    ...((section['tables'] as List)
+                                        .where((t) => t is Map)
+                                        .map((t) {
+                                      final table = DocumentTable.fromJson(
+                                        Map<String, dynamic>.from(t as Map),
+                                      );
+                                      return TableWidget(
+                                        sectionIndex: index,
+                                        tableIndex: null,
+                                        table: table,
+                                        currencySymbol: 'R',
+                                        readOnly: true,
+                                      );
+                                    })),
                                 ],
                               ),
                             ),
@@ -1099,7 +1119,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                                   DateTime.parse(
                                                       _proposal!['updated_at']),
                                                 )
-                                              : 'Unknown date',
+                                              : 'N/A',
                                         ),
                                       ],
                                     ),
@@ -1159,8 +1179,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                           padding: EdgeInsets.all(16),
                                           child: Text(
                                             'No versions available yet',
-                                            style:
-                                                TextStyle(color: Colors.white54),
+                                            style: TextStyle(color: Colors.white54),
                                           ),
                                         ),
                                       ],
@@ -1283,8 +1302,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                               controller: _commentController,
                                               style: const TextStyle(
                                                   color: Colors.white),
-                                              decoration:
-                                                  const InputDecoration(
+                                              decoration: const InputDecoration(
                                                 hintText: 'Add a comment...',
                                                 hintStyle: TextStyle(
                                                     color: Colors.white54),

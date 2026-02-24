@@ -22,6 +22,8 @@ class _ProposalsPageState extends State<ProposalsPage>
   List<Map<String, dynamic>> proposals = [];
   bool _isLoading = true;
   String? _token;
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'My Proposals';
 
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
@@ -84,7 +86,6 @@ class _ProposalsPageState extends State<ProposalsPage>
       },
     );
   }
-
   final ScrollController _scrollController = ScrollController();
   bool _hasLoadedOnce = false;
 
@@ -852,25 +853,11 @@ class ProposalItem extends StatelessWidget {
     return date.toString();
   }
 
-  String _statusKey(String? status) {
-    return (status ?? '').toString().toLowerCase().trim();
-  }
-
-  String _statusLabel(String? status) {
-    final s = _statusKey(status);
-    if (s == 'pending ceo approval' || s == 'pending approval') {
-      return 'Pending Approval';
-    }
-    if (s.isEmpty) return 'Unknown';
-    return status!.toString();
-  }
-
   @override
   Widget build(BuildContext context) {
-    final statusKey = _statusKey(proposal['status']?.toString());
-    final displayStatus = _statusLabel(proposal['status']?.toString());
+    final status = (proposal['status'] ?? '').toString().toLowerCase().trim();
     Color statusColor;
-    switch (statusKey) {
+    switch (status) {
       case 'draft':
         statusColor = PremiumTheme.purple;
         break;
@@ -931,7 +918,7 @@ class ProposalItem extends StatelessWidget {
                 decoration: BoxDecoration(
                     color: statusBgColor,
                     borderRadius: BorderRadius.circular(20)),
-                child: Text(displayStatus,
+                child: Text(proposal['status'] ?? 'Unknown',
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -939,7 +926,8 @@ class ProposalItem extends StatelessWidget {
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () {
-                if (statusKey == 'draft') {
+                if ((proposal['status'] ?? '').toString().toLowerCase() ==
+                    'draft') {
                   Navigator.pushNamed(context, '/compose', arguments: proposal)
                       .then((_) {
                     if (onRefresh != null) onRefresh!();

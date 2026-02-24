@@ -44,10 +44,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     });
   }
 
-  bool _canManageInvitations() {
-    return _isAdminUser();
-  }
-
   bool _isFinanceUser() {
     try {
       final user = AuthService.currentUser;
@@ -60,6 +56,10 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     } catch (e) {
       return false;
     }
+  }
+
+  bool _canManageInvitations() {
+    return _isFinanceUser();
   }
 
   void _showAddClientDialog() {
@@ -274,18 +274,15 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     try {
       final token = AuthService.token;
       if (token != null) {
-        final clients = await ClientService.getClients(token);
-        final invitations = _canManageInvitations()
-            ? await ClientService.getInvitations(token)
-            : [];
+        final results = await Future.wait([
+          ClientService.getClients(token),
+          ClientService.getInvitations(token),
+        ]);
 
         if (mounted) {
           setState(() {
-            _clients = List<Map<String, dynamic>>.from(clients);
-            _invitations = List<Map<String, dynamic>>.from(invitations);
-            if (!_canManageInvitations() && _selectedTab == 'invitations') {
-              _selectedTab = 'clients';
-            }
+            _clients = List<Map<String, dynamic>>.from(results[0]);
+            _invitations = List<Map<String, dynamic>>.from(results[1]);
           });
         }
       }
@@ -668,8 +665,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                                 const Center(
                                     child: CircularProgressIndicator(
                                         color: PremiumTheme.teal))
-                              else if (_selectedTab == 'clients' ||
-                                  !_canManageInvitations())
+                              else if (_selectedTab == 'clients')
                                 _buildClientsTable()
                               else
                                 _buildInvitationsTable(),
@@ -1281,23 +1277,22 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 ),
                 const SizedBox(width: 12),
               ],
-              if (_canManageInvitations())
-                ElevatedButton.icon(
-                  onPressed: _showInviteDialog,
-                  icon: const Icon(Icons.person_add, size: 20),
-                  label: const Text('Invite Client',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: PremiumTheme.teal,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
+              ElevatedButton.icon(
+                onPressed: _showInviteDialog,
+                icon: const Icon(Icons.person_add, size: 20),
+                label: const Text('Invite Client',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: PremiumTheme.teal,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
+                  elevation: 0,
                 ),
+              ),
             ],
           ),
         ),
@@ -1337,7 +1332,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   ),
                 ),
               ),
-              if (_canManageInvitations() && _selectedTab == 'invitations') ...[
+              if (_selectedTab == 'invitations') ...[
                 const SizedBox(width: 12),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1454,51 +1449,49 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             ),
           ),
         ),
-        if (_canManageInvitations()) ...[
-          const SizedBox(width: 16),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: PremiumTheme.statCard(PremiumTheme.blueGradient),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.mail, color: Colors.white, size: 20),
-                          SizedBox(width: 8),
-                          Text('Pending Invites',
-                              style:
-                                  TextStyle(color: Colors.white, fontSize: 14)),
-                        ],
+        const SizedBox(width: 16),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: PremiumTheme.statCard(PremiumTheme.blueGradient),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.mail, color: Colors.white, size: 20),
+                        SizedBox(width: 8),
+                        Text('Pending Invites',
+                            style:
+                                TextStyle(color: Colors.white, fontSize: 14)),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '$pendingInvites',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        '$pendingInvites',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    ),
+                    Text(
+                      '$completedInvites completed',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 12,
                       ),
-                      Text(
-                        '$completedInvites completed',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-        ],
+        ),
         const SizedBox(width: 16),
         Expanded(
           child: ClipRRect(
@@ -1606,54 +1599,53 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   ),
                 ),
               ),
-              if (_canManageInvitations())
-                Expanded(
-                  child: InkWell(
-                    onTap: () => setState(() => _selectedTab = 'invitations'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      decoration: BoxDecoration(
-                        color: _selectedTab == 'invitations'
-                            ? PremiumTheme.teal.withValues(alpha: 0.3)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(20),
-                        border: _selectedTab == 'invitations'
-                            ? Border.all(color: PremiumTheme.teal, width: 2)
-                            : null,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.mail,
+              Expanded(
+                child: InkWell(
+                  onTap: () => setState(() => _selectedTab = 'invitations'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: BoxDecoration(
+                      color: _selectedTab == 'invitations'
+                          ? PremiumTheme.teal.withValues(alpha: 0.3)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                      border: _selectedTab == 'invitations'
+                          ? Border.all(color: PremiumTheme.teal, width: 2)
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.mail,
+                          color: _selectedTab == 'invitations'
+                              ? PremiumTheme.teal
+                              : Colors.white,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Invitations (${_invitations.where((i) {
+                            final status =
+                                i['status']?.toString().toLowerCase() ?? '';
+                            final clientId = i['client_id'];
+                            return status != 'completed' &&
+                                (clientId == null ||
+                                    clientId.toString().isEmpty);
+                          }).length})',
+                          style: TextStyle(
                             color: _selectedTab == 'invitations'
                                 ? PremiumTheme.teal
                                 : Colors.white,
+                            fontWeight: _selectedTab == 'invitations'
+                                ? FontWeight.w600
+                                : FontWeight.w400,
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Invitations (${_invitations.where((i) {
-                              final status =
-                                  i['status']?.toString().toLowerCase() ?? '';
-                              final clientId = i['client_id'];
-                              return status != 'completed' &&
-                                  (clientId == null ||
-                                      clientId.toString().isEmpty);
-                            }).length})',
-                            style: TextStyle(
-                              color: _selectedTab == 'invitations'
-                                  ? PremiumTheme.teal
-                                  : Colors.white,
-                              fontWeight: _selectedTab == 'invitations'
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              ),
             ],
           ),
         ),
@@ -1724,45 +1716,44 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     topRight: Radius.circular(20),
                   ),
                 ),
-                child: Row(
+                child: const Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                         flex: 3,
                         child: Text('Company',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    const Expanded(
+                    Expanded(
                         flex: 2,
                         child: Text('Contact',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    const Expanded(
+                    Expanded(
                         flex: 2,
                         child: Text('Email',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    const Expanded(
+                    Expanded(
                         flex: 2,
                         child: Text('Industry',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    const Expanded(
+                    Expanded(
                         flex: 1,
                         child: Text('Status',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    if (_canManageInvitations())
-                      const SizedBox(
-                          width: 80,
-                          child: Text('Actions',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600))),
+                    SizedBox(
+                        width: 80,
+                        child: Text('Actions',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
                   ],
                 ),
               ),
@@ -1779,23 +1770,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     final company = client['company_name'] ?? 'N/A';
     final contact = client['contact_person'] ?? 'N/A';
     final email = client['email'] ?? 'N/A';
-    // Get holding information from various possible keys
-    final holdingInfo = client['holding_information'] ??
-        client['holdingInformation'] ??
-        client['holding'] ??
-        client['client_holding'] ??
-        client['industry']; // fallback to industry if holding is not found
-
-    final industry = (holdingInfo == null ||
-            holdingInfo.toString().trim().isEmpty ||
-            holdingInfo.toString().trim().toLowerCase() == 'n/a')
-        ? 'Holding'
-        : holdingInfo.toString();
+    final industry = client['industry'] ?? 'N/A';
     final status = client['status'] ?? 'active';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         border: Border(
           bottom:
@@ -1952,45 +1931,44 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     topRight: Radius.circular(20),
                   ),
                 ),
-                child: Row(
+                child: const Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                         flex: 3,
                         child: Text('Email',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    const Expanded(
+                    Expanded(
                         flex: 2,
                         child: Text('Company',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    const Expanded(
+                    Expanded(
                         flex: 2,
                         child: Text('Sent Date',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    const Expanded(
+                    Expanded(
                         flex: 2,
                         child: Text('Expires',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    const Expanded(
+                    Expanded(
                         flex: 1,
                         child: Text('Status',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    if (_canManageInvitations())
-                      const SizedBox(
-                          width: 80,
-                          child: Text('Actions',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600))),
+                    SizedBox(
+                        width: 80,
+                        child: Text('Actions',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600))),
                   ],
                 ),
               ),
@@ -2073,6 +2051,22 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
             ),
           ),
+          SizedBox(
+            width: 80,
+            child: PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert, color: Colors.white, size: 18),
+              onSelected: (value) => _handleInvitationAction(value, invite),
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'resend', child: Text('Resend')),
+                if (!_isEmailVerified(invite))
+                  const PopupMenuItem(
+                      value: 'send_code',
+                      child: Text('Send Verification Code')),
+                const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
+                const PopupMenuItem(value: 'delete', child: Text('Delete')),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -2143,11 +2137,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     }
   }
 
-  void _showClientMenu(Map<String, dynamic> client) {
-    // TODO: Show menu with options (edit, view notes, link proposal, etc.)
-    _showSnackBar('Client menu coming soon!');
-  }
-
   void _showClientDetails(Map<String, dynamic> client) {
     final company = (client['company_name'] ?? client['name'] ?? 'Client')
         .toString()
@@ -2176,6 +2165,52 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
           ),
         ],
       ),
+    );
+  }
+
+  void _showClientMenu(Map<String, dynamic> client) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0E1726),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.visibility, color: Colors.white),
+                  title: const Text(
+                    'View Details',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showClientDetails(client);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.edit, color: Colors.white),
+                  title: const Text(
+                    'Edit',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _showSnackBar('Edit client coming soon!');
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

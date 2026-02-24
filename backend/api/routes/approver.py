@@ -45,7 +45,7 @@ def options_pending_approvals():
 
 @bp.get("/proposals/pending_approval")
 @token_required
-def get_pending_approvals(username=None):
+def get_pending_approvals(username=None, user_id=None, email=None):
     """Get all proposals pending approval"""
     try:
         with get_db_connection() as conn:
@@ -159,6 +159,110 @@ def get_pending_approvals(username=None):
     except Exception as e:
         print(f"❌ Error fetching pending approvals: {e}")
         import traceback
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.get("/proposals/all")
+@token_required
+def get_all_proposals_for_admin(username=None, user_id=None, email=None):
+    """Get proposals across all users for admin/approver dashboards."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            resolved_user_id = user_id
+            if not resolved_user_id:
+                resolved_user_id = resolve_user_id(cursor, username or email)
+
+            requester_role = ''
+            if resolved_user_id:
+                cursor.execute('SELECT role FROM users WHERE id = %s', (resolved_user_id,))
+                role_row = cursor.fetchone()
+                if role_row:
+                    requester_role = (role_row.get('role') or '').strip().lower()
+
+            # Only admin/CEO/approver-style roles should be able to see all proposals.
+            if requester_role not in ['admin', 'ceo', 'approver']:
+                return {'detail': 'Admin access required'}, 403
+
+            # Detect actual proposals table schema so we can support multiple environments.
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            cols = cursor.fetchall() or []
+            existing_columns = [
+                (c['column_name'] if isinstance(c, dict) else c[0])
+                for c in cols
+            ]
+
+            if 'client' in existing_columns:
+                client_expr = 'client'
+            elif 'client_name' in existing_columns:
+                client_expr = 'client_name'
+            else:
+                client_expr = "NULL::text"
+
+            if 'client_email' in existing_columns:
+                client_email_expr = 'client_email'
+            else:
+                client_email_expr = "NULL::text"
+
+            if 'owner_id' in existing_columns:
+                owner_expr = 'owner_id'
+            elif 'user_id' in existing_columns:
+                owner_expr = 'user_id'
+            else:
+                owner_expr = "NULL::text"
+
+            if 'budget' in existing_columns:
+                budget_expr = 'budget'
+            else:
+                budget_expr = 'NULL::numeric'
+
+            query = f'''
+                SELECT
+                    id,
+                    title,
+                    content,
+                    {client_expr} AS client,
+                    {client_email_expr} AS client_email,
+                    {owner_expr} AS user_id,
+                    status,
+                    created_at,
+                    updated_at,
+                    {budget_expr} AS budget
+                FROM proposals
+                ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+            '''
+
+            cursor.execute(query)
+            rows = cursor.fetchall() or []
+            proposals = []
+            for row in rows:
+                proposals.append({
+                    'id': row.get('id'),
+                    'title': row.get('title'),
+                    'content': row.get('content'),
+                    'client': row.get('client') or 'Unknown',
+                    'client_name': row.get('client') or 'Unknown',
+                    'client_email': (row.get('client_email') or ''),
+                    'owner_id': row.get('user_id'),
+                    'user_id': row.get('user_id'),
+                    'status': row.get('status'),
+                    'budget': row.get('budget'),
+                    'created_at': row.get('created_at').isoformat() if row.get('created_at') else None,
+                    'updated_at': row.get('updated_at').isoformat() if row.get('updated_at') else None,
+                    'updatedAt': row.get('updated_at').isoformat() if row.get('updated_at') else None,
+                })
+
+            return {'proposals': proposals}, 200
+    except Exception as e:
+        print(f"❌ Error fetching all proposals for admin: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 

@@ -1,13 +1,13 @@
 import 'dart:math' as math;
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-
 import '../../api.dart';
 import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/app_side_nav.dart';
 import '../../widgets/custom_scrollbar.dart';
@@ -4121,7 +4121,7 @@ class _FunnelStage extends StatelessWidget {
     final statuses = [
       'Draft',
       'In Review',
-      'Pending Approval',
+      'Pending Ceo Approval',
       'Sent To Client',
       'Signed',
       'Lost',
@@ -4136,10 +4136,6 @@ class _FunnelStage extends StatelessWidget {
           status.contains('lost') ||
           status.contains('rejected')) {
         lostCount += entry.value;
-      } else if (status == 'pending ceo approval' ||
-          status == 'pending approval') {
-        normalizedCounts['Pending Approval'] =
-            (normalizedCounts['Pending Approval'] ?? 0) + entry.value;
       } else {
         normalizedCounts[entry.key] = entry.value;
       }
@@ -4787,10 +4783,4 @@ class _FunnelStage extends StatelessWidget {
     if (date == null) return 'No date';
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
-
-  String _formatDMY(DateTime date) {
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-  }
-}
-
 */
