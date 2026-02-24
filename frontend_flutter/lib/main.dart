@@ -35,8 +35,8 @@ import 'pages/guest/guest_collaboration_page.dart';
 import 'pages/shared/collaboration_router.dart';
 import 'pages/client/client_onboarding_page.dart';
 import 'pages/client/client_dashboard_home.dart';
-import 'pages/admin/analytics_page.dart';
 import 'pages/finance_manager/finance_analytics.dart';
+import 'pages/admin/analytics_page.dart' as admin;
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
@@ -416,7 +416,7 @@ class MyApp extends StatelessWidget {
             if (role.isFinance()) {
               return const FinanceAnalyticsPage();
             }
-            return const AnalyticsPage();
+            return const admin.AnalyticsPage();
           },
           '/ai-configuration': (context) => const AIConfigurationPage(),
           '/settings': (context) => const SettingsPage(),
@@ -723,7 +723,7 @@ class _HomeShellState extends State<HomeShell> {
     ContentLibraryPage(), // 2
     ClientManagementPage(), // 3
     ApproverDashboardPage(), // 4
-    AnalyticsPage(), // 5
+    admin.AnalyticsPage(), // 5
     PreviewPage(), // 6 (optional)
     ComposePage(), // 7 (optional)
     GovernPage(), // 8 (optional)
