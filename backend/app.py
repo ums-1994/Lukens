@@ -87,6 +87,7 @@ _cors_origins = [
     "http://localhost:5173",
     "http://localhost:5000",
     "http://localhost:8081",
+    "http://localhost:50478",  # Add your specific port
 ]
 
 # Also allow a configured frontend origin (Render/Netlify/custom domain).
@@ -103,15 +104,11 @@ except Exception:
 
 CORS(
     app,
+    origins=_cors_origins,
     supports_credentials=True,
-    resources={
-        r"/*": {
-            "origins": ["*"],
-            "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
-            "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
-            "expose_headers": ["Content-Type", "Authorization"],
-        }
-    },
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+    methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
+    expose_headers=["Content-Type", "Authorization"],
 )
 
 @app.route("/", methods=["OPTIONS"])

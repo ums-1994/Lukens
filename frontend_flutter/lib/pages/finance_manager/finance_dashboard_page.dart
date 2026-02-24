@@ -283,7 +283,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
           height: 44,
           child: IconButton(
             tooltip: 'Notifications',
-            icon: const Icon(Icons.notifications_none, color: Colors.white),
+            icon: Icon(
+              unread > 0
+                  ? Icons.notifications_active
+                  : Icons.notifications_none,
+              color: Colors.white,
+            ),
             onPressed: () async {
               await app.fetchNotifications();
               if (!mounted) return;
@@ -336,7 +341,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
 
               return Container(
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(bottomSheetContext).size.height * 0.8,
+                  maxHeight:
+                      MediaQuery.of(bottomSheetContext).size.height * 0.8,
                 ),
                 padding: EdgeInsets.only(
                   bottom: MediaQuery.of(bottomSheetContext).viewInsets.bottom,
@@ -386,102 +392,109 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                           ),
                         ],
                       ),
-                  ),
-                  Expanded(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 12,
-                        horizontal: 16,
-                      ),
-                      child: notifications.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No notifications yet.',
-                                style: TextStyle(
-                                  color: Color(0xFF4A4A4A),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            )
-                          : ListView.separated(
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 12, horizontal: 16),
-                              itemCount: notifications.length,
-                              separatorBuilder: (_, __) =>
-                                  const Divider(height: 16),
-                              itemBuilder: (context, index) {
-                                final rawItem = notifications[index];
-                                final Map<String, dynamic> notification =
-                                    rawItem is Map<String, dynamic>
-                                        ? rawItem
-                                        : (rawItem is Map
-                                            ? <String, dynamic>{}
-                                            : <String, dynamic>{});
-
-                                final title =
-                                    notification['title']?.toString().trim();
-                                final message =
-                                    notification['message']?.toString().trim() ?? '';
-                                final proposalTitle = notification['proposal_title']
-                                        ?.toString()
-                                        .trim();
-                                final isRead = notification['is_read'] == true;
-                                final timeLabel = _formatNotificationTimestamp(
-                                    notification['created_at']);
-
-                                final dynamic notificationIdRaw =
-                                    notification['id'];
-                                final int? notificationId = notificationIdRaw is int
-                                    ? notificationIdRaw
-                                    : int.tryParse(
-                                        notificationIdRaw?.toString() ?? '',
-                                      );
-
-                                return ListTile(
-                                  onTap: () async {
-                                    Navigator.of(bottomSheetContext).pop();
-                                    await _handleNotificationTap(
-                                      app,
-                                      notification,
-                                      notificationId,
-                                      isAlreadyRead: isRead,
-                                    );
-                                  },
-                                  leading: Icon(
-                                    isRead
-                                        ? Icons.notifications_none_outlined
-                                        : Icons.notifications_active,
-                                    color: isRead
-                                        ? const Color(0xFF95A5A6)
-                                        : const Color(0xFF3498DB),
-                                  ),
-                                  title: Text(
-                                    title?.isNotEmpty == true
-                                        ? title!
-                                        : 'Notification',
-                                    style: TextStyle(
-                                      color: const Color(0xFF2C3E50),
-                                      fontWeight: isRead
-                                          ? FontWeight.normal
-                                          : FontWeight.bold,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    message,
-                                    style: TextStyle(
-                                      color: const Color(0xFF64748B),
-                                      fontSize: 14,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                );
-                              },
-                            ),
                     ),
-                  ),
-                ],
-              ),);
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 16,
+                        ),
+                        child: notifications.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'No notifications yet.',
+                                  style: TextStyle(
+                                    color: Color(0xFF4A4A4A),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 12, horizontal: 16),
+                                itemCount: notifications.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 16),
+                                itemBuilder: (context, index) {
+                                  final rawItem = notifications[index];
+                                  final Map<String, dynamic> notification =
+                                      rawItem is Map<String, dynamic>
+                                          ? rawItem
+                                          : (rawItem is Map
+                                              ? <String, dynamic>{}
+                                              : <String, dynamic>{});
+
+                                  final title =
+                                      notification['title']?.toString().trim();
+                                  final message = notification['message']
+                                          ?.toString()
+                                          .trim() ??
+                                      '';
+                                  final proposalTitle =
+                                      notification['proposal_title']
+                                          ?.toString()
+                                          .trim();
+                                  final isRead =
+                                      notification['is_read'] == true;
+                                  final timeLabel =
+                                      _formatNotificationTimestamp(
+                                          notification['created_at']);
+
+                                  final dynamic notificationIdRaw =
+                                      notification['id'];
+                                  final int? notificationId = notificationIdRaw
+                                          is int
+                                      ? notificationIdRaw
+                                      : int.tryParse(
+                                          notificationIdRaw?.toString() ?? '',
+                                        );
+
+                                  return ListTile(
+                                    onTap: () async {
+                                      Navigator.of(bottomSheetContext).pop();
+                                      await _handleNotificationTap(
+                                        app,
+                                        notification,
+                                        notificationId,
+                                        isAlreadyRead: isRead,
+                                      );
+                                    },
+                                    leading: Icon(
+                                      isRead
+                                          ? Icons.notifications_none_outlined
+                                          : Icons.notifications_active,
+                                      color: isRead
+                                          ? const Color(0xFF95A5A6)
+                                          : const Color(0xFF3498DB),
+                                    ),
+                                    title: Text(
+                                      title?.isNotEmpty == true
+                                          ? title!
+                                          : 'Notification',
+                                      style: TextStyle(
+                                        color: const Color(0xFF2C3E50),
+                                        fontWeight: isRead
+                                            ? FontWeight.normal
+                                            : FontWeight.bold,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      message,
+                                      style: TextStyle(
+                                        color: const Color(0xFF64748B),
+                                        fontSize: 14,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
             },
           ),
         );
@@ -490,13 +503,11 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
   }
 
   Future<void> _handleNotificationTap(
-    AppState app,
-    Map<String, dynamic> notification,
-    int? notificationId,
-    {required bool isAlreadyRead}) async {
+      AppState app, Map<String, dynamic> notification, int? notificationId,
+      {required bool isAlreadyRead}) async {
     // Handle notification tap based on type
     final notificationType = notification['notification_type']?.toString();
-    
+
     if (notificationType == 'changes_requested') {
       // Handle change requests - navigate to proposal review
       final proposalId = notification['proposal_id'];
@@ -520,7 +531,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         );
       }
     }
-    
+
     // Mark as read if not already read
     if (!isAlreadyRead && notificationId != null) {
       try {
@@ -742,7 +753,15 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
                   onPressed: _isLoading ? null : _loadData,
                   icon: const Icon(Icons.refresh, color: Colors.white),
                 ),
-                _buildNotificationButton(app),
+                IconButton(
+                  tooltip: 'Notifications',
+                  icon: const Icon(Icons.notifications, color: Colors.white),
+                  onPressed: () async {
+                    await app.fetchNotifications();
+                    if (!mounted) return;
+                    _showNotificationsSheet(app);
+                  },
+                ),
                 ClipOval(
                   child: Image.asset(
                     'assets/images/User_Profile.png',
