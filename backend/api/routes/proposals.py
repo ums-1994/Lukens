@@ -126,6 +126,8 @@ def create_proposal(username=None, user_id=None, email=None):
             client_name = data.get('client_name') or data.get('client') or 'Unknown Client'
             client_email = data.get('client_email')
             client_id = data.get('client_id')
+            budget = data.get('budget')
+            timeline_days = data.get('timeline_days')
             
             # Insert
             cursor.execute(
@@ -161,6 +163,14 @@ def create_proposal(username=None, user_id=None, email=None):
             elif 'user_id' in existing_columns:
                 insert_cols.append('user_id')
                 values.append(user_id)
+
+            if 'budget' in existing_columns and budget is not None:
+                insert_cols.append('budget')
+                values.append(budget)
+
+            if 'timeline_days' in existing_columns and timeline_days is not None:
+                insert_cols.append('timeline_days')
+                values.append(timeline_days)
 
             placeholders = ', '.join(['%s'] * len(insert_cols))
             columns_sql = ', '.join(insert_cols)
@@ -246,6 +256,12 @@ def create_proposal(username=None, user_id=None, email=None):
                 new_proposal['client'] = client_name
 
             new_proposal['client_email'] = row_dict.get('client_email') or client_email
+
+            if 'budget' in row_dict:
+                new_proposal['budget'] = row_dict.get('budget')
+
+            if 'timeline_days' in row_dict:
+                new_proposal['timeline_days'] = row_dict.get('timeline_days')
 
             if 'owner_id' in row_dict:
                 new_proposal['owner_id'] = row_dict.get('owner_id')

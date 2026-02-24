@@ -9,6 +9,8 @@ import '../../theme/premium_theme.dart';
 import '../../widgets/header.dart';
 import '../../widgets/admin/admin_sidebar.dart';
 import 'package:intl/intl.dart';
+import '../../document_editor/models/document_table.dart';
+import '../../document_editor/widgets/table_widget.dart';
 
 class ProposalReviewPage extends StatefulWidget {
   final String proposalId;
@@ -455,7 +457,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
               backgroundColor: Colors.green,
             ),
           );
-          Navigator.pop(context);
+          Navigator.pop(context, 'approved');
         }
       } else {
         String errorMessage = 'Failed to approve proposal';
@@ -620,7 +622,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
               backgroundColor: Colors.green,
             ),
           );
-          Navigator.pop(context);
+          Navigator.pop(context, 'rejected');
         }
       } else {
         throw Exception('Failed to request changes');
@@ -984,6 +986,21 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                       letterSpacing: 0.2,
                                     ),
                                   ),
+                                  if (section['tables'] is List)
+                                    ...((section['tables'] as List)
+                                        .where((t) => t is Map)
+                                        .map((t) {
+                                      final table = DocumentTable.fromJson(
+                                        Map<String, dynamic>.from(t as Map),
+                                      );
+                                      return TableWidget(
+                                        sectionIndex: index,
+                                        tableIndex: null,
+                                        table: table,
+                                        currencySymbol: 'R',
+                                        readOnly: true,
+                                      );
+                                    })),
                                 ],
                               ),
                             ),

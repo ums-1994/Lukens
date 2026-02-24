@@ -166,7 +166,39 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       List<Map<String, dynamic>> recentApprovals = [];
 
       try {
-        final allProposals = await ApiService.getProposals(token);
+        List<Map<String, dynamic>> allProposals = [];
+
+        try {
+          final allResponse = await http.get(
+            Uri.parse('${ApiService.baseUrl}/api/proposals/all'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          );
+
+          if (allResponse.statusCode == 200) {
+            final decoded = json.decode(allResponse.body);
+            final items =
+                (decoded is Map ? decoded['proposals'] : null) as List?;
+            allProposals = (items ?? [])
+                .whereType<Map>()
+                .map((p) => Map<String, dynamic>.from(p))
+                .toList();
+          }
+        } catch (_) {
+          // Fall through to AppState fallback
+        }
+
+        if (allProposals.isEmpty) {
+          final appState = context.read<AppState>();
+          await appState.fetchProposals();
+          allProposals = List<Map<String, dynamic>>.from(
+            (appState.proposals)
+                .whereType<Map>()
+                .map((p) => Map<String, dynamic>.from(p)),
+          );
+        }
         final now = DateTime.now();
         final startOfMonth = DateTime(now.year, now.month, 1);
         final startOfNextMonth = now.month == 12
@@ -192,9 +224,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           addCombined(Map<String, dynamic>.from(proposal));
         }
 
-        // Add any additional proposals returned by the generic /api/proposals
+        // Add any additional proposals returned by /api/proposals
         for (final raw in allProposals) {
-          if (raw is! Map) continue;
           addCombined(Map<String, dynamic>.from(raw));
         }
 
@@ -202,26 +233,55 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         for (final proposal in combined) {
           final riskScore = _parseDouble(proposal['risk_score']);
           final riskLevel =
-              (proposal['risk_level'] ?? '').toString().toLowerCase();
+              (proposal['risk_level'] ?? '').toString().toLowerCase().trim();
           if ((riskScore != null && riskScore >= 70) ||
               riskLevel == 'high' ||
               riskLevel == 'critical') {
             highRiskCount++;
           }
 
-          final status = (proposal['status'] ?? '').toString().toLowerCase();
+          dynamic rawStatus(dynamic p) {
+            if (p is! Map) return null;
+            return p['status'] ??
+                p['proposal_status'] ??
+                p['approval_status'] ??
+                p['state'] ??
+                p['stage'];
+          }
 
-          if (status == 'released') {
+          String normalizeStatus(dynamic value) {
+            return (value ?? '')
+                .toString()
+                .trim()
+                .toLowerCase()
+                .replaceAll('_', ' ');
+          }
+
+          final status = normalizeStatus(rawStatus(proposal));
+
+          final isSentToClient = status.contains('released') ||
+              status.contains('release') ||
+              status == 'sent' ||
+              status.contains('sent to client') ||
+              status.contains('client sent') ||
+              status.contains('shared');
+          if (isSentToClient) {
             sentToClientCount++;
           }
-          if (status == 'signed') {
+
+          final isClientApproved = status == 'signed' ||
+              status == 'client signed' ||
+              status == 'client approved' ||
+              status == 'approved' ||
+              status == 'completed';
+          if (isClientApproved) {
             clientApprovedCount++;
           }
 
-          final isApproved = status == 'signed' ||
-              status == 'client signed' ||
-              status == 'approved' ||
-              status == 'completed';
+          final isApproved = isClientApproved ||
+              isSentToClient ||
+              status.contains('sent for signature') ||
+              status.contains('out for signature');
           if (isApproved) {
             final updatedRaw = proposal['updated_at'] ?? proposal['updatedAt'];
             final updatedAt = _parseDate(updatedRaw);

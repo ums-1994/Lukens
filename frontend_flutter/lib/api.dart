@@ -425,7 +425,7 @@ class AppState extends ChangeNotifier {
   String _normalizeStatus(String? status) {
     if (status == null || status.isEmpty) return 'Draft';
 
-    final lowerStatus = status.toLowerCase().trim();
+    final lowerStatus = status.toLowerCase().trim().replaceAll('_', ' ');
 
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
@@ -435,6 +435,8 @@ class AppState extends ChangeNotifier {
       return 'Pending Approval';
     if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
       return 'Sent to Client';
+    if (lowerStatus.contains('released')) return 'Sent to Client';
+    if (lowerStatus == 'sent') return 'Sent to Client';
     if (lowerStatus == 'signed' ||
         lowerStatus == 'approved' ||
         lowerStatus == 'client signed' ||

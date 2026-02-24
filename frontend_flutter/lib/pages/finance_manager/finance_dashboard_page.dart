@@ -144,7 +144,94 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
       final parsed = double.tryParse(cleaned);
       if (parsed != null) return parsed;
     }
-    return 0;
+
+    double _parseNum(dynamic v) {
+      if (v == null) return 0;
+      if (v is num) return v.toDouble();
+      final cleaned = v.toString().replaceAll(RegExp(r'[^0-9.\-]'), '');
+      return double.tryParse(cleaned) ?? 0;
+    }
+
+    int? _findHeaderIndex(List<dynamic> headers, List<String> needles) {
+      for (int i = 0; i < headers.length; i++) {
+        final h = headers[i].toString().toLowerCase().trim();
+        for (final n in needles) {
+          if (h == n || h.contains(n)) return i;
+        }
+      }
+      return null;
+    }
+
+    double _tableSubtotalFromCells(List<dynamic> cellsRaw) {
+      if (cellsRaw.isEmpty) return 0;
+      final headerRow = cellsRaw.first;
+      if (headerRow is! List) return 0;
+
+      final totalCol =
+          _findHeaderIndex(headerRow, ['total', 'amount', 'line total']) ?? 4;
+      final qtyCol = _findHeaderIndex(headerRow, ['quantity', 'qty']) ?? 2;
+      final unitCol = _findHeaderIndex(headerRow, ['unit price', 'price']) ?? 3;
+
+      double subtotal = 0;
+      for (int i = 1; i < cellsRaw.length; i++) {
+        final rowAny = cellsRaw[i];
+        if (rowAny is! List) continue;
+
+        final row = rowAny;
+        double rowTotal = 0;
+        if (totalCol >= 0 && totalCol < row.length) {
+          rowTotal = _parseNum(row[totalCol]);
+        }
+
+        if (rowTotal == 0) {
+          final qty = (qtyCol >= 0 && qtyCol < row.length)
+              ? _parseNum(row[qtyCol])
+              : 0.0;
+          final unit = (unitCol >= 0 && unitCol < row.length)
+              ? _parseNum(row[unitCol])
+              : 0.0;
+          rowTotal = qty * unit;
+        }
+
+        subtotal += rowTotal;
+      }
+      return subtotal;
+    }
+
+    double _sumPriceTablesFromSections(dynamic sectionsAny) {
+      final List<dynamic> sectionsList;
+      if (sectionsAny is List) {
+        sectionsList = sectionsAny;
+      } else if (sectionsAny is Map && sectionsAny['sections'] is List) {
+        sectionsList = sectionsAny['sections'] as List;
+      } else {
+        return 0;
+      }
+
+      double total = 0;
+      for (final sAny in sectionsList) {
+        if (sAny is! Map) continue;
+        final tablesAny = sAny['tables'];
+        if (tablesAny is! List) continue;
+
+        for (final tAny in tablesAny) {
+          if (tAny is! Map) continue;
+          final type = (tAny['type'] ?? '').toString().toLowerCase().trim();
+          if (type != 'price') continue;
+
+          final cellsAny = tAny['cells'];
+          if (cellsAny is! List) continue;
+
+          final subtotal = _tableSubtotalFromCells(cellsAny);
+          final vatRate = _parseNum(tAny['vatRate']);
+          final vat = vatRate > 0 ? subtotal * vatRate : 0;
+          total += (subtotal + vat);
+        }
+      }
+      return total;
+    }
+
+    return _sumPriceTablesFromSections(p['sections']);
   }
 
   String _formatCurrency(double amount) {
