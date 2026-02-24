@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
+import '../../services/api_service.dart';
 import 'governance_panel.dart';
 
 class EnhancedComposePage extends StatefulWidget {
@@ -38,6 +39,55 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
     _initializeProposal();
   }
 
+  Future<void> _loadLatestVersionMetadata() async {
+    final app = context.read<AppState>();
+    final String? token = app.authToken;
+
+    if (token == null || token.isEmpty) {
+      return;
+    }
+
+    final int? proposalIdInt = int.tryParse(widget.proposalId);
+    if (proposalIdInt == null) {
+      return;
+    }
+
+    try {
+      final versions = await ApiService.getVersions(
+        token: token,
+        proposalId: proposalIdInt,
+      );
+
+      if (versions.isEmpty) {
+        return;
+      }
+
+      final dynamic latest = versions.first;
+      if (latest is Map) {
+        final dynamic latestVersionRaw = latest['version_number'];
+        final dynamic latestCreatedAt = latest['created_at'];
+
+        int? latestVersion;
+        if (latestVersionRaw is int) {
+          latestVersion = latestVersionRaw;
+        } else {
+          latestVersion = int.tryParse(latestVersionRaw?.toString() ?? '');
+        }
+
+        setState(() {
+          if (latestVersion != null) {
+            _proposalData['versionNumber'] = latestVersion;
+          }
+          if (latestCreatedAt != null) {
+            _proposalData['createdAt'] = latestCreatedAt.toString();
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading latest version metadata: $e');
+    }
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -54,14 +104,25 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
       final Map<String, dynamic> initial =
           Map<String, dynamic>.from(widget.initialData ?? const {});
 
+      final String initialCreatedAt =
+          (initial['createdAt']?.toString().isNotEmpty ?? false)
+              ? initial['createdAt'].toString()
+              : DateTime.now().toIso8601String();
+
+      final dynamic versionRaw = initial['versionNumber'];
+      final int initialVersionNumber = versionRaw is int
+          ? versionRaw
+          : int.tryParse(versionRaw?.toString() ?? '') ?? 1;
+
       // Initialize proposal data based on template type and selected modules
       _proposalData.addAll({
         'id': widget.proposalId,
         'title': widget.proposalTitle,
         'templateType': widget.templateType,
         'status': 'Draft',
-        'createdAt': DateTime.now().toIso8601String(),
+        'createdAt': initialCreatedAt,
         'lastModified': DateTime.now().toIso8601String(),
+        'versionNumber': initialVersionNumber,
       });
 
       // Initialize content for selected modules
@@ -84,6 +145,14 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
           initial['estimatedValue']?.toString() ?? '';
       _proposalData['timeline'] = initial['timeline']?.toString() ?? '';
 
+      _proposalData['opportunityId'] =
+          initial['opportunityId']?.toString() ?? '';
+      _proposalData['engagementStage'] =
+          initial['engagementStage']?.toString() ?? 'Proposal Drafted';
+      _proposalData['engagementOpenedAt'] =
+          initial['engagementOpenedAt']?.toString() ?? '';
+      _proposalData['ownerName'] = initial['ownerName']?.toString() ?? '';
+
       _controllers['clientName'] =
           TextEditingController(text: _proposalData['clientName']);
       _controllers['clientEmail'] =
@@ -94,6 +163,8 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
           TextEditingController(text: _proposalData['estimatedValue']);
       _controllers['timeline'] =
           TextEditingController(text: _proposalData['timeline']);
+
+      await _loadLatestVersionMetadata();
     } finally {
       setState(() => _isLoading = false);
     }
@@ -286,6 +357,23 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
   }
 
   Widget _buildPreviewView() {
+    final dynamic versionRaw = _proposalData['versionNumber'];
+    final int versionNumber = versionRaw is int
+        ? versionRaw
+        : int.tryParse(versionRaw?.toString() ?? '') ?? 1;
+
+    DateTime createdDate;
+    final String? createdAtStr = _proposalData['createdAt']?.toString();
+    if (createdAtStr != null && createdAtStr.isNotEmpty) {
+      try {
+        createdDate = DateTime.parse(createdAtStr);
+      } catch (_) {
+        createdDate = DateTime.now();
+      }
+    } else {
+      createdDate = DateTime.now();
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -326,9 +414,18 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Date: ${_formatDate(DateTime.now())}',
+                  'Opp ${_proposalData['opportunityId'] ?? ''} • Stage: ${_proposalData['engagementStage'] ?? 'Proposal Drafted'} • Owner: ${_proposalData['ownerName'] ?? ''}',
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 13,
+                    color: Colors.grey,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Draft v$versionNumber • ${_formatDate(createdDate)}',
+                  style: const TextStyle(
+                    fontSize: 12,
                     color: Colors.grey,
                   ),
                 ),

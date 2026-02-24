@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
+import '../../config/app_constants.dart';
 import 'content_library_page.dart';
 import 'creator_dashboard_page.dart';
 import 'settings_page.dart';
@@ -142,6 +143,32 @@ class _AppShellState extends State<AppShell> {
                     app.logout();
                     Navigator.pushNamed(context, '/login');
                   },
+                ),
+                const SizedBox(height: 16),
+                // Version Display
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1F2E),
+                      borderRadius: BorderRadius.circular(8),
+                      border:
+                          Border.all(color: const Color(0xFF2D3748), width: 1),
+                    ),
+                    child: Text(
+                      AppConstants.fullVersion,
+                      style: const TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 8,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ),
               ],
             ),

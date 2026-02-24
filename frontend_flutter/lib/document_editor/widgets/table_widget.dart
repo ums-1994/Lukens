@@ -121,9 +121,11 @@ class TableWidget extends StatelessWidget {
                 columns: List.generate(
                   table.cells[0].length,
                   (colIndex) => DataColumn(
-                    label: Expanded(
+                    label: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 220),
                       child: Text(
                         table.cells[0][colIndex],
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontWeight: FontWeight.bold),
                         textDirection: TextDirection.ltr,
                       ),

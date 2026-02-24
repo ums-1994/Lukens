@@ -3,6 +3,16 @@ DocuSign utility functions
 """
 import os
 import traceback
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load environment variables deterministically regardless of cwd.
+_this_file = Path(__file__).resolve()
+_backend_dir = _this_file.parents[2]  # .../backend
+_repo_root = _backend_dir.parent
+load_dotenv(dotenv_path=_backend_dir / '.env', override=False)
+load_dotenv(dotenv_path=_repo_root / '.env', override=False)
 
 DOCUSIGN_AVAILABLE = False
 try:
@@ -61,6 +71,13 @@ def get_docusign_jwt_token():
                     private_key = raw_path_or_key
                 else:
                     private_key_path = raw_path_or_key or './docusign_private.key'
+
+                    # Resolve relative paths relative to the backend directory (not cwd)
+                    try:
+                        if not os.path.isabs(private_key_path):
+                            private_key_path = str((_backend_dir / private_key_path).resolve())
+                    except Exception:
+                        pass
 
                     # Check if private key file exists
                     if not os.path.exists(private_key_path):

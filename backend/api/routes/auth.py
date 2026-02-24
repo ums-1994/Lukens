@@ -22,10 +22,17 @@ bp = Blueprint('auth', __name__)
 
 # Initialize Firebase on module load (with error handling to prevent import failures)
 try:
-    initialize_firebase()
+    print("[AUTH] Initializing Firebase Admin SDK...")
+    result = initialize_firebase()
+    if result:
+        print("[AUTH] [OK] Firebase initialization succeeded")
+    else:
+        print("[AUTH] [WARNING] Firebase initialization returned None - check logs above")
 except Exception as e:
-    print(f"[AUTH] WARNING: Firebase initialization failed, but auth blueprint will still work: {e}")
-    print("   Firebase authentication features may not be available until Firebase is properly configured.")
+    import traceback
+    print(f"[AUTH] [ERROR] Firebase initialization failed: {e}")
+    print(f"[AUTH] Stack trace: {traceback.format_exc()}")
+    print("[AUTH]    Firebase authentication features may not be available until Firebase is properly configured.")
 
 def generate_verification_token(user_id, email):
     """Generate a verification token for email verification and store in database"""
@@ -384,10 +391,6 @@ def firebase_auth():
         
         # Get role from request (for new registrations)
         requested_role = data.get('role', 'user')
-        print(f'🔍 Backend received role from request: "{requested_role}"')
-        print(f'🔍 Full request data keys: {list(data.keys())}')
-        if 'role' in data:
-            print(f'🔍 Role value type: {type(data.get("role"))}, value: {repr(data.get("role"))}')
         
         # Verify Firebase token
         decoded_token = verify_firebase_token(id_token)

@@ -658,8 +658,8 @@ class _ProposalsPageState extends State<ProposalsPage>
                   style: ElevatedButton.styleFrom(
                     backgroundColor: PremiumTheme.purple,
                     foregroundColor: Colors.white,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 18, vertical: 12),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -945,7 +945,7 @@ class _ProposalsPageState extends State<ProposalsPage>
         break;
       case 'Templates':
         // Templates functionality - redirect to content library for now
-        Navigator.pushReplacementNamed(context, '/content_library');
+        Navigator.pushReplacementNamed(context, '/templates');
         break;
       case 'Content Library':
         Navigator.pushReplacementNamed(context, '/content_library');
@@ -1173,7 +1173,7 @@ class ProposalItem extends StatelessWidget {
                       if (intId != 0) {
                         final success = await ApiService.deleteProposal(
                             token: token, id: intId);
-                        
+
                         if (success) {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -1188,7 +1188,8 @@ class ProposalItem extends StatelessWidget {
                           if (context.mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Failed to delete proposal. Please try again.'),
+                                content: Text(
+                                    'Failed to delete proposal. Please try again.'),
                                 backgroundColor: Colors.red,
                               ),
                             );
@@ -1221,4 +1222,3 @@ class ProposalItem extends StatelessWidget {
     );
   }
 }
-

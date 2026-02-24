@@ -24,16 +24,23 @@ def initialize_firebase():
         
         # If not set, try default location in backend directory
         if not cred_path:
-            backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            # Get the backend directory (api/utils/firebase_auth.py -> backend/)
+            current_file = os.path.abspath(__file__)  # Full path to firebase_auth.py
+            backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))  # Go up 3 levels
             default_path = os.path.join(backend_dir, 'firebase-service-account.json')
+            
+            print(f"[FIREBASE] Looking for credentials at: {default_path}")
+            print(f"[FIREBASE] File exists: {os.path.exists(default_path)}")
+            
             if os.path.exists(default_path):
                 cred_path = default_path
                 print(f"[FIREBASE] Using default Firebase credentials: {default_path}")
         
         if cred_path and os.path.exists(cred_path):
+            print(f"[FIREBASE] Loading credentials from: {cred_path}")
             cred = credentials.Certificate(cred_path)
             _firebase_app = firebase_admin.initialize_app(cred)
-            print(f"[FIREBASE] Firebase Admin SDK initialized from: {cred_path}")
+            print(f"[OK] [FIREBASE] Firebase Admin SDK initialized from: {cred_path}")
         else:
             # Try to use default credentials (for Google Cloud environments)
             # Or use service account JSON from environment variable
@@ -43,18 +50,20 @@ def initialize_firebase():
                 cred_info = json.loads(service_account_json)
                 cred = credentials.Certificate(cred_info)
                 _firebase_app = firebase_admin.initialize_app(cred)
-                print("[FIREBASE] Firebase Admin SDK initialized from environment variable")
+                print("[FIREBASE] [OK] Firebase Admin SDK initialized from environment variable")
             else:
                 # Try default credentials (for local development with gcloud auth)
                 try:
                     _firebase_app = firebase_admin.initialize_app()
-                    print("[FIREBASE] Firebase Admin SDK initialized with default credentials")
+                    print("[FIREBASE] [OK] Firebase Admin SDK initialized with default credentials")
                 except Exception as e:
-                    print(f"[FIREBASE] WARNING: Firebase Admin SDK not initialized: {e}")
-                    print("   Set FIREBASE_CREDENTIALS_PATH or FIREBASE_SERVICE_ACCOUNT_JSON")
+                    print(f"[FIREBASE] [ERROR] WARNING: Firebase Admin SDK not initialized: {e}")
+                    print("[FIREBASE]    Set FIREBASE_CREDENTIALS_PATH or FIREBASE_SERVICE_ACCOUNT_JSON")
                     return None
     except Exception as e:
-        print(f"[FIREBASE] ERROR: Error initializing Firebase Admin SDK: {e}")
+        import traceback
+        print(f"[FIREBASE] [ERROR] Error initializing Firebase Admin SDK: {e}")
+        print(f"[FIREBASE] Stack trace: {traceback.format_exc()}")
         return None
     
     return _firebase_app

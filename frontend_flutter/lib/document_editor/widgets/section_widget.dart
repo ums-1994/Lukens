@@ -60,14 +60,8 @@ class SectionWidget extends StatelessWidget {
           margin: EdgeInsets.zero,
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            border: Border.all(
-              color: isSelected ? const Color(0xFF00BCD4) : Colors.transparent,
-              width: isSelected ? 2 : 1,
-            ),
             borderRadius: BorderRadius.circular(8),
-            color: isSelected
-                ? const Color(0xFF00BCD4).withValues(alpha: 0.03)
-                : Colors.transparent,
+            color: Colors.transparent,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

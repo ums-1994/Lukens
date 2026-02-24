@@ -742,7 +742,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/ai/analyze-risks'),
+        Uri.parse('$baseUrl/api/risk-gate/analyze'),
         headers: _getHeaders(token),
         body: json.encode({
           'proposal_id': proposalId,
@@ -751,6 +751,12 @@ class ApiService {
 
       if (response.statusCode == 200) {
         return json.decode(response.body);
+      }
+      if (response.statusCode == 400) {
+        final data = json.decode(response.body);
+        if (data is Map<String, dynamic> && data['status'] == 'BLOCK') {
+          return data;
+        }
       }
       print('Error analyzing risks: ${response.statusCode} - ${response.body}');
       return null;

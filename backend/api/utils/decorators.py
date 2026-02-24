@@ -5,10 +5,13 @@ Supports Firebase tokens
 import os
 import psycopg2
 import psycopg2.extensions
+import base64
+import json
 from functools import wraps
 from flask import request
 from api.utils.firebase_auth import verify_firebase_token, get_user_from_token
 from api.utils.database import get_db_connection
+from api.utils.auth import verify_token
 
 
 DEV_BYPASS_ENABLED = os.getenv('DEV_BYPASS_AUTH', 'false').lower() == 'true'
@@ -53,12 +56,23 @@ def token_required(f):
             print('[ERROR] No token found in Authorization header')
             return {'detail': 'Token is missing'}, 401
 
-        # Try Firebase token first (only if token looks like a Firebase JWT)
-        # Firebase ID tokens are JWTs with 3 parts separated by dots
+        # Try Firebase token first only when it actually looks like a Firebase JWT.
+        # Firebase ID tokens are JWTs with a 'kid' header.
         token_parts = token.split('.')
-        is_firebase_token_format = len(token_parts) == 3
+        is_jwt_format = len(token_parts) == 3
+        has_kid_header = False
+
+        if is_jwt_format:
+            try:
+                header_b64 = token_parts[0]
+                padding = '=' * (-len(header_b64) % 4)
+                header_bytes = base64.urlsafe_b64decode(header_b64 + padding)
+                header = json.loads(header_bytes.decode('utf-8'))
+                has_kid_header = isinstance(header, dict) and bool(header.get('kid'))
+            except Exception:
+                has_kid_header = False
         
-        if is_firebase_token_format:
+        if is_jwt_format and has_kid_header:
             decoded_token = verify_firebase_token(token)
             if decoded_token:
                 firebase_user = get_user_from_token(decoded_token)
@@ -338,17 +352,29 @@ def token_required(f):
                         f"'{DEV_DEFAULT_USERNAME}'. Set DEV_BYPASS_AUTH=false to disable."
                     )
                     return f(username=DEV_DEFAULT_USERNAME, *args, **kwargs)
-                print('[ERROR] Firebase token validation failed - invalid or expired token')
+                # If Firebase verification fails, fall back to legacy/local DB validation
+                username = verify_token(token)
+                if username:
+                    print(f"[TOKEN] Legacy token validated for user: {username}")
+                    return f(username=username, *args, **kwargs)
+                print('[ERROR] Firebase token validation failed and legacy validation failed')
                 return {'detail': 'Invalid or expired token'}, 401
         else:
-            # Token doesn't look like a Firebase JWT, reject it (no legacy fallback)
+            # Token doesn't look like a Firebase JWT.
+# Fall back to legacy/local DB token validation.
+            username = verify_token(token)
+            if username:
+                print(f"[TOKEN] Legacy token validated for user: {username}")
+                return f(username=username, *args, **kwargs)
+
             if DEV_BYPASS_ENABLED:
                 print(
                     "[DEV] Non-Firebase token provided. Using development bypass for user "
                     f"'{DEV_DEFAULT_USERNAME}'. Set DEV_BYPASS_AUTH=false to disable."
                 )
                 return f(username=DEV_DEFAULT_USERNAME, *args, **kwargs)
-            print('[ERROR] Token is not a valid Firebase ID token (legacy tokens disabled)')
+
+            print('[ERROR] Token is not a valid Firebase ID token and legacy validation failed')
             return {'detail': 'Invalid or unsupported token type'}, 401
 
     return decorated

@@ -281,14 +281,16 @@ Return only a comma-separated list of tags.''';
               children: [
                 const Icon(Icons.auto_awesome, color: Colors.purple, size: 24),
                 const SizedBox(width: 8),
-                const Text(
-                  'AI Content Generator',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                const Expanded(
+                  child: Text(
+                    'AI Content Generator',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.close),
                   onPressed: widget.onClose,
