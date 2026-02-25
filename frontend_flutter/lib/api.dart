@@ -107,10 +107,17 @@ class AppState extends ChangeNotifier {
         print('🔄 Synced token from AuthService in fetchContent');
       }
 
-      final r = await http.get(
-        Uri.parse("$baseUrl/api/content"),
-        headers: _headers,
-      );
+      final r = await http
+          .get(
+            Uri.parse("$baseUrl/api/content"),
+            headers: _headers,
+          )
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {
+              throw Exception('fetchContent timed out');
+            },
+          );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
         // Handle both array response and object with 'content' key
@@ -123,11 +130,9 @@ class AppState extends ChangeNotifier {
         }
       } else {
         print('Error fetching content: ${r.statusCode} - ${r.body}');
-        contentBlocks = [];
       }
     } catch (e) {
       print('Error fetching content: $e');
-      contentBlocks = [];
     }
   }
 
@@ -333,10 +338,17 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final response = await http.get(
-        Uri.parse("$baseUrl/api/notifications"),
-        headers: _headers,
-      );
+      final response = await http
+          .get(
+            Uri.parse("$baseUrl/api/notifications"),
+            headers: _headers,
+          )
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {
+              throw Exception('fetchNotifications timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -401,10 +413,17 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchProposals() async {
     try {
-      final r = await http.get(
-        Uri.parse("$baseUrl/api/proposals"),
-        headers: _headers,
-      );
+      final r = await http
+          .get(
+            Uri.parse("$baseUrl/api/proposals"),
+            headers: _headers,
+          )
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {
+              throw Exception('fetchProposals timed out');
+            },
+          );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
         proposals = List<dynamic>.from(data);
@@ -413,11 +432,9 @@ class AppState extends ChangeNotifier {
         _updateDashboardCounts();
       } else {
         print('Error fetching proposals: ${r.statusCode} - ${r.body}');
-        proposals = [];
       }
     } catch (e) {
       print('Error fetching proposals: $e');
-      proposals = [];
     }
   }
 

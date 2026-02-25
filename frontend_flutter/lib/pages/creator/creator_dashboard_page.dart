@@ -193,9 +193,44 @@ class _DashboardPageState extends State<DashboardPage>
         return null;
       }
 
+      // Fetch the full proposal data first
+      final proposals = await ApiService.getProposals(token);
+      final proposal = proposals.firstWhere(
+        (p) => p['id'] == proposalIdInt,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (proposal.isEmpty) {
+        print('Proposal not found: $proposalId');
+        return null;
+      }
+
+      // Build proposal data for AI analysis
+      final proposalData = <String, dynamic>{
+        'id': proposal['id'],
+        'title': proposal['title'] ?? proposal['proposal_title'] ?? 'Proposal',
+        'clientName': proposal['client_name'] ?? '',
+        'clientEmail': proposal['client_email'] ?? '',
+        'projectType': proposal['project_type'] ?? '',
+        'estimatedValue': proposal['estimated_value'] ?? '',
+        'timeline': proposal['timeline'] ?? '',
+      };
+
+      // Add content sections if available
+      if (proposal['content'] != null) {
+        final content = proposal['content'];
+        if (content is Map) {
+          content.forEach((key, value) {
+            if (value != null && value.toString().isNotEmpty) {
+              proposalData[key] = value.toString();
+            }
+          });
+        }
+      }
+
       final raw = await ApiService.analyzeRisks(
         token: token,
-        proposalId: proposalIdInt,
+        proposalData: proposalData,
       );
       if (raw == null) return null;
 
@@ -221,9 +256,12 @@ class _DashboardPageState extends State<DashboardPage>
       }
 
       return {
-        'risk_score': riskScore,
+        'overallRiskLevel': overallRiskLevel,
+        'riskScore': riskScore,
+        'status': status,
         'issues': issues,
-        'overall_risk_level': overallRiskLevel,
+        'canRelease': status == 'PASS',
+        'lastAnalyzed': DateTime.now().toIso8601String(),
       };
     } catch (e) {
       print('Error fetching proposal risks: $e');

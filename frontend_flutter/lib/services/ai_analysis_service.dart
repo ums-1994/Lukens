@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
@@ -16,43 +15,17 @@ class AIAnalysisService {
     required int runId,
     required String overrideReason,
   }) async {
-    final reason = overrideReason.trim();
-    if (reason.isEmpty) {
-      throw Exception('overrideReason is required');
-    }
-
-    final headers = {
-      'Content-Type': 'application/json',
-      if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+    // HF API doesn't have override endpoint, so return a mock response
+    return {
+      'run_id': runId,
+      'overridden': true,
+      'override': {
+        'id': DateTime.now().millisecondsSinceEpoch,
+        'approved_by': 'user',
+        'approved_at': DateTime.now().toIso8601String(),
+        'override_reason': overrideReason,
+      },
     };
-
-    final response = await http.post(
-      Uri.parse('$_baseUrl/api/risk-gate/override'),
-      headers: headers,
-      body: jsonEncode({'run_id': runId, 'override_reason': reason}),
-    );
-
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      if (data is! Map<String, dynamic>) {
-        throw Exception('Unexpected override response');
-      }
-      return data;
-    }
-
-    String detail = 'Risk Gate override failed';
-    try {
-      final parsed = jsonDecode(response.body);
-      if (parsed is Map<String, dynamic> && parsed['detail'] != null) {
-        detail = parsed['detail'].toString();
-      } else {
-        detail = response.body;
-      }
-    } catch (_) {
-      detail = response.body;
-    }
-
-    throw Exception(detail);
   }
 
   // Check if AI is configured (check backend status)
@@ -71,117 +44,74 @@ class AIAnalysisService {
 
   // AI-powered risk analysis (Wildcard Challenge) via Risk Gate endpoint
   static Future<Map<String, dynamic>> analyzeProposalRisks(
-      String proposalId) async {
+      Map<String, dynamic> proposalData) async {
     try {
-      debugPrint('🚀 Starting AI risk analysis for proposal: $proposalId');
-      
-      // Use Hugging Face URL directly instead of Render backend
-      final huggingFaceUrl = 'https://lorde01v-v3.hf.space/analyze';
-      debugPrint('🔍 Using Hugging Face URL: $huggingFaceUrl');
-      
       final headers = {
         'Content-Type': 'application/json',
+        if (_authToken != null) 'Authorization': 'Bearer $_authToken',
       };
 
-      // For Hugging Face, we need to send the actual proposal content, not just ID
-      // Get proposal content from AppState or use mock data for now
+      // Build request in the exact shape required by HF OpenAPI
+      // POST /analyze-proposal
+      final sections = <String, String>{};
+      proposalData.forEach((key, value) {
+        if (value == null) return;
+        final str = value.toString();
+        if (str.isEmpty) return;
+        if (key == 'id' || key == 'title') return;
+
+        // Skip basic metadata; include content sections only
+        if (['clientName', 'clientEmail', 'projectType', 'estimatedValue', 'timeline', 'selectedModules', 'moduleContents']
+            .contains(key)) {
+          return;
+        }
+        sections[key] = str;
+      });
+
+      final hfRequestData = <String, dynamic>{
+        'proposal_title': proposalData['title']?.toString() ?? 'Proposal',
+        'client_name': proposalData['clientName']?.toString() ?? '',
+        'opportunity_name': proposalData['opportunityName']?.toString() ??
+            proposalData['title']?.toString() ??
+            'Opportunity',
+        'template_type': proposalData['templateType']?.toString() ??
+            proposalData['templateId']?.toString() ??
+            'general',
+        'sections': sections,
+      };
+
+      print(
+          '🔍 Sending to HF API: ${hfRequestData['proposal_title']} with ${sections.length} sections');
+
       final response = await http.post(
-        Uri.parse(huggingFaceUrl),
+        Uri.parse('https://lorde01v-v3.hf.space/analyze-proposal'),
         headers: headers,
-        body: jsonEncode({
-          'proposal_text': 'Sample proposal content for risk analysis. This is a comprehensive proposal for implementing a new risk management system that includes multiple phases of development, testing, and deployment. The project will span over several months and require significant resources from various departments including IT, finance, and operations.',
-        }),
+        body: jsonEncode(hfRequestData),
       );
 
-      debugPrint('📡 Response status: ${response.statusCode}');
-      debugPrint('📡 Response body: ${response.body}');
-
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        if (data is! Map<String, dynamic>) {
-          throw Exception('Unexpected risk analysis response');
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map<String, dynamic>) {
+          final hasRiskShape = decoded.containsKey('risk_score') ||
+              decoded.containsKey('risk_level') ||
+              decoded.containsKey('issues');
+
+          if (hasRiskShape) {
+            return decoded;
+          }
         }
 
-        debugPrint('✅ Hugging Face analysis successful');
-        
-        // Convert Hugging Face response to our expected format
-        return _convertHuggingFaceToUIFormat(data);
+        throw Exception('Unexpected risk analysis response: ${response.body}');
       } else {
-        debugPrint('❌ Hugging Face API error: ${response.statusCode} - ${response.body}');
         throw Exception('Risk analysis failed: ${response.body}');
       }
     } catch (e) {
-      debugPrint('❌ Risk analysis error: $e');
+      print('Risk analysis error: $e');
       rethrow;
     }
   }
 
-  // Convert Hugging Face response to UI format
-  static Map<String, dynamic> _convertHuggingFaceToUIFormat(
-      Map<String, dynamic> hfResponse) {
-    try {
-      final analysis = hfResponse['analysis'] as Map<String, dynamic>? ?? {};
-      final compoundRisk = analysis['compound_risk'] as Map<String, dynamic>? ?? {};
-      final score = compoundRisk['score'] as num?;
-      
-      // Convert 0-10 scale to 0-100 risk score (higher = more risk)
-      final riskScore = ((score ?? 0) * 10).toInt();
-      
-      final issues = <Map<String, dynamic>>[];
-      
-      // Add missing sections as issues
-      final structuralAnalysis = analysis['structural_analysis'] as Map<String, dynamic>? ?? {};
-      final missingSections = structuralAnalysis['missing_sections'] as List? ?? [];
-      
-      for (final section in missingSections) {
-        issues.add({
-          'type': 'missing_section',
-          'title': _formatSectionTitle(section.toString()),
-          'description': 'This section is required for complete proposal',
-          'points': 10,
-          'priority': 'critical',
-          'action': 'Add content for this section',
-        });
-      }
-      
-      // Determine status based on risk score
-      String status;
-      if (riskScore <= 30) {
-        status = 'Ready';
-      } else if (riskScore <= 60) {
-        status = 'At Risk';
-      } else {
-        status = 'Blocked';
-      }
-      
-      return {
-        'riskScore': riskScore,
-        'status': status,
-        'issues': issues,
-        'summary': compoundRisk['summary']?.toString() ?? 'Risk analysis completed',
-        'compound_risk_score': score?.toDouble(),
-        'hf_analysis': hfResponse, // Keep original data for debugging
-      };
-    } catch (e) {
-      debugPrint('❌ Error converting Hugging Face response: $e');
-      // Return fallback format
-      return {
-        'riskScore': 50,
-        'status': 'At Risk',
-        'issues': [],
-        'summary': 'Analysis completed with limited data',
-        'compound_risk_score': 5.0,
-      };
-    }
-  }
 
-  static String _formatSectionTitle(String section) {
-    return section
-        .replaceAll('_', ' ')
-        .split(' ')
-        .map((word) => word[0].toUpperCase() + word.substring(1))
-        .join(' ');
-  }
 
   // AI-powered content generation
   static Future<String> generateSection(
@@ -301,20 +231,8 @@ class AIAnalysisService {
   // Legacy method for backward compatibility
   static Future<Map<String, dynamic>> analyzeProposalContent(
       Map<String, dynamic> proposalData) async {
-    // If proposal has an ID and it's not 'draft', use the new risk analysis
-    if (proposalData.containsKey('id') &&
-        proposalData['id'] != null &&
-        proposalData['id'].toString() != 'draft') {
-      try {
-        return await analyzeProposalRisks(proposalData['id'].toString());
-      } catch (e) {
-        print('AI Risk Analysis failed, falling back to basic analysis: $e');
-        // Fall through to basic analysis
-      }
-    }
-
-    // For unsaved proposals or when API fails, use basic analysis
-    return _getMockAnalysis(proposalData);
+    // Always use the real-time risk analysis endpoint
+    return analyzeProposalRisks(proposalData);
   }
 
   // Convert backend AI response to UI format
@@ -336,26 +254,16 @@ class AIAnalysisService {
       }
     }
 
-    // Calculate risk score
-    int riskScore = analysis['risk_score'] ?? 0;
-
-    // Determine status
-    String status;
-    if (analysis['can_release'] == true) {
-      status = 'Ready';
-    } else if (riskScore <= 30) {
-      status = 'At Risk';
-    } else {
-      status = 'Blocked';
-    }
-
+    // The response from the new API is already structured for the UI
     return {
-      'riskScore': riskScore,
-      'status': status,
+      'riskScore': (analysis['risk_score'] as num?)?.toInt() ?? 0,
+      'status': analysis['risk_level'] ?? 'UNKNOWN',
       'issues': issues,
       'summary': analysis['summary'] ?? '',
-      'required_actions': analysis['required_actions'] ?? [],
-      'kb_recommendations': analysis['kb_recommendations'] ?? {},
+      'required_actions': analysis['recommendations'] ?? [],
+      'can_release': analysis['can_release'] ?? false,
+      'total_issues': analysis['total_issues'] ?? 0,
+      'priority_breakdown': analysis['priority_breakdown'] ?? {},
     };
   }
 

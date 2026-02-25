@@ -738,30 +738,57 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> analyzeRisks({
     required String token,
-    required int proposalId,
+    required Map<String, dynamic> proposalData,
   }) async {
     try {
+      // HF Space OpenAPI expects:
+      // proposal_title, client_name, opportunity_name, template_type, sections (map)
+      final sections = <String, String>{};
+      proposalData.forEach((key, value) {
+        if (value == null) return;
+        final str = value.toString();
+        if (str.isEmpty) return;
+        if (key == 'id' || key == 'title') return;
+
+        if (['clientName', 'clientEmail', 'projectType', 'estimatedValue', 'timeline', 'selectedModules', 'moduleContents']
+            .contains(key)) {
+          return;
+        }
+        sections[key] = str;
+      });
+
+      final proposalRequest = <String, dynamic>{
+        'proposal_title': proposalData['title']?.toString() ?? 'Proposal',
+        'client_name': proposalData['clientName']?.toString() ?? '',
+        'opportunity_name': proposalData['opportunityName']?.toString() ??
+            proposalData['title']?.toString() ??
+            'Opportunity',
+        'template_type': proposalData['templateType']?.toString() ??
+            proposalData['templateId']?.toString() ??
+            'general',
+        'sections': sections,
+      };
+
       final response = await http.post(
-        Uri.parse('$baseUrl/api/risk-gate/analyze'),
+        Uri.parse('https://lorde01v-v3.hf.space/analyze-proposal'),
         headers: _getHeaders(token),
-        body: json.encode({
-          'proposal_id': proposalId,
-        }),
+        body: json.encode(proposalRequest),
       );
 
       if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      if (response.statusCode == 400) {
         final data = json.decode(response.body);
-        if (data is Map<String, dynamic> && data['status'] == 'BLOCK') {
-          return data;
+        if (data is Map<String, dynamic>) {
+          // If HF already returns the risk gate shape, just pass it through.
+          if (data.containsKey('risk_score') ||
+              data.containsKey('risk_level') ||
+              data.containsKey('issues')) {
+            return data;
+          }
         }
       }
-      print('Error analyzing risks: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
-      print('Error analyzing risks: $e');
+      print('Risk analysis error: $e');
       return null;
     }
   }
