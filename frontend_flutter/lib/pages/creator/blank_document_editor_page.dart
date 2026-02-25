@@ -5585,6 +5585,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           final table = section.tables.removeAt(oldIndex);
           section.tables.insert(newIndex, table);
         });
+        _onContentChanged();
       },
       buildInteractiveTable: (int tableIndex, DocumentTable table) {
         // Finance can edit pricing tables; Manager can view tables but not edit.
@@ -5800,6 +5801,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             tables.insert(draggedIndex, draggedTable);
           }
         });
+        _onContentChanged();
       },
       builder: (context, candidateData, rejectedData) {
         final isActive = candidateData.isNotEmpty;
@@ -5921,7 +5923,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 18),
-                      onPressed: () => setState(() => table.addRow()),
+                      onPressed: () {
+                        setState(() => table.addRow());
+                        _onContentChanged();
+                      },
                       tooltip: 'Add Row',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -5932,7 +5937,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       icon: const Icon(Icons.view_column, size: 18),
                       onPressed: table.type == 'price'
                           ? null
-                          : () => setState(() => table.addColumn()),
+                          : () {
+                              setState(() => table.addColumn());
+                              _onContentChanged();
+                            },
                       tooltip: table.type == 'price'
                           ? 'Price tables have fixed columns'
                           : 'Add Column',
@@ -5947,6 +5955,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         setState(() {
                           _sections[sectionIndex].tables.removeAt(tableIndex);
                         });
+                        _onContentChanged();
                       },
                       tooltip: 'Delete Table',
                       padding: EdgeInsets.zero,
@@ -6020,6 +6029,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         .recalculatePriceRowTotal(rowIndex + 1);
                                   }
                                 });
+                                _onContentChanged();
                               },
                               decoration: const InputDecoration(
                                 border: InputBorder.none,
