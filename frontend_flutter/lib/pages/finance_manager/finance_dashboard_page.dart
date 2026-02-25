@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'dart:convert';
+
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
@@ -191,30 +193,70 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
         return 0;
       }
 
+      double _sumPriceTablesFromSectionMap(Map sAny) {
+        double total = 0;
+
+        void sumTablesList(dynamic tablesAny) {
+          if (tablesAny is! List) return;
+          for (final tAny in tablesAny) {
+            if (tAny is! Map) continue;
+            final type = (tAny['type'] ?? '').toString().toLowerCase().trim();
+            if (type != 'price') continue;
+            final cellsAny = tAny['cells'];
+            if (cellsAny is! List) continue;
+            final subtotal = _tableSubtotalFromCells(cellsAny);
+            final vatRate = _parseNum(tAny['vatRate']);
+            final vat = vatRate > 0 ? subtotal * vatRate : 0;
+            total += (subtotal + vat);
+          }
+        }
+
+        void sumPositionedTables(dynamic positionedAny) {
+          if (positionedAny is! List) return;
+          for (final pAny in positionedAny) {
+            if (pAny is! Map) continue;
+            final tableAny = pAny['table'];
+            if (tableAny is! Map) continue;
+            sumTablesList([tableAny]);
+          }
+        }
+
+        sumTablesList(sAny['tables']);
+        sumPositionedTables(sAny['positionedPricingTables']);
+
+        final bodyAny = sAny['body'] ?? sAny['content'];
+        if (bodyAny is Map) {
+          sumTablesList(bodyAny['tables']);
+          sumPositionedTables(bodyAny['positionedPricingTables']);
+        }
+
+        return total;
+      }
+
       double total = 0;
       for (final sAny in sectionsList) {
         if (sAny is! Map) continue;
-        final tablesAny = sAny['tables'];
-        if (tablesAny is! List) continue;
-
-        for (final tAny in tablesAny) {
-          if (tAny is! Map) continue;
-          final type = (tAny['type'] ?? '').toString().toLowerCase().trim();
-          if (type != 'price') continue;
-
-          final cellsAny = tAny['cells'];
-          if (cellsAny is! List) continue;
-
-          final subtotal = _tableSubtotalFromCells(cellsAny);
-          final vatRate = _parseNum(tAny['vatRate']);
-          final vat = vatRate > 0 ? subtotal * vatRate : 0;
-          total += (subtotal + vat);
-        }
+        total += _sumPriceTablesFromSectionMap(sAny);
       }
       return total;
     }
 
-    return _sumPriceTablesFromSections(p['sections']);
+    dynamic sectionsAny = p['sections'];
+    if (sectionsAny == null) {
+      final contentAny = p['content'];
+      if (contentAny is Map) {
+        sectionsAny = contentAny['sections'] ?? contentAny;
+      } else if (contentAny is String) {
+        try {
+          final decoded = jsonDecode(contentAny);
+          if (decoded is Map || decoded is List) {
+            sectionsAny = decoded;
+          }
+        } catch (_) {}
+      }
+    }
+
+    return _sumPriceTablesFromSections(sectionsAny);
   }
 
   String _formatCurrency(double amount) {
