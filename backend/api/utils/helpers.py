@@ -19,8 +19,16 @@ try:
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Paragraph,
+        Spacer,
+        PageBreak,
+        Table as PdfTable,
+        TableStyle,
+    )
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.lib import colors
     from reportlab.pdfgen import canvas
     from reportlab.lib.utils import ImageReader
     from io import BytesIO
@@ -601,6 +609,119 @@ def generate_proposal_pdf(
         'value',
     )
 
+    def _parse_num(v):
+        if v is None:
+            return 0.0
+        if isinstance(v, (int, float)):
+            return float(v)
+        try:
+            s = str(v)
+            cleaned = ''.join(ch for ch in s if (ch.isdigit() or ch in '.-'))
+            return float(cleaned) if cleaned else 0.0
+        except Exception:
+            return 0.0
+
+    def _table_subtotal_from_cells(cells):
+        if not isinstance(cells, list) or not cells:
+            return 0.0
+        header = cells[0] if isinstance(cells[0], list) else []
+        def _find_header_idx(needles, fallback):
+            for i, h in enumerate(header):
+                hs = str(h).strip().lower()
+                for n in needles:
+                    if hs == n or n in hs:
+                        return i
+            return fallback
+        total_col = _find_header_idx(['total', 'amount', 'line total'], 4)
+        qty_col = _find_header_idx(['quantity', 'qty'], 2)
+        unit_col = _find_header_idx(['unit price', 'price', 'unit'], 3)
+
+        subtotal = 0.0
+        for row in cells[1:]:
+            if not isinstance(row, list):
+                continue
+            row_total = 0.0
+            if 0 <= total_col < len(row):
+                row_total = _parse_num(row[total_col])
+            if row_total == 0.0:
+                qty = _parse_num(row[qty_col]) if 0 <= qty_col < len(row) else 0.0
+                unit = _parse_num(row[unit_col]) if 0 <= unit_col < len(row) else 0.0
+                row_total = qty * unit
+            subtotal += row_total
+        return subtotal
+
+    def _render_tables(elements, section_dict, *, style_normal, style_heading):
+        if not isinstance(section_dict, dict):
+            return
+
+        def _render_single_table(table_dict):
+            if not isinstance(table_dict, dict):
+                return
+            cells = table_dict.get('cells')
+            if not isinstance(cells, list) or not cells:
+                return
+            # Ensure 2D list of strings
+            data = []
+            for r in cells:
+                if not isinstance(r, list):
+                    continue
+                data.append([str(c) if c is not None else '' for c in r])
+            if not data:
+                return
+
+            elements.append(Spacer(1, 0.08 * inch))
+            elements.append(Paragraph('Table', style_heading))
+
+            tbl = PdfTable(data, repeatRows=1)
+            tbl.setStyle(
+                TableStyle(
+                    [
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#EAEAEA')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 8),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                        ('TOPPADDING', (0, 0), (-1, -1), 3),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                    ]
+                )
+            )
+            elements.append(tbl)
+
+            ttype = str(table_dict.get('type') or '').strip().lower()
+            if ttype == 'price':
+                vat_rate = _parse_num(table_dict.get('vatRate'))
+                subtotal = _table_subtotal_from_cells(cells)
+                vat = subtotal * vat_rate if vat_rate > 0 else 0.0
+                total = subtotal + vat
+                elements.append(Spacer(1, 0.08 * inch))
+                elements.append(
+                    Paragraph(
+                        f"Subtotal: R{subtotal:.2f}<br/>VAT ({int(vat_rate*100)}%): R{vat:.2f}<br/><b>Total: R{total:.2f}</b>",
+                        style_normal,
+                    )
+                )
+
+        # Legacy tables
+        tables_any = section_dict.get('tables')
+        if isinstance(tables_any, list):
+            for t in tables_any:
+                if isinstance(t, dict):
+                    _render_single_table(t)
+
+        # Positioned tables: { table: {...}, x, y, width }
+        positioned_any = section_dict.get('positionedPricingTables')
+        if isinstance(positioned_any, list):
+            for p in positioned_any:
+                if not isinstance(p, dict):
+                    continue
+                t = p.get('table')
+                if isinstance(t, dict):
+                    _render_single_table(t)
+
     def _extract_text(value, *, depth: int = 0, max_depth: int = 6):
         if value is None:
             return ""
@@ -839,6 +960,24 @@ def generate_proposal_pdf(
                     _render_body(elements, sub_body, content_style, bullet_style)
             else:
                 _render_body(elements, body, content_style, bullet_style)
+
+            # Render any tables associated with this section (legacy + positioned)
+            if isinstance(section, dict):
+                _render_tables(
+                    elements,
+                    section,
+                    style_normal=content_style,
+                    style_heading=subheading_style,
+                )
+
+            # Some content shapes nest tables inside the section body/content dict.
+            if isinstance(body, dict):
+                _render_tables(
+                    elements,
+                    body,
+                    style_normal=content_style,
+                    style_heading=subheading_style,
+                )
 
             elements.append(Spacer(1, 0.15 * inch))
         if len(sections) > max_sections:

@@ -162,7 +162,10 @@ limiter = Limiter(
             "default_limits": (
                 ["1000000 per day", "100000 per hour"]
                 if os.getenv("DEV_BYPASS_AUTH", "false").lower() in ("1", "true", "yes")
-                else ["200 per day", "50 per hour"]
+                else [
+                    os.getenv("RATE_LIMIT_PER_DAY", "5000 per day"),
+                    os.getenv("RATE_LIMIT_PER_HOUR", "500 per hour"),
+                ]
             ),
             **(
                 {"request_filter": (lambda: request.method == "OPTIONS")}

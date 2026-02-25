@@ -10,6 +10,7 @@ import '../../widgets/header.dart';
 import '../../widgets/admin/admin_sidebar.dart';
 import 'package:intl/intl.dart';
 import '../../document_editor/models/document_table.dart';
+import '../../document_editor/models/positioned_pricing_table.dart';
 import '../../document_editor/widgets/table_widget.dart';
 
 class ProposalReviewPage extends StatefulWidget {
@@ -976,7 +977,15 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                   ),
                                   const SizedBox(height: 24),
                                   Text(
-                                    sectionContent.isEmpty
+                                    (sectionContent.isEmpty &&
+                                            !(section['tables'] is List &&
+                                                (section['tables'] as List)
+                                                    .isNotEmpty) &&
+                                            !(section['positionedPricingTables']
+                                                    is List &&
+                                                (section['positionedPricingTables']
+                                                        as List)
+                                                    .isNotEmpty))
                                         ? '(No content in this section)'
                                         : sectionContent,
                                     style: const TextStyle(
@@ -997,6 +1006,24 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                         sectionIndex: index,
                                         tableIndex: null,
                                         table: table,
+                                        currencySymbol: 'R',
+                                        readOnly: true,
+                                      );
+                                    })),
+                                  if (section['positionedPricingTables']
+                                      is List)
+                                    ...((section['positionedPricingTables']
+                                            as List)
+                                        .where((p) => p is Map)
+                                        .map((p) {
+                                      final positioned =
+                                          PositionedPricingTable.fromJson(
+                                        Map<String, dynamic>.from(p as Map),
+                                      );
+                                      return TableWidget(
+                                        sectionIndex: index,
+                                        tableIndex: null,
+                                        table: positioned.table,
                                         currencySymbol: 'R',
                                         readOnly: true,
                                       );
