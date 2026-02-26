@@ -590,9 +590,22 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             requester_role = (requester_role or '').strip().lower()
             is_finance = requester_role.startswith('finance') or requester_role in ['finance']
 
+            # Some environments do not have a dedicated `sections` column on proposals.
+            # If the client sends `sections` but the DB does not support it, store it in `content`.
+            if 'sections' in data and 'sections' not in existing_columns:
+                if 'content' not in data:
+                    data['content'] = data.get('sections')
+                data.pop('sections', None)
+
+            select_cols = ['status', 'content']
+            if 'sections' in existing_columns:
+                select_cols.append('sections')
+            if 'budget' in existing_columns:
+                select_cols.append('budget')
+
             cursor.execute(
-                """
-                SELECT status, content, sections, budget
+                f"""
+                SELECT {', '.join(select_cols)}
                 FROM proposals
                 WHERE id = %s
                 """,
@@ -603,13 +616,25 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 return jsonify({'detail': 'Proposal not found'}), 404
 
             before_status = (before_row[0] or '').strip().lower()
-            before_content = before_row[1]
-            before_sections = before_row[2]
-            before_budget = before_row[3]
+            before_content = before_row[1] if len(before_row) > 1 else None
+
+            before_sections = None
+            if 'sections' in existing_columns:
+                try:
+                    before_sections = before_row[select_cols.index('sections')]
+                except Exception:
+                    before_sections = None
+
+            before_budget = None
+            if 'budget' in existing_columns:
+                try:
+                    before_budget = before_row[select_cols.index('budget')]
+                except Exception:
+                    before_budget = None
 
             sent_locked = ('sent to client' in before_status) or ('released' in before_status)
             if sent_locked and is_finance:
-                if any(k in data for k in ['content', 'sections', 'budget']):
+                if any(k in data for k in ['content', 'budget']):
                     return jsonify({'detail': 'Pricing changes are not allowed after proposal is sent to client'}), 403
 
             # Finance users can only update pricing-related fields.
@@ -645,7 +670,7 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             if 'content' in data:
                 updates.append('content = %s')
                 params.append(data['content'])
-            if 'sections' in data:
+            if 'sections' in data and 'sections' in existing_columns:
                 updates.append('sections = %s')
                 try:
                     sections_json = json.dumps(data['sections'])
@@ -691,7 +716,7 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             if is_finance:
                 if 'content' in data:
                     changes.append({'field': 'content', 'old': before_content, 'new': data.get('content')})
-                if 'sections' in data:
+                if 'sections' in data and 'sections' in existing_columns:
                     changes.append({'field': 'sections', 'old': before_sections, 'new': data.get('sections')})
                 if 'budget' in data and 'budget' in existing_columns:
                     changes.append({'field': 'budget', 'old': before_budget, 'new': data.get('budget')})
