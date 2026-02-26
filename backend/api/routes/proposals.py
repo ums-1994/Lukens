@@ -894,6 +894,7 @@ def delete_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 requester_role = None
             requester_role = (requester_role or '').strip().lower()
             is_admin = requester_role in ['admin', 'ceo']
+            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
 
             # Verify proposal exists and ownership (unless admin)
             cursor.execute(
@@ -1031,7 +1032,7 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
             params = [proposal_id]
 
             # Non-admins can only read their own proposals
-            if not is_admin and owner_col:
+            if not is_admin and not is_finance and owner_col:
                 where_clause += f' AND {owner_col}::text = %s::text'
                 params.append(str(resolved_user_id))
 
