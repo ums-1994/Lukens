@@ -133,6 +133,23 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
         print(f"⚠️ Failed to log activity: {e}")
 
 
+def log_status_change(proposal_id, user_id, old_status, new_status):
+    try:
+        description = f"Status changed from {old_status} to {new_status}"
+        log_activity(
+            proposal_id,
+            user_id,
+            'status_change',
+            description,
+            metadata={
+                'old_status': old_status,
+                'new_status': new_status,
+            },
+        )
+    except Exception as e:
+        print(f"⚠️ Failed to log status change: {e}")
+
+
 def create_notification(
     user_id,
     notification_type,
