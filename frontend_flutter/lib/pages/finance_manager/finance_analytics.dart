@@ -125,10 +125,10 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                   ),
                   const SizedBox(height: 8),
                   RadioListTile<String>(
-                    title: const Text('CSV'),
+                    title: const Text('Excel (.xlsx)'),
                     subtitle: const Text(
-                        'Comma-separated values, opens in Excel with columns'),
-                    value: 'csv',
+                        'Native Excel format, structured columns and sheets'),
+                    value: 'xlsx',
                     groupValue: selectedFormat,
                     onChanged: (value) {
                       setState(() {
@@ -138,10 +138,10 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                     contentPadding: EdgeInsets.zero,
                   ),
                   RadioListTile<String>(
-                    title: const Text('Excel (.xlsx)'),
+                    title: const Text('CSV'),
                     subtitle: const Text(
-                        'Native Excel format, structured columns and sheets'),
-                    value: 'xlsx',
+                        'Comma-separated values, opens in Excel with columns'),
+                    value: 'csv',
                     groupValue: selectedFormat,
                     onChanged: (value) {
                       setState(() {
