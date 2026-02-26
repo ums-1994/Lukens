@@ -2217,7 +2217,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         ),
         const SizedBox(height: 8),
         Text(
-          'Submit for internal review and approval',
+          'Send proposal to Finance for review',
           style: PremiumTheme.bodyMedium,
         ),
         const SizedBox(height: 24),
@@ -3988,12 +3988,12 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Submit for Internal Approval',
+                'Send to Finance',
                 style: PremiumTheme.titleMedium,
               ),
               const SizedBox(height: 16),
               Text(
-                'Before submitting, ensure:',
+                'Before sending to Finance, ensure:',
                 style: PremiumTheme.bodyMedium.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -4065,7 +4065,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Approved internally',
+                          'Sent to Finance for review',
                           style: PremiumTheme.bodyMedium.copyWith(
                             color: PremiumTheme.success,
                             fontWeight: FontWeight.w600,
@@ -4077,9 +4077,9 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 )
               else
                 ElevatedButton.icon(
-                  onPressed: _submitForInternalApproval,
-                  icon: const Icon(Icons.send),
-                  label: const Text('Submit for Approval'),
+                  onPressed: _submitToFinance,
+                  icon: const Icon(Icons.account_balance),
+                  label: const Text('Send to Finance'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: PremiumTheme.teal,
                     foregroundColor: Colors.white,
@@ -4432,10 +4432,23 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     }
   }
 
-  Future<void> _submitForInternalApproval() async {
+  Future<void> _submitToFinance() async {
     setState(() => _isLoading = true);
 
     try {
+      // Check if Risk Gate has been run
+      if (_riskAssessment.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Risk Gate analysis must be completed before sending to Finance'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
       // Check if governance passed (AI Ready status)
       final governanceStatus =
           (_governanceResults['status'] as String?) ?? 'PENDING';
@@ -4444,7 +4457,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Governance check must be Ready before submitting for approval'),
+                'Governance check must be Ready before sending to Finance'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -4452,24 +4465,40 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         return;
       }
 
-      // Simulate API call - replace with actual
-      await Future.delayed(const Duration(seconds: 1));
+      // Check Risk Gate blocking status
+      if (_isRiskGateBlockedWithoutOverride()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Cannot send to Finance: AI Risk Gate returned BLOCK and no override exists. Please go back to the AI Risk Gate step and submit an override to proceed.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Update proposal status to "Pending Finance Review"
+      final app = context.read<AppState>();
+      if (_proposalId != null) {
+        await app.updateProposalStatus(_proposalId!, 'Pending Finance Review');
+      }
 
       setState(() {
-        _isInternalApproved = true;
+        _isInternalApproved = true; // Keep this flag for UI state
         _isLoading = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Proposal submitted for internal approval'),
+          content: Text('Proposal sent to Finance for review'),
           backgroundColor: Colors.green,
         ),
       );
     } catch (e) {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error submitting for approval: $e')),
+        SnackBar(content: Text('Error sending to Finance: $e')),
       );
     }
   }
