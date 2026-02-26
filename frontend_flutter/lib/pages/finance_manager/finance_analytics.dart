@@ -1075,24 +1075,6 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                   ),
                 ),
                 if (!_isSidebarCollapsed) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Finance Portal',
-                          style: PremiumTheme.bodyLarge
-                              .copyWith(color: Colors.white),
-                        ),
-                        Text(
-                          'Navigation',
-                          style: PremiumTheme.labelMedium
-                              .copyWith(color: Colors.white60),
-                        ),
-                      ],
-                    ),
-                  ),
                 ] else ...[
                   const Spacer(),
                 ],
