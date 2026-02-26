@@ -1,6 +1,4 @@
-// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
-
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../theme/premium_theme.dart';
@@ -161,8 +159,8 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -458,7 +456,7 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
                 // Footer
                 const Center(
                   child: Text(
-                    '© 2024 Khonology. All rights reserved.',
+                    'Â© 2024 Khonology. All rights reserved.',
                     style: TextStyle(color: PremiumTheme.textTertiary, fontSize: 12),
                   ),
                 ),
