@@ -111,27 +111,7 @@ CORS(
     expose_headers=["Content-Type", "Authorization"],
 )
 
-@app.route("/", methods=["OPTIONS"])
-@app.route("/<path:remaining>", methods=["OPTIONS"])
-def handle_options_preflight(remaining=None):
-    resp = Response("", status=200)
-    origin = request.headers.get('Origin')
-    if origin:
-        resp.headers['Access-Control-Allow-Origin'] = origin
-    resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
-    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
-    resp.headers['Access-Control-Allow-Credentials'] = 'true'
-    return resp
-
-
-# Explicit OPTIONS handlers for finance export (CORS preflight); registered before blueprint so they take precedence
-@app.route("/api/finance/export/proposal-summary", methods=["OPTIONS"])
-@app.route("/api/finance/export/client-report", methods=["OPTIONS"])
-@app.route("/api/finance/export/summary-stats", methods=["OPTIONS"])
-def finance_export_options_preflight():
-    return handle_options_preflight()
-
-# Register API blueprints
+# Register API blueprints first so GET/OPTIONS on /api/finance/export/* match blueprint, not catch-all
 from api.routes.auth import bp as auth_bp
 from api.routes.proposals import bp as proposals_bp
 from api.routes.creator import bp as creator_bp
@@ -157,6 +137,19 @@ app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp)
 app.register_blueprint(finance_export_bp, url_prefix='/api')
+
+# Catch-all OPTIONS after blueprints so specific routes (e.g. finance export) handle their path first
+@app.route("/", methods=["OPTIONS"])
+@app.route("/<path:remaining>", methods=["OPTIONS"])
+def handle_options_preflight(remaining=None):
+    resp = Response("", status=200)
+    origin = request.headers.get('Origin')
+    if origin:
+        resp.headers['Access-Control-Allow-Origin'] = origin
+    resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
+    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+    resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    return resp
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)

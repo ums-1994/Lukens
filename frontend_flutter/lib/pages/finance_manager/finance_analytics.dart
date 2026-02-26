@@ -849,72 +849,77 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                tooltip: 'Export Financial Data',
-                icon: const Icon(Icons.download, color: Colors.white),
-                onPressed: _showExportDialog,
-              ),
-              const SizedBox(width: 8),
-              ClipOval(
-                child: Image.asset(
-                  'assets/images/User_Profile.png',
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.cover,
+          Flexible(
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                IconButton(
+                  tooltip: 'Export Financial Data',
+                  icon: const Icon(Icons.download, color: Colors.white),
+                  onPressed: _showExportDialog,
                 ),
-              ),
-              if (!isMobile) ...[
-                const SizedBox(width: 10),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      userName.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                const SizedBox(width: 8),
+                ClipOval(
+                  child: Image.asset(
+                    'assets/images/User_Profile.png',
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                if (!isMobile) ...[
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          userName.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const Text(
+                          'Finance',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ),
-                    const Text(
-                      'Finance',
-                      style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
+                  ),
+                ],
+                const SizedBox(width: 10),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: Colors.white),
+                  onSelected: (value) {
+                    if (value == 'logout') {
+                      app.logout();
+                      AuthService.logout();
+                      Navigator.pushNamed(context, '/login');
+                    }
+                  },
+                  itemBuilder: (BuildContext context) => const [
+                    PopupMenuItem<String>(
+                      value: 'logout',
+                      child: Row(
+                        children: [
+                          Icon(Icons.logout),
+                          SizedBox(width: 8),
+                          Text('Logout'),
+                        ],
                       ),
                     ),
                   ],
                 ),
               ],
-              const SizedBox(width: 10),
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, color: Colors.white),
-                onSelected: (value) {
-                  if (value == 'logout') {
-                    app.logout();
-                    AuthService.logout();
-                    Navigator.pushNamed(context, '/login');
-                  }
-                },
-                itemBuilder: (BuildContext context) => const [
-                  PopupMenuItem<String>(
-                    value: 'logout',
-                    child: Row(
-                      children: [
-                        Icon(Icons.logout),
-                        SizedBox(width: 8),
-                        Text('Logout'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
         ],
       ),
