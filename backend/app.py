@@ -135,6 +135,7 @@ from api.routes.approver import bp as approver_bp
 from api.routes.cycle_time import bp as cycle_time_bp
 from api.routes.pipeline import bp as pipeline_bp
 from api.routes.risk_gate import bp as risk_gate_bp
+from api.routes.finance_export import bp as finance_export_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -147,6 +148,7 @@ app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp)
+app.register_blueprint(finance_export_bp, url_prefix='/api')
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)

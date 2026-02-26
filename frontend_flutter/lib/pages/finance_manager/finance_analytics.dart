@@ -1,11 +1,14 @@
 import 'dart:math' as math;
 
 import 'dart:convert';
+import 'dart:html' as html;
 
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
@@ -46,6 +49,222 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _showExportDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        String selectedReport = 'proposal_summary';
+        String selectedFormat = 'csv';
+        bool isExporting = false;
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text(
+                'Export Financial Data',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Select report type and format:',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Report Type Selection
+                  const Text(
+                    'Report Type:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  RadioListTile<String>(
+                    title: const Text('Proposal Financial Summary'),
+                    subtitle:
+                        const Text('Individual proposal details with amounts'),
+                    value: 'proposal_summary',
+                    groupValue: selectedReport,
+                    onChanged: (value) {
+                      setState(() {
+                        selectedReport = value!;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<String>(
+                    title: const Text('Client Financial Report'),
+                    subtitle: const Text('Aggregated data by client'),
+                    value: 'client_report',
+                    groupValue: selectedReport,
+                    onChanged: (value) {
+                      setState(() {
+                        selectedReport = value!;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Format Selection
+                  const Text(
+                    'Export Format:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  RadioListTile<String>(
+                    title: const Text('CSV'),
+                    subtitle: const Text(
+                        'Comma-separated values, compatible with Excel'),
+                    value: 'csv',
+                    groupValue: selectedFormat,
+                    onChanged: (value) {
+                      setState(() {
+                        selectedFormat = value!;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isExporting
+                      ? null
+                      : () {
+                          Navigator.of(context).pop();
+                        },
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isExporting
+                      ? null
+                      : () async {
+                          setState(() {
+                            isExporting = true;
+                          });
+
+                          try {
+                            await _performExport(
+                                selectedReport, selectedFormat);
+                            if (mounted) {
+                              Navigator.of(context).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content:
+                                      Text('Export completed successfully!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              Navigator.of(context).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Export failed: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          } finally {
+                            setState(() {
+                              isExporting = false;
+                            });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.teal,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: isExporting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text('Export'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _performExport(String reportType, String format) async {
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+
+    if (token == null) {
+      throw Exception('Authentication required');
+    }
+
+    String endpoint;
+    if (reportType == 'proposal_summary') {
+      endpoint = '/api/finance/export/proposal-summary';
+    } else if (reportType == 'client_report') {
+      endpoint = '/api/finance/export/client-report';
+    } else {
+      throw Exception('Invalid report type');
+    }
+
+    final uri = Uri.parse('${baseUrl}$endpoint').replace(queryParameters: {
+      'format': format,
+    });
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': format == 'csv'
+            ? 'text/csv'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      // Create download link
+      final bytes = response.bodyBytes;
+      final fileName =
+          '${reportType}_${DateTime.now().millisecondsSinceEpoch}.${format == 'csv' ? 'csv' : 'xlsx'}';
+
+      // For web, create download link
+      if (kIsWeb) {
+        final blob = html.Blob([bytes], 'text/csv');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.AnchorElement(href: url)
+          ..setAttribute('download', fileName)
+          ..style.display = 'none';
+        html.document.body?.children.add(anchor);
+        anchor.click();
+        html.document.body?.children.remove(anchor);
+        html.Url.revokeObjectUrl(url);
+      } else {
+        // For mobile/desktop, save to file
+        // You might want to use path_provider package here
+        print('Export saved: $fileName (${bytes.length} bytes)');
+      }
+    } else {
+      throw Exception('Export failed: ${response.statusCode}');
+    }
   }
 
   bool _isDraft(String status) => status.trim().toLowerCase() == 'draft';
@@ -622,6 +841,12 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              IconButton(
+                tooltip: 'Export Financial Data',
+                icon: const Icon(Icons.download, color: Colors.white),
+                onPressed: _showExportDialog,
+              ),
+              const SizedBox(width: 8),
               ClipOval(
                 child: Image.asset(
                   'assets/images/User_Profile.png',

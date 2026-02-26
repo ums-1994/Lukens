@@ -766,7 +766,8 @@ class AppState extends ChangeNotifier {
         if (region != null && region.isNotEmpty) 'region': region,
         if (industry != null && industry.isNotEmpty) 'industry': industry,
         if (scope != null && scope.isNotEmpty) 'scope': scope,
-        if (department != null && department.isNotEmpty) 'department': department,
+        if (department != null && department.isNotEmpty)
+          'department': department,
         if (limit != null) 'limit': limit.toString(),
       };
 
@@ -809,7 +810,8 @@ class AppState extends ChangeNotifier {
         if (region != null && region.isNotEmpty) 'region': region,
         if (industry != null && industry.isNotEmpty) 'industry': industry,
         if (scope != null && scope.isNotEmpty) 'scope': scope,
-        if (department != null && department.isNotEmpty) 'department': department,
+        if (department != null && department.isNotEmpty)
+          'department': department,
       };
 
       final analyticsUri = Uri.parse("$baseUrl/api/analytics/risk-gate-summary")
