@@ -397,6 +397,27 @@ def admin_required(f):
     return decorated
 
 
+def finance_audit_required(f):
+    """Decorator to require finance_manager role or admin/ceo for audit/compliance access."""
+    @wraps(f)
+    def decorated(username=None, *args, **kwargs):
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+            result = cursor.fetchone()
+
+        if not result:
+            return {'detail': 'User not found'}, 403
+
+        role = (result[0] or '').strip().lower()
+        if role not in ['finance_manager', 'admin', 'ceo']:
+            return {'detail': 'Finance manager access required'}, 403
+
+        return f(username=username, *args, **kwargs)
+
+    return decorated
+
+
 def finance_required(f):
     """Decorator to require finance role or admin"""
     @wraps(f)

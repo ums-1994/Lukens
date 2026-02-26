@@ -28,6 +28,7 @@ except ImportError:
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.ai_safety import AISafetyError
+from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
 
 bp = Blueprint('creator', __name__, url_prefix='')
 
@@ -816,6 +817,7 @@ def send_to_client(username=None, proposal_id=None):
                 f"""
                 SELECT id,
                        title,
+                       status,
                        {client_expr} as client_name,
                        {client_email_expr} as client_email,
                        {owner_expr} as user_id
@@ -827,6 +829,16 @@ def send_to_client(username=None, proposal_id=None):
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
+
+            try:
+                compliance = evaluate_proposal_compliance(proposal_id=proposal_id)
+                if (compliance.get('status') or '').upper() == 'NON_COMPLIANT':
+                    return {
+                        'detail': 'Proposal is non-compliant and cannot be sent to client',
+                        'compliance': compliance,
+                    }, 403
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id} before send: {comp_err}")
             # Run compound risk gate check
             risk_result = evaluate_compound_risk(dict(proposal))
             if risk_result.get('blocked'):
@@ -847,12 +859,27 @@ def send_to_client(username=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
             
             # Update status
+            old_status = proposal.get('status')
             new_status = 'Sent to Client'
             cursor.execute(
                 """UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
                 (new_status, proposal_id)
             )
             conn.commit()
+
+            log_finance_audit_async(
+                user_id=sender.get('id'),
+                username=username,
+                entity_type='proposal',
+                entity_id=str(proposal_id),
+                action_type='SEND_TO_CLIENT',
+                changes=[{'field': 'status', 'old': old_status, 'new': new_status}],
+            )
+
+            try:
+                evaluate_proposal_compliance(proposal_id=proposal_id)
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id} after send: {comp_err}")
             
             # Send email to client
             email_sent = False

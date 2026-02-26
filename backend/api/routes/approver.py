@@ -13,6 +13,7 @@ from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
 from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification, resolve_user_id
+from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
 
 bp = Blueprint('approver', __name__)
 
@@ -314,6 +315,7 @@ def approve_proposal(username=None, proposal_id=None):
                     p.title, 
                     {client_expr} AS client,
                     {owner_expr} AS user_id,
+                    p.status,
                     p.content,
                     {client_email_expr} AS client_email
                 FROM proposals p
@@ -324,6 +326,16 @@ def approve_proposal(username=None, proposal_id=None):
             
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
+
+            try:
+                compliance = evaluate_proposal_compliance(proposal_id=proposal_id)
+                if (compliance.get('status') or '').upper() == 'NON_COMPLIANT':
+                    return {
+                        'detail': 'Proposal is non-compliant and cannot be sent to client',
+                        'compliance': compliance,
+                    }, 403
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id} before approve: {comp_err}")
             
             title = proposal.get('title')
             client_name = proposal.get('client') or proposal.get('client_name') or 'Unknown'
@@ -444,6 +456,8 @@ def approve_proposal(username=None, proposal_id=None):
                 or approver_user.get('username')
                 or username
             ) if approver_user else (username or 'Approver')
+
+            old_status = proposal.get('status')
             
             # Update status to Sent to Client
             cursor.execute(
@@ -457,6 +471,20 @@ def approve_proposal(username=None, proposal_id=None):
             if status_row:
                 new_status = status_row['status']
                 print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
+
+                log_finance_audit_async(
+                    user_id=approver_user_id,
+                    username=username,
+                    entity_type='proposal',
+                    entity_id=str(proposal_id),
+                    action_type='FINANCE_APPROVE',
+                    changes=[{'field': 'status', 'old': old_status, 'new': new_status}],
+                )
+
+                try:
+                    evaluate_proposal_compliance(proposal_id=proposal_id)
+                except Exception as comp_err:
+                    print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id} after approve: {comp_err}")
 
                 # Notify proposal creator about approval
                 try:
@@ -1046,6 +1074,10 @@ def reject_proposal(username=None, proposal_id=None):
                 return {'detail': 'Proposal not found'}, 404
 
             proposal_id_db, title, creator_user_id = proposal
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            old_status_row = cursor.fetchone()
+            old_status = old_status_row[0] if old_status_row else None
             
             # Update status to Draft
             cursor.execute(
@@ -1053,6 +1085,20 @@ def reject_proposal(username=None, proposal_id=None):
                 (proposal_id,)
             )
             conn.commit()
+
+            log_finance_audit_async(
+                user_id=None,
+                username=username,
+                entity_type='proposal',
+                entity_id=str(proposal_id),
+                action_type='FINANCE_REJECT',
+                changes=[{'field': 'status', 'old': old_status, 'new': 'Draft'}],
+            )
+
+            try:
+                evaluate_proposal_compliance(proposal_id=proposal_id)
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id} after reject: {comp_err}")
 
             # Notify proposal creator about rejection
             try:
