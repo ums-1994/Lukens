@@ -127,8 +127,21 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                   RadioListTile<String>(
                     title: const Text('CSV'),
                     subtitle: const Text(
-                        'Comma-separated values, compatible with Excel'),
+                        'Comma-separated values, opens in Excel with columns'),
                     value: 'csv',
+                    groupValue: selectedFormat,
+                    onChanged: (value) {
+                      setState(() {
+                        selectedFormat = value!;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<String>(
+                    title: const Text('Excel (.xlsx)'),
+                    subtitle: const Text(
+                        'Native Excel format, structured columns and sheets'),
+                    value: 'xlsx',
                     groupValue: selectedFormat,
                     onChanged: (value) {
                       setState(() {
@@ -256,7 +269,10 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
 
       // For web, create download link
       if (kIsWeb) {
-        final blob = html.Blob([bytes], 'text/csv');
+        final mimeType = format == 'csv'
+            ? 'text/csv'
+            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        final blob = html.Blob([bytes], mimeType);
         final url = html.Url.createObjectUrlFromBlob(blob);
         final anchor = html.AnchorElement(href: url)
           ..setAttribute('download', fileName)

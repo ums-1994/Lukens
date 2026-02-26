@@ -26,6 +26,7 @@ cloudinary==1.36.0
 # Document extraction
 PyPDF2==3.0.1
 python-docx==0.8.11
+openpyxl>=3.1.0
 
 # DocuSign E-Signature Integration
 docusign-esign>=5.4.0
