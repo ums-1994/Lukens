@@ -577,7 +577,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     // Mark as read if not already read
     if (!isAlreadyRead && notificationId != null) {
       try {
-        await app.markNotificationRead(notificationId!);
+        await app.markNotificationRead(notificationId);
       } catch (e) {
         debugPrint('Error marking notification as read: $e');
       }
