@@ -853,7 +853,6 @@ def get_client(username=None, client_id=None):
         print(f"[ERROR] Error fetching client: {exc}")
         return jsonify({"error": str(exc)}), 500
 
-
 @bp.patch("/clients/<int:client_id>")
 @token_required
 def update_client(username=None, client_id=None):

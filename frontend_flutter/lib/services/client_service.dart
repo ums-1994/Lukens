@@ -1,11 +1,9 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
 
 class ClientService {
-  // Backend routes for clients are mounted under `/api`
-  static String get baseUrl => '${ApiService.baseUrl}/api';
-
+  static String get baseUrl => ApiService.baseUrl;
   static String get _clientsBase => '$baseUrl/api/clients';
 
   // Get headers with token
@@ -89,7 +87,6 @@ class ClientService {
       final cleanAddress = clean(address);
       final cleanClientContactEmail = clean(clientContactEmail);
       final cleanClientContactMobile = clean(clientContactMobile);
-
       final response = await http.patch(
         Uri.parse('$_clientsBase/$clientId'),
         headers: _getHeaders(token),
@@ -138,7 +135,6 @@ class ClientService {
       return false;
     }
   }
-
   // ============================================================
   // CLIENT MANAGEMENT
   // ============================================================

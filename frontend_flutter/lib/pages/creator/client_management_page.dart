@@ -1,6 +1,4 @@
-// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
-
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../services/client_service.dart';
@@ -9,9 +7,8 @@ import '../../services/asset_service.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
 import '../../theme/premium_theme.dart';
-import '../../theme/app_colors.dart';
-import '../../widgets/app_side_nav.dart';
 import '../../api.dart';
+import '../../widgets/app_side_nav.dart';
 import 'dart:ui';
 
 class ClientManagementPage extends StatefulWidget {
@@ -37,7 +34,15 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   void initState() {
     super.initState();
     _loadData();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRoute());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncRoute();
+      if (!mounted) return;
+      context.read<AppState>().setCurrentNavLabel('Client Management');
+    });
+  }
+
+  bool _canManageInvitations() {
+    return _isAdminUser();
   }
 
   bool _isFinanceUser() {
@@ -266,15 +271,18 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     try {
       final token = AuthService.token;
       if (token != null) {
-        final results = await Future.wait([
-          ClientService.getClients(token),
-          ClientService.getInvitations(token),
-        ]);
+        final clients = await ClientService.getClients(token);
+        final invitations = _canManageInvitations()
+            ? await ClientService.getInvitations(token)
+            : [];
 
         if (mounted) {
           setState(() {
-            _clients = List<Map<String, dynamic>>.from(results[0]);
-            _invitations = List<Map<String, dynamic>>.from(results[1]);
+            _clients = List<Map<String, dynamic>>.from(clients);
+            _invitations = List<Map<String, dynamic>>.from(invitations);
+            if (!_canManageInvitations() && _selectedTab == 'invitations') {
+              _selectedTab = 'clients';
+            }
           });
         }
       }
@@ -521,115 +529,136 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     return Scaffold(
       body: Container(
         color: Colors.transparent,
-        child: Row(
+        child: Column(
           children: [
-            // Consistent Sidebar using AppSideNav
-            Consumer<AppState>(
-              builder: (context, app, child) {
-                final role = (app.currentUser?['role'] ?? '')
-                    .toString()
-                    .toLowerCase()
-                    .trim();
-                final isAdmin = role == 'admin' || role == 'ceo';
-                return AppSideNav(
-                  isCollapsed: _isSidebarCollapsed,
-                  currentLabel: _currentPage,
-                  isAdmin: isAdmin,
-                  onToggle: () => setState(
-                    () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                  ),
-                  onSelect: (label) {
-                    setState(() => _currentPage = label);
-                    _navigateToPage(context, label);
-                  },
-                );
-              },
-            ),
+            // Header
+            Container(
+              height: 70,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.black.withValues(alpha: 0.3),
+                    Colors.transparent,
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isNarrow = constraints.maxWidth < 620;
 
-            // Main Content Area
-            Expanded(
-              child: Column(
-                children: [
-                  // Header
-                  Container(
-                    height: 70,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black.withOpacity(0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Client Management',
-                            style:
-                                PremiumTheme.titleLarge.copyWith(fontSize: 22),
+                    final title = Text(
+                      'Client Management',
+                      style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+                      overflow: TextOverflow.ellipsis,
+                    );
+
+                    final userControls = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ClipOval(
+                          child: Image.asset(
+                            'assets/images/User_Profile.png',
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
                           ),
-                          Row(
+                        ),
+                        const SizedBox(width: 10),
+                        Flexible(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              ClipOval(
-                                child: Image.asset(
-                                  'assets/images/User_Profile.png',
-                                  width: 48,
-                                  height: 48,
-                                  fit: BoxFit.cover,
-                                ),
+                              Text(
+                                _getUserName(user),
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold),
                               ),
-                              const SizedBox(width: 10),
-                              Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _getUserName(user),
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  Text(
-                                    userRole.toString(),
-                                    style: const TextStyle(
-                                        color: Colors.white70, fontSize: 12),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(width: 10),
-                              PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert,
-                                    color: Colors.white),
-                                onSelected: (value) {
-                                  if (value == 'logout') {
-                                    app.logout();
-                                    AuthService.logout();
-                                    Navigator.pushNamed(context, '/login');
-                                  }
-                                },
-                                itemBuilder: (BuildContext context) => const [
-                                  PopupMenuItem<String>(
-                                    value: 'logout',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.logout),
-                                        SizedBox(width: 8),
-                                        Text('Logout'),
-                                      ],
-                                    ),
-                                  ),
-                                ],
+                              Text(
+                                userRole.toString(),
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 12),
                               ),
                             ],
                           ),
+                        ),
+                        const SizedBox(width: 10),
+                        PopupMenuButton<String>(
+                          icon:
+                              const Icon(Icons.more_vert, color: Colors.white),
+                          onSelected: (value) {
+                            if (value == 'logout') {
+                              app.logout();
+                              AuthService.logout();
+                              Navigator.pushNamed(context, '/login');
+                            }
+                          },
+                          itemBuilder: (BuildContext context) => const [
+                            PopupMenuItem<String>(
+                              value: 'logout',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.logout),
+                                  SizedBox(width: 8),
+                                  Text('Logout'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+
+                    if (!isNarrow) {
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(child: title),
+                          userControls,
                         ],
-                      ),
-                    ),
+                      );
+                    }
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        title,
+                        const SizedBox(height: 8),
+                        userControls,
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // Main Content with Sidebar
+            Expanded(
+              child: Row(
+                children: [
+                  Consumer<AppState>(
+                    builder: (context, app, _) {
+                      final user = AuthService.currentUser ?? app.currentUser;
+                      final role =
+                          (user?['role'] ?? '').toString().toLowerCase().trim();
+                      final isAdmin = role == 'admin' || role == 'ceo';
+                      return AppSideNav(
+                        isCollapsed: app.isSidebarCollapsed,
+                        currentLabel: app.currentNavLabel,
+                        isAdmin: isAdmin,
+                        onToggle: app.toggleSidebar,
+                        onSelect: (label) {
+                          app.setCurrentNavLabel(label);
+                          _navigateToPage(context, label);
+                        },
+                      );
+                    },
                   ),
 
                   // Content Area
@@ -657,7 +686,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                                 const Center(
                                     child: CircularProgressIndicator(
                                         color: PremiumTheme.teal))
-                              else if (_selectedTab == 'clients')
+                              else if (_selectedTab == 'clients' ||
+                                  !_canManageInvitations())
                                 _buildClientsTable()
                               else
                                 _buildInvitationsTable(),
@@ -667,11 +697,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       ),
                     ),
                   ),
-
-                  const Footer(),
                 ],
               ),
             ),
+
+            const Footer(),
           ],
         ),
       ),
@@ -840,371 +870,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     }
   }
 
-  // Exact Dashboard Sidebar Implementation
-  Widget _buildFixedSidebar(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final isSmall = screenWidth < 768;
-    final effectiveCollapsed = isSmall ? true : _isSidebarCollapsed;
-
-    return AnimatedContainer(
-      duration: AppColors.animationDuration,
-      width: effectiveCollapsed
-          ? AppColors.collapsedWidth
-          : AppColors.expandedWidth,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            color: AppColors.backgroundColor
-                .withValues(alpha: AppColors.backgroundOpacity),
-            border: Border(
-              right: BorderSide(
-                color: Colors.white.withValues(alpha: 0.1),
-                width: 1,
-              ),
-            ),
-          ),
-          child: Column(
-            children: [
-              // Header Section
-              SizedBox(
-                height: AppColors.headerHeight,
-                child: Padding(
-                  padding: AppSpacing.sidebarHeaderPadding,
-                  child: InkWell(
-                    onTap: () {
-                      if (!isSmall) {
-                        setState(
-                            () => _isSidebarCollapsed = !_isSidebarCollapsed);
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      height: AppColors.itemHeight,
-                      decoration: BoxDecoration(
-                        color: AppColors.hoverColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: effectiveCollapsed
-                            ? MainAxisAlignment.center
-                            : MainAxisAlignment.spaceBetween,
-                        children: [
-                          if (!effectiveCollapsed)
-                            Expanded(
-                              child: Text(
-                                'Navigation',
-                                style: TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          Padding(
-                            padding: EdgeInsets.symmetric(
-                                horizontal: effectiveCollapsed ? 0 : 8),
-                            child: Icon(
-                              effectiveCollapsed
-                                  ? Icons.keyboard_arrow_right
-                                  : Icons.keyboard_arrow_left,
-                              color: AppColors.textPrimary,
-                              size: 20,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-
-              // Navigation Items
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 8),
-                      _buildSidebarNavItem(
-                        label: 'Dashboard',
-                        assetPath: 'assets/images/Dahboard.png',
-                        isSelected: _currentPage == 'Dashboard',
-                        isCollapsed: effectiveCollapsed,
-                        onTap: () => _navigateToPage(context, 'Dashboard'),
-                      ),
-                      _buildSidebarNavItem(
-                        label: 'My Proposals',
-                        assetPath: 'assets/images/My_Proposals.png',
-                        isSelected: _currentPage == 'My Proposals',
-                        isCollapsed: effectiveCollapsed,
-                        onTap: () => _navigateToPage(context, 'My Proposals'),
-                      ),
-                      _buildSidebarNavItem(
-                        label: 'Templates',
-                        assetPath: 'assets/images/content_library.png',
-                        isSelected: _currentPage == 'Templates',
-                        isCollapsed: effectiveCollapsed,
-                        onTap: () => _navigateToPage(context, 'Templates'),
-                      ),
-                      _buildSidebarNavItem(
-                        label: 'Content Library',
-                        assetPath: 'assets/images/content_library.png',
-                        isSelected: _currentPage == 'Content Library',
-                        isCollapsed: effectiveCollapsed,
-                        onTap: () =>
-                            _navigateToPage(context, 'Content Library'),
-                      ),
-                      _buildSidebarNavItem(
-                        label: 'Client Management',
-                        assetPath: 'assets/images/collaborations.png',
-                        isSelected: _currentPage == 'Client Management',
-                        isCollapsed: effectiveCollapsed,
-                        onTap: () =>
-                            _navigateToPage(context, 'Client Management'),
-                      ),
-                      _buildSidebarNavItem(
-                        label: 'Approved Proposals',
-                        assetPath:
-                            'assets/images/Time Allocation_Approval_Blue.png',
-                        isSelected: _currentPage == 'Approved Proposals',
-                        isCollapsed: effectiveCollapsed,
-                        onTap: () =>
-                            _navigateToPage(context, 'Approved Proposals'),
-                      ),
-                      _buildSidebarNavItem(
-                        label: 'Analytics (My Pipeline)',
-                        assetPath: 'assets/images/analytics.png',
-                        isSelected: _currentPage == 'Analytics (My Pipeline)',
-                        isCollapsed: effectiveCollapsed,
-                        onTap: () =>
-                            _navigateToPage(context, 'Analytics (My Pipeline)'),
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Divider
-                      if (!effectiveCollapsed)
-                        Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 16),
-                          height: 1,
-                          color: Colors.white.withValues(alpha: 0.1),
-                        ),
-                      const SizedBox(height: 12),
-
-                      // Logout
-                      _buildSidebarNavItem(
-                        label: 'Logout',
-                        assetPath: 'assets/images/Logout_KhonoBuzz.png',
-                        isSelected: false,
-                        isCollapsed: effectiveCollapsed,
-                        onTap: () => _handleLogout(context),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSidebarNavItem({
-    required String label,
-    required String assetPath,
-    required bool isSelected,
-    required bool isCollapsed,
-    required VoidCallback onTap,
-    bool showProfileIndicator = false,
-  }) {
-    bool hovering = false;
-
-    return StatefulBuilder(
-      builder: (context, setState) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          child: MouseRegion(
-            onEnter: (_) => setState(() => hovering = true),
-            onExit: (_) => setState(() => hovering = false),
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(12),
-              child: AnimatedContainer(
-                duration: AppColors.animationDuration,
-                height: AppColors.itemHeight,
-                decoration: BoxDecoration(
-                  color: _getItemColor(isSelected, hovering, isCollapsed),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: _getItemShadow(isSelected, hovering, isCollapsed),
-                ),
-                child: isCollapsed
-                    ? _buildCollapsedItem(
-                        assetPath, isSelected, showProfileIndicator)
-                    : _buildExpandedItem(label, assetPath, isSelected),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildCollapsedItem(
-      String assetPath, bool isSelected, bool showProfileIndicator) {
-    return Center(
-      child: Stack(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.transparent,
-              shape: BoxShape.circle,
-            ),
-            padding: const EdgeInsets.all(8),
-            child: AssetService.buildImageWidget(
-              assetPath,
-              fit: BoxFit.contain,
-            ),
-          ),
-          if (showProfileIndicator)
-            Positioned(
-              top: 0,
-              right: 0,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: AppColors.activeColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: AppColors.backgroundColor,
-                    width: 1.5,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildExpandedItem(String label, String assetPath, bool isSelected) {
-    return Padding(
-      padding: AppSpacing.sidebarItemPadding,
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.transparent,
-              shape: BoxShape.circle,
-            ),
-            padding: const EdgeInsets.all(8),
-            child: AssetService.buildImageWidget(
-              assetPath,
-              fit: BoxFit.contain,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: isSelected
-                    ? AppColors.textPrimary
-                    : AppColors.textSecondary,
-                fontSize: 14,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-          ),
-          if (isSelected)
-            const Icon(
-              Icons.arrow_forward_ios,
-              size: 12,
-              color: AppColors.textPrimary,
-            ),
-        ],
-      ),
-    );
-  }
-
-  Color _getItemColor(bool isSelected, bool hovering, bool isCollapsed) {
-    if (isCollapsed) {
-      return Colors.transparent; // All items transparent when collapsed
-    }
-
-    if (isSelected) {
-      return AppColors.activeColor;
-    }
-
-    if (hovering) {
-      return AppColors.hoverColor;
-    }
-
-    return Colors.transparent;
-  }
-
-  List<BoxShadow> _getItemShadow(
-      bool isSelected, bool hovering, bool isCollapsed) {
-    if (isCollapsed) {
-      return []; // No shadow when collapsed
-    }
-
-    if (isSelected) {
-      return [
-        BoxShadow(
-          color: AppColors.activeColor.withValues(alpha: 0x35),
-          blurRadius: 10,
-          offset: const Offset(0, 2),
-        ),
-      ];
-    }
-
-    if (hovering) {
-      return [
-        BoxShadow(
-          color: AppColors.hoverColor.withValues(alpha: 0x35),
-          blurRadius: 10,
-          offset: const Offset(0, 2),
-        ),
-      ];
-    }
-
-    return [];
-  }
-
-  void _handleLogout(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                final app = Provider.of<AppState>(context, listen: false);
-                app.logout();
-                AuthService.logout();
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Widget _buildHeader() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
@@ -1269,22 +934,23 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                 ),
                 const SizedBox(width: 12),
               ],
-              ElevatedButton.icon(
-                onPressed: _showInviteDialog,
-                icon: const Icon(Icons.person_add, size: 20),
-                label: const Text('Invite Client',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: PremiumTheme.teal,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              if (_canManageInvitations())
+                ElevatedButton.icon(
+                  onPressed: _showInviteDialog,
+                  icon: const Icon(Icons.person_add, size: 20),
+                  label: const Text('Invite Client',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: PremiumTheme.teal,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
                   ),
-                  elevation: 0,
                 ),
-              ),
             ],
           ),
         ),
@@ -1324,7 +990,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   ),
                 ),
               ),
-              if (_selectedTab == 'invitations') ...[
+              if (_canManageInvitations() && _selectedTab == 'invitations') ...[
                 const SizedBox(width: 12),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1441,49 +1107,51 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             ),
           ),
         ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: PremiumTheme.statCard(PremiumTheme.blueGradient),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.mail, color: Colors.white, size: 20),
-                        SizedBox(width: 8),
-                        Text('Pending Invites',
-                            style:
-                                TextStyle(color: Colors.white, fontSize: 14)),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '$pendingInvites',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
+        if (_canManageInvitations()) ...[
+          const SizedBox(width: 16),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: PremiumTheme.statCard(PremiumTheme.blueGradient),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.mail, color: Colors.white, size: 20),
+                          SizedBox(width: 8),
+                          Text('Pending Invites',
+                              style:
+                                  TextStyle(color: Colors.white, fontSize: 14)),
+                        ],
                       ),
-                    ),
-                    Text(
-                      '$completedInvites completed',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontSize: 12,
+                      const SizedBox(height: 12),
+                      Text(
+                        '$pendingInvites',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 32,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    ),
-                  ],
+                      Text(
+                        '$completedInvites completed',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.7),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
         const SizedBox(width: 16),
         Expanded(
           child: ClipRRect(
@@ -1591,53 +1259,54 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   ),
                 ),
               ),
-              Expanded(
-                child: InkWell(
-                  onTap: () => setState(() => _selectedTab = 'invitations'),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
-                      color: _selectedTab == 'invitations'
-                          ? PremiumTheme.teal.withValues(alpha: 0.3)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(20),
-                      border: _selectedTab == 'invitations'
-                          ? Border.all(color: PremiumTheme.teal, width: 2)
-                          : null,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.mail,
-                          color: _selectedTab == 'invitations'
-                              ? PremiumTheme.teal
-                              : Colors.white,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Invitations (${_invitations.where((i) {
-                            final status =
-                                i['status']?.toString().toLowerCase() ?? '';
-                            final clientId = i['client_id'];
-                            return status != 'completed' &&
-                                (clientId == null ||
-                                    clientId.toString().isEmpty);
-                          }).length})',
-                          style: TextStyle(
+              if (_canManageInvitations())
+                Expanded(
+                  child: InkWell(
+                    onTap: () => setState(() => _selectedTab = 'invitations'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      decoration: BoxDecoration(
+                        color: _selectedTab == 'invitations'
+                            ? PremiumTheme.teal.withValues(alpha: 0.3)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(20),
+                        border: _selectedTab == 'invitations'
+                            ? Border.all(color: PremiumTheme.teal, width: 2)
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.mail,
                             color: _selectedTab == 'invitations'
                                 ? PremiumTheme.teal
                                 : Colors.white,
-                            fontWeight: _selectedTab == 'invitations'
-                                ? FontWeight.w600
-                                : FontWeight.w400,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Text(
+                            'Invitations (${_invitations.where((i) {
+                              final status =
+                                  i['status']?.toString().toLowerCase() ?? '';
+                              final clientId = i['client_id'];
+                              return status != 'completed' &&
+                                  (clientId == null ||
+                                      clientId.toString().isEmpty);
+                            }).length})',
+                            style: TextStyle(
+                              color: _selectedTab == 'invitations'
+                                  ? PremiumTheme.teal
+                                  : Colors.white,
+                              fontWeight: _selectedTab == 'invitations'
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
@@ -1708,44 +1377,45 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     topRight: Radius.circular(20),
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Expanded(
+                    const Expanded(
                         flex: 3,
                         child: Text('Company',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Contact',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Email',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Industry',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 1,
                         child: Text('Status',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    SizedBox(
-                        width: 80,
-                        child: Text('Actions',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
+                    if (_canManageInvitations())
+                      const SizedBox(
+                          width: 80,
+                          child: Text('Actions',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600))),
                   ],
                 ),
               ),
@@ -1762,11 +1432,23 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     final company = client['company_name'] ?? 'N/A';
     final contact = client['contact_person'] ?? 'N/A';
     final email = client['email'] ?? 'N/A';
-    final industry = client['industry'] ?? 'N/A';
+    // Get holding information from various possible keys
+    final holdingInfo = client['holding_information'] ??
+        client['holdingInformation'] ??
+        client['holding'] ??
+        client['client_holding'] ??
+        client['industry']; // fallback to industry if holding is not found
+
+    final industry = (holdingInfo == null ||
+            holdingInfo.toString().trim().isEmpty ||
+            holdingInfo.toString().trim().toLowerCase() == 'n/a')
+        ? 'Holding'
+        : holdingInfo.toString();
     final status = client['status'] ?? 'active';
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
       decoration: BoxDecoration(
         border: Border(
           bottom:
@@ -1820,25 +1502,26 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
             ),
           ),
-          SizedBox(
-            width: 80,
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.visibility, size: 18),
-                  color: PremiumTheme.cyan,
-                  onPressed: () => _showClientDetails(client),
-                  tooltip: 'View Details',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.more_vert, size: 18),
-                  color: Colors.white,
-                  onPressed: () => _showClientMenu(client),
-                  tooltip: 'More Options',
-                ),
-              ],
+          if (_canManageInvitations())
+            SizedBox(
+              width: 80,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.visibility, size: 18),
+                    color: PremiumTheme.cyan,
+                    onPressed: () => _showClientDetails(client),
+                    tooltip: 'View Details',
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.more_vert, size: 18),
+                    color: Colors.white,
+                    onPressed: () => _showClientMenu(client),
+                    tooltip: 'More Options',
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1922,44 +1605,45 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                     topRight: Radius.circular(20),
                   ),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Expanded(
+                    const Expanded(
                         flex: 3,
                         child: Text('Email',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Company',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Sent Date',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 2,
                         child: Text('Expires',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    Expanded(
+                    const Expanded(
                         flex: 1,
                         child: Text('Status',
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600))),
-                    SizedBox(
-                        width: 80,
-                        child: Text('Actions',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
+                    if (_canManageInvitations())
+                      const SizedBox(
+                          width: 80,
+                          child: Text('Actions',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600))),
                   ],
                 ),
               ),
@@ -2042,22 +1726,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
             ),
           ),
-          SizedBox(
-            width: 80,
-            child: PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: Colors.white, size: 18),
-              onSelected: (value) => _handleInvitationAction(value, invite),
-              itemBuilder: (context) => [
-                const PopupMenuItem(value: 'resend', child: Text('Resend')),
-                if (!_isEmailVerified(invite))
-                  const PopupMenuItem(
-                      value: 'send_code',
-                      child: Text('Send Verification Code')),
-                const PopupMenuItem(value: 'cancel', child: Text('Cancel')),
-                const PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
-            ),
-          ),
         ],
       ),
     );
@@ -2128,14 +1796,40 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     }
   }
 
-  void _showClientDetails(Map<String, dynamic> client) {
-    // TODO: Show client details dialog with notes and proposals
-    _showSnackBar('Client details view coming soon!');
-  }
-
   void _showClientMenu(Map<String, dynamic> client) {
     // TODO: Show menu with options (edit, view notes, link proposal, etc.)
     _showSnackBar('Client menu coming soon!');
+  }
+
+  void _showClientDetails(Map<String, dynamic> client) {
+    final company = (client['company_name'] ?? client['name'] ?? 'Client')
+        .toString()
+        .trim();
+    final email = (client['email'] ?? '').toString().trim();
+    final contact = (client['contact_person'] ?? client['contact_name'] ?? '')
+        .toString()
+        .trim();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(company.isNotEmpty ? company : 'Client Details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (email.isNotEmpty) Text('Email: $email'),
+            if (contact.isNotEmpty) Text('Contact: $contact'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool> _confirmAction({
@@ -2153,7 +1847,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: PremiumTheme.error.withOpacity(0.2),
+                color: PremiumTheme.error.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.delete_forever, color: Colors.white),
