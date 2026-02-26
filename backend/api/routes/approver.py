@@ -826,6 +826,11 @@ def approve_proposal(username=None, proposal_id=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@bp.route("/proposals/<int:proposal_id>/request-changes", methods=['OPTIONS'])
+def options_request_changes(proposal_id=None):
+    """Handle CORS preflight for request changes endpoint"""
+    return {}, 200
+
 @bp.post("/proposals/<int:proposal_id>/request-changes")
 @token_required
 def request_changes(username=None, proposal_id=None):
