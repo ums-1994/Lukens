@@ -230,19 +230,27 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
       'format': format,
     });
 
-    final response = await http.get(
-      uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': format == 'csv'
-            ? 'text/csv'
-            : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      },
-    );
+    final response = await http
+        .get(
+          uri,
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Accept': format == 'csv'
+                ? 'text/csv'
+                : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+        )
+        .timeout(
+          const Duration(seconds: 60),
+          onTimeout: () => throw Exception('Export request timed out'),
+        );
 
     if (response.statusCode == 200) {
       // Create download link
       final bytes = response.bodyBytes;
+      if (bytes.isEmpty) {
+        throw Exception('Export returned empty data');
+      }
       final fileName =
           '${reportType}_${DateTime.now().millisecondsSinceEpoch}.${format == 'csv' ? 'csv' : 'xlsx'}';
 
@@ -256,7 +264,10 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
         html.document.body?.children.add(anchor);
         anchor.click();
         html.document.body?.children.remove(anchor);
-        html.Url.revokeObjectUrl(url);
+        // Delay revoke so the browser has time to start the download
+        Future.delayed(const Duration(milliseconds: 500), () {
+          html.Url.revokeObjectUrl(url);
+        });
       } else {
         // For mobile/desktop, save to file
         // You might want to use path_provider package here

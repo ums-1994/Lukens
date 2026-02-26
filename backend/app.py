@@ -123,6 +123,14 @@ def handle_options_preflight(remaining=None):
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
     return resp
 
+
+# Explicit OPTIONS handlers for finance export (CORS preflight); registered before blueprint so they take precedence
+@app.route("/api/finance/export/proposal-summary", methods=["OPTIONS"])
+@app.route("/api/finance/export/client-report", methods=["OPTIONS"])
+@app.route("/api/finance/export/summary-stats", methods=["OPTIONS"])
+def finance_export_options_preflight():
+    return handle_options_preflight()
+
 # Register API blueprints
 from api.routes.auth import bp as auth_bp
 from api.routes.proposals import bp as proposals_bp
