@@ -645,17 +645,13 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   Consumer<AppState>(
                     builder: (context, app, _) {
                       final user = AuthService.currentUser ?? app.currentUser;
-                      final role = (user?['role'] ?? '')
-                          .toString()
-                          .toLowerCase()
-                          .trim();
+                      final role =
+                          (user?['role'] ?? '').toString().toLowerCase().trim();
                       final isAdmin = role == 'admin' || role == 'ceo';
                       return AppSideNav(
                         isCollapsed: app.isSidebarCollapsed,
                         currentLabel: app.currentNavLabel,
                         isAdmin: isAdmin,
-                        isLightMode: app.isLightMode,
-                        onToggleThemeMode: app.toggleThemeMode,
                         onToggle: app.toggleSidebar,
                         onSelect: (label) {
                           app.setCurrentNavLabel(label);
