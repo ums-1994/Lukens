@@ -487,46 +487,12 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
     String? subtitle,
     IconData? icon,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: PremiumTheme.labelMedium.copyWith(
-                    color: Colors.white70,
-                  ),
-                ),
-              ),
-              if (icon != null) Icon(icon, size: 18, color: Colors.white60),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            value,
-            style: PremiumTheme.displayMedium.copyWith(
-              color: Colors.white,
-              fontSize: 22,
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              style: PremiumTheme.labelMedium.copyWith(color: Colors.white54),
-            ),
-          ],
-        ],
-      ),
+    return PremiumStatCard(
+      title: label,
+      value: value,
+      subtitle: subtitle,
+      icon: icon,
+      gradient: PremiumTheme.tealGradient,
     );
   }
 
@@ -534,19 +500,15 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
       {required String title,
       required String subtitle,
       required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
-      ),
+    return GlassContainer(
+      borderRadius: 20,
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: PremiumTheme.bodyLarge.copyWith(
+            style: PremiumTheme.titleMedium.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w600,
             ),
@@ -554,7 +516,7 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: PremiumTheme.labelMedium.copyWith(color: Colors.white60),
+            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
           ),
           const SizedBox(height: 14),
           child,
