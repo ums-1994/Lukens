@@ -397,6 +397,13 @@ def export_proposal_summary(username=None, user_id=None, email=None):
             date_from=date_from,
             date_to=date_to
         )
+
+        if not proposals:
+            return jsonify({
+                'error': 'No proposals found to export',
+                'report': 'proposal_summary',
+                'format': format_type,
+            }), 404
         
         ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
 
@@ -475,6 +482,13 @@ def export_client_report(username=None, user_id=None, email=None):
             date_from=date_from,
             date_to=date_to
         )
+
+        if not proposals:
+            return jsonify({
+                'error': 'No proposals found to export',
+                'report': 'client_report',
+                'format': format_type,
+            }), 404
         
         # Aggregate by client
         client_data = _get_client_portfolio_data(proposals)
