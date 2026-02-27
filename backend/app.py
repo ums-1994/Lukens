@@ -430,6 +430,13 @@ def init_pg_schema():
             """)
         except Exception as e:
             print(f"[WARN] Could not update proposals_status_check constraint: {e}")
+            # If this ALTER TABLE fails it can leave the transaction in an
+            # aborted state. Roll back so subsequent DDL statements for the
+            # rest of the schema can still run successfully.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         # Risk Gate runs + override audit trail
         cursor.execute(
@@ -2643,55 +2650,41 @@ def create_comment(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.route("/api/comments/proposal/<int:proposal_id>", methods=['GET', 'OPTIONS'])
-def get_proposal_comments(proposal_id):
-    """Get all comments for a proposal"""
+@app.get("/api/comments/document/<int:proposal_id>")
+@token_required
+def get_document_comments(username, proposal_id):
+    """
+    Get all comments for a proposal document for the admin/manager review screens.
+    """
     try:
-        with _pg_conn() as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    """SELECT 
-                           dc.id, dc.proposal_id, dc.comment_text, dc.created_by, dc.created_at,
-                           dc.section_index, dc.highlighted_text, dc.status, dc.updated_at, 
-                           dc.resolved_by, dc.resolved_at,
-                           u.email as created_by_email,
-                           u.full_name as created_by_name,
-                           r.email as resolved_by_email,
-                           r.full_name as resolved_by_name
-                       FROM document_comments dc
-                       LEFT JOIN users u ON dc.created_by = u.id
-                       LEFT JOIN users r ON dc.resolved_by = r.id
-                       WHERE dc.proposal_id = %s
-                       ORDER BY dc.created_at DESC""",
-                    (proposal_id,)
-                )
-                rows = cur.fetchall()
-                
-                # Convert timestamps to ISO format
-                comments = []
-                for row in rows:
-                    comments.append({
-                        "id": row["id"],
-                        "proposal_id": row["proposal_id"],
-                        "comment_text": row["comment_text"],
-                        "created_by": row["created_by"],
-                        "created_by_email": row["created_by_email"],
-                        "created_by_name": row["created_by_name"],
-                        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-                        "section_index": row["section_index"],
-                        "highlighted_text": row["highlighted_text"],
-                        "status": row["status"],
-                        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
-                        "resolved_by": row["resolved_by"],
-                        "resolved_by_email": row["resolved_by_email"],
-                        "resolved_by_name": row["resolved_by_name"],
-                        "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None
-                    })
-                return comments
-    except HTTPException:
-        raise
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                """
+                SELECT 
+                    dc.id,
+                    dc.proposal_id,
+                    dc.comment_text,
+                    dc.created_at,
+                    u.full_name AS author_name,
+                    u.username AS author_username,
+                    u.email AS author_email
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at DESC
+                """,
+                (proposal_id,),
+            )
+            comments = cursor.fetchall()
+            return {
+                "comments": [dict(c) for c in comments],
+                "total": len(comments),
+            }, 200
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Error getting document comments: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
 # Proposal Versions endpoints
 @app.post("/legacy/proposals/<int:proposal_id>/versions")

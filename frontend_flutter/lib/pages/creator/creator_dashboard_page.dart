@@ -276,6 +276,11 @@ class _DashboardPageState extends State<DashboardPage>
         return status == 'draft' || status.isEmpty;
       }
 
+      // Special handling for "changes requested" - handle case variations
+      if (filter == 'changes requested') {
+        return status == 'changes requested' || status.contains('changes requested');
+      }
+
       // For other statuses, do exact match after normalization
       return status == filter;
     }).toList();
@@ -1934,6 +1939,15 @@ class _DashboardPageState extends State<DashboardPage>
                           (p['status'] ?? '').toString().toLowerCase() ==
                           'signed')
                       .length),
+              const SizedBox(width: 8),
+              _buildFilterTab(
+                  'Changes Requested',
+                  'changes requested',
+                  proposals
+                      .where((p) =>
+                          (p['status'] ?? '').toString().toLowerCase() ==
+                          'changes requested')
+                      .length),
             ],
           ),
         ),
@@ -2312,6 +2326,10 @@ class _DashboardPageState extends State<DashboardPage>
         return PremiumTheme.info;
       case 'signed':
         return PremiumTheme.teal;
+      case 'changes requested':
+        return Colors.orange;
+      case 'resubmitted':
+        return Colors.blue;
       default:
         return PremiumTheme.orange;
     }

@@ -749,22 +749,60 @@ def send_for_approval(username=None, proposal_id=None, user_id=None, email=None)
                     'detail': 'Proposals table is missing owner column; cannot verify ownership'
                 }, 500
 
-            # Check if proposal exists and belongs to user (cast owner column to text for type safety)
+            # Check if proposal exists and belongs to user, and get current status
             cursor.execute(
-                f"SELECT id FROM proposals WHERE id = %s AND {owner_col}::text = %s",
+                f"SELECT id, status FROM proposals WHERE id = %s AND {owner_col}::text = %s",
                 (proposal_id, str(user_id)),
             )
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
             
-            # Update status to "Pending CEO Approval" (more descriptive than "In Review")
+            current_status = proposal[1] if len(proposal) > 1 else None
+            is_resubmission = current_status and 'changes requested' in str(current_status).lower()
+            
+            # Determine new status: "Resubmitted" if previously "Changes Requested", otherwise "Pending CEO Approval"
+            new_status = 'Resubmitted' if is_resubmission else 'Pending CEO Approval'
+            
+            # Update status
             cursor.execute(
-                '''UPDATE proposals SET status = 'Pending CEO Approval', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
-                (proposal_id,)
+                f'''UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
+                (new_status, proposal_id)
             )
+            
+            # If resubmission, notify admin users
+            if is_resubmission:
+                from api.utils.helpers import create_notification
+                
+                # Get proposal title for notification
+                cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
+                proposal_title_row = cursor.fetchone()
+                proposal_title = proposal_title_row[0] if proposal_title_row else f'Proposal {proposal_id}'
+                
+                # Get all admin users
+                cursor.execute(
+                    "SELECT id FROM users WHERE role ILIKE '%admin%' OR role ILIKE '%ceo%'"
+                )
+                admin_users = cursor.fetchall()
+                
+                # Notify each admin
+                for admin_row in admin_users:
+                    admin_id = admin_row[0]
+                    create_notification(
+                        user_id=admin_id,
+                        notification_type='proposal_resubmitted',
+                        title='Proposal Resubmitted',
+                        message=f"Proposal '{proposal_title}' has been resubmitted after changes were requested.",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'previous_status': current_status,
+                            'new_status': new_status,
+                            'resubmitted_by': user_id
+                        }
+                    )
+            
             conn.commit()
-            return {'detail': 'Proposal sent for approval', 'status': 'Pending CEO Approval'}, 200
+            return {'detail': 'Proposal sent for approval', 'status': new_status}, 200
     except Exception as e:
         print(f"❌ Error sending proposal for approval: {e}")
         import traceback

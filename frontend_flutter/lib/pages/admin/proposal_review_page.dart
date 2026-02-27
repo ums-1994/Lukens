@@ -614,12 +614,28 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
       );
 
       if (response.statusCode == 200) {
+        final data = json.decode(response.body);
         _commentController.clear();
         if (mounted) {
+          final manager = data['manager'] as Map<String, dynamic>?;
+          final managerName = manager?['name']?.toString();
+          final managerEmail = manager?['email']?.toString();
+          String sentText;
+          if (managerName != null && managerEmail != null) {
+            sentText =
+                '✅ Changes requested and sent to $managerName <$managerEmail>';
+          } else if (managerName != null) {
+            sentText = '✅ Changes requested and sent to $managerName';
+          } else if (managerEmail != null) {
+            sentText = '✅ Changes requested and sent to $managerEmail';
+          } else {
+            sentText =
+                '✅ Changes requested from ${target == 'manager' ? 'Manager' : 'Finance Manager'}';
+          }
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                  '✅ Changes requested from ${target == 'manager' ? 'Manager' : 'Finance Manager'}'),
+              content: Text(sentText),
               backgroundColor: Colors.green,
             ),
           );

@@ -133,6 +133,34 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
         print(f"⚠️ Failed to log activity: {e}")
 
 
+def log_status_change(proposal_id, user_id, old_status, new_status):
+    """
+    Log a proposal status change to the activity timeline
+    
+    Args:
+        proposal_id: ID of the proposal
+        user_id: ID of the user who changed the status (can be None for system actions)
+        old_status: Previous status of the proposal
+        new_status: New status of the proposal
+    """
+    try:
+        description = f"Status changed from '{old_status}' to '{new_status}'"
+        metadata = {
+            'old_status': old_status,
+            'new_status': new_status,
+            'change_type': 'status_change'
+        }
+        log_activity(
+            proposal_id=proposal_id,
+            user_id=user_id,
+            action_type='status_changed',
+            description=description,
+            metadata=metadata
+        )
+    except Exception as e:
+        print(f"⚠️ Failed to log status change: {e}")
+
+
 def create_notification(
     user_id,
     notification_type,

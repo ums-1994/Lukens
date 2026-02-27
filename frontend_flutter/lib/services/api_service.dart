@@ -36,17 +36,8 @@ class ApiService {
           final apiUrl = configObj['API_URL'];
           if (apiUrl != null && apiUrl.toString().isNotEmpty) {
             final url = apiUrl.toString().replaceAll('"', '').trim();
-            // Guard against stale cached config defaulting to localhost when backend is on Render.
-            final hostname = html.window.location.hostname;
-            final isLocalHost = hostname == 'localhost' || hostname == '127.0.0.1';
-            final isLocalApi = url.contains('127.0.0.1:5000') || url.contains('localhost:5000');
-            if (isLocalHost && isLocalApi) {
-              const renderUrl = 'https://lukens-wp8w.onrender.com';
-              print(
-                  '⚠️ ApiService: APP_CONFIG API_URL points to local backend ($url) while running on localhost. Falling back to Render: $renderUrl');
-              return renderUrl;
-            }
-
+            // Allow explicit APP_CONFIG override even when running on localhost,
+            // so we can point the web app at a local backend for testing.
             print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
             return url;
           }
