@@ -124,7 +124,7 @@ def _format_currency(amount):
 
 
 def _get_proposals_with_financials(user_id=None, status_filter=None, date_from=None, date_to=None):
-    """Get proposals with financial calculations"""
+    """Get proposals with financial calculations. Uses dynamic column names to support both owner_id/user_id and client/client_name."""
     proposals = []
 
     params = []
@@ -248,28 +248,29 @@ def _get_proposals_with_financials(user_id=None, status_filter=None, date_from=N
             rows = cursor.fetchall() or []
             
             for row in rows:
-                # Extract amount from content
                 amount = 0.0
-                if row['content']:
+                if row.get('content'):
                     try:
                         content_data = json.loads(row['content']) if isinstance(row['content'], str) else row['content']
                         amount = _extract_amount_from_content(content_data)
-                    except:
+                    except Exception:
                         pass
                 
-                # Calculate days in current status
                 days_in_status = 0
-                if row['updated_at']:
-                    days_in_status = (datetime.now() - row['updated_at']).days
+                if row.get('updated_at'):
+                    try:
+                        days_in_status = (datetime.now() - row['updated_at']).days
+                    except Exception:
+                        pass
                 
                 proposal = {
                     'id': row['id'],
-                    'title': row['title'],
-                    'client_name': row['client_name'],
-                    'status': row['status'],
-                    'created_at': row['created_at'],
-                    'updated_at': row['updated_at'],
-                    'created_by': row['created_by'],
+                    'title': row.get('title') or '',
+                    'client_name': row.get('client_name') or '',
+                    'status': row.get('status') or '',
+                    'created_at': row.get('created_at'),
+                    'updated_at': row.get('updated_at'),
+                    'created_by': row.get('created_by') or '',
                     'amount': amount,
                     'formatted_amount': _format_currency(amount),
                     'days_in_status': days_in_status
@@ -278,6 +279,8 @@ def _get_proposals_with_financials(user_id=None, status_filter=None, date_from=N
                 
     except Exception as e:
         print(f"Error fetching proposals: {e}")
+        import traceback
+        traceback.print_exc()
         return []
     
     return proposals
@@ -323,9 +326,9 @@ def _get_client_portfolio_data(proposals):
     return list(client_data.values())
 
 def _generate_csv_summary(proposals):
-    """Generate CSV for proposal financial summary"""
+    """Generate CSV for proposal financial summary (Excel-friendly: UTF-8 BOM, CRLF)."""
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = csv.writer(output, lineterminator='\r\n')
     
     # Header
     writer.writerow([
@@ -351,9 +354,9 @@ def _generate_csv_summary(proposals):
     return output.getvalue()
 
 def _generate_csv_client_report(client_data):
-    """Generate CSV for client financial report"""
+    """Generate CSV for client financial report (Excel-friendly: UTF-8 BOM, CRLF)."""
     output = io.StringIO()
-    writer = csv.writer(output)
+    writer = csv.writer(output, lineterminator='\r\n')
     
     # Header
     writer.writerow([
@@ -378,6 +381,76 @@ def _generate_csv_client_report(client_data):
         ])
     
     return output.getvalue()
+
+try:
+    from openpyxl import Workbook
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
+
+
+def _generate_xlsx_summary(proposals):
+    """Generate Excel (.xlsx) for proposal financial summary."""
+    if not OPENPYXL_AVAILABLE:
+        return None
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Proposal Summary"
+    headers = [
+        'Proposal ID', 'Title', 'Client', 'Status',
+        'Created Date', 'Updated Date', 'Amount (ZAR)',
+        'Days in Status', 'Created By'
+    ]
+    for col, h in enumerate(headers, 1):
+        ws.cell(row=1, column=col, value=h)
+    for row_idx, proposal in enumerate(proposals, 2):
+        ws.cell(row=row_idx, column=1, value=proposal['id'])
+        ws.cell(row=row_idx, column=2, value=proposal['title'])
+        ws.cell(row=row_idx, column=3, value=proposal['client_name'])
+        ws.cell(row=row_idx, column=4, value=proposal['status'])
+        ws.cell(row=row_idx, column=5,
+               value=proposal['created_at'].strftime('%Y-%m-%d') if proposal['created_at'] else '')
+        ws.cell(row=row_idx, column=6,
+               value=proposal['updated_at'].strftime('%Y-%m-%d') if proposal['updated_at'] else '')
+        ws.cell(row=row_idx, column=7, value=proposal['amount'])
+        ws.cell(row=row_idx, column=8, value=proposal['days_in_status'])
+        ws.cell(row=row_idx, column=9, value=proposal['created_by'])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def _generate_xlsx_client_report(client_data):
+    """Generate Excel (.xlsx) for client financial report."""
+    if not OPENPYXL_AVAILABLE:
+        return None
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Client Report"
+    headers = [
+        'Client Name', 'Total Proposals', 'Total Amount (ZAR)',
+        'Approved Proposals', 'Approved Amount (ZAR)',
+        'Pending Proposals', 'Pending Amount (ZAR)',
+        'Success Rate (%)', 'Average Deal Size (ZAR)'
+    ]
+    for col, h in enumerate(headers, 1):
+        ws.cell(row=1, column=col, value=h)
+    for row_idx, client in enumerate(client_data, 2):
+        ws.cell(row=row_idx, column=1, value=client['client_name'])
+        ws.cell(row=row_idx, column=2, value=client['total_proposals'])
+        ws.cell(row=row_idx, column=3, value=client['total_amount'])
+        ws.cell(row=row_idx, column=4, value=client['approved_proposals'])
+        ws.cell(row=row_idx, column=5, value=client['approved_amount'])
+        ws.cell(row=row_idx, column=6, value=client['pending_proposals'])
+        ws.cell(row=row_idx, column=7, value=client['pending_amount'])
+        ws.cell(row=row_idx, column=8, value=client['success_rate'])
+        ws.cell(row=row_idx, column=9, value=client['average_deal_size'])
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
 
 @bp.route("/finance/export/proposal-summary", methods=["GET", "OPTIONS"])
 @token_required
@@ -410,8 +483,9 @@ def export_proposal_summary(username=None, user_id=None, email=None):
         if format_type == 'csv':
             csv_data = _generate_csv_summary(proposals)
             
-            # Create file in memory
+            # Excel-friendly: UTF-8 BOM so Excel parses columns correctly
             output = io.BytesIO()
+            output.write(b'\xef\xbb\xbf')  # UTF-8 BOM
             output.write(csv_data.encode('utf-8'))
             output.seek(0)
             
@@ -498,8 +572,9 @@ def export_client_report(username=None, user_id=None, email=None):
         if format_type == 'csv':
             csv_data = _generate_csv_client_report(client_data)
             
-            # Create file in memory
+            # Excel-friendly: UTF-8 BOM so Excel parses columns correctly
             output = io.BytesIO()
+            output.write(b'\xef\xbb\xbf')  # UTF-8 BOM
             output.write(csv_data.encode('utf-8'))
             output.seek(0)
             

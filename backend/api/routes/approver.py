@@ -877,10 +877,32 @@ def request_changes(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-            # Get proposal details
+            # Determine ownership column (owner_id vs user_id) to support both schemas
             cursor.execute(
                 """
-                SELECT id, title, status, owner_id, user_id
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            existing_columns = [row['column_name'] for row in cursor.fetchall()]
+
+            owner_col = None
+            if 'owner_id' in existing_columns:
+                owner_col = 'owner_id'
+            elif 'user_id' in existing_columns:
+                owner_col = 'user_id'
+
+            if not owner_col:
+                print("⚠️ No owner_id or user_id column found in proposals table when requesting changes")
+                return {
+                    'detail': 'Proposals table is missing owner column; cannot determine creator for change request.'
+                }, 500
+
+            # Get proposal details using resolved owner column
+            cursor.execute(
+                f"""
+                SELECT id, title, status, {owner_col} AS creator_id
                 FROM proposals 
                 WHERE id = %s
                 """,
@@ -902,7 +924,29 @@ def request_changes(username=None, proposal_id=None):
             )
             
             # Get creator/owner ID
-            creator_id = proposal.get('owner_id') or proposal.get('user_id')
+            creator_id = proposal.get('creator_id')
+
+            # Look up manager/creator user details for history + response
+            manager_row = None
+            manager_name = None
+            manager_email = None
+            if creator_id:
+                cursor.execute(
+                    """
+                    SELECT id, username, full_name, email
+                    FROM users
+                    WHERE id = %s
+                    """,
+                    (creator_id,),
+                )
+                manager_row = cursor.fetchone()
+                if manager_row:
+                    manager_name = (
+                        manager_row.get("full_name")
+                        or manager_row.get("username")
+                        or None
+                    )
+                    manager_email = manager_row.get("email")
             
             # Get approver info
             cursor.execute(
@@ -933,7 +977,10 @@ def request_changes(username=None, proposal_id=None):
                         metadata={
                             'requested_by': approver_name,
                             'target': 'manager',
-                            'comments': comments
+                            'comments': comments,
+                            'manager_id': creator_id,
+                            'manager_name': manager_name,
+                            'manager_email': manager_email,
                         }
                     )
                     notifications_created.append('creator')
@@ -957,7 +1004,10 @@ def request_changes(username=None, proposal_id=None):
                         metadata={
                             'requested_by': approver_name,
                             'target': 'finance_coordination',
-                            'comments': comments
+                            'comments': comments,
+                            'manager_id': creator_id,
+                            'manager_name': manager_name,
+                            'manager_email': manager_email,
                         }
                     )
                     notifications_created.append('finance')
@@ -982,7 +1032,10 @@ def request_changes(username=None, proposal_id=None):
                         metadata={
                             'requested_by': approver_name,
                             'target': 'finance_only',
-                            'comments': comments
+                            'comments': comments,
+                            'manager_id': creator_id,
+                            'manager_name': manager_name,
+                            'manager_email': manager_email,
                         }
                     )
                 
@@ -997,7 +1050,10 @@ def request_changes(username=None, proposal_id=None):
                         metadata={
                             'requested_by': approver_name,
                             'target': 'finance_only',
-                            'comments': comments
+                            'comments': comments,
+                            'manager_id': creator_id,
+                            'manager_name': manager_name,
+                            'manager_email': manager_email,
                         }
                     )
                     notifications_created.extend(['finance', 'creator'])
@@ -1013,7 +1069,38 @@ def request_changes(username=None, proposal_id=None):
                     """,
                     (proposal_id, f"Changes requested from {target}: {comments}", approver_id, 'active')
                 )
-            
+
+            # Log status change + activity for History / timeline
+            try:
+                old_status = proposal.get('status') or 'Unknown'
+                log_status_change(
+                    proposal_id=proposal_id,
+                    user_id=approver['id'] if approver else None,
+                    old_status=old_status,
+                    new_status='Changes Requested',
+                )
+                log_activity(
+                    proposal_id=proposal_id,
+                    user_id=approver['id'] if approver else None,
+                    action_type='changes_requested',
+                    description=(
+                        f"{approver_name} requested changes from {target}"
+                        + (f" (sent to {manager_name or 'manager'}"
+                           + (f' <{manager_email}>)' if manager_email else ')')
+                           if manager_name or manager_email else ''
+                        )
+                    ),
+                    metadata={
+                        'target': target,
+                        'comments': comments,
+                        'manager_id': creator_id,
+                        'manager_name': manager_name,
+                        'manager_email': manager_email,
+                    },
+                )
+            except Exception as activity_err:
+                print(f"⚠️ Failed to log changes_requested activity: {activity_err}")
+
             conn.commit()
             
             return {
@@ -1021,7 +1108,12 @@ def request_changes(username=None, proposal_id=None):
                 'target': target,
                 'notifications_sent': notifications_created,
                 'proposal_id': proposal_id,
-                'status': 'Changes Requested'
+                'status': 'Changes Requested',
+                'manager': {
+                    'id': creator_id,
+                    'name': manager_name,
+                    'email': manager_email,
+                },
             }, 200
             
     except Exception as e:
