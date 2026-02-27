@@ -15,8 +15,8 @@ import '../../services/auth_service.dart';
 import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
+import '../../widgets/finance/finance_sidebar.dart';
 import '../../widgets/footer.dart';
-import 'finance_client_management_page.dart';
 
 class FinanceAnalyticsPage extends StatefulWidget {
   const FinanceAnalyticsPage({super.key});
@@ -1230,6 +1230,11 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final proposals = _financeProposals(app);
+    final showAudit = _canAccessAudit(app);
+    final pendingBadge = proposals
+        .where((p) =>
+            (p['status'] ?? '').toString().toLowerCase().contains('pricing'))
+        .length;
 
     final now = DateTime.now();
     final quarterStart = _quarterStart(now);
@@ -1340,7 +1345,52 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
             Expanded(
               child: Row(
                 children: [
-                  _buildSidebar(),
+                  FinanceSidebar(
+                    isCollapsed: _isSidebarCollapsed,
+                    currentPage: 'Analytics',
+                    showAudit: showAudit,
+                    pendingBadge: pendingBadge > 0 ? pendingBadge : null,
+                    onToggle: () {
+                      setState(() {
+                        _isSidebarCollapsed = !_isSidebarCollapsed;
+                      });
+                    },
+                    onSelect: (label) {
+                      if (label == 'Dashboard' || label == 'Proposals') {
+                        Navigator.pushNamed(context, '/finance_dashboard');
+                        return;
+                      }
+                      if (label == 'Client Management') {
+                        Navigator.pushNamed(
+                          context,
+                          '/finance_dashboard',
+                          arguments: const {'initialTab': 'clients'},
+                        );
+                        return;
+                      }
+                      if (label == 'Audit') {
+                        Navigator.pushNamed(
+                          context,
+                          '/finance_dashboard',
+                          arguments: const {'initialTab': 'audit'},
+                        );
+                        return;
+                      }
+                      if (label == 'Analytics') {
+                        return;
+                      }
+                      if (label == 'Settings') {
+                        Navigator.pushNamed(context, '/settings');
+                        return;
+                      }
+                      if (label == 'Sign Out') {
+                        app.logout();
+                        AuthService.logout();
+                        Navigator.pushNamed(context, '/login');
+                        return;
+                      }
+                    },
+                  ),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),

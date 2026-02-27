@@ -13,6 +13,7 @@ import '../../services/auth_service.dart';
 import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
+import '../../widgets/finance/finance_sidebar.dart';
 import '../../widgets/footer.dart';
 import '../creator/blank_document_editor_page.dart';
 import 'finance_client_management_page.dart';
@@ -68,22 +69,27 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is! Map) return;
 
-     final String? initialTab = args['initialTab']?.toString();
-     if (initialTab != null && initialTab.trim().isNotEmpty) {
-       final t = initialTab.trim().toLowerCase();
-       if (t == 'audit') {
-         WidgetsBinding.instance.addPostFrameCallback((_) {
-           if (!mounted) return;
-           setState(() => _currentTab = 'audit');
-           _loadAuditLogs();
-         });
-       } else if (t == 'dashboard' || t == 'proposals' || t == 'clients') {
-         WidgetsBinding.instance.addPostFrameCallback((_) {
-           if (!mounted) return;
-           setState(() => _currentTab = t);
-         });
-       }
-     }
+    final String? initialTab = args['initialTab']?.toString();
+    if (initialTab != null && initialTab.trim().isNotEmpty) {
+      final t = initialTab.trim().toLowerCase();
+      if (t == 'audit') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() => _currentTab = 'audit');
+          _loadAuditLogs();
+        });
+      } else if (t == 'dashboard' || t == 'proposals' || t == 'clients') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() => _currentTab = t);
+        });
+      } else if (t == 'client management') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() => _currentTab = 'clients');
+        });
+      }
+    }
 
     final dynamic openIdRaw = args['openProposalId'] ?? args['proposalId'];
     final String? openProposalId =
@@ -1061,6 +1067,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     final proposals =
         _currentTab == 'dashboard' ? dashboardProposals : proposalsTabProposals;
 
+    final pendingBadge = app.proposals
+        .where((p) =>
+            (p is Map) &&
+            _isPricingInProgressStatus((p['status'] ?? '').toString()))
+        .length;
+
     final pricingCount = proposals
         .where(
             (p) => _isPricingInProgressStatus((p['status'] ?? '').toString()))
@@ -1102,7 +1114,58 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
             Expanded(
               child: Row(
                 children: [
-                  _buildSidebar(),
+                  FinanceSidebar(
+                    isCollapsed: _isSidebarCollapsed,
+                    currentPage: _currentTab == 'dashboard'
+                        ? 'Dashboard'
+                        : _currentTab == 'proposals'
+                            ? 'Proposals'
+                            : _currentTab == 'clients'
+                                ? 'Client Management'
+                                : _currentTab == 'audit'
+                                    ? 'Audit'
+                                    : 'Dashboard',
+                    showAudit: _canAccessAudit(app),
+                    pendingBadge: pendingBadge > 0 ? pendingBadge : null,
+                    onToggle: () {
+                      setState(() {
+                        _isSidebarCollapsed = !_isSidebarCollapsed;
+                      });
+                    },
+                    onSelect: (label) {
+                      if (label == 'Dashboard') {
+                        setState(() => _currentTab = 'dashboard');
+                        return;
+                      }
+                      if (label == 'Proposals') {
+                        setState(() => _currentTab = 'proposals');
+                        return;
+                      }
+                      if (label == 'Client Management') {
+                        setState(() => _currentTab = 'clients');
+                        return;
+                      }
+                      if (label == 'Audit') {
+                        setState(() => _currentTab = 'audit');
+                        _loadAuditLogs();
+                        return;
+                      }
+                      if (label == 'Analytics') {
+                        Navigator.pushNamed(context, '/analytics');
+                        return;
+                      }
+                      if (label == 'Settings') {
+                        Navigator.pushNamed(context, '/settings');
+                        return;
+                      }
+                      if (label == 'Sign Out') {
+                        app.logout();
+                        AuthService.logout();
+                        Navigator.pushNamed(context, '/login');
+                        return;
+                      }
+                    },
+                  ),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
