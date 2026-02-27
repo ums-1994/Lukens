@@ -559,14 +559,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
               Text('Audit Logs', style: PremiumTheme.titleMedium),
               const Spacer(),
               TextButton.icon(
-                onPressed: _auditLoading ? null : _loadAuditLogs,
-                icon:
-                    const Icon(Icons.refresh, color: Colors.white70, size: 18),
-                label: const Text('Refresh',
-                    style: TextStyle(color: Colors.white70)),
-              ),
-              const SizedBox(width: 8),
-              TextButton.icon(
                 onPressed: () => _exportAuditLogs('csv'),
                 icon:
                     const Icon(Icons.download, color: Colors.white70, size: 18),
@@ -1101,49 +1093,43 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                           ? const FinanceClientManagementPage()
                           : CustomScrollbar(
                               controller: _scrollController,
-                              child: RefreshIndicator(
-                                onRefresh: _loadData,
-                                color: PremiumTheme.teal,
-                                child: SingleChildScrollView(
-                                  controller: _scrollController,
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      _buildBreadcrumb(),
+                              child: SingleChildScrollView(
+                                controller: _scrollController,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _buildBreadcrumb(),
+                                    const SizedBox(height: 16),
+                                    if (_currentTab == 'dashboard') ...[
+                                      _buildDashboardTitle(),
                                       const SizedBox(height: 16),
-                                      if (_currentTab == 'dashboard') ...[
-                                        _buildDashboardTitle(),
-                                        const SizedBox(height: 16),
-                                        _buildSummaryRow(
-                                          proposals: dashboardProposals,
-                                          pendingCount: pricingCount,
-                                          approvedCount: approvedCount,
-                                          sentToClientCount: sentToClientCount,
-                                          totalAmount: totalAmount,
-                                        ),
-                                        const SizedBox(height: 16),
-                                        _buildDashboardPanels(),
-                                        const SizedBox(height: 12),
-                                        _buildRequiresAttention(
-                                            requiresAttention),
-                                        const SizedBox(height: 24),
-                                        const Footer(),
-                                      ] else if (_currentTab == 'audit') ...[
-                                        _buildAuditPanel(),
-                                        const SizedBox(height: 24),
-                                        const Footer(),
-                                      ] else ...[
-                                        _buildFilters(),
-                                        const SizedBox(height: 16),
-                                        _buildTable(proposalsTabProposals),
-                                        const SizedBox(height: 24),
-                                        const Footer(),
-                                      ],
+                                      _buildSummaryRow(
+                                        proposals: dashboardProposals,
+                                        pendingCount: pricingCount,
+                                        approvedCount: approvedCount,
+                                        sentToClientCount: sentToClientCount,
+                                        totalAmount: totalAmount,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      _buildDashboardPanels(),
+                                      const SizedBox(height: 12),
+                                      _buildRequiresAttention(
+                                          requiresAttention),
+                                      const SizedBox(height: 24),
+                                      const Footer(),
+                                    ] else if (_currentTab == 'audit') ...[
+                                      _buildAuditPanel(),
+                                      const SizedBox(height: 24),
+                                      const Footer(),
+                                    ] else ...[
+                                      _buildFilters(),
+                                      const SizedBox(height: 16),
+                                      _buildTable(proposalsTabProposals),
+                                      const SizedBox(height: 24),
+                                      const Footer(),
                                     ],
-                                  ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -1657,11 +1643,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _isLoading ? null : _loadData,
-                  icon: const Icon(Icons.refresh, color: Colors.white),
-                ),
                 _buildNotificationButton(app),
                 if (!isMobile) ...[
                   const SizedBox(width: 10),
@@ -1876,11 +1857,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Finance Portal',
-                          style: PremiumTheme.bodyLarge
-                              .copyWith(color: Colors.white),
-                        ),
                         Text(
                           'Navigation',
                           style: PremiumTheme.labelMedium
@@ -2480,12 +2456,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
               style: PremiumTheme.bodyMedium.copyWith(
                 color: Colors.white.withValues(alpha: 0.8),
               ),
-            ),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: _loadData,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refresh'),
             ),
           ],
         ),

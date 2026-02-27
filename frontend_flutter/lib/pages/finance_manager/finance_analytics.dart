@@ -137,6 +137,18 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                     },
                     contentPadding: EdgeInsets.zero,
                   ),
+                  RadioListTile<String>(
+                    title: const Text('PDF'),
+                    subtitle: const Text('Printable report'),
+                    value: 'pdf',
+                    groupValue: selectedFormat,
+                    onChanged: (value) {
+                      setState(() {
+                        selectedFormat = value!;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
                 ],
               ),
               actions: [
@@ -230,20 +242,16 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
       'format': format,
     });
 
-    final response = await http
-        .get(
-          uri,
-          headers: {
-            'Authorization': 'Bearer $token',
-            'Accept': format == 'csv'
-                ? 'text/csv'
-                : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          },
-        )
-        .timeout(
-          const Duration(seconds: 60),
-          onTimeout: () => throw Exception('Export request timed out'),
-        );
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': format == 'pdf' ? 'application/pdf' : 'text/csv',
+      },
+    ).timeout(
+      const Duration(seconds: 60),
+      onTimeout: () => throw Exception('Export request timed out'),
+    );
 
     if (response.statusCode == 200) {
       // Create download link
@@ -251,21 +259,24 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
       if (bytes.isEmpty) {
         throw Exception('Export returned empty data');
       }
+      final ext = format == 'pdf' ? 'pdf' : 'csv';
       final fileName =
-          '${reportType}_${DateTime.now().millisecondsSinceEpoch}.${format == 'csv' ? 'csv' : 'xlsx'}';
+          '${reportType}_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
       // For web, create download link
       if (kIsWeb) {
-        final blob = html.Blob([bytes], 'text/csv');
+        final contentType =
+            response.headers['content-type'] ?? 'application/octet-stream';
+        final blob = html.Blob([bytes], contentType);
         final url = html.Url.createObjectUrlFromBlob(blob);
         final anchor = html.AnchorElement(href: url)
-          ..setAttribute('download', fileName)
+          ..download = fileName
           ..style.display = 'none';
         html.document.body?.children.add(anchor);
         anchor.click();
         html.document.body?.children.remove(anchor);
         // Delay revoke so the browser has time to start the download
-        Future.delayed(const Duration(milliseconds: 500), () {
+        Future.delayed(const Duration(milliseconds: 1200), () {
           html.Url.revokeObjectUrl(url);
         });
       } else {
@@ -274,7 +285,9 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
         print('Export saved: $fileName (${bytes.length} bytes)');
       }
     } else {
-      throw Exception('Export failed: ${response.statusCode}');
+      final body = response.body;
+      throw Exception(
+          'Export failed: ${response.statusCode}${body.isNotEmpty ? ' - $body' : ''}');
     }
   }
 
@@ -1074,7 +1087,8 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                     size: 18,
                   ),
                 ),
-                if (!_isSidebarCollapsed) ...[
+                if (!_isSidebarCollapsed)
+                  ...[
                 ] else ...[
                   const Spacer(),
                 ],

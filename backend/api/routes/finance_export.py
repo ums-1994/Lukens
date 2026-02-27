@@ -16,6 +16,52 @@ import json
 
 bp = Blueprint('finance_export', __name__)
 
+
+def _ensure_str(v):
+    if v is None:
+        return ''
+    return str(v)
+
+
+def _rows_to_pdf_bytes(title: str, headers: List[str], rows: List[List[Any]]):
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+    except Exception:
+        raise RuntimeError('PDF export not available (reportlab missing)')
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    width, height = letter
+
+    y = height - 40
+    c.setFont('Helvetica-Bold', 12)
+    c.drawString(40, y, title[:120])
+    y -= 18
+
+    c.setFont('Helvetica', 8)
+    c.drawString(40, y, 'Generated: ' + datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'))
+    y -= 18
+
+    c.setFont('Helvetica-Bold', 8)
+    c.drawString(40, y, ' | '.join([h[:28] for h in headers])[:140])
+    y -= 14
+    c.setFont('Helvetica', 8)
+
+    for r in rows:
+        line = ' | '.join([_ensure_str(v) for v in r])
+        c.drawString(40, y, line[:140])
+        y -= 12
+        if y < 60:
+            c.showPage()
+            y = height - 40
+            c.setFont('Helvetica', 8)
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.getvalue()
+
 def _extract_amount_from_content(content_data):
     """Extract financial amount from proposal content using same logic as frontend"""
     if not content_data:
@@ -260,6 +306,8 @@ def export_proposal_summary(username=None, user_id=None, email=None):
             date_to=date_to
         )
         
+        ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+
         if format_type == 'csv':
             csv_data = _generate_csv_summary(proposals)
             
@@ -268,7 +316,7 @@ def export_proposal_summary(username=None, user_id=None, email=None):
             output.write(csv_data.encode('utf-8'))
             output.seek(0)
             
-            filename = f"proposal_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            filename = f"proposal_summary_{ts}.csv"
             
             return send_file(
                 output,
@@ -277,8 +325,41 @@ def export_proposal_summary(username=None, user_id=None, email=None):
                 mimetype='text/csv'
             )
         
+        elif format_type == 'pdf':
+            headers = [
+                'Proposal ID', 'Title', 'Client', 'Status',
+                'Created Date', 'Updated Date', 'Amount (ZAR)',
+                'Days in Status', 'Created By'
+            ]
+
+            rows = []
+            for proposal in proposals:
+                rows.append([
+                    proposal.get('id'),
+                    (proposal.get('title') or '')[:60],
+                    (proposal.get('client_name') or '')[:40],
+                    (proposal.get('status') or '')[:30],
+                    proposal.get('created_at').strftime('%Y-%m-%d') if proposal.get('created_at') else '',
+                    proposal.get('updated_at').strftime('%Y-%m-%d') if proposal.get('updated_at') else '',
+                    f"{float(proposal.get('amount') or 0.0):.2f}",
+                    proposal.get('days_in_status'),
+                    (proposal.get('created_by') or '')[:40],
+                ])
+
+            pdf_bytes = _rows_to_pdf_bytes('Proposal Financial Summary', headers, rows)
+            output = io.BytesIO(pdf_bytes)
+            output.seek(0)
+            filename = f"proposal_summary_{ts}.pdf"
+
+            return send_file(
+                output,
+                as_attachment=True,
+                download_name=filename,
+                mimetype='application/pdf'
+            )
+
         else:
-            return jsonify({'error': 'Only CSV format is currently supported'}), 400
+            return jsonify({'error': 'Only CSV and PDF formats are currently supported'}), 400
             
     except Exception as e:
         print(f"Error exporting proposal summary: {e}")
@@ -306,6 +387,8 @@ def export_client_report(username=None, user_id=None, email=None):
         # Aggregate by client
         client_data = _get_client_portfolio_data(proposals)
         
+        ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+
         if format_type == 'csv':
             csv_data = _generate_csv_client_report(client_data)
             
@@ -314,7 +397,7 @@ def export_client_report(username=None, user_id=None, email=None):
             output.write(csv_data.encode('utf-8'))
             output.seek(0)
             
-            filename = f"client_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            filename = f"client_report_{ts}.csv"
             
             return send_file(
                 output,
@@ -322,9 +405,43 @@ def export_client_report(username=None, user_id=None, email=None):
                 download_name=filename,
                 mimetype='text/csv'
             )
-        
+
+        elif format_type == 'pdf':
+            headers = [
+                'Client Name', 'Total Proposals', 'Total Amount (ZAR)',
+                'Approved Proposals', 'Approved Amount (ZAR)',
+                'Pending Proposals', 'Pending Amount (ZAR)',
+                'Success Rate (%)', 'Average Deal Size (ZAR)'
+            ]
+
+            rows = []
+            for client in client_data:
+                rows.append([
+                    (client.get('client_name') or '')[:50],
+                    client.get('total_proposals'),
+                    f"{float(client.get('total_amount') or 0.0):.2f}",
+                    client.get('approved_proposals'),
+                    f"{float(client.get('approved_amount') or 0.0):.2f}",
+                    client.get('pending_proposals'),
+                    f"{float(client.get('pending_amount') or 0.0):.2f}",
+                    f"{float(client.get('success_rate') or 0.0):.1f}",
+                    f"{float(client.get('average_deal_size') or 0.0):.2f}",
+                ])
+
+            pdf_bytes = _rows_to_pdf_bytes('Client Financial Report', headers, rows)
+            output = io.BytesIO(pdf_bytes)
+            output.seek(0)
+            filename = f"client_report_{ts}.pdf"
+
+            return send_file(
+                output,
+                as_attachment=True,
+                download_name=filename,
+                mimetype='application/pdf'
+            )
+
         else:
-            return jsonify({'error': 'Only CSV format is currently supported'}), 400
+            return jsonify({'error': 'Only CSV and PDF formats are currently supported'}), 400
             
     except Exception as e:
         print(f"Error exporting client report: {e}")
@@ -363,7 +480,7 @@ def get_export_summary_stats(username=None, user_id=None, email=None):
             'total_proposals': total_proposals,
             'status_breakdown': status_breakdown,
             'date_range': date_range,
-            'supported_formats': ['csv'],
+            'supported_formats': ['csv', 'pdf'],
             'report_types': ['proposal_summary', 'client_report']
         })
         
