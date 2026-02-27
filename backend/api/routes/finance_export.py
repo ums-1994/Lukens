@@ -122,38 +122,130 @@ def _format_currency(amount):
         return "R 0"
     return f"R {amount:,.2f}"
 
+
 def _get_proposals_with_financials(user_id=None, status_filter=None, date_from=None, date_to=None):
     """Get proposals with financial calculations"""
     proposals = []
-    
-    query = """
-        SELECT p.id, p.title, p.client_name, p.status, p.created_at, p.updated_at,
-               p.content, u.full_name as created_by
-        FROM proposals p
-        LEFT JOIN users u ON p.created_by = u.id
-        WHERE 1=1
-    """
+
     params = []
-    
-    if status_filter:
-        query += " AND LOWER(p.status) LIKE %s"
-        params.append(f"%{status_filter.lower()}%")
-    
-    if date_from:
-        query += " AND p.created_at >= %s"
-        params.append(date_from)
-    
-    if date_to:
-        query += " AND p.created_at <= %s"
-        params.append(date_to)
-    
-    query += " ORDER BY p.created_at DESC"
-    
+
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            existing_columns = [row['column_name'] for row in cursor.fetchall()]
+
+            cursor.execute(
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_name = 'users'
+                ) AS users_table_exists
+                """
+            )
+            users_table_exists = bool((cursor.fetchone() or {}).get('users_table_exists'))
+
+            users_full_name_exists = False
+            if users_table_exists:
+                cursor.execute(
+                    """
+                    SELECT EXISTS(
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'users' AND column_name = 'full_name'
+                    ) AS full_name_exists
+                    """
+                )
+                users_full_name_exists = bool((cursor.fetchone() or {}).get('full_name_exists'))
+
+            owner_col = None
+            if 'created_by' in existing_columns:
+                owner_col = 'created_by'
+            elif 'owner_id' in existing_columns:
+                owner_col = 'owner_id'
+            elif 'user_id' in existing_columns:
+                owner_col = 'user_id'
+
+            client_col = None
+            if 'client_name' in existing_columns:
+                client_col = 'client_name'
+            elif 'client' in existing_columns:
+                client_col = 'client'
+
+            content_col = None
+            if 'content' in existing_columns:
+                content_col = 'content'
+            elif 'sections' in existing_columns:
+                content_col = 'sections'
+
+            select_cols = [
+                'p.id',
+                'p.title',
+                'p.status',
+            ]
+            if client_col:
+                select_cols.append(f"p.{client_col} AS client_name")
+            else:
+                select_cols.append("NULL AS client_name")
+
+            if 'created_at' in existing_columns:
+                select_cols.append('p.created_at')
+            else:
+                select_cols.append('NULL AS created_at')
+
+            if 'updated_at' in existing_columns:
+                select_cols.append('p.updated_at')
+            else:
+                select_cols.append('NULL AS updated_at')
+
+            if content_col:
+                select_cols.append(f"p.{content_col} AS content")
+            else:
+                select_cols.append("NULL AS content")
+
+            join_sql = ""
+            if owner_col and users_table_exists and users_full_name_exists:
+                join_sql = f"LEFT JOIN users u ON u.id = p.{owner_col}"
+                select_cols.append("u.full_name AS created_by")
+            elif owner_col:
+                select_cols.append(f"p.{owner_col}::text AS created_by")
+            else:
+                select_cols.append("NULL AS created_by")
+
+            query = f"""
+                SELECT {', '.join(select_cols)}
+                FROM proposals p
+                {join_sql}
+                WHERE 1=1
+            """
+
+            if status_filter:
+                query += " AND LOWER(p.status) LIKE %s"
+                params.append(f"%{status_filter.lower()}%")
+
+            if date_from and 'created_at' in existing_columns:
+                query += " AND p.created_at >= %s"
+                params.append(date_from)
+
+            if date_to and 'created_at' in existing_columns:
+                query += " AND p.created_at <= %s"
+                params.append(date_to)
+
+            if 'created_at' in existing_columns:
+                query += " ORDER BY p.created_at DESC"
+            else:
+                query += " ORDER BY p.id DESC"
+
             cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows = cursor.fetchall() or []
             
             for row in rows:
                 # Extract amount from content
