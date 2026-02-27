@@ -68,6 +68,23 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is! Map) return;
 
+     final String? initialTab = args['initialTab']?.toString();
+     if (initialTab != null && initialTab.trim().isNotEmpty) {
+       final t = initialTab.trim().toLowerCase();
+       if (t == 'audit') {
+         WidgetsBinding.instance.addPostFrameCallback((_) {
+           if (!mounted) return;
+           setState(() => _currentTab = 'audit');
+           _loadAuditLogs();
+         });
+       } else if (t == 'dashboard' || t == 'proposals' || t == 'clients') {
+         WidgetsBinding.instance.addPostFrameCallback((_) {
+           if (!mounted) return;
+           setState(() => _currentTab = t);
+         });
+       }
+     }
+
     final dynamic openIdRaw = args['openProposalId'] ?? args['proposalId'];
     final String? openProposalId =
         openIdRaw?.toString().trim().isNotEmpty == true

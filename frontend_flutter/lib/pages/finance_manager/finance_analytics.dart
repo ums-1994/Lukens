@@ -32,6 +32,11 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
 
+  bool _canAccessAudit(AppState app) {
+    final role = (app.currentUser?['role'] ?? '').toString().toLowerCase();
+    return role == 'finance_manager' || role == 'admin' || role == 'ceo';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1035,6 +1040,7 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
     }
 
     final app = context.watch<AppState>();
+    final showAudit = _canAccessAudit(app);
     final pendingBadge = _financeProposals(app)
         .where((p) =>
             (p['status'] ?? '').toString().toLowerCase().contains('pricing'))
@@ -1139,6 +1145,19 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
               ),
             ),
             const SizedBox(height: 10),
+            if (showAudit) ...[
+              navItem(
+                icon: Icons.receipt_long_outlined,
+                label: 'Audit',
+                active: _currentTab == 'audit',
+                onTap: () => Navigator.pushNamed(
+                  context,
+                  '/finance_dashboard',
+                  arguments: const {'initialTab': 'audit'},
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             navItem(
               icon: Icons.analytics_outlined,
               label: 'Analytics',
