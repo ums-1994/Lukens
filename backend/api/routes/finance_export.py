@@ -213,7 +213,7 @@ def _get_proposals_with_financials(user_id=None, status_filter=None, date_from=N
 
             join_sql = ""
             if owner_col and users_table_exists and users_full_name_exists:
-                join_sql = f"LEFT JOIN users u ON u.id = p.{owner_col}"
+                join_sql = f"LEFT JOIN users u ON u.id::text = p.{owner_col}::text"
                 select_cols.append("u.full_name AS created_by")
             elif owner_col:
                 select_cols.append(f"p.{owner_col}::text AS created_by")
