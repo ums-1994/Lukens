@@ -55,6 +55,37 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     }
   }
 
+  void _showClientDetails(Map<String, dynamic> client) {
+    final company = (client['company_name'] ?? client['name'] ?? 'Client')
+        .toString()
+        .trim();
+    final email = (client['email'] ?? '').toString().trim();
+    final contact = (client['contact_person'] ?? client['contact_name'] ?? '')
+        .toString()
+        .trim();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(company.isNotEmpty ? company : 'Client Details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (email.isNotEmpty) Text('Email: $email'),
+            if (contact.isNotEmpty) Text('Contact: $contact'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   bool _canManageInvitations() {
     return _isFinanceUser();
   }
@@ -554,92 +585,112 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               },
             ),
 
-                    final title = Text(
-                      'Client Management',
-                      style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                      overflow: TextOverflow.ellipsis,
-                    );
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 900;
 
-                    final userControls = Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ClipOval(
-                          child: Image.asset(
-                            'assets/images/User_Profile.png',
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
+                final title = Text(
+                  'Client Management',
+                  style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+                  overflow: TextOverflow.ellipsis,
+                );
+
+                final userControls = Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ClipOval(
+                      child: Image.asset(
+                        'assets/images/User_Profile.png',
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Flexible(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _getUserName(user),
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          Text(
+                            userRole.toString(),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    PopupMenuButton<String>(
+                      icon: const Icon(Icons.more_vert, color: Colors.white),
+                      onSelected: (value) {
+                        if (value == 'logout') {
+                          app.logout();
+                          AuthService.logout();
+                          Navigator.pushNamed(context, '/login');
+                        }
+                      },
+                      itemBuilder: (BuildContext context) => const [
+                        PopupMenuItem<String>(
+                          value: 'logout',
+                          child: Row(
                             children: [
-                              Text(
-                                _getUserName(user),
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              Text(
-                                userRole.toString(),
-                                style: const TextStyle(
-                                    color: Colors.white70, fontSize: 12),
-                              ),
+                              Icon(Icons.logout),
+                              SizedBox(width: 8),
+                              Text('Logout'),
                             ],
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          icon:
-                              const Icon(Icons.more_vert, color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'logout') {
-                              app.logout();
-                              AuthService.logout();
-                              Navigator.pushNamed(context, '/login');
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => const [
-                            PopupMenuItem<String>(
-                              value: 'logout',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
                       ],
-                    );
+                    ),
+                  ],
+                );
 
-                    if (!isNarrow) {
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(child: title),
-                          userControls,
-                        ],
-                      );
-                    }
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        title,
-                        const SizedBox(height: 8),
-                        userControls,
+                return Container(
+                  height: 72,
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.black.withValues(alpha: 0.25),
+                        Colors.transparent,
                       ],
-                    );
-                  },
-                ),
-              ),
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                    ),
+                  ),
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: isNarrow
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              title,
+                              const SizedBox(height: 8),
+                              userControls,
+                            ],
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(child: title),
+                              userControls,
+                            ],
+                          ),
+                  ),
+                );
+              },
             ),
 
             // Main Content with Sidebar
@@ -656,6 +707,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                         isCollapsed: app.isSidebarCollapsed,
                         currentLabel: app.currentNavLabel,
                         isAdmin: isAdmin,
+                        isLightMode: app.isLightMode,
+                        onToggleThemeMode: app.toggleThemeMode,
                         onToggle: app.toggleSidebar,
                         onSelect: (label) {
                           app.setCurrentNavLabel(label);
@@ -1800,37 +1853,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     }
   }
 
-  void _showClientDetails(Map<String, dynamic> client) {
-    final company = (client['company_name'] ?? client['name'] ?? 'Client')
-        .toString()
-        .trim();
-    final email = (client['email'] ?? '').toString().trim();
-    final contact = (client['contact_person'] ?? client['contact_name'] ?? '')
-        .toString()
-        .trim();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(company.isNotEmpty ? company : 'Client Details'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (email.isNotEmpty) Text('Email: $email'),
-            if (contact.isNotEmpty) Text('Contact: $contact'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showClientMenu(Map<String, dynamic> client) {
     showModalBottomSheet<void>(
       context: context,
@@ -1874,37 +1896,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
           ),
         );
       },
-    );
-  }
-
-  void _showClientDetails(Map<String, dynamic> client) {
-    final company = (client['company_name'] ?? client['name'] ?? 'Client')
-        .toString()
-        .trim();
-    final email = (client['email'] ?? '').toString().trim();
-    final contact = (client['contact_person'] ?? client['contact_name'] ?? '')
-        .toString()
-        .trim();
-
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(company.isNotEmpty ? company : 'Client Details'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (email.isNotEmpty) Text('Email: $email'),
-            if (contact.isNotEmpty) Text('Contact: $contact'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
     );
   }
 

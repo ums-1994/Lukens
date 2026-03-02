@@ -65,6 +65,87 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
     await _loadData();
   }
 
+  void _showNotificationsSheet(AppState app) {
+    final notifications = (app.notifications ?? []).cast<dynamic>();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0E1726),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text('Notifications', style: PremiumTheme.titleMedium),
+                      const Spacer(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if (notifications.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Text(
+                        'No notifications',
+                        style: TextStyle(color: Colors.white70),
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 420),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: notifications.length,
+                        separatorBuilder: (_, __) => Divider(
+                          color: Colors.white.withValues(alpha: 0.08),
+                          height: 1,
+                        ),
+                        itemBuilder: (context, idx) {
+                          final nAny = notifications[idx];
+                          final n = nAny is Map<String, dynamic>
+                              ? nAny
+                              : (nAny is Map ? Map<String, dynamic>.from(nAny) : <String, dynamic>{});
+                          final title = (n['title'] ?? n['type'] ?? 'Notification')
+                              .toString()
+                              .trim();
+                          final body = (n['message'] ?? n['body'] ?? '')
+                              .toString()
+                              .trim();
+                          return ListTile(
+                            title: Text(title,
+                                style: const TextStyle(color: Colors.white)),
+                            subtitle: body.isEmpty
+                                ? null
+                                : Text(body,
+                                    style:
+                                        const TextStyle(color: Colors.white70)),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   BoxDecoration _cardDecoration() {
     return BoxDecoration(
       color: Colors.white.withValues(alpha: 0.04),

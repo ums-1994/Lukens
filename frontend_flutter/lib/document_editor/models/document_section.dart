@@ -17,6 +17,7 @@ class DocumentSection {
   bool isCoverPage;
   List<InlineImage> inlineImages; // Inline content images (not backgrounds)
   List<DocumentTable> tables; // Tables in this section
+  List<PositionedPricingTable> positionedPricingTables;
   List<String> blockOrder; // ['text', 'table:<id>', 'image:<id>', ...]
 
   DocumentSection({
@@ -28,6 +29,7 @@ class DocumentSection {
     this.isCoverPage = false,
     List<InlineImage>? inlineImages,
     List<DocumentTable>? tables,
+    List<PositionedPricingTable>? positionedPricingTables,
     List<String>? blockOrder,
   })  : controller = TextEditingController(text: content),
         titleController = TextEditingController(text: title),
@@ -35,10 +37,13 @@ class DocumentSection {
         titleFocus = FocusNode(),
         inlineImages = inlineImages ?? [],
         tables = tables ?? [],
+        positionedPricingTables = positionedPricingTables ?? [],
         blockOrder = blockOrder ??
             [
               'text',
               ...((tables ?? []).map((t) => 'table:${t.id}')),
+              ...((positionedPricingTables ?? [])
+                  .map((t) => 'positioned_pricing_table:${t.table.id}')),
               ...((inlineImages ?? []).map((img) => 'image:${img.id}')),
             ];
 }

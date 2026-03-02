@@ -34,22 +34,16 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   String _currentTab = 'dashboard'; // dashboard, proposals, clients
   bool _isSidebarCollapsed = false;
 
-  String _financePipelineBucket(String rawStatus) {
-    final s = rawStatus.toLowerCase();
-    if (s.contains('pending finance')) return 'In Pricing';
-    if (_isPricingInProgressStatus(s)) return 'In Pricing';
-    if (s.contains('pending review') || s.contains('pending approval')) {
-      return 'Pending Review';
-    }
-    if (s.contains('changes requested') || s.contains('needs changes')) {
-      return 'Changes Requested';
-    }
-    if (s.contains('released') || s.contains('sent to client')) {
-      return 'Released';
-    }
-    if (s.contains('signed') || s.contains('approved')) return 'Signed';
-    return '';
-  }
+  // Audit logs
+  DateTime? _auditFrom;
+  DateTime? _auditTo;
+  bool _auditLoading = false;
+  List<Map<String, dynamic>> _auditItems = [];
+  final TextEditingController _auditUserController = TextEditingController();
+  final TextEditingController _auditEntityTypeController =
+      TextEditingController();
+  final TextEditingController _auditActionTypeController =
+      TextEditingController();
 
   bool _isMetricsLoading = false;
   String? _metricsError;

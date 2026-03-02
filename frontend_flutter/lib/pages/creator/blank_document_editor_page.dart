@@ -5207,29 +5207,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
               ],
             ),
-          );
-
-          if (isNarrow) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                titleAndBadge,
-                const SizedBox(height: 12),
-                actions,
-              ],
-            );
-          }
-
-          return Row(
-            children: [
-              Expanded(child: titleAndBadge),
-              const SizedBox(width: 24),
-              Flexible(child: actions),
-            ],
-          );
-        },
-      ),
-    );
+          ),
+          ],
+        ),
+      );
   }
 
   Widget _buildToolbar() {
