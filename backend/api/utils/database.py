@@ -301,6 +301,8 @@ def init_pg_schema():
                         'Pending Approval',
                         'Pricing In Progress',
                         'Priced',
+                        'Changes Requested',
+                        'changes requested',
                         'Sent to Client',
                         'Sent for Signature',
                         'In Review',
