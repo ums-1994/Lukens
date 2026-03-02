@@ -6,7 +6,7 @@ class ClientService {
   // Backend routes for clients are mounted under `/api`
   static String get baseUrl => '${ApiService.baseUrl}/api';
 
-  static String get _clientsBase => '$baseUrl/api/clients';
+  static String get _clientsBase => '$baseUrl/clients';
 
   // Get headers with token
   static Map<String, String> _getHeaders(String? token) {

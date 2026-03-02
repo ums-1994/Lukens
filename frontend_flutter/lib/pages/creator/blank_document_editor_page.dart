@@ -58,6 +58,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   late TextEditingController _titleController;
   late TextEditingController _clientNameController;
   late TextEditingController _clientEmailController;
+  late TextEditingController _identityLast4Controller;
   List<Map<String, dynamic>> _clients = [];
   bool _isLoadingClients = false;
   int? _selectedClientId;
@@ -153,6 +154,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
     _clientNameController = TextEditingController();
     _clientEmailController = TextEditingController();
+    _identityLast4Controller = TextEditingController();
     _commentController = TextEditingController();
     _commentController.addListener(_handleCommentTextChanged);
     _commentFocusNode.addListener(_handleCommentFocusChange);
@@ -338,6 +340,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       return v == 'true' || v == '1' || v == 't' || v == 'yes';
     }
     return false;
+  }
+
+  int? _tryParseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is String) return int.tryParse(value.trim());
+    return null;
   }
 
   Future<void> _initializeAuth() async {
@@ -753,14 +762,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       if (proposal['content'] != null) {
         try {
           final dynamic rawContent = proposal['content'];
-          final dynamic contentData = rawContent is String
+          dynamic contentData = rawContent is String
               ? json.decode(rawContent)
               : (rawContent is Map
                   ? Map<String, dynamic>.from(rawContent)
                   : null);
 
+          if (contentData is String) {
+            contentData = json.decode(contentData);
+          }
+
           if (contentData == null) {
             throw Exception('Unsupported content format');
+          }
+
+          if (contentData is! Map) {
+            throw Exception('Unsupported content data type');
           }
 
           setState(() {
@@ -814,7 +831,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       .toString(),
                   content: sectionData['content'] ?? '',
                   backgroundColor: sectionData['backgroundColor'] != null
-                      ? Color(sectionData['backgroundColor'] as int)
+                      ? Color(_tryParseInt(sectionData['backgroundColor']) ??
+                          Colors.white.value)
                       : Colors.white,
                   backgroundImageUrl:
                       sectionData['backgroundImageUrl'] as String?,
@@ -1207,6 +1225,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _titleController.dispose();
     _clientNameController.dispose();
     _clientEmailController.dispose();
+    _identityLast4Controller.dispose();
     _commentController.removeListener(_handleCommentTextChanged);
     _commentController.dispose();
     _commentFocusNode.removeListener(_handleCommentFocusChange);
@@ -2550,6 +2569,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
                 keyboardType: TextInputType.emailAddress,
               ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _identityLast4Controller,
+                decoration: const InputDecoration(
+                  labelText: 'Identity Last 4 Digits (optional)',
+                  hintText: 'e.g., 1234',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock),
+                ),
+                keyboardType: TextInputType.number,
+              ),
               const SizedBox(height: 12),
               const Text(
                 '* When approved, the proposal will be sent to this email',
@@ -2977,6 +3007,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           clientEmail: _clientEmailController.text.trim().isEmpty
               ? null
               : _clientEmailController.text.trim(),
+          identityLast4: _identityLast4Controller.text.trim().isEmpty
+              ? null
+              : _identityLast4Controller.text.trim(),
           status: _proposalStatus ?? 'draft',
         );
 
@@ -3016,6 +3049,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           clientEmail: _clientEmailController.text.trim().isEmpty
               ? null
               : _clientEmailController.text.trim(),
+          identityLast4: _identityLast4Controller.text.trim().isEmpty
+              ? null
+              : _identityLast4Controller.text.trim(),
           status: _proposalStatus ?? 'draft',
           budget: isFinanceRole ? computedBudget : null,
         );
@@ -4622,7 +4658,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final isManagerRole = context.watch<RoleService>().isCreator();
     final statusKey = (_proposalStatus ?? '').toString().toLowerCase().trim();
     final isDraftStatus = statusKey.isEmpty || statusKey == 'draft';
-    final isPricingStatus = statusKey == 'pricing in progress';
+    final isPricingStatus =
+        statusKey == 'pricing in progress' || statusKey == 'pending finance';
 
     return Container(
       color: Colors.white,
@@ -5038,26 +5075,70 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ? const SizedBox(width: 12)
                     : const SizedBox.shrink(),
                 // Send for Approval button
-                (_proposalStatus == null || _proposalStatus == 'draft')
-                    ? ElevatedButton.icon(
-                        onPressed: _sendForApproval,
-                        icon: const Icon(Icons.send, size: 16),
-                        label: const Text('Send for Approval'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF2ECC71),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 10),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
+                Builder(
+                  builder: (context) {
+                    final statusKey =
+                        (_proposalStatus ?? '').toString().toLowerCase().trim();
+                    final isDraftStatus =
+                        statusKey.isEmpty || statusKey == 'draft';
+                    final isPricingStatus =
+                        statusKey == 'pricing in progress' ||
+                        statusKey == 'pending finance';
+                    final isFinanceRole = context.read<RoleService>().isFinance();
+                    final isArchived = statusKey == 'archived';
+                    final isReadOnly = widget.readOnly || isArchived;
+
+                    if (isReadOnly) return const SizedBox.shrink();
+
+                    if (isDraftStatus) {
+                      return Row(
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: _sendForApproval,
+                            icon: const Icon(Icons.send, size: 16),
+                            label: const Text('Send for Approval'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2ECC71),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 10),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
                           ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-                (_proposalStatus == null || _proposalStatus == 'draft')
-                    ? const SizedBox(width: 12)
-                    : const SizedBox.shrink(),
+                          const SizedBox(width: 12),
+                        ],
+                      );
+                    }
+
+                    if (isPricingStatus && isFinanceRole) {
+                      return Row(
+                        children: [
+                          ElevatedButton.icon(
+                            onPressed: _submitForApprovalFinance,
+                            icon: const Icon(Icons.check_circle, size: 16),
+                            label: const Text('Submit for Approval'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2ECC71),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 10),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                        ],
+                      );
+                    }
+
+                    return const SizedBox.shrink();
+                  },
+                ),
                 // Action buttons
                 OutlinedButton.icon(
                   onPressed: _showPreview,

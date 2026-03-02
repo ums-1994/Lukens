@@ -45,6 +45,32 @@ import 'services/role_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+String? _extractTokenLoose(String input) {
+  try {
+    final idx = input.indexOf('token=');
+    if (idx < 0) return null;
+    var token = input.substring(idx + 'token='.length);
+    final cutAmp = token.indexOf('&');
+    if (cutAmp >= 0) token = token.substring(0, cutAmp);
+    final cutHash = token.indexOf('#');
+    if (cutHash >= 0) token = token.substring(0, cutHash);
+    token = token.trim();
+    if (token.isEmpty) return null;
+    try {
+      token = Uri.decodeComponent(token);
+    } catch (_) {}
+    while (token.startsWith('"') || token.startsWith("'")) {
+      token = token.substring(1);
+    }
+    while (token.endsWith('"') || token.endsWith("'")) {
+      token = token.substring(0, token.length - 1);
+    }
+    return token.isEmpty ? null : token;
+  } catch (_) {
+    return null;
+  }
+}
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
@@ -211,14 +237,17 @@ class MyApp extends StatelessWidget {
                   settings.name!.startsWith('/client/proposals'))) {
             print('🔍 Client proposals route detected: ${settings.name}');
 
-            // Extract token from URL
             final currentUrl = web.window.location.href;
-            final uri = Uri.parse(currentUrl);
-            String? token = uri.queryParameters['token'];
+            final hash = web.window.location.hash;
+            String? token;
+
+            token = _extractTokenLoose(settings.name ?? '');
+            token ??= _extractTokenLoose(currentUrl);
+            token ??= _extractTokenLoose(hash);
 
             if (token != null && token.isNotEmpty) {
               print('✅ Token found for client proposals');
-              final validToken = token;
+              final validToken = token.trim();
               return MaterialPageRoute(
                 builder: (context) =>
                     ClientDashboardHome(initialToken: validToken),
@@ -459,6 +488,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
     _checkVerificationUrl();
   }
 
+  String? _extractTokenFromUrl(String url) {
+    final token = _extractTokenLoose(url);
+    if (token != null && token.isNotEmpty) return token;
+    final hash = web.window.location.hash;
+    return _extractTokenLoose(hash);
+  }
+
   Future<void> _checkVerificationUrl() async {
     final currentUrl = web.window.location.href;
     final uri = Uri.parse(currentUrl);
@@ -660,14 +696,22 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     // Check for client proposals URL (priority - must be before collaboration check)
     final isClientProposals = currentUrl.contains('/client/proposals') ||
-        uri.path.contains('/client/proposals');
+        hash.contains('/client/proposals') ||
+        uri.path.contains('/client/proposals') ||
+        uri.fragment.contains('/client/proposals');
 
     if (isClientProposals) {
-      final token = uri.queryParameters['token'];
-      if (token != null && token.isNotEmpty) {
+      final extractedToken = _extractTokenFromUrl(currentUrl);
+      if (extractedToken != null && extractedToken.isNotEmpty) {
+        String tokenValue = extractedToken;
+        try {
+          tokenValue = Uri.decodeComponent(tokenValue);
+        } catch (_) {}
         print('✅ Detected client proposals URL - showing ClientDashboardHome');
-        print('📍 Client token: ${token.substring(0, 10)}...');
-        return const ClientDashboardHome();
+        final tokenPreview =
+            tokenValue.length >= 10 ? tokenValue.substring(0, 10) : tokenValue;
+        print('📍 Client token: $tokenPreview...');
+        return ClientDashboardHome(initialToken: tokenValue);
       }
     }
 
@@ -1020,12 +1064,12 @@ class _HomeShellState extends State<HomeShell> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(dialogContext).pop();
                 // Perform logout
                 final app = context.read<AppState>();
+                await AuthService.logoutAndRevoke();
                 app.logout();
-                AuthService.logout();
                 Navigator.pushNamedAndRemoveUntil(
                     context, '/login', (route) => false);
               },

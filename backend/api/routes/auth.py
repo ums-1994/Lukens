@@ -7,6 +7,10 @@ import os
 import json
 import traceback
 from datetime import datetime, timedelta, timezone
+import secrets
+import hashlib
+import hmac
+import base64
 import psycopg2
 import psycopg2.extras
 
@@ -14,11 +18,360 @@ from api.utils.database import get_db_connection, _pg_conn, release_pg_conn
 from api.utils.decorators import token_required
 from api.utils.auth import verify_token, get_valid_tokens, generate_token, hash_password, verify_password, save_tokens
 from api.utils.firebase_auth import verify_firebase_token, get_user_from_token, firebase_token_required, initialize_firebase
-from api.utils.email import send_email, send_verification_email
+from api.utils.email import send_email, send_verification_email, get_logo_html
 from api.utils.jwt_validator import JWTValidationError, validate_jwt_token, extract_user_info
 from werkzeug.security import check_password_hash
 
 bp = Blueprint('auth', __name__)
+
+
+def _now_utc():
+    return datetime.now(timezone.utc)
+
+
+def _session_pepper() -> bytes:
+    return (
+        os.getenv('SESSION_TOKEN_PEPPER')
+        or os.getenv('JWT_SECRET')
+        or os.getenv('SECRET_KEY')
+        or 'dev-session-pepper'
+    ).encode('utf-8')
+
+
+def _hash_session_token(token: str) -> str:
+    digest = hmac.new(_session_pepper(), token.encode('utf-8'), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode('utf-8')
+
+
+def _hash_otp(code: str, challenge_salt: str) -> str:
+    msg = f"{challenge_salt}:{code}".encode('utf-8')
+    digest = hmac.new(_session_pepper(), msg, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode('utf-8')
+
+
+def _ensure_device_session_schema(cursor):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS trusted_devices (
+            user_id INTEGER NOT NULL,
+            device_id TEXT NOT NULL,
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (user_id, device_id)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS device_otp_challenges (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            device_id TEXT NOT NULL,
+            challenge_salt TEXT NOT NULL,
+            otp_hash TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            verified_at TIMESTAMPTZ NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            device_id TEXT NOT NULL,
+            session_token_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            revoked_at TIMESTAMPTZ NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS user_sessions_user_device_idx
+        ON user_sessions(user_id, device_id)
+        """
+    )
+
+
+def _resolve_user_by_email(cursor, email: str):
+    cursor.execute(
+        """
+        SELECT id, username, email
+        FROM users
+        WHERE lower(email) = lower(%s)
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (email,),
+    )
+    return cursor.fetchone()
+
+
+def _resolve_user_from_firebase_token(id_token: str):
+    decoded = verify_firebase_token(id_token)
+    if not decoded:
+        return None, {'detail': 'Invalid or expired Firebase token'}, 401
+    fb_user = get_user_from_token(decoded)
+    if not fb_user or not fb_user.get('email'):
+        return None, {'detail': 'Could not extract user information from token'}, 401
+
+    email = (fb_user.get('email') or '').strip()
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        _ensure_device_session_schema(cursor)
+        conn.commit()
+
+        row = _resolve_user_by_email(cursor, email)
+        if not row:
+            return None, {'detail': 'User not found in database'}, 404
+        return {
+            'user_id': row.get('id'),
+            'username': row.get('username'),
+            'email': row.get('email') or email,
+        }, None, None
+
+
+def _create_session(cursor, user_id: int, device_id: str):
+    session_token = secrets.token_urlsafe(32)
+    token_hash = _hash_session_token(session_token)
+    session_id = secrets.token_urlsafe(24)
+    now = _now_utc()
+    expires_at = now + timedelta(hours=12)
+    cursor.execute(
+        """
+        INSERT INTO user_sessions (id, user_id, device_id, session_token_hash, created_at, last_seen_at, expires_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (session_id, user_id, device_id, token_hash, now, now, expires_at),
+    )
+    return {
+        'session_token': session_token,
+        'session_id': session_id,
+        'expires_at': expires_at,
+    }
+
+
+@bp.post('/auth/device-session/start')
+def start_device_session():
+    """Start (or resume) a device session. Requires OTP only for new devices."""
+    try:
+        data = request.get_json(silent=True) or {}
+        id_token = data.get('idToken') or data.get('id_token')
+        device_id = (data.get('device_id') or data.get('deviceId') or '').strip()
+        if not id_token:
+            return {'detail': 'Firebase ID token required'}, 400
+        if not device_id:
+            return {'detail': 'device_id is required'}, 400
+
+        user_info, err, code = _resolve_user_from_firebase_token(id_token)
+        if err:
+            return err, code
+
+        user_id = int(user_info['user_id'])
+        email = user_info['email']
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            _ensure_device_session_schema(cursor)
+
+            cursor.execute(
+                """
+                SELECT 1
+                FROM trusted_devices
+                WHERE user_id = %s AND device_id = %s
+                """,
+                (user_id, device_id),
+            )
+            trusted = cursor.fetchone() is not None
+
+            if trusted:
+                cursor.execute(
+                    """
+                    UPDATE trusted_devices
+                    SET last_seen_at = NOW()
+                    WHERE user_id = %s AND device_id = %s
+                    """,
+                    (user_id, device_id),
+                )
+                session = _create_session(cursor, user_id, device_id)
+                conn.commit()
+                return {
+                    'otp_required': False,
+                    'session_token': session['session_token'],
+                    'session_id': session['session_id'],
+                    'expires_at': session['expires_at'].isoformat(),
+                }, 200
+
+            otp_code = f"{secrets.randbelow(1_000_000):06d}"
+            challenge_id = secrets.token_urlsafe(24)
+            challenge_salt = secrets.token_urlsafe(16)
+            otp_hash = _hash_otp(otp_code, challenge_salt)
+            now = _now_utc()
+            expires_at = now + timedelta(minutes=10)
+            cursor.execute(
+                """
+                INSERT INTO device_otp_challenges (id, user_id, device_id, challenge_salt, otp_hash, attempts, created_at, expires_at)
+                VALUES (%s, %s, %s, %s, %s, 0, %s, %s)
+                """,
+                (challenge_id, user_id, device_id, challenge_salt, otp_hash, now, expires_at),
+            )
+            conn.commit()
+
+        subject = 'Your login verification code'
+        html_content = f"""
+        {get_logo_html()}
+        <h2>Verification Code</h2>
+        <p>Use the code below to verify this new device login:</p>
+        <div style="text-align:center;margin:20px 0;">
+          <div style="display:inline-block;background:#111;border:1px solid #333;border-radius:12px;padding:16px 24px;font-size:28px;letter-spacing:6px;color:#fff;font-weight:700;">
+            {otp_code}
+          </div>
+        </div>
+        <p>This code expires in 10 minutes.</p>
+        """
+        send_email(email, subject, html_content)
+
+        return {
+            'otp_required': True,
+            'challenge_id': challenge_id,
+            'expires_at': expires_at.isoformat(),
+        }, 200
+    except Exception as e:
+        print(f"[ERROR] start_device_session error: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post('/auth/device-session/verify-otp')
+def verify_device_otp():
+    """Verify OTP for a new device challenge; issues a 12h session token."""
+    try:
+        data = request.get_json(silent=True) or {}
+        challenge_id = (data.get('challenge_id') or data.get('challengeId') or '').strip()
+        otp = (data.get('otp') or data.get('code') or '').strip()
+        if not challenge_id:
+            return {'detail': 'challenge_id is required'}, 400
+        if not otp:
+            return {'detail': 'otp is required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            _ensure_device_session_schema(cursor)
+
+            cursor.execute(
+                """
+                SELECT id, user_id, device_id, challenge_salt, otp_hash, attempts, expires_at, verified_at
+                FROM device_otp_challenges
+                WHERE id = %s
+                """,
+                (challenge_id,),
+            )
+            ch = cursor.fetchone()
+            if not ch:
+                return {'detail': 'Invalid challenge'}, 404
+
+            if ch.get('verified_at') is not None:
+                return {'detail': 'Challenge already verified'}, 400
+
+            expires_at = ch.get('expires_at')
+            if expires_at and expires_at < _now_utc():
+                return {'detail': 'OTP expired'}, 401
+
+            attempts = int(ch.get('attempts') or 0)
+            if attempts >= 5:
+                return {'detail': 'Too many attempts'}, 423
+
+            expected = ch.get('otp_hash')
+            salt = ch.get('challenge_salt')
+            ok = hmac.compare_digest(_hash_otp(otp, salt), expected)
+            if not ok:
+                attempts += 1
+                cursor.execute(
+                    """
+                    UPDATE device_otp_challenges
+                    SET attempts = %s
+                    WHERE id = %s
+                    """,
+                    (attempts, challenge_id),
+                )
+                conn.commit()
+                return {
+                    'detail': 'Invalid OTP',
+                    'attempts_remaining': max(0, 5 - attempts),
+                }, 401
+
+            now = _now_utc()
+            cursor.execute(
+                """
+                UPDATE device_otp_challenges
+                SET verified_at = %s
+                WHERE id = %s
+                """,
+                (now, challenge_id),
+            )
+
+            user_id = int(ch.get('user_id'))
+            device_id = str(ch.get('device_id') or '').strip()
+            cursor.execute(
+                """
+                INSERT INTO trusted_devices (user_id, device_id, first_seen_at, last_seen_at)
+                VALUES (%s, %s, NOW(), NOW())
+                ON CONFLICT (user_id, device_id)
+                DO UPDATE SET last_seen_at = NOW()
+                """,
+                (user_id, device_id),
+            )
+
+            session = _create_session(cursor, user_id, device_id)
+            conn.commit()
+
+            return {
+                'session_token': session['session_token'],
+                'session_id': session['session_id'],
+                'expires_at': session['expires_at'].isoformat(),
+            }, 200
+    except Exception as e:
+        print(f"[ERROR] verify_device_otp error: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post('/auth/device-session/logout')
+def logout_device_session():
+    """Revoke the current session token."""
+    try:
+        auth_header = request.headers.get('Authorization') or ''
+        parts = auth_header.split()
+        token = parts[-1] if parts else ''
+        token = token.strip()
+        if not token:
+            return {'detail': 'Token is missing'}, 401
+
+        token_hash = _hash_session_token(token)
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            _ensure_device_session_schema(cursor)
+            cursor.execute(
+                """
+                UPDATE user_sessions
+                SET revoked_at = NOW()
+                WHERE session_token_hash = %s
+                  AND revoked_at IS NULL
+                """,
+                (token_hash,),
+            )
+            conn.commit()
+        return {'success': True}, 200
+    except Exception as e:
+        print(f"[ERROR] logout_device_session error: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
 # Initialize Firebase on module load (with error handling to prevent import failures)
 try:

@@ -12,6 +12,8 @@ from flask import request
 from api.utils.firebase_auth import verify_firebase_token, get_user_from_token
 from api.utils.database import get_db_connection
 from api.utils.auth import verify_token
+import hashlib
+import hmac
 
 
 DEV_BYPASS_ENABLED = os.getenv('DEV_BYPASS_AUTH', 'false').lower() == 'true'
@@ -21,6 +23,20 @@ DEV_DEFAULT_USERNAME = os.getenv('DEV_DEFAULT_USERNAME', 'admin')
 # on every request when the database has eventual-consistency issues.
 # Keyed by email, value is (user_id, username).
 USER_CACHE_BY_EMAIL = {}
+
+
+def _session_pepper() -> bytes:
+    return (
+        os.getenv('SESSION_TOKEN_PEPPER')
+        or os.getenv('JWT_SECRET')
+        or os.getenv('SECRET_KEY')
+        or 'dev-session-pepper'
+    ).encode('utf-8')
+
+
+def _hash_session_token(token: str) -> str:
+    digest = hmac.new(_session_pepper(), token.encode('utf-8'), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode('utf-8')
 
 
 def token_required(f):
@@ -55,6 +71,77 @@ def token_required(f):
                 return f(username=DEV_DEFAULT_USERNAME, *args, **kwargs)
             print('[ERROR] No token found in Authorization header')
             return {'detail': 'Token is missing'}, 401
+
+        # Backend per-device session token support (non-JWT). If the token does not
+        # look like a JWT, try validating it against user_sessions.
+        token_parts = token.split('.') if isinstance(token, str) else []
+        is_jwt_format = len(token_parts) == 3
+        if not is_jwt_format:
+            try:
+                token_hash = _hash_session_token(token)
+                device_id = (request.headers.get('X-Device-Id') or request.headers.get('x-device-id') or '').strip()
+                with get_db_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        """
+                        SELECT us.user_id, us.device_id, us.expires_at, us.revoked_at, u.username, u.email
+                        FROM user_sessions us
+                        JOIN users u ON u.id = us.user_id
+                        WHERE us.session_token_hash = %s
+                        ORDER BY us.created_at DESC
+                        LIMIT 1
+                        """,
+                        (token_hash,),
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        user_id, session_device_id, expires_at, revoked_at, username_db, email_db = row
+                        if revoked_at is not None:
+                            return {'detail': 'Session revoked'}, 401
+                        if expires_at is not None:
+                            try:
+                                from datetime import datetime, timezone
+
+                                now = datetime.now(timezone.utc)
+                                if getattr(expires_at, 'tzinfo', None) is None:
+                                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                                if expires_at < now:
+                                    return {'detail': 'Session expired'}, 401
+                            except Exception:
+                                pass
+
+                        if device_id and session_device_id and device_id != session_device_id:
+                            return {'detail': 'Session device mismatch'}, 401
+
+                        # best-effort last_seen update
+                        try:
+                            cursor.execute(
+                                "UPDATE user_sessions SET last_seen_at = NOW() WHERE session_token_hash = %s",
+                                (token_hash,),
+                            )
+                            conn.commit()
+                        except Exception:
+                            try:
+                                conn.rollback()
+                            except Exception:
+                                pass
+
+                        import inspect
+
+                        sig = inspect.signature(f)
+                        clean_kwargs = {
+                            k: v
+                            for k, v in kwargs.items()
+                            if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']
+                        }
+                        if 'user_id' in sig.parameters:
+                            clean_kwargs['user_id'] = user_id
+                        if 'email' in sig.parameters:
+                            clean_kwargs['email'] = email_db
+                        return f(username=username_db, *args, **clean_kwargs)
+            except Exception as sess_err:
+                # Session token not valid; fall through to other auth mechanisms.
+                print(f"[AUTH] Session token validation skipped/failed: {sess_err}")
 
         # Try Firebase token first only when it actually looks like a Firebase JWT.
         # Firebase ID tokens are JWTs with a 'kid' header.
@@ -435,7 +522,45 @@ def token_required(f):
                 username = verify_token(token)
                 if username:
                     print(f"[TOKEN] Legacy token validated for user: {username}")
-                    return f(username=username, *args, **kwargs)
+
+                    import inspect
+                    sig = inspect.signature(f)
+                    clean_kwargs = {
+                        k: v
+                        for k, v in kwargs.items()
+                        if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']
+                    }
+
+                    resolved_user_id = None
+                    resolved_email = None
+                    resolved_username = username
+                    try:
+                        with get_db_connection() as conn:
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                """
+                                SELECT id, username, email
+                                FROM users
+                                WHERE username = %s OR lower(email) = lower(%s)
+                                ORDER BY id DESC
+                                LIMIT 1
+                                """,
+                                (username, username),
+                            )
+                            row = cursor.fetchone()
+                            if row:
+                                resolved_user_id = row[0]
+                                resolved_username = row[1] or resolved_username
+                                resolved_email = row[2]
+                    except Exception:
+                        resolved_user_id = None
+                        resolved_email = None
+
+                    if 'user_id' in sig.parameters:
+                        clean_kwargs['user_id'] = resolved_user_id
+                    if 'email' in sig.parameters:
+                        clean_kwargs['email'] = resolved_email
+                    return f(username=resolved_username, *args, **clean_kwargs)
                 print('[ERROR] Firebase token validation failed and legacy validation failed')
                 return {'detail': 'Invalid or expired token'}, 401
         else:
@@ -444,7 +569,45 @@ def token_required(f):
             username = verify_token(token)
             if username:
                 print(f"[TOKEN] Legacy token validated for user: {username}")
-                return f(username=username, *args, **kwargs)
+
+                import inspect
+                sig = inspect.signature(f)
+                clean_kwargs = {
+                    k: v
+                    for k, v in kwargs.items()
+                    if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']
+                }
+
+                resolved_user_id = None
+                resolved_email = None
+                resolved_username = username
+                try:
+                    with get_db_connection() as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            """
+                            SELECT id, username, email
+                            FROM users
+                            WHERE username = %s OR lower(email) = lower(%s)
+                            ORDER BY id DESC
+                            LIMIT 1
+                            """,
+                            (username, username),
+                        )
+                        row = cursor.fetchone()
+                        if row:
+                            resolved_user_id = row[0]
+                            resolved_username = row[1] or resolved_username
+                            resolved_email = row[2]
+                except Exception:
+                    resolved_user_id = None
+                    resolved_email = None
+
+                if 'user_id' in sig.parameters:
+                    clean_kwargs['user_id'] = resolved_user_id
+                if 'email' in sig.parameters:
+                    clean_kwargs['email'] = resolved_email
+                return f(username=resolved_username, *args, **clean_kwargs)
 
             if DEV_BYPASS_ENABLED:
                 print(

@@ -115,6 +115,17 @@ class RoleService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> reset() async {
+    _currentRole = UserRole.creator;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('user_role');
+    } catch (e) {
+      print('⚠️ Could not reset saved role: $e');
+    }
+    notifyListeners();
+  }
+
   Future<void> switchRole(UserRole newRole) async {
     _currentRole = newRole;
 

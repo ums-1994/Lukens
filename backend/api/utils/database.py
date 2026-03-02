@@ -367,6 +367,7 @@ def init_pg_schema():
                         'Archived',
                         'Pending CEO Approval',
                         'Pending Approval',
+                        'Pending Finance',
                         'Pricing In Progress',
                         'Priced',
                         'Sent to Client',

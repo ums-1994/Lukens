@@ -6,6 +6,7 @@ import traceback
 from pathlib import Path
 import base64
 import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
@@ -183,11 +184,12 @@ def send_email(to_email, subject, html_content):
 
 def send_email_via_smtp(to_email, subject, html_content):
     try:
-        smtp_host = os.getenv('SMTP_HOST')
+        smtp_host = (os.getenv('SMTP_HOST') or '').strip()
         smtp_port = int((os.getenv('SMTP_PORT') or '587').strip())
-        smtp_user = os.getenv('SMTP_USER')
+        smtp_user = (os.getenv('SMTP_USER') or '').strip()
         smtp_pass = os.getenv('SMTP_PASS')
-        smtp_from_email = os.getenv('SMTP_FROM_EMAIL') or smtp_user
+        smtp_pass = smtp_pass.strip() if isinstance(smtp_pass, str) else smtp_pass
+        smtp_from_email = (os.getenv('SMTP_FROM_EMAIL') or smtp_user).strip()
         smtp_from_name = os.getenv('SMTP_FROM_NAME', 'Khonology')
 
         if not all([smtp_host, smtp_user, smtp_pass, smtp_from_email]):
@@ -204,14 +206,31 @@ def send_email_via_smtp(to_email, subject, html_content):
         print(f"[EMAIL] SMTP Host: {smtp_host}, Port: {smtp_port}, User: {smtp_user}")
         print(f"[EMAIL] From: {smtp_from_name} <{smtp_from_email}>")
 
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
+        timeout_s = int((os.getenv('SMTP_TIMEOUT_SECONDS') or '20').strip())
+        use_ssl_env = (os.getenv('SMTP_USE_SSL') or '').strip().lower() in ('1', 'true', 'yes')
+        use_ssl = use_ssl_env or smtp_port == 465
+        context = ssl.create_default_context()
+
+        if use_ssl:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=timeout_s, context=context) as server:
+                server.ehlo()
+                server.login(smtp_user, smtp_pass)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=timeout_s) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+                server.login(smtp_user, smtp_pass)
+                server.send_message(msg)
         print(f"[SUCCESS] Email sent via SMTP to {to_email}")
         return True
     except Exception as e:
         print(f"[ERROR] SMTP email error: {e}")
+        print(
+            "[HELP] If using Mailgun SMTP, confirm: SMTP_HOST=smtp.mailgun.org, SMTP_PORT=587 (STARTTLS) or 465 (SSL), "
+            "SMTP_USER=postmaster@<your-mailgun-domain>, SMTP_PASS is correct, and your network allows outbound SMTP."
+        )
         traceback.print_exc()
         return False
 

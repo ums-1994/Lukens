@@ -7,6 +7,33 @@ from api.utils.decorators import token_required
 bp = Blueprint("cycle_time", __name__)
 
 
+def _owner_match_keys(owner_id, username=None, email=None, extra_keys=None):
+    keys = []
+    if owner_id is not None:
+        keys.append(str(owner_id))
+    if username:
+        keys.append(str(username).strip())
+    if email:
+        keys.append(str(email).strip())
+    if extra_keys:
+        for k in extra_keys:
+            if k is None:
+                continue
+            s = str(k).strip()
+            if s:
+                keys.append(s)
+    out = []
+    seen = set()
+    for k in keys:
+        if not k:
+            continue
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(k)
+    return out
+
+
 def _parse_date(s: str | None):
     if not s:
         return None
@@ -187,8 +214,19 @@ def cycle_time_metrics(username=None, user_id=None, email=None):
 
         if owner_filter:
             if owner_col_is_text:
-                where.append(f"{owner_col}::text = %s::text")
-                params.append(str(owner_id))
+                cursor.execute(
+                    "SELECT id, username, email FROM users WHERE username = %s OR email = %s OR id::text = %s",
+                    (owner_filter, owner_filter, owner_filter),
+                )
+                owner_row = cursor.fetchone()
+                owner_keys = _owner_match_keys(
+                    owner_row[0] if owner_row else owner_id,
+                    username=owner_row[1] if owner_row else username,
+                    email=owner_row[2] if owner_row else email,
+                    extra_keys=[owner_filter],
+                )
+                where.append(f"{owner_col}::text = ANY(%s::text[])")
+                params.append(owner_keys)
             else:
                 where.append(f"{owner_col} = %s")
                 params.append(owner_id)
@@ -215,15 +253,25 @@ def cycle_time_metrics(username=None, user_id=None, email=None):
                         }
                     ), 200
                 if owner_col_is_text:
+                    cursor.execute(
+                        "SELECT id, username, email FROM users WHERE id = ANY(%s::int[])",
+                        (team_owner_ids,),
+                    )
+                    team_keys = []
+                    for r in cursor.fetchall() or []:
+                        team_keys.extend(_owner_match_keys(r[0], username=r[1], email=r[2]))
+                    if not team_keys:
+                        team_keys = [str(x) for x in team_owner_ids]
                     where.append(f"{owner_col}::text = ANY(%s::text[])")
-                    params.append([str(x) for x in team_owner_ids])
+                    params.append(team_keys)
                 else:
                     where.append(f"{owner_col} = ANY(%s::int[])")
                     params.append(team_owner_ids)
             else:
                 if owner_col_is_text:
-                    where.append(f"{owner_col}::text = %s::text")
-                    params.append(str(owner_id))
+                    owner_keys = _owner_match_keys(owner_id, username=username, email=email)
+                    where.append(f"{owner_col}::text = ANY(%s::text[])")
+                    params.append(owner_keys)
                 else:
                     where.append(f"{owner_col} = %s")
                     params.append(owner_id)
@@ -564,10 +612,11 @@ def client_engagement(username=None, user_id=None, email=None):
         where = ["created_at IS NOT NULL"]
         params = []
 
-        if owner_filter:
+        if owner_filter and owner_id is not None:
             if owner_col_is_text:
-                where.append(f"{owner_col}::text = %s::text")
-                params.append(str(owner_id))
+                owner_keys = _owner_match_keys(owner_id, extra_keys=[owner_filter])
+                where.append(f"{owner_col}::text = ANY(%s::text[])")
+                params.append(owner_keys)
             else:
                 where.append(f"{owner_col} = %s")
                 params.append(owner_id)
@@ -579,15 +628,25 @@ def client_engagement(username=None, user_id=None, email=None):
                     proposal_ids = []
                 else:
                     if owner_col_is_text:
+                        cursor.execute(
+                            "SELECT id, username, email FROM users WHERE id = ANY(%s::int[])",
+                            (team_owner_ids,),
+                        )
+                        team_keys = []
+                        for r in cursor.fetchall() or []:
+                            team_keys.extend(_owner_match_keys(r[0], username=r[1], email=r[2]))
+                        if not team_keys:
+                            team_keys = [str(x) for x in team_owner_ids]
                         where.append(f"{owner_col}::text = ANY(%s::text[])")
-                        params.append([str(x) for x in team_owner_ids])
+                        params.append(team_keys)
                     else:
                         where.append(f"{owner_col} = ANY(%s::int[])")
                         params.append(team_owner_ids)
             else:
                 if owner_col_is_text:
-                    where.append(f"{owner_col}::text = %s::text")
-                    params.append(str(owner_id))
+                    owner_keys = _owner_match_keys(owner_id, username=username, email=email)
+                    where.append(f"{owner_col}::text = ANY(%s::text[])")
+                    params.append(owner_keys)
                 else:
                     where.append(f"{owner_col} = %s")
                     params.append(owner_id)
@@ -1132,8 +1191,19 @@ def collaboration_load(username=None, user_id=None, email=None):
 
             if owner_filter:
                 if owner_col_is_text:
-                    where.append(f"{owner_col}::text = %s::text")
-                    params.append(str(owner_id))
+                    cursor.execute(
+                        "SELECT id, username, email FROM users WHERE username = %s OR email = %s OR id::text = %s",
+                        (owner_filter, owner_filter, owner_filter),
+                    )
+                    owner_row = cursor.fetchone()
+                    owner_keys = _owner_match_keys(
+                        owner_row[0] if owner_row else owner_id,
+                        username=owner_row[1] if owner_row else username,
+                        email=owner_row[2] if owner_row else email,
+                        extra_keys=[owner_filter],
+                    )
+                    where.append(f"{owner_col}::text = ANY(%s::text[])")
+                    params.append(owner_keys)
                 else:
                     where.append(f"{owner_col} = %s")
                     params.append(owner_id)
@@ -1164,15 +1234,25 @@ def collaboration_load(username=None, user_id=None, email=None):
                             }
                         ), 200
                     if owner_col_is_text:
+                        cursor.execute(
+                            "SELECT id, username, email FROM users WHERE id = ANY(%s::int[])",
+                            (team_owner_ids,),
+                        )
+                        team_keys = []
+                        for r in cursor.fetchall() or []:
+                            team_keys.extend(_owner_match_keys(r[0], username=r[1], email=r[2]))
+                        if not team_keys:
+                            team_keys = [str(x) for x in team_owner_ids]
                         where.append(f"{owner_col}::text = ANY(%s::text[])")
-                        params.append([str(x) for x in team_owner_ids])
+                        params.append(team_keys)
                     else:
                         where.append(f"{owner_col} = ANY(%s::int[])")
                         params.append(team_owner_ids)
                 else:
                     if owner_col_is_text:
-                        where.append(f"{owner_col}::text = %s::text")
-                        params.append(str(owner_id))
+                        owner_keys = _owner_match_keys(owner_id, username=username, email=email)
+                        where.append(f"{owner_col}::text = ANY(%s::text[])")
+                        params.append(owner_keys)
                     else:
                         where.append(f"{owner_col} = %s")
                         params.append(owner_id)

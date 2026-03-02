@@ -8,11 +8,40 @@ from api.utils.decorators import token_required, admin_required
 from api.utils.database import get_db_connection
 from api.utils.helpers import resolve_user_id, log_status_change, create_notification
 from api.utils.email import send_email
+import os
+import base64
+import hashlib
+import hmac
 import json
 import psycopg2.extras
 import traceback
 
 bp = Blueprint('proposals', __name__)
+
+
+def _pbkdf2_hash(value: str, salt: bytes, iterations: int = 200_000) -> bytes:
+    return hashlib.pbkdf2_hmac('sha256', value.encode('utf-8'), salt, iterations)
+
+
+def _encode_identity_hash(last4: str) -> str:
+    salt = os.getenv('IDENTITY_SALT') or os.getenv('JWT_SECRET') or os.getenv('SECRET_KEY') or 'dev-identity-salt'
+    salt_bytes = salt.encode('utf-8')
+    digest = _pbkdf2_hash(last4, salt_bytes)
+    return "pbkdf2$" + base64.urlsafe_b64encode(salt_bytes).decode('utf-8') + "$" + base64.urlsafe_b64encode(digest).decode('utf-8')
+
+
+def _ensure_identity_column(cursor):
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'proposals'
+          AND table_schema = current_schema()
+        """
+    )
+    cols = {r[0] for r in (cursor.fetchall() or [])}
+    if 'identity_last4_hash' not in cols:
+        cursor.execute('ALTER TABLE proposals ADD COLUMN identity_last4_hash TEXT')
 
 
 def _role_key(raw_role: Optional[str]) -> str:
@@ -35,6 +64,31 @@ def _is_manager_role(role_key: str) -> bool:
     return role_key in ['manager', 'creator', 'user'] or not role_key
 
 
+# Central approval workflow configuration so that allowed status transitions
+# can be adjusted without rewriting the core logic. Keys are high‑level role
+# categories mapped to normalized status keys.
+ROLE_WORKFLOW_TRANSITIONS = {
+    'manager': {
+        # Creator/manager moves draft work into the finance queue
+        'draft': ['pending finance', 'pricing in progress'],
+        # Allow re‑working rejected proposals
+        'rejected': ['draft'],
+    },
+    'finance': {
+        # Finance can pick up items waiting in the queue or bounce drafts
+        'draft': ['pricing in progress'],
+        'pending finance': ['pricing in progress', 'pending approval'],
+        'pricing in progress': ['pending approval'],
+    },
+    'admin': {
+        # Final approver (admin/CEO) decides outcome
+        'pending approval': ['approved', 'rejected'],
+        # Optional loop back for re‑work
+        'rejected': ['draft'],
+    },
+}
+
+
 @bp.post("/proposals")
 @token_required
 def create_proposal(username=None, user_id=None, email=None):
@@ -45,6 +99,7 @@ def create_proposal(username=None, user_id=None, email=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor()
+            _ensure_identity_column(cursor)
             # If token_required already provided a numeric user_id, trust it directly.
             # The Firebase flow guarantees this id comes from a committed INSERT
             # even if this connection can't see the users row yet due to
@@ -135,6 +190,13 @@ def create_proposal(username=None, user_id=None, email=None):
             client_id = data.get('client_id')
             budget = data.get('budget')
             timeline_days = data.get('timeline_days')
+
+            identity_last4 = (str(data.get('identity_last4') or '')).strip()
+            identity_last4_hash = None
+            if identity_last4:
+                if len(identity_last4) < 4:
+                    return jsonify({'detail': 'identity_last4 must be at least 4 digits'}), 400
+                identity_last4_hash = _encode_identity_hash(identity_last4[-4:])
             
             # Insert
             cursor.execute(
@@ -183,13 +245,13 @@ def create_proposal(username=None, user_id=None, email=None):
                 insert_cols.append('user_id')
                 values.append(user_id)
 
-            if 'budget' in existing_columns and budget is not None:
-                insert_cols.append('budget')
-                values.append(budget)
-
             if 'timeline_days' in existing_columns and timeline_days is not None:
                 insert_cols.append('timeline_days')
                 values.append(timeline_days)
+
+            if identity_last4_hash and 'identity_last4_hash' in existing_columns:
+                insert_cols.append('identity_last4_hash')
+                values.append(identity_last4_hash)
 
             placeholders = ', '.join(['%s'] * len(insert_cols))
             columns_sql = ', '.join(insert_cols)
@@ -786,6 +848,15 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             updates = ['updated_at = NOW()']
             params = []
 
+            identity_last4 = (str(data.get('identity_last4') or '')).strip()
+            if identity_last4 and not is_finance:
+                if len(identity_last4) < 4:
+                    return jsonify({'detail': 'identity_last4 must be at least 4 digits'}), 400
+                identity_last4_hash = _encode_identity_hash(identity_last4[-4:])
+                if 'identity_last4_hash' in existing_columns:
+                    updates.append('identity_last4_hash = %s')
+                    params.append(identity_last4_hash)
+
             existing_client_value = None
             if 'client' in existing_columns:
                 cursor.execute("SELECT client FROM proposals WHERE id = %s", (proposal_id,))
@@ -905,29 +976,24 @@ def update_proposal_status(username=None, proposal_id=None, user_id=None, email=
             if target_key == 'pending ceo approval':
                 target_key = 'pending approval'
 
-            # Option B workflow:
-            # Manager: Draft -> Pricing In Progress
-            # Finance: Pricing In Progress -> Pending Approval
-            # Admin: Pending Approval -> Approved/Rejected
+            # Option B workflow expressed via central ROLE_WORKFLOW_TRANSITIONS,
+            # so that individual environments can tweak the allowed graph of
+            # state changes per role category.
             allowed = False
-
+            normalized_role = None
             if _is_manager_role(role_key):
-                if current_key == 'draft' and target_key == 'pricing in progress':
-                    allowed = True
-                # Allow returning to draft from rejected
-                if current_key == 'rejected' and target_key == 'draft':
-                    allowed = True
+                normalized_role = 'manager'
+            elif _is_finance_role(role_key):
+                normalized_role = 'finance'
+            elif _is_admin_role(role_key):
+                normalized_role = 'admin'
 
-            if _is_finance_role(role_key):
-                if current_key in ['draft', 'pricing in progress'] and target_key == 'pricing in progress':
-                    allowed = True
-                if current_key == 'pricing in progress' and target_key == 'pending approval':
-                    allowed = True
-
-            if _is_admin_role(role_key):
-                if current_key == 'pending approval' and target_key in ['approved', 'rejected']:
-                    allowed = True
-                if current_key == 'rejected' and target_key == 'draft':
+            if normalized_role:
+                current_transitions = ROLE_WORKFLOW_TRANSITIONS.get(
+                    normalized_role, {}
+                )
+                allowed_targets = current_transitions.get(current_key, [])
+                if target_key in allowed_targets:
                     allowed = True
 
             if not allowed:
@@ -944,6 +1010,8 @@ def update_proposal_status(username=None, proposal_id=None, user_id=None, email=
                 status_to_store = 'Draft'
             elif target_key == 'pricing in progress':
                 status_to_store = 'Pricing In Progress'
+            elif target_key == 'pending finance':
+                status_to_store = 'Pending Finance'
             elif target_key == 'pending approval':
                 status_to_store = 'Pending Approval'
             elif target_key == 'approved':

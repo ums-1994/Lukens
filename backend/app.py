@@ -76,7 +76,7 @@ from dotenv import load_dotenv
 from api.utils.ai_safety import AISafetyError
 
 # Load environment variables
-load_dotenv(dotenv_path=Path(__file__).with_name('.env'))
+load_dotenv(dotenv_path=Path(__file__).with_name('.env'), override=True)
 
 _CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').strip()
 if _CORS_ALLOWED_ORIGINS:
@@ -647,6 +647,7 @@ def init_pg_schema():
                         'Archived',
                         'Pending CEO Approval',
                         'Pending Approval',
+                        'Pending Finance',
                         'Pricing In Progress',
                         'Priced',
                         'Sent to Client',

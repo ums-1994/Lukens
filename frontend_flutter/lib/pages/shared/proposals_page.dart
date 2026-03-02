@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/firebase_service.dart';
+import '../../services/role_service.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../widgets/custom_scrollbar.dart';
@@ -67,11 +69,13 @@ class _ProposalsPageState extends State<ProposalsPage>
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(dialogContext).pop();
-                final app = context.read<dynamic>();
+                final app = context.read<AppState>();
+                await AuthService.logoutAndRevoke();
                 app.logout();
-                AuthService.logout();
+                await context.read<RoleService>().reset();
+                await FirebaseService.signOut();
                 Navigator.pushNamedAndRemoveUntil(
                     context, '/login', (route) => false);
               },

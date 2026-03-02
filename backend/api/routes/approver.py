@@ -6,6 +6,9 @@ import os
 import traceback
 import secrets
 import html
+import hashlib
+import hmac
+import base64
 import psycopg2.extras
 from datetime import datetime, timedelta
 
@@ -21,6 +24,17 @@ from api.utils.helpers import (
 )
 
 bp = Blueprint('approver', __name__)
+
+
+def _pbkdf2_hash(value: str, salt: bytes, iterations: int = 200_000) -> bytes:
+    return hashlib.pbkdf2_hmac('sha256', value.encode('utf-8'), salt, iterations)
+
+
+def _encode_identity_hash(last4: str) -> str:
+    salt = os.getenv('IDENTITY_SALT') or os.getenv('JWT_SECRET') or os.getenv('SECRET_KEY') or 'dev-identity-salt'
+    salt_bytes = salt.encode('utf-8')
+    digest = _pbkdf2_hash(last4, salt_bytes)
+    return "pbkdf2$" + base64.urlsafe_b64encode(salt_bytes).decode('utf-8') + "$" + base64.urlsafe_b64encode(digest).decode('utf-8')
 
 # ============================================================================
 # APPROVER ROUTES
@@ -610,7 +624,13 @@ def approve_proposal(username=None, proposal_id=None):
                 if client_name and client_name != 'Unknown':
                     try:
                         from api.utils.helpers import get_frontend_url
-                        frontend_url = get_frontend_url()
+                        origin = request.headers.get('Origin') or request.headers.get('origin')
+                        if not origin:
+                            try:
+                                origin = request.host_url
+                            except Exception:
+                                origin = None
+                        frontend_url = get_frontend_url(origin=origin)
                         print(f"🌐 Using frontend URL: {frontend_url}")
                         backend_url = os.getenv('BACKEND_URL') or os.getenv('API_URL') or os.getenv('RENDER_EXTERNAL_URL')
                         
@@ -624,8 +644,32 @@ def approve_proposal(username=None, proposal_id=None):
                             print(f"   Webhook URL should be: https://your-backend-url.com/api/docusign/webhook")
                             print(f"   Configure this in DocuSign: Settings → Connect → Add Configuration")
                         
+                        # Identity verification is required for all shared client links.
+                        # Regenerate a new verification code on each send and email it separately.
+                        try:
+                            if 'identity_last4_hash' not in existing_columns:
+                                return {
+                                    'detail': 'Cannot send proposal: identity verification is required but not configured (missing identity_last4_hash column).',
+                                    'error': 'missing_identity_verification_schema',
+                                    'proposal_id': proposal_id,
+                                }, 400
+
+                            verification_code = f"{secrets.randbelow(10000):04d}"
+                            identity_last4_hash = _encode_identity_hash(verification_code)
+                            cursor.execute(
+                                "UPDATE proposals SET identity_last4_hash = %s, updated_at = NOW() WHERE id = %s",
+                                (identity_last4_hash, proposal_id),
+                            )
+                            conn.commit()
+                        except Exception as id_check_err:
+                            print(f"⚠️ Failed to validate identity verification config for proposal {proposal_id}: {id_check_err}")
+                            return {
+                                'detail': 'Cannot send proposal: failed to validate identity verification configuration.',
+                                'error': 'identity_verification_check_failed',
+                                'proposal_id': proposal_id,
+                            }, 500
+                        
                         # Generate client access token (you may need to create this in collaboration_invitations)
-                        import secrets
                         access_token = secrets.token_urlsafe(32)
                         
                         # Validate client email - must be a real email address
@@ -918,6 +962,32 @@ def approve_proposal(username=None, proposal_id=None):
                         email_sent = send_email(effective_client_email, email_subject, email_body)
                         if email_sent:
                             print(f"[EMAIL] ✅ Proposal email sent successfully to {effective_client_email}")
+                            code_subject = f"Your verification code for: {display_title}"
+                            code_body = f"""
+                            {get_logo_html()}
+                            <h2>Verification Code</h2>
+                            <p>Dear {client_name or 'Client'},</p>
+                            <p>Use the verification code below to unlock your proposal:</p>
+                            <div style="text-align:center;margin:24px 0;">
+                              <div style="display:inline-block;background:#111;border:1px solid #333;border-radius:12px;padding:16px 24px;font-size:28px;letter-spacing:6px;color:#fff;font-weight:700;">
+                                {verification_code}
+                              </div>
+                            </div>
+                            <p>If you did not request this, you can ignore this email.</p>
+                            """
+                            code_sent = send_email(effective_client_email, code_subject, code_body)
+                            if code_sent:
+                                print(f"[EMAIL] ✅ Verification code email sent successfully to {effective_client_email}")
+                            else:
+                                print(f"[EMAIL] ❌ Failed to send verification code email to {effective_client_email}")
+                                return {
+                                    'detail': 'Proposal approved but verification code email failed to send. Fix email configuration and retry.',
+                                    'warning': 'verification_code_email_failed',
+                                    'proposal_id': proposal_id,
+                                    'client_email': effective_client_email,
+                                    'client_link': client_link,
+                                    'email_sent': True,
+                                }, 200
                         else:
                             print(f"[EMAIL] ❌ Failed to send proposal email to {effective_client_email}")
                             print(f"   Check SENDGRID_* or SMTP_* env vars and logs above for details")

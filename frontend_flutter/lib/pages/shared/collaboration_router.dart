@@ -20,6 +20,20 @@ class CollaborationRouter extends StatefulWidget {
 class _CollaborationRouterState extends State<CollaborationRouter> {
   String? _error;
 
+  String _sanitizeToken(String token) {
+    var t = token.trim();
+    try {
+      t = Uri.decodeComponent(t);
+    } catch (_) {}
+    while (t.startsWith('"') || t.startsWith("'")) {
+      t = t.substring(1);
+    }
+    while (t.endsWith('"') || t.endsWith("'")) {
+      t = t.substring(0, t.length - 1);
+    }
+    return t.trim();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -28,14 +42,18 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
 
   Future<void> _determineRoute() async {
     try {
+      final token = _sanitizeToken(widget.token);
+      if (token.isEmpty) {
+        throw Exception('Missing access token');
+      }
       print(
-          '🔍 Checking collaboration type for token: ${widget.token.substring(0, 20)}...');
+          '🔍 Checking collaboration type for token: ${token.substring(0, 20)}...');
 
       // First, try the collaborate endpoint (for collaborators)
       final collaborateResponse = await http
           .get(
-            Uri.parse(
-                '$baseUrl/api/collaborate?token=${widget.token}'),
+            Uri.parse('$baseUrl/api/collaborate')
+                .replace(queryParameters: {'token': token}),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -87,7 +105,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
               context,
               MaterialPageRoute(
                 builder: (context) =>
-                    ClientDashboardHome(initialToken: widget.token),
+                    ClientDashboardHome(initialToken: _sanitizeToken(token)),
               ),
             );
           }
@@ -118,8 +136,8 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
 
       final clientResponse = await http
           .get(
-            Uri.parse(
-                '$baseUrl/api/client/proposals?token=${widget.token}'),
+            Uri.parse('$baseUrl/api/client/proposals')
+                .replace(queryParameters: {'token': token}),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -131,7 +149,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
             context,
             MaterialPageRoute(
               builder: (context) =>
-                  ClientDashboardHome(initialToken: widget.token),
+                  ClientDashboardHome(initialToken: token),
             ),
           );
         }

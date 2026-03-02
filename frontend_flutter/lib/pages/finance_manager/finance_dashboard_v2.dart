@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
@@ -30,6 +30,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
 
   String _financePipelineBucket(String rawStatus) {
     final s = rawStatus.toLowerCase();
+    if (s.contains('pending finance')) return 'In Pricing';
     if (_isPricingInProgressStatus(s)) return 'In Pricing';
     if (s.contains('pending review') || s.contains('pending approval')) {
       return 'Pending Review';
@@ -365,7 +366,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
 
   bool _isPricingInProgressStatus(String raw) {
     final s = raw.toLowerCase();
-    return s.contains('pricing in progress') || s.contains('in pricing');
+    return s.contains('pricing in progress') ||
+        s.contains('in pricing') ||
+        s.contains('pending finance');
   }
 
   double _extractAmount(Map<String, dynamic> p) {

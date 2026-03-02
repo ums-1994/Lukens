@@ -18,6 +18,34 @@ from api.utils.decorators import token_required
 bp = Blueprint("risk_gate", __name__)
 
 
+def _owner_match_keys(owner_id, username=None, email=None, extra_keys=None):
+    keys = []
+    if owner_id is not None:
+        keys.append(str(owner_id))
+    if username:
+        keys.append(str(username).strip())
+    if email:
+        keys.append(str(email).strip())
+    if extra_keys:
+        for k in extra_keys:
+            if k is None:
+                continue
+            s = str(k).strip()
+            if s:
+                keys.append(s)
+
+    out = []
+    seen = set()
+    for k in keys:
+        if not k:
+            continue
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(k)
+    return out
+
+
 def _parse_datetime_param(value: Optional[str]):
     if not value:
         return None
@@ -581,8 +609,19 @@ def summary(username=None, user_id=None, email=None):
 
             if owner_filter and resolved_owner_id is not None:
                 if owner_col_is_text:
-                    where.append(f"p.{owner_col}::text = %s::text")
-                    params.append(str(resolved_owner_id))
+                    cursor.execute(
+                        "SELECT id, username, email FROM users WHERE id = %s",
+                        (resolved_owner_id,),
+                    )
+                    r = cursor.fetchone() or {}
+                    owner_keys = _owner_match_keys(
+                        resolved_owner_id,
+                        username=r.get("username"),
+                        email=r.get("email"),
+                        extra_keys=[owner_filter],
+                    )
+                    where.append(f"p.{owner_col}::text = ANY(%s::text[])")
+                    params.append(owner_keys)
                 else:
                     where.append(f"p.{owner_col} = %s")
                     params.append(resolved_owner_id)
@@ -609,15 +648,40 @@ def summary(username=None, user_id=None, email=None):
                             }
                         ), 200
                     if owner_col_is_text:
+                        cursor.execute(
+                            "SELECT id, username, email FROM users WHERE id = ANY(%s::int[])",
+                            (team_owner_ids,),
+                        )
+                        team_keys = []
+                        for row in cursor.fetchall() or []:
+                            team_keys.extend(
+                                _owner_match_keys(
+                                    row.get("id"),
+                                    username=row.get("username"),
+                                    email=row.get("email"),
+                                )
+                            )
+                        if not team_keys:
+                            team_keys = [str(x) for x in team_owner_ids]
                         where.append(f"p.{owner_col}::text = ANY(%s::text[])")
-                        params.append([str(x) for x in team_owner_ids])
+                        params.append(team_keys)
                     else:
                         where.append(f"p.{owner_col} = ANY(%s::int[])")
                         params.append(team_owner_ids)
                 else:
                     if owner_col_is_text:
-                        where.append(f"p.{owner_col}::text = %s::text")
-                        params.append(str(owner_id_val))
+                        cursor.execute(
+                            "SELECT id, username, email FROM users WHERE id = %s",
+                            (owner_id_val,),
+                        )
+                        r = cursor.fetchone() or {}
+                        owner_keys = _owner_match_keys(
+                            owner_id_val,
+                            username=r.get("username") or username,
+                            email=r.get("email") or email,
+                        )
+                        where.append(f"p.{owner_col}::text = ANY(%s::text[])")
+                        params.append(owner_keys)
                     else:
                         where.append(f"p.{owner_col} = %s")
                         params.append(owner_id_val)

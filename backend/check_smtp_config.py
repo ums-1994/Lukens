@@ -1,14 +1,19 @@
-"""
-Check SendGrid email configuration and test email sending
+"""Check email configuration and test SMTP connectivity.
+
+This script helps debug SMTP issues (e.g., Mailgun) by validating env vars,
+printing EHLO capabilities, and attempting an authenticated login.
 """
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+import smtplib
+import ssl
+
 from api.utils.email import send_email, get_logo_html, SENDGRID_AVAILABLE
 
 # Load .env file from backend directory
 env_path = Path(__file__).parent / '.env'
-load_dotenv(dotenv_path=env_path)
+load_dotenv(dotenv_path=env_path, override=True)
 
 def check_email_config():
     """Check if SendGrid email configuration is set"""
@@ -52,8 +57,69 @@ def check_email_config():
         return False
 
 def check_smtp_config():
-    """Legacy function name - redirects to check_email_config"""
-    return check_email_config()
+    """Check SMTP configuration and attempt login."""
+    print("=" * 60)
+    print("SMTP Configuration Check")
+    print("=" * 60)
+
+    smtp_host = (os.getenv('SMTP_HOST') or '').strip()
+    smtp_port_raw = (os.getenv('SMTP_PORT') or '587').strip()
+    smtp_user = (os.getenv('SMTP_USER') or '').strip()
+    smtp_pass = os.getenv('SMTP_PASS')
+    smtp_use_ssl = (os.getenv('SMTP_USE_SSL') or '').strip().lower() in ('1', 'true', 'yes')
+
+    try:
+        smtp_port = int(smtp_port_raw)
+    except Exception:
+        smtp_port = 587
+
+    print(f"\nSMTP_HOST: {'✅ SET' if smtp_host else '❌ NOT SET'}")
+    if smtp_host:
+        print(f"   Value: {smtp_host}")
+    print(f"\nSMTP_PORT: {smtp_port}")
+    print(f"\nSMTP_USE_SSL: {smtp_use_ssl}")
+    print(f"\nSMTP_USER: {'✅ SET' if smtp_user else '❌ NOT SET'}")
+    if smtp_user:
+        print(f"   Value: {smtp_user}")
+    print(f"\nSMTP_PASS: {'✅ SET' if smtp_pass else '❌ NOT SET'}")
+
+    if not (smtp_host and smtp_user and smtp_pass):
+        print("\n❌ SMTP configuration incomplete")
+        return False
+
+    timeout_s = int((os.getenv('SMTP_TIMEOUT_SECONDS') or '20').strip())
+    use_ssl = smtp_use_ssl or smtp_port == 465
+    context = ssl.create_default_context()
+
+    print("\n" + "=" * 60)
+    print("SMTP Handshake / Login Test")
+    print("=" * 60)
+    print(f"Connecting to {smtp_host}:{smtp_port} (ssl={use_ssl}, timeout={timeout_s}s)")
+
+    try:
+        if use_ssl:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=timeout_s, context=context) as server:
+                server.set_debuglevel(1)
+                server.ehlo()
+                print(f"\nESMTP features: {getattr(server, 'esmtp_features', {})}")
+                server.login(smtp_user, smtp_pass)
+                print("\n✅ SMTP login succeeded")
+                return True
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=timeout_s) as server:
+                server.set_debuglevel(1)
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+                print(f"\nESMTP features: {getattr(server, 'esmtp_features', {})}")
+                server.login(smtp_user, smtp_pass)
+                print("\n✅ SMTP login succeeded")
+                return True
+    except Exception as e:
+        print(f"\n❌ SMTP test failed: {e}")
+        print("\n[HELP] If you are using Mailgun: try SMTP_HOST=smtp.mailgun.org (US) or smtp.eu.mailgun.org (EU).")
+        print("[HELP] Verify SMTP_USER is exactly the postmaster@<domain> shown in Mailgun and SMTP_PASS matches the SMTP password.")
+        return False
 
 def test_email():
     """Test sending an email"""
@@ -84,8 +150,16 @@ def test_email():
         print("❌ Failed to send test email. Check the error messages above.")
 
 if __name__ == '__main__':
-    if check_email_config():
-        test = input("\nWould you like to send a test email? (y/n): ").strip().lower()
-        if test == 'y':
-            test_email()
+    provider = (os.getenv('EMAIL_PROVIDER') or 'auto').strip().lower()
+    if provider == 'smtp':
+        ok = check_smtp_config()
+        if ok:
+            test = input("\nWould you like to send a test email? (y/n): ").strip().lower()
+            if test == 'y':
+                test_email()
+    else:
+        if check_email_config():
+            test = input("\nWould you like to send a test email? (y/n): ").strip().lower()
+            if test == 'y':
+                test_email()
 

@@ -10,6 +10,8 @@ import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/firebase_service.dart';
+import '../../services/role_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../theme/app_colors.dart';
@@ -1276,12 +1278,13 @@ class _DashboardPageState extends State<DashboardPage>
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(dialogContext).pop();
                 // Perform logout
                 final app = context.read<AppState>();
                 app.logout();
-                AuthService.logout();
+                await context.read<RoleService>().reset();
+                await FirebaseService.signOut();
                 Navigator.pushNamedAndRemoveUntil(
                     context, '/login', (route) => false);
               },

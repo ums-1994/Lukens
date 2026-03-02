@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../api.dart';
 import '../services/auth_service.dart';
+import '../services/firebase_service.dart';
+import '../services/role_service.dart';
 import '../widgets/fixed_sidebar.dart';
 
 mixin SidebarMixin<T extends StatefulWidget> on State<T> {
@@ -67,11 +70,13 @@ mixin SidebarMixin<T extends StatefulWidget> on State<T> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 Navigator.of(dialogContext).pop();
-                final app = context.read<dynamic>();
+                final app = context.read<AppState>();
+                await AuthService.logoutAndRevoke();
                 app.logout();
-                AuthService.logout();
+                await context.read<RoleService>().reset();
+                await FirebaseService.signOut();
                 Navigator.pushNamedAndRemoveUntil(
                     context, '/login', (route) => false);
               },
