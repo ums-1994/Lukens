@@ -140,6 +140,19 @@ app.register_blueprint(risk_gate_bp)
 app.register_blueprint(finance_export_bp, url_prefix='/api')
 app.register_blueprint(finance_audit_bp, url_prefix='/api')
 
+
+@app.route("/", methods=["GET", "HEAD"])
+def root():
+    return {
+        "status": "ok",
+        "service": "lukens-backend",
+    }, 200
+
+
+@app.route("/health", methods=["GET", "HEAD"])
+def health():
+    return {"status": "ok"}, 200
+
 # Catch-all OPTIONS after blueprints so specific routes (e.g. finance export) handle their path first
 @app.route("/", methods=["OPTIONS"])
 @app.route("/<path:remaining>", methods=["OPTIONS"])
