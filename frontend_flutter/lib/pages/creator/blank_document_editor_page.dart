@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -20,6 +22,7 @@ import '../../services/ai_analysis_service.dart';
 import '../../document_editor/models/document_section.dart';
 import '../../document_editor/models/inline_image.dart';
 import '../../document_editor/models/document_table.dart';
+import '../../document_editor/models/positioned_pricing_table.dart';
 // Block-based section widget
 import '../../document_editor/widgets/section_widget.dart';
 
@@ -66,6 +69,80 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   int _selectedSectionIndex =
       0; // Track which section is selected for content insertion
   String _selectedCurrency = 'Rand (ZAR)';
+
+  Widget _buildPositionedPricingTable(
+    int sectionIndex,
+    int positionedIndex,
+    PositionedPricingTable positioned,
+  ) {
+    return Positioned(
+      left: positioned.x,
+      top: positioned.y,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            positioned.x = (positioned.x + details.delta.dx).clamp(0.0, 700.0);
+            positioned.y = (positioned.y + details.delta.dy).clamp(0.0, 1000.0);
+          });
+        },
+        child: SizedBox(
+          width: positioned.width,
+          child: Stack(
+            children: [
+              _buildTableContainer(
+                sectionIndex,
+                -1,
+                positioned.table,
+                _getCurrencySymbol(),
+              ),
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00BCD4),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(
+                    Icons.drag_indicator,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Material(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _sections[sectionIndex]
+                            .positionedPricingTables
+                            .removeAt(positionedIndex);
+                      });
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.close,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   List<String> _uploadedImages = [];
   List<Map<String, dynamic>> _libraryImages = [];
   bool _isLoadingLibraryImages = false;
@@ -216,6 +293,123 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Get auth token and load existing data if editing
     _initializeAuth();
+  }
+
+  Future<void> _sendToFinance() async {
+    // First save the document
+    if (_hasUnsavedChanges) {
+      await _saveToBackend();
+    }
+
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the document before sending to Finance'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Send to Finance'),
+        content: const Text(
+          'This will move the proposal to Pricing In Progress so Finance can add pricing and tables.\n\nDo you want to continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pricing In Progress',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pricing In Progress';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Sent to Finance for pricing'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/creator_dashboard',
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send to Finance: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _startPricingFinance() async {
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the document before starting pricing'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pricing In Progress',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pricing In Progress';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Pricing started'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to start pricing: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   bool _isTruthy(dynamic value) {
@@ -707,7 +901,33 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         }
                       }).toList() ??
                       [],
+                  positionedPricingTables:
+                      (sectionData['positionedPricingTables'] as List<dynamic>?)
+                              ?.map((p) => PositionedPricingTable.fromJson(
+                                  p as Map<String, dynamic>))
+                              .toList() ??
+                          [],
                 );
+
+                // Migrate legacy price tables stored in tables[] into positionedPricingTables.
+                if (newSection.tables.isNotEmpty) {
+                  final legacyPriceTables = newSection.tables
+                      .where((t) => t.type == 'price')
+                      .toList();
+                  if (legacyPriceTables.isNotEmpty) {
+                    newSection.tables.removeWhere((t) => t.type == 'price');
+                    for (final t in legacyPriceTables) {
+                      newSection.positionedPricingTables.add(
+                        PositionedPricingTable(
+                          table: t,
+                          x: 0,
+                          y: 0,
+                          width: 700,
+                        ),
+                      );
+                    }
+                  }
+                }
                 _sections.add(newSection);
 
                 // Add listeners
@@ -1168,7 +1388,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         (content.startsWith('http://') || content.startsWith('https://'));
 
     if (isUrl) {
-      await _handleImageForBranding(content as String);
+      await _handleImageForBranding(content);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1197,7 +1417,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         (content.startsWith('http://') || content.startsWith('https://'));
 
     if (isUrl) {
-      await _handleImageForBranding(content as String);
+      await _handleImageForBranding(content);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1363,6 +1583,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     });
   }
 
+  double _computePricingTotal() {
+    double total = 0;
+    for (final section in _sections) {
+      for (final table in section.tables) {
+        if (table.type == 'price') {
+          total += table.getTotal();
+        }
+      }
+
+      for (final positioned in section.positionedPricingTables) {
+        if (positioned.table.type == 'price') {
+          total += positioned.table.getTotal();
+        }
+      }
+    }
+    return total;
+  }
+
   void _addFromLibrary() {
     if (_sections.isEmpty || _selectedSectionIndex >= _sections.length) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1418,35 +1656,43 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
 
         setState(() {
-          // Insert at cursor position if available, otherwise append
-          final text = controller.text;
-          final selection = controller.selection;
+          final isFinanceRole = context.read<RoleService>().isFinance();
+          if (!isFinanceRole) {
+            // Insert at cursor position if available, otherwise append
+            final text = controller.text;
+            final selection = controller.selection;
 
-          if (selection.isValid &&
-              selection.start >= 0 &&
-              selection.start <= text.length) {
-            // Insert at cursor position
-            final before = text.substring(0, selection.start);
-            final after = text.substring(selection.end);
-            final separator =
-                before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
-            controller.text = '$before$separator$textToInsert$after';
-            // Set cursor after inserted content
-            final newPosition =
-                selection.start + separator.length + textToInsert.length;
-            controller.selection = TextSelection.collapsed(offset: newPosition);
-          } else {
-            // Append to end
-            if (text.isEmpty) {
-              controller.text = textToInsert;
+            if (selection.isValid &&
+                selection.start >= 0 &&
+                selection.start <= text.length) {
+              // Insert at cursor position
+              final before = text.substring(0, selection.start);
+              final after = text.substring(selection.end);
+              final separator =
+                  before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
+              controller.text = '$before$separator$textToInsert$after';
+              // Set cursor after inserted content
+              final newPosition =
+                  selection.start + separator.length + textToInsert.length;
+              controller.selection =
+                  TextSelection.collapsed(offset: newPosition);
             } else {
-              controller.text = '$text\n\n$textToInsert';
+              // Append to end
+              if (text.isEmpty) {
+                controller.text = textToInsert;
+              } else {
+                controller.text = '$text\n\n$textToInsert';
+              }
             }
           }
 
           // Add tables to the section's tables list
           if (tablesToInsert.isNotEmpty) {
-            currentSection.tables.addAll(tablesToInsert);
+            if (isFinanceRole) {
+              currentSection.tables.insertAll(0, tablesToInsert);
+            } else {
+              currentSection.tables.addAll(tablesToInsert);
+            }
           }
         });
 
@@ -2268,8 +2514,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Status helper methods
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return const Color(0xFFF39C12); // Orange
+    }
+    switch (s) {
       case 'pending approval':
         return const Color(0xFFF39C12); // Orange
       case 'sent to client':
@@ -2284,8 +2533,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   IconData _getStatusIcon(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return Icons.pending;
+    }
+    switch (s) {
       case 'pending approval':
         return Icons.pending;
       case 'sent to client':
@@ -2300,8 +2552,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   String _getStatusLabel(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return 'Pending Approval';
+    }
+    switch (s) {
       case 'pending approval':
         return 'Pending Approval';
       case 'sent to client':
@@ -2435,12 +2690,39 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     if (!_hasCompletedGovernanceCheck || !_hasCompletedRiskAssessment) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please complete the Review & Complete process (governance check and risk assessment) before sending for approval.'),
+          content: Text(
+              'Please complete the Review & Complete process (governance check and risk assessment) before sending for approval.'),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 3),
         ),
       );
       return;
+    }
+
+    // If user already selected a client in the dropdown, ensure fields are filled
+    if (_selectedClientId != null &&
+        (_clientNameController.text.trim().isEmpty ||
+            _clientEmailController.text.trim().isEmpty)) {
+      Map<String, dynamic>? selected;
+      for (final c in _clients) {
+        final id = _tryParseClientId(c);
+        if (id == _selectedClientId) {
+          selected = c;
+          break;
+        }
+      }
+
+      if (selected != null) {
+        final name = _extractClientName(selected).trim();
+        final email = _extractClientEmail(selected).trim();
+
+        if (name.isNotEmpty && _clientNameController.text.trim().isEmpty) {
+          _clientNameController.text = name;
+        }
+        if (email.isNotEmpty && _clientEmailController.text.trim().isEmpty) {
+          _clientEmailController.text = email;
+        }
+      }
     }
 
     // Check if client information is provided
@@ -2581,6 +2863,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     section.inlineImages.map((img) => img.toJson()).toList(),
                 'tables':
                     section.tables.map((table) => table.toJson()).toList(),
+                'positionedPricingTables': section.positionedPricingTables
+                    .map((p) => p.toJson())
+                    .toList(),
               })
           .toList(),
       'metadata': {
@@ -2719,6 +3004,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ? 'Untitled Document'
         : _titleController.text;
     final content = _serializeDocumentContent();
+    final isFinanceRole = context.read<RoleService>().isFinance();
+    final computedBudget = _computePricingTotal();
 
     try {
       if (_savedProposalId == null) {
@@ -2774,6 +3061,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ? null
               : _clientEmailController.text.trim(),
           status: _proposalStatus ?? 'draft',
+          budget: isFinanceRole ? computedBudget : null,
         );
         print('✅ Proposal updated: $_savedProposalId');
         print('🔍 Update result: $result');
@@ -2810,6 +3098,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     section.inlineImages.map((img) => img.toJson()).toList(),
                 'tables':
                     section.tables.map((table) => table.toJson()).toList(),
+                'positionedPricingTables': section.positionedPricingTables
+                    .map((p) => p.toJson())
+                    .toList(),
               })
           .toList(),
       'change_description': changeDescription,
@@ -2896,7 +3187,26 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               }
             }).toList() ??
             [],
+        positionedPricingTables: (sectionData['positionedPricingTables']
+                    as List<dynamic>?)
+                ?.map((p) =>
+                    PositionedPricingTable.fromJson(p as Map<String, dynamic>))
+                .toList() ??
+            [],
       );
+
+      if (newSection.tables.isNotEmpty) {
+        final legacyPriceTables =
+            newSection.tables.where((t) => t.type == 'price').toList();
+        if (legacyPriceTables.isNotEmpty) {
+          newSection.tables.removeWhere((t) => t.type == 'price');
+          for (final t in legacyPriceTables) {
+            newSection.positionedPricingTables.add(
+              PositionedPricingTable(table: t, x: 0, y: 0, width: 700),
+            );
+          }
+        }
+      }
       _sections.add(newSection);
     }
 
@@ -3499,13 +3809,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // In collaborator mode, hide navigation sidebar but allow editing
     final isCollaboratorMode = widget.isCollaborator;
+    final hideLeftSidebar = context.watch<RoleService>().isFinance();
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Row(
         children: [
           // Left Sidebar (hide in read-only mode AND collaborator mode)
-          if (!isReadOnly && !isCollaboratorMode) _buildLeftSidebar(),
+          if (!isReadOnly && !isCollaboratorMode && !hideLeftSidebar)
+            _buildLeftSidebar(),
           // Sections Sidebar (conditional, hide in read-only mode AND collaborator mode)
           if (!isReadOnly && !isCollaboratorMode && _showSectionsSidebar)
             _buildSectionsSidebar(),
@@ -3860,13 +4172,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           : MainAxisAlignment.spaceBetween,
                       children: [
                         if (!_isSidebarCollapsed)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'Navigation',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
+                          Expanded(
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'Navigation',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
                           ),
@@ -4361,6 +4675,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   Widget _buildTopHeader() {
     final isFinanceRole = context.watch<RoleService>().isFinance();
+    final isManagerRole = context.watch<RoleService>().isCreator();
+    final statusKey = (_proposalStatus ?? '').toString().toLowerCase().trim();
+    final isDraftStatus = statusKey.isEmpty || statusKey == 'draft';
+    final isPricingStatus = statusKey == 'pricing in progress';
 
     return Container(
       color: Colors.white,
@@ -4459,42 +4777,69 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
               SizedBox(
                 width: 80,
-                child: TextField(
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (value) {
-                    // Price value input - ready for future use
-                    setState(() {});
-                  },
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '0.00',
-                    hintStyle: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[400],
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide:
-                          BorderSide(color: Colors.grey[300]!, width: 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF00BCD4),
-                        width: 1,
+                child: isFinanceRole
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                            color: Colors.grey[300]!,
+                            width: 1,
+                          ),
+                        ),
+                        child: Text(
+                          _computePricingTotal().toStringAsFixed(2),
+                          textAlign: TextAlign.left,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      )
+                    : TextField(
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        onChanged: (value) {
+                          // Price value input - ready for future use
+                          setState(() {});
+                        },
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                        decoration: InputDecoration(
+                          hintText: '0.00',
+                          hintStyle: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[400],
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            borderSide: BorderSide(
+                              color: Colors.grey[300]!,
+                              width: 1,
+                            ),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(4),
+                            borderSide: const BorderSide(
+                              color: Color(0xFF00BCD4),
+                              width: 1,
+                            ),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                        ),
                       ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                  ),
-                ),
               ),
             ],
           ),
@@ -4642,13 +4987,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           if (_proposalStatus != null && _proposalStatus != 'draft')
             const SizedBox(width: 12),
           // Send for Approval button
-          if (_proposalStatus == null || _proposalStatus == 'draft')
+          if (isManagerRole && isDraftStatus)
             ElevatedButton.icon(
-              onPressed:
-                  isFinanceRole ? _submitForApprovalFinance : _sendForApproval,
+              onPressed: _sendToFinance,
               icon: const Icon(Icons.send, size: 16),
-              label: Text(
-                  isFinanceRole ? 'Submit for Approval' : 'Send for Approval'),
+              label: const Text('Send to Finance'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2ECC71),
                 foregroundColor: Colors.white,
@@ -4660,8 +5003,43 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
               ),
             ),
-          if (_proposalStatus == null || _proposalStatus == 'draft')
-            const SizedBox(width: 12),
+          if (isManagerRole && isDraftStatus) const SizedBox(width: 12),
+
+          if (isFinanceRole && isDraftStatus)
+            ElevatedButton.icon(
+              onPressed: _startPricingFinance,
+              icon: const Icon(Icons.play_arrow, size: 16),
+              label: const Text('Start Pricing'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (isFinanceRole && isDraftStatus) const SizedBox(width: 12),
+
+          if (isFinanceRole && isPricingStatus)
+            ElevatedButton.icon(
+              onPressed: _submitForApprovalFinance,
+              icon: const Icon(Icons.send, size: 16),
+              label: const Text('Submit for Approval'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (isFinanceRole && isPricingStatus) const SizedBox(width: 12),
           // Action buttons
           OutlinedButton.icon(
             onPressed: _showPreview,
@@ -5083,7 +5461,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             horizontal: 60,
                             vertical: 24,
                           ),
-                          child: _buildSectionContent(index),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              minHeight: 1100,
+                            ),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                _buildSectionContent(index),
+                                ...section.positionedPricingTables
+                                    .asMap()
+                                    .entries
+                                    .map(
+                                        (entry) => _buildPositionedPricingTable(
+                                              index,
+                                              entry.key,
+                                              entry.value,
+                                            ))
+                                    .toList(),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -5163,12 +5561,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final section = _sections[index];
     final isHovered = _hoveredSectionIndex == index;
     final isSelected = _selectedSectionIndex == index;
+
+    final isFinanceRole = context.watch<RoleService>().isFinance();
+    final isManagerRole = context.watch<RoleService>().isCreator();
+    final financeTextLocked = isFinanceRole;
+
     return SectionWidget(
       section: section,
       isHovered: isHovered,
       isSelected: isSelected,
-      readOnly: widget.readOnly,
-      canDelete: _sections.length > 1,
+      readOnly: widget.readOnly || financeTextLocked,
+      canDelete: !isFinanceRole && (_sections.length > 1),
       onHoverChanged: (hovered) {
         setState(() {
           _hoveredSectionIndex = hovered ? index : -1;
@@ -5177,24 +5580,30 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       onTap: () {
         setState(() => _selectedSectionIndex = index);
       },
-      onInsertBelow: () => _insertSection(index),
+      onInsertBelow: isFinanceRole ? () {} : () => _insertSection(index),
       onInsertFromLibrary: () {
         setState(() {
           _selectedSectionIndex = index;
         });
         _addFromLibrary();
       },
-      onShowAIAssistant: () {
-        setState(() {
-          _selectedSectionIndex = index;
-        });
-        _showAIAssistantDialog();
-      },
-      onDuplicate: () => _duplicateSection(index),
-      onDelete: () => _deleteSection(index),
+      onShowAIAssistant: isFinanceRole
+          ? () {}
+          : () {
+              setState(() {
+                _selectedSectionIndex = index;
+              });
+              _showAIAssistantDialog();
+            },
+      onDuplicate: isFinanceRole ? () {} : () => _duplicateSection(index),
+      onDelete: isFinanceRole ? () {} : () => _deleteSection(index),
       getContentTextStyle: _getContentTextStyle,
       getTextAlignment: _getTextAlignment,
       onReorderTables: (int oldIndex, int newIndex) {
+        final canReorderTables = !(widget.readOnly || isManagerRole);
+
+        if (!canReorderTables) return;
+
         setState(() {
           if (newIndex > oldIndex) {
             newIndex -= 1;
@@ -5202,15 +5611,28 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           final table = section.tables.removeAt(oldIndex);
           section.tables.insert(newIndex, table);
         });
+        _onContentChanged();
       },
-      buildInteractiveTable: (int tableIndex, DocumentTable table) =>
-          _buildInteractiveTable(
-        index,
-        tableIndex,
-        table,
-        key: ValueKey('table_${index}_$tableIndex'),
-      ),
+      buildInteractiveTable: (int tableIndex, DocumentTable table) {
+        // Finance can edit pricing tables; Manager can view tables but not edit.
+        if (isFinanceRole) {
+          return _buildInteractiveTable(
+            index,
+            tableIndex,
+            table,
+          );
+        }
+        if (isManagerRole) {
+          return _buildReadOnlyTable(table);
+        }
+        return _buildInteractiveTable(
+          index,
+          tableIndex,
+          table,
+        );
+      },
       onRemoveInlineImage: (imageIndex) {
+        if (isFinanceRole) return;
         setState(() {
           _sections[index].inlineImages.removeAt(imageIndex);
         });
@@ -5405,6 +5827,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             tables.insert(draggedIndex, draggedTable);
           }
         });
+        _onContentChanged();
       },
       builder: (context, candidateData, rejectedData) {
         final isActive = candidateData.isNotEmpty;
@@ -5468,6 +5891,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Widget _buildTableContainer(int sectionIndex, int tableIndex,
       DocumentTable table, String currencySymbol,
       {Key? key}) {
+    final isManagerRole = context.watch<RoleService>().isCreator();
+    final canReorderTables = !(widget.readOnly || isManagerRole);
+    final totalColIndex =
+        table.type == 'price' ? table.getResolvedPriceTotalColumnIndex() : -1;
+
     return Container(
       key: key,
       margin: const EdgeInsets.symmetric(vertical: 16),
@@ -5494,11 +5922,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 Row(
                   children: [
                     // Drag handle icon (for ReorderableListView)
-                    Icon(
-                      Icons.drag_handle,
-                      size: 18,
-                      color: Colors.grey[600],
-                    ),
+                    if (canReorderTables)
+                      ReorderableDragStartListener(
+                        index: tableIndex,
+                        child: Icon(
+                          Icons.drag_handle,
+                          size: 18,
+                          color: Colors.grey[600],
+                        ),
+                      )
+                    else
+                      Icon(
+                        Icons.drag_handle,
+                        size: 18,
+                        color: Colors.grey[600],
+                      ),
                     const SizedBox(width: 8),
                     Text(
                       '${table.type == 'price' ? 'Price' : 'Text'} Table',
@@ -5511,7 +5949,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 18),
-                      onPressed: () => setState(() => table.addRow()),
+                      onPressed: () {
+                        setState(() => table.addRow());
+                        _onContentChanged();
+                      },
                       tooltip: 'Add Row',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -5522,7 +5963,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       icon: const Icon(Icons.view_column, size: 18),
                       onPressed: table.type == 'price'
                           ? null
-                          : () => setState(() => table.addColumn()),
+                          : () {
+                              setState(() => table.addColumn());
+                              _onContentChanged();
+                            },
                       tooltip: table.type == 'price'
                           ? 'Price tables have fixed columns'
                           : 'Add Column',
@@ -5537,6 +5981,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         setState(() {
                           _sections[sectionIndex].tables.removeAt(tableIndex);
                         });
+                        _onContentChanged();
                       },
                       tooltip: 'Delete Table',
                       padding: EdgeInsets.zero,
@@ -5572,43 +6017,58 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   (rowIndex) => DataRow(
                     cells: List.generate(
                       table.cells[rowIndex + 1].length,
-                      (colIndex) => DataCell(
-                        Directionality(
-                          textDirection: TextDirection.ltr,
-                          child: TextField(
+                      (colIndex) {
+                        final isPriceTotalCell =
+                            table.type == 'price' && colIndex == totalColIndex;
+
+                        if (isPriceTotalCell) {
+                          return DataCell(
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Text(
+                                table.cells[rowIndex + 1][colIndex],
+                                textDirection: TextDirection.ltr,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  textBaseline: TextBaseline.alphabetic,
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+
+                        return DataCell(
+                          Directionality(
                             textDirection: TextDirection.ltr,
-                            textAlign: TextAlign.left,
-                            controller: TextEditingController(
-                              text: table.cells[rowIndex + 1][colIndex],
-                            ),
-                            onChanged: (value) {
-                              setState(() {
-                                table.cells[rowIndex + 1][colIndex] = value;
-                                // Auto-calculate total for price tables
-                                if (table.type == 'price' && colIndex == 2 ||
-                                    colIndex == 3) {
-                                  final qty = double.tryParse(
-                                          table.cells[rowIndex + 1][2]) ??
-                                      0;
-                                  final price = double.tryParse(
-                                          table.cells[rowIndex + 1][3]) ??
-                                      0;
-                                  table.cells[rowIndex + 1][4] =
-                                      (qty * price).toStringAsFixed(2);
-                                }
-                              });
-                            },
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.all(8),
-                            ),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              textBaseline: TextBaseline.alphabetic,
+                            child: TextFormField(
+                              key: ValueKey(
+                                '${table.hashCode}-$rowIndex-$colIndex',
+                              ),
+                              textDirection: TextDirection.ltr,
+                              textAlign: TextAlign.left,
+                              initialValue: table.cells[rowIndex + 1][colIndex],
+                              onChanged: (value) {
+                                setState(() {
+                                  table.cells[rowIndex + 1][colIndex] = value;
+                                  if (table.type == 'price') {
+                                    table
+                                        .recalculatePriceRowTotal(rowIndex + 1);
+                                  }
+                                });
+                                _onContentChanged();
+                              },
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.all(8),
+                              ),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                textBaseline: TextBaseline.alphabetic,
+                              ),
                             ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -6156,7 +6616,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     setState(() {
       final section = _sections[_selectedSectionIndex];
       if (tableType == 'price') {
-        section.tables.add(DocumentTable.priceTable());
+        section.positionedPricingTables.add(
+          PositionedPricingTable(
+            table: DocumentTable.priceTable(),
+            x: 0,
+            y: 0,
+            width: 700,
+          ),
+        );
       } else {
         section.tables.add(DocumentTable());
       }
@@ -6586,9 +7053,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       builder: (BuildContext context) {
         return Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          child: SizedBox(
-            width: 400,
-            child: Padding(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 400,
+              // Prevent bottom overflow on shorter viewports by allowing scroll.
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -8934,8 +9405,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                     const SizedBox(height: 24),
                                                     // Section content
                                                     Text(
-                                                      section.controller.text
-                                                              .isEmpty
+                                                      (section.controller.text
+                                                                  .isEmpty &&
+                                                              section.tables
+                                                                  .isEmpty &&
+                                                              section
+                                                                  .positionedPricingTables
+                                                                  .isEmpty)
                                                           ? '(No content in this section)'
                                                           : section
                                                               .controller.text,
@@ -8954,6 +9430,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                           .map((table) =>
                                                               _buildReadOnlyTable(
                                                                   table))
+                                                          .toList(),
+                                                      const SizedBox(
+                                                          height: 12),
+                                                    ],
+                                                    if (section
+                                                        .positionedPricingTables
+                                                        .isNotEmpty) ...[
+                                                      ...section
+                                                          .positionedPricingTables
+                                                          .map((p) =>
+                                                              _buildReadOnlyTable(
+                                                                  p.table))
                                                           .toList(),
                                                       const SizedBox(
                                                           height: 12),
@@ -10366,12 +10854,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       int missingSections = 0;
       int clauseIssues = 0;
       if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
-        final missingSectionsMatch = RegExp(r'Add\s+(\d+)\s+missing\s+sections',
-                caseSensitive: false)
-            .firstMatch(recommendations.join(' '));
-        final clauseIssuesMatch = RegExp(r'Fix\s+(\d+)\s+clause\s+issues',
-                caseSensitive: false)
-            .firstMatch(recommendations.join(' '));
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
 
         missingSections = missingSectionsMatch != null
             ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
@@ -10380,8 +10868,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ? int.tryParse(clauseIssuesMatch.group(1) ?? '') ?? 0
             : 0;
 
-        riskScore =
-            ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
+        riskScore = ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
       }
 
       // Readiness score (higher is better) - MUST be based on the final riskScore
@@ -10426,9 +10913,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         };
       }).toList();
 
-      final bool hasActionableRecos = recommendations.isNotEmpty ||
-          missingSections > 0 ||
-          clauseIssues > 0;
+      final bool hasActionableRecos =
+          recommendations.isNotEmpty || missingSections > 0 || clauseIssues > 0;
       final String computedStatus = hasActionableRecos
           ? 'At Risk'
           : (canRelease
@@ -10494,12 +10980,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // HF can return issues=[] and risk_score=0 while still flagging missing
       // sections/clauses in recommendations. Derive a meaningful display.
       if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
-        final missingSectionsMatch = RegExp(r'Add\s+(\d+)\s+missing\s+sections',
-                caseSensitive: false)
-            .firstMatch(recommendations.join(' '));
-        final clauseIssuesMatch = RegExp(r'Fix\s+(\d+)\s+clause\s+issues',
-                caseSensitive: false)
-            .firstMatch(recommendations.join(' '));
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
 
         final missingSections = missingSectionsMatch != null
             ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
@@ -10520,9 +11006,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Convert risk points into a 0-100 score where higher is better
       final double displayScore = (100 - riskScore).clamp(0, 100).toDouble();
 
-      final risks = issues
-          .map((issue) => issue['title']?.toString() ?? 'Issue')
-          .toList();
+      final risks =
+          issues.map((issue) => issue['title']?.toString() ?? 'Issue').toList();
 
       setState(() {
         _riskAssessment = {
@@ -10579,7 +11064,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final section = _sections[i];
       final title = section.titleController.text.trim().isNotEmpty
           ? section.titleController.text.trim()
-          : (section.title.trim().isNotEmpty ? section.title.trim() : 'Section ${i + 1}');
+          : (section.title.trim().isNotEmpty
+              ? section.title.trim()
+              : 'Section ${i + 1}');
       final content = section.controller.text.trim().isNotEmpty
           ? section.controller.text.trim()
           : section.content.trim();
@@ -10618,7 +11105,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     try {
       // Run governance check first
       await _runGovernanceCheck();
-      
+
       // Then run risk assessment
       await _runRiskAssessment();
 
@@ -10630,7 +11117,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     } catch (e) {
       // Close loading dialog
       Navigator.of(context).pop();
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error during analysis: $e')),
       );
@@ -10640,10 +11127,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void _showFlaggedIssues() {
     final List<Map<String, dynamic>> allIssues = [];
     if (_governanceResults['issues'] != null) {
-      allIssues.addAll(List<Map<String, dynamic>>.from(_governanceResults['issues']));
+      allIssues.addAll(
+          List<Map<String, dynamic>>.from(_governanceResults['issues']));
     }
     if (_riskAssessment['issues'] != null) {
-      allIssues.addAll(List<Map<String, dynamic>>.from(_riskAssessment['issues']));
+      allIssues
+          .addAll(List<Map<String, dynamic>>.from(_riskAssessment['issues']));
     }
 
     _openIssuesReviewSheet(allIssues);
@@ -10671,7 +11160,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     child: Row(
                       children: [
                         const Text(
@@ -10713,31 +11203,39 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             itemCount: issues.length,
                             itemBuilder: (context, index) {
                               final issue = issues[index];
-                              final title = issue['title']?.toString() ?? 'Issue';
-                              final description = issue['description']?.toString() ?? '';
-                              final priority = (issue['priority']?.toString() ?? 'info')
-                                  .toLowerCase()
-                                  .trim();
+                              final title =
+                                  issue['title']?.toString() ?? 'Issue';
+                              final description =
+                                  issue['description']?.toString() ?? '';
+                              final priority =
+                                  (issue['priority']?.toString() ?? 'info')
+                                      .toLowerCase()
+                                      .trim();
 
                               Color priorityColor;
-                              if (priority == 'critical' || priority == 'high') {
+                              if (priority == 'critical' ||
+                                  priority == 'high') {
                                 priorityColor = const Color(0xFFDC2626);
-                              } else if (priority == 'warning' || priority == 'medium') {
+                              } else if (priority == 'warning' ||
+                                  priority == 'medium') {
                                 priorityColor = const Color(0xFFF59E0B);
                               } else {
                                 priorityColor = const Color(0xFF00BCD4);
                               }
 
                               return Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
                                 child: Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.grey[200]!, width: 1),
+                                    border: Border.all(
+                                        color: Colors.grey[200]!, width: 1),
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -10800,7 +11298,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
         ),
         const SizedBox(height: 16),
-        
+
         // Description
         Container(
           padding: const EdgeInsets.all(12),
@@ -10864,11 +11362,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   if (_hasCompletedGovernanceCheck) ...[
                     const Spacer(),
                     Icon(
-                      _governanceResults['status'] == 'Ready' 
-                          ? Icons.check_circle 
+                      _governanceResults['status'] == 'Ready'
+                          ? Icons.check_circle
                           : Icons.warning,
-                      color: _governanceResults['status'] == 'Ready' 
-                          ? Colors.green[700] 
+                      color: _governanceResults['status'] == 'Ready'
+                          ? Colors.green[700]
                           : Colors.orange[700],
                       size: 16,
                     ),
@@ -10888,19 +11386,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: _governanceResults['status'] == 'Ready' 
-                        ? Colors.green[100] 
+                    color: _governanceResults['status'] == 'Ready'
+                        ? Colors.green[100]
                         : Colors.orange[100],
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Row(
                     children: [
                       Icon(
-                        _governanceResults['status'] == 'Ready' 
-                            ? Icons.check_circle 
+                        _governanceResults['status'] == 'Ready'
+                            ? Icons.check_circle
                             : Icons.warning,
-                        color: _governanceResults['status'] == 'Ready' 
-                            ? Colors.green[700] 
+                        color: _governanceResults['status'] == 'Ready'
+                            ? Colors.green[700]
                             : Colors.orange[700],
                         size: 16,
                       ),
@@ -10934,7 +11432,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.analytics_outlined, color: Colors.orange[700], size: 20),
+                  Icon(Icons.analytics_outlined,
+                      color: Colors.orange[700], size: 20),
                   const SizedBox(width: 8),
                   const Text(
                     'Risk Assessment',
@@ -10997,8 +11496,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: (_isRunningGovernance || _isRunningRiskAssessment) 
-                ? null 
+            onPressed: (_isRunningGovernance || _isRunningRiskAssessment)
+                ? null
                 : _reviewAndComplete,
             icon: (_isRunningGovernance || _isRunningRiskAssessment)
                 ? const SizedBox(
@@ -11037,11 +11536,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.blue),
                         ),
                       )
                     : const Icon(Icons.verified_user, size: 16),
-                label: Text(_isRunningGovernance ? 'Running...' : 'Governance Only'),
+                label: Text(
+                    _isRunningGovernance ? 'Running...' : 'Governance Only'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.blue[700],
                   side: BorderSide(color: Colors.blue[300]!),
@@ -11059,11 +11560,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.orange),
                         ),
                       )
                     : const Icon(Icons.analytics_outlined, size: 16),
-                label: Text(_isRunningRiskAssessment ? 'Running...' : 'Risk Only'),
+                label:
+                    Text(_isRunningRiskAssessment ? 'Running...' : 'Risk Only'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.orange[700],
                   side: BorderSide(color: Colors.orange[300]!),
@@ -11095,31 +11598,36 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
                 const SizedBox(height: 8),
                 if (_governanceResults.isNotEmpty) ...[
-                  Text('• Governance: ${_governanceResults['status']} (${_governanceResults['score']}%)'),
+                  Text(
+                      '• Governance: ${_governanceResults['status']} (${_governanceResults['score']}%)'),
                 ],
                 if (_riskAssessment.isNotEmpty) ...[
-                  Text('• Risk: ${_riskAssessment['risk_level']} (${_riskAssessment['display_score']?.toInt()}%)'),
+                  Text(
+                      '• Risk: ${_riskAssessment['risk_level']} (${_riskAssessment['display_score']?.toInt()}%)'),
                 ],
                 const SizedBox(height: 12),
-                
+
                 // Review Issues button
                 Builder(
                   builder: (context) {
                     final List<Map<String, dynamic>> allIssues = [];
                     if (_governanceResults['issues'] != null) {
-                      allIssues.addAll(List<Map<String, dynamic>>.from(_governanceResults['issues']));
+                      allIssues.addAll(List<Map<String, dynamic>>.from(
+                          _governanceResults['issues']));
                     }
                     if (_riskAssessment['issues'] != null) {
-                      allIssues.addAll(List<Map<String, dynamic>>.from(_riskAssessment['issues']));
+                      allIssues.addAll(List<Map<String, dynamic>>.from(
+                          _riskAssessment['issues']));
                     }
-                    
+
                     if (allIssues.isNotEmpty) {
                       return SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
                           onPressed: () => _openIssuesReviewSheet(allIssues),
                           icon: const Icon(Icons.list_alt, size: 16),
-                          label: Text('Review ${allIssues.length} Flagged Issues'),
+                          label:
+                              Text('Review ${allIssues.length} Flagged Issues'),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFF9C27B0),
                             side: const BorderSide(color: Color(0xFF9C27B0)),

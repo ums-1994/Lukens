@@ -1,6 +1,6 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import '../../api.dart';
@@ -331,22 +331,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   final ScrollController _contentModulesScrollController = ScrollController();
   final ScrollController _projectDetailsScrollController = ScrollController();
 
-  // Persistent controllers for client fields to ensure they update correctly
-  final TextEditingController _clientNameController = TextEditingController();
-  final TextEditingController _clientEmailController = TextEditingController();
-  final TextEditingController _clientHoldingController =
-      TextEditingController();
-  final TextEditingController _clientAddressController =
-      TextEditingController();
-  final TextEditingController _clientContactNameController =
-      TextEditingController();
-  final TextEditingController _clientContactEmailController =
-      TextEditingController();
-  final TextEditingController _clientContactMobileController =
-      TextEditingController();
-  final TextEditingController _proposalTitleController =
-      TextEditingController();
-
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
     {'number': '1', 'label': 'Compose'},
@@ -473,74 +457,36 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       _useManualEntry = client == null;
 
       if (client != null) {
-        if (kDebugMode) {
-          try {
-            debugPrint(
-                'ProposalWizard selected client: ${json.encode(client)}');
-          } catch (e) {
-            debugPrint('ProposalWizard selected client (non-JSON): $client');
-            debugPrint('ProposalWizard selected client encode error: $e');
-          }
-        }
-
-        final additional = _parseAdditionalInfo(
-          client['additional_info'] ?? client['additionalInfo'],
-        );
+        final additional = _parseAdditionalInfo(client['additional_info']);
         // Auto-populate client details
         _formData['clientName'] =
             client['company_name'] ?? client['name'] ?? '';
         _formData['clientEmail'] = client['email'] ?? '';
         _formData['clientHolding'] = client['organization'] ??
             client['holding'] ??
-            client['holding_information'] ??
-            client['holdingInformation'] ??
-            client['holding_info'] ??
             additional['holding_information'] ??
             additional['holdingInformation'] ??
-            additional['holding_info'] ??
             '';
         _formData['clientAddress'] = client['location'] ??
             client['address'] ??
-            client['client_address'] ??
-            client['clientAddress'] ??
-            client['physical_address'] ??
             additional['address'] ??
-            additional['client_address'] ??
-            additional['clientAddress'] ??
             '';
         _formData['clientContactName'] = client['contact_person'] ??
             client['contact_name'] ??
-            client['client_contact_name'] ??
             additional['client_contact_name'] ??
             additional['clientContactName'] ??
             '';
         _formData['clientContactEmail'] = client['contact_email'] ??
-            client['client_contact_email'] ??
             additional['client_contact_email'] ??
             additional['clientContactEmail'] ??
             client['email'] ??
             '';
         _formData['clientContactMobile'] = client['phone'] ??
             client['mobile'] ??
-            client['client_contact_mobile'] ??
-            client['client_contact_number'] ??
             additional['client_contact_mobile'] ??
             additional['clientContactMobile'] ??
-            additional['client_contact_number'] ??
             '';
         _formData['clientId'] = client['id'];
-
-        // Update controllers
-        _clientNameController.text = _formData['clientName'] ?? '';
-        _clientEmailController.text = _formData['clientEmail'] ?? '';
-        _clientHoldingController.text = _formData['clientHolding'] ?? '';
-        _clientAddressController.text = _formData['clientAddress'] ?? '';
-        _clientContactNameController.text =
-            _formData['clientContactName'] ?? '';
-        _clientContactEmailController.text =
-            _formData['clientContactEmail'] ?? '';
-        _clientContactMobileController.text =
-            _formData['clientContactMobile'] ?? '';
       } else {
         // Clear fields when switching to manual entry
         _formData['clientName'] = '';
@@ -551,15 +497,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         _formData['clientContactEmail'] = '';
         _formData['clientContactMobile'] = '';
         _formData['clientId'] = null;
-
-        // Clear controllers
-        _clientNameController.clear();
-        _clientEmailController.clear();
-        _clientHoldingController.clear();
-        _clientAddressController.clear();
-        _clientContactNameController.clear();
-        _clientContactEmailController.clear();
-        _clientContactMobileController.clear();
       }
     });
   }
@@ -669,16 +606,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     _templateGridScrollController.dispose();
     _contentModulesScrollController.dispose();
     _projectDetailsScrollController.dispose();
-
-    _clientNameController.dispose();
-    _clientEmailController.dispose();
-    _clientHoldingController.dispose();
-    _clientAddressController.dispose();
-    _clientContactNameController.dispose();
-    _clientContactEmailController.dispose();
-    _clientContactMobileController.dispose();
-    _proposalTitleController.dispose();
-
     super.dispose();
   }
 
@@ -2423,6 +2350,20 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   }
 
   Widget _buildClientDetails() {
+    // Initialize controllers with current values and explicit LTR direction
+    final proposalTitleController = TextEditingController(
+        text: _formData['proposalTitle']?.toString() ?? '');
+    final clientNameController =
+        TextEditingController(text: _formData['clientName']?.toString() ?? '');
+    final clientEmailController =
+        TextEditingController(text: _formData['clientEmail']?.toString() ?? '');
+    final clientHoldingController = TextEditingController(
+        text: _formData['clientHolding']?.toString() ?? '');
+    final clientAddressController = TextEditingController(
+        text: _formData['clientAddress']?.toString() ?? '');
+    final clientContactMobileController = TextEditingController(
+        text: _formData['clientContactMobile']?.toString() ?? '');
+
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Builder(
@@ -2445,290 +2386,237 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 child: SingleChildScrollView(
                   controller: _clientDetailsScrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 120),
-                    child: Column(
-                      children: [
-                        _buildTextField(
-                          'Proposal Title',
-                          'Enter proposal title',
-                          (value) => setState(
-                              () => _formData['proposalTitle'] = value),
-                          Icons.description_outlined,
-                          controller: _proposalTitleController,
+                  child: Column(
+                    children: [
+                      _buildTextField(
+                        'Proposal Title',
+                        'Enter proposal title',
+                        (value) =>
+                            setState(() => _formData['proposalTitle'] = value),
+                        Icons.description_outlined,
+                        controller: proposalTitleController,
+                      ),
+                      const SizedBox(height: 20),
+                      // Client Selection Dropdown (active clients only)
+                      _buildClientDropdown(),
+                      const SizedBox(height: 20),
+                      // Client Details Fields (auto-populated or manual)
+                      if (!_useManualEntry && _selectedClient != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: Colors.green.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.check_circle,
+                                  color: Colors.green, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Client details auto-filled from database. Update the client record in Client Management to change these values.',
+                                  style: TextStyle(
+                                      color: Colors.green.shade300,
+                                      fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 20),
-                        // Client Selection Dropdown (active clients only)
-                        _buildClientDropdown(),
-                        const SizedBox(height: 20),
-                        // Client Details Fields (auto-populated or manual)
-                        if (!_useManualEntry && _selectedClient != null) ...[
-                          if ((_formData['clientName']?.toString().isEmpty ??
-                                  true) ||
-                              (_formData['clientEmail']?.toString().isEmpty ??
-                                  true) ||
-                              (_formData['clientContactName']
-                                      ?.toString()
-                                      .isEmpty ??
-                                  true) ||
-                              (_formData['clientContactEmail']
-                                      ?.toString()
-                                      .isEmpty ??
-                                  true))
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                    color: Colors.orange.withOpacity(0.4)),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.warning_amber_rounded,
-                                      color: Colors.orange, size: 18),
-                                  const SizedBox(width: 8),
-                                  const Expanded(
-                                    child: Text(
-                                      'Some client details are missing. You can temporarily fill in the missing fields here (manual override).',
-                                      style: TextStyle(
-                                        color: Colors.orange,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          else
-                            ...[
-                              // Show read-only fields when all client data is complete
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildReadOnlyField(
-                                        'Client Name',
-                                        _formData['clientName']?.toString() ??
-                                            '',
-                                        Icons.business_outlined),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _buildReadOnlyField(
-                                        'Client Email',
-                                        _formData['clientEmail']?.toString() ??
-                                            '',
-                                        Icons.email_outlined),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildReadOnlyField(
-                                        'Client Contact Name',
-                                        _formData['clientContactName']
-                                                ?.toString() ??
-                                            '',
-                                        Icons.person_outline),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _buildReadOnlyField(
-                                        'Client Contact Email',
-                                        _formData['clientContactEmail']
-                                                ?.toString() ??
-                                            '',
-                                        Icons.email_outlined),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildReadOnlyField(
-                                        'Client Contact Mobile',
-                                        _formData['clientContactMobile']
-                                                ?.toString() ??
-                                            '',
-                                        Icons.phone_iphone),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _buildReadOnlyField(
-                                        'Client Holding / Group',
-                                        _formData['clientHolding']
-                                                ?.toString() ??
-                                            '',
-                                        Icons.account_tree_outlined),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              _buildReadOnlyField(
-                                  'Client Address',
-                                  _formData['clientAddress']?.toString() ?? '',
-                                  Icons.location_on_outlined),
-                            ],
-                        ],
-                        if (_useManualEntry || _selectedClient == null) ...[
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTextField(
-                                  'Client Name',
-                                  'Company or contact name',
-                                  (value) => setState(
-                                      () => _formData['clientName'] = value),
-                                  Icons.business_outlined,
-                                  controller: _clientNameController,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildTextField(
-                                  'Client Email',
-                                  'client@company.com',
-                                  (value) => setState(() {
-                                    _formData['clientEmail'] = value;
-                                    if ((_formData['clientContactEmail']
-                                            ?.toString()
-                                            .isEmpty ??
-                                        true)) {
-                                      _formData['clientContactEmail'] = value;
-                                    }
-                                  }),
-                                  Icons.email_outlined,
-                                  keyboardType: TextInputType.emailAddress,
-                                  controller: _clientEmailController,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ] else ...[
-                          // When a client is selected, keep populated fields read-only
-                          // but allow manual override for any missing core fields.
-                          Row(
-                            children: [
-                              Expanded(
-                                child: (_formData['clientName']
-                                            ?.toString()
-                                            .isEmpty ??
-                                        true)
-                                    ? _buildTextField(
-                                        'Client Name',
-                                        'Company or contact name',
-                                        (value) => setState(() =>
-                                            _formData['clientName'] = value),
-                                        Icons.business_outlined,
-                                        controller: _clientNameController,
-                                      )
-                                    : _buildReadOnlyField(
-                                        'Client Name',
-                                        _formData['clientName']?.toString() ??
-                                            '',
-                                        Icons.business_outlined,
-                                      ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: (_formData['clientEmail']
-                                            ?.toString()
-                                            .isEmpty ??
-                                        true)
-                                    ? _buildTextField(
-                                        'Client Email',
-                                        'client@company.com',
-                                        (value) => setState(() {
-                                          _formData['clientEmail'] = value;
-                                          if ((_formData['clientContactEmail']
-                                                  ?.toString()
-                                                  .isEmpty ??
-                                              true)) {
-                                            _formData['clientContactEmail'] =
-                                                value;
-                                          }
-                                        }),
-                                        Icons.email_outlined,
-                                        keyboardType:
-                                            TextInputType.emailAddress,
-                                        controller: _clientEmailController,
-                                      )
-                                    : _buildReadOnlyField(
-                                        'Client Email',
-                                        _formData['clientEmail']?.toString() ??
-                                            '',
-                                        Icons.email_outlined,
-                                      ),
-                              ),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(height: 20),
-                        if (_useManualEntry ||
-                            _selectedClient == null ||
-                            (_formData['clientContactMobile']
+                        const SizedBox(height: 12),
+                        if ((_formData['clientName']?.toString().isEmpty ??
+                                true) ||
+                            (_formData['clientEmail']?.toString().isEmpty ??
+                                true) ||
+                            (_formData['clientContactName']
+                                    ?.toString()
+                                    .isEmpty ??
+                                true) ||
+                            (_formData['clientContactEmail']
                                     ?.toString()
                                     .isEmpty ??
                                 true))
-                          _buildTextField(
-                            'Client Contact Mobile',
-                            'Mobile number',
-                            (value) => setState(
-                                () => _formData['clientContactMobile'] = value),
-                            Icons.phone_iphone,
-                            keyboardType: TextInputType.phone,
-                            controller: _clientContactMobileController,
-                          )
-                        else
-                          _buildReadOnlyField(
-                            'Client Contact Mobile',
-                            _formData['clientContactMobile']?.toString() ?? '',
-                            Icons.phone_iphone,
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.orange.withOpacity(0.4)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning_amber_rounded,
+                                    color: Colors.orange, size: 18),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'Some client details are missing. You can temporarily fill in the missing fields here (manual override).',
+                                    style: TextStyle(
+                                      color: Colors.orange,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        const SizedBox(height: 20),
-                        if (_useManualEntry ||
-                            _selectedClient == null ||
-                            (_formData['clientHolding']?.toString().isEmpty ??
-                                true))
-                          _buildTextField(
-                            'Client Holding / Group',
-                            'Parent company or group',
-                            (value) => setState(
-                                () => _formData['clientHolding'] = value),
-                            Icons.account_tree_outlined,
-                            controller: _clientHoldingController,
-                          )
-                        else
-                          _buildReadOnlyField(
-                            'Client Holding / Group',
-                            _formData['clientHolding']?.toString() ?? '',
-                            Icons.account_tree_outlined,
-                          ),
-                        const SizedBox(height: 20),
-                        if (_useManualEntry ||
-                            _selectedClient == null ||
-                            (_formData['clientAddress']?.toString().isEmpty ??
-                                true))
-                          _buildTextField(
-                            'Client Address',
-                            'Physical or postal address',
-                            (value) => setState(
-                                () => _formData['clientAddress'] = value),
-                            Icons.location_on_outlined,
-                            controller: _clientAddressController,
-                          )
-                        else
-                          _buildReadOnlyField(
-                            'Client Address',
-                            _formData['clientAddress']?.toString() ?? '',
-                            Icons.location_on_outlined,
-                          ),
-                        const SizedBox(height: 20), // Add this line
                       ],
-                    ),
+                      if (_useManualEntry || _selectedClient == null) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Name',
+                                'Company or contact name',
+                                (value) => setState(
+                                    () => _formData['clientName'] = value),
+                                Icons.business_outlined,
+                                controller: clientNameController,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Email',
+                                'client@company.com',
+                                (value) => setState(() {
+                                  _formData['clientEmail'] = value;
+                                  if ((_formData['clientContactEmail']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)) {
+                                    _formData['clientContactEmail'] = value;
+                                  }
+                                }),
+                                Icons.email_outlined,
+                                keyboardType: TextInputType.emailAddress,
+                                controller: clientEmailController,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        // When a client is selected, keep populated fields read-only
+                        // but allow manual override for any missing core fields.
+                        Row(
+                          children: [
+                            Expanded(
+                              child: (_formData['clientName']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)
+                                  ? _buildTextField(
+                                      'Client Name',
+                                      'Company or contact name',
+                                      (value) => setState(() =>
+                                          _formData['clientName'] = value),
+                                      Icons.business_outlined,
+                                      controller: clientNameController,
+                                    )
+                                  : _buildReadOnlyField(
+                                      'Client Name',
+                                      _formData['clientName']?.toString() ?? '',
+                                      Icons.business_outlined,
+                                    ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: (_formData['clientEmail']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)
+                                  ? _buildTextField(
+                                      'Client Email',
+                                      'client@company.com',
+                                      (value) => setState(() {
+                                        _formData['clientEmail'] = value;
+                                        if ((_formData['clientContactEmail']
+                                                ?.toString()
+                                                .isEmpty ??
+                                            true)) {
+                                          _formData['clientContactEmail'] =
+                                              value;
+                                        }
+                                      }),
+                                      Icons.email_outlined,
+                                      keyboardType: TextInputType.emailAddress,
+                                      controller: clientEmailController,
+                                    )
+                                  : _buildReadOnlyField(
+                                      'Client Email',
+                                      _formData['clientEmail']?.toString() ??
+                                          '',
+                                      Icons.email_outlined,
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientHolding']?.toString().isEmpty ??
+                              true))
+                        _buildTextField(
+                          'Client Holding / Group',
+                          'Parent company or group',
+                          (value) => setState(
+                              () => _formData['clientHolding'] = value),
+                          Icons.account_tree_outlined,
+                          controller: clientHoldingController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Holding / Group',
+                          _formData['clientHolding']?.toString() ?? '',
+                          Icons.account_tree_outlined,
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientAddress']?.toString().isEmpty ??
+                              true))
+                        _buildTextField(
+                          'Client Address',
+                          'Physical or postal address',
+                          (value) => setState(
+                              () => _formData['clientAddress'] = value),
+                          Icons.location_on_outlined,
+                          controller: clientAddressController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Address',
+                          _formData['clientAddress']?.toString() ?? '',
+                          Icons.location_on_outlined,
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientContactMobile']
+                                  ?.toString()
+                                  .isEmpty ??
+                              true))
+                        _buildTextField(
+                          'Client Contact Mobile',
+                          'Mobile number',
+                          (value) => setState(
+                              () => _formData['clientContactMobile'] = value),
+                          Icons.phone_iphone,
+                          keyboardType: TextInputType.phone,
+                          controller: clientContactMobileController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Contact Mobile',
+                          _formData['clientContactMobile']?.toString() ?? '',
+                          Icons.phone_iphone,
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -3129,7 +3017,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         Directionality(
           textDirection: TextDirection.ltr,
           child: DropdownButtonFormField<Map<String, dynamic>>(
-            value: _selectedClient,
+            initialValue: _selectedClient,
             style: PremiumTheme.bodyMedium.copyWith(
               color: PremiumTheme.textPrimary,
             ),
@@ -3181,25 +3069,33 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 final email = client['email'] ?? '';
                 return DropdownMenuItem<Map<String, dynamic>>(
                   value: client,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        name,
-                        style: PremiumTheme.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (email.isNotEmpty)
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 40),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         Text(
-                          email,
+                          name,
                           style: PremiumTheme.bodyMedium.copyWith(
-                            color: PremiumTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
                             fontSize: 12,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                    ],
+                        if (email.isNotEmpty)
+                          Text(
+                            email,
+                            style: PremiumTheme.bodyMedium.copyWith(
+                              color: PremiumTheme.textSecondary,
+                              fontSize: 10,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
                   ),
                 );
               }),
@@ -3666,7 +3562,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       );
     }
 
-    final riskLevel = _riskAssessment["risk_level"]?.toString().toUpperCase() ?? "UNKNOWN";
+    final riskLevel =
+        _riskAssessment["risk_level"]?.toString().toUpperCase() ?? "UNKNOWN";
     final riskScore = (_riskAssessment["risk_score"] as num?)?.toInt() ?? 0;
     final issues = List<Map<String, dynamic>>.from(
       _riskAssessment["issues"] ?? const [],
@@ -3679,9 +3576,14 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     final priorityBreakdown = Map<String, int>.from(
       _riskAssessment["priority_breakdown"] ?? const {},
     );
+    final summary = (_riskAssessment["summary"] ?? '').toString();
+    final isBlocked = riskLevel == "BLOCK" || canRelease == false;
+    final status = riskLevel;
 
     Color riskColor;
-    if (riskLevel == "BLOCK" || riskLevel == "CRITICAL" || riskLevel == "HIGH") {
+    if (riskLevel == "BLOCK" ||
+        riskLevel == "CRITICAL" ||
+        riskLevel == "HIGH") {
       riskColor = PremiumTheme.error;
     } else if (riskLevel == "REVIEW" || riskLevel == "MEDIUM") {
       riskColor = Colors.orange;
@@ -3756,7 +3658,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      Icons.warning_amber_rounded,
+                      isBlocked ? Icons.block : Icons.warning_amber_rounded,
                       color: riskColor,
                       size: 32,
                     ),
@@ -3767,14 +3669,14 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Risk Level: $riskLevel',
+                          'Risk Level: ${status.toString().toUpperCase()}',
                           style: PremiumTheme.titleMedium.copyWith(
                             color: riskColor,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Risk Score: ${riskScore.toStringAsFixed(0)}/100',
+                          'Risk Score: ${riskScore.toStringAsFixed(0)}%',
                           style: PremiumTheme.bodyMedium,
                         ),
                       ],
@@ -3782,10 +3684,36 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                   ),
                 ],
               ),
+              if (summary.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Risk Summary',
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        summary,
+                        style: PremiumTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
-        const SizedBox(height: 16),
+        
         if (recommendations.isNotEmpty) ...[
           Text(
             'AI Recommendations',
@@ -3830,7 +3758,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         ],
         if (issues.isNotEmpty) ...[
           Text(
-            'Flagged Issues',
+            'Detected Issues (${issues.length})',
             style: PremiumTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -3842,6 +3770,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             final description = issue['description']?.toString() ?? '';
             final action = issue["recommendation"]?.toString() ?? "";
             final category = issue["category"]?.toString() ?? "";
+            final type = category;
             final severity = issue['severity']?.toString().toLowerCase() ?? '';
 
             // KB Citations are now part of the issue itself if available
@@ -3852,6 +3781,13 @@ class _ProposalWizardPageState extends State<ProposalWizard>
               iconColor = PremiumTheme.error;
             } else if (severity == 'medium') {
               iconColor = Colors.orange;
+            }
+
+            IconData issueIcon = Icons.info_outline;
+            if (type == 'structural') {
+              issueIcon = Icons.build_outlined;
+            } else if (type == 'clause') {
+              issueIcon = Icons.gavel_outlined;
             }
 
             return Padding(
@@ -3865,10 +3801,17 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.flag_outlined,
-                          color: iconColor,
-                          size: 20,
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: iconColor.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            issueIcon,
+                            color: iconColor,
+                            size: 20,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -3896,73 +3839,28 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                   description,
                                   style: PremiumTheme.bodyMedium,
                                 ),
-                              ],
-                              if (action.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Text(
-                                  'Recommendation:',
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  action,
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    color: PremiumTheme.textSecondary,
-                                  ),
-                                ),
-                              ],
-                              if (kbTitle.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Text(
-                                  'KB citation:',
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  kbTitle,
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    color: PremiumTheme.textSecondary,
-                                  ),
-                                ),
-                              ],
+                              ),
                             ],
                           ),
                         ),
-                        if (action.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          IconButton(
-                            tooltip: 'Copy fix',
-                            onPressed: () async {
-                              await Clipboard.setData(
-                                ClipboardData(text: action),
-                              );
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Fix copied'),
-                                  ),
-                                );
-                              }
-                            },
-                            icon: const Icon(Icons.copy, size: 18),
-                          ),
-                        ],
                       ],
                     ),
                   ],
                 ),
               ),
             );
-          }),
-          const SizedBox(height: 4),
+          }).toList(),
         ],
-
       ],
     );
+  }
+
+  String _formatSectionTitle(String section) {
+    return section
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
   }
 
   // Internal Approval Builder

@@ -60,7 +60,7 @@ except ImportError:
     # DocuSign SDK missing: warn user (emoji-friendly message)
     print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
-from flask import Flask, request, jsonify, send_file, Response, send_from_directory
+from flask import Flask, request, jsonify, send_file, Response, send_from_directory, has_request_context
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -75,17 +75,40 @@ from api.utils.ai_safety import AISafetyError
 load_dotenv(dotenv_path=Path(__file__).resolve().with_name('.env'), override=True)
 
 app = Flask(__name__)
+
+# Flask-Cors origin matching is strict unless you provide regex objects.
+# Use compiled regexes so localhost dev ports (Flutter web) are allowed.
+_cors_origins = [
+    "https://proposals2025.netlify.app",
+    # Allow Flutter web dev server ports (e.g. http://localhost:56886)
+    re.compile(r"^http://localhost(:\d+)?$"),
+    re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
+    # Common local dev ports
+    "http://localhost:5173",
+    "http://localhost:5000",
+    "http://localhost:8081",
+    "http://localhost:50478",  # Add your specific port
+]
+
+# Also allow a configured frontend origin (Render/Netlify/custom domain).
+# FRONTEND_URL may contain a path; CORS needs just the origin.
+try:
+    _frontend_url = (os.getenv("FRONTEND_URL") or "").strip()
+    if _frontend_url:
+        parsed_frontend = urlparse(_frontend_url)
+        if parsed_frontend.scheme and parsed_frontend.netloc:
+            _cors_origins.append(f"{parsed_frontend.scheme}://{parsed_frontend.netloc}")
+except Exception:
+    # Never fail app startup due to CORS parsing.
+    pass
+
 CORS(
     app,
+    origins=_cors_origins,
     supports_credentials=True,
-    resources={
-        r"/*": {
-            "origins": ["*"],
-            "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
-            "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
-            "expose_headers": ["Content-Type", "Authorization"],
-        }
-    },
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+    methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
+    expose_headers=["Content-Type", "Authorization"],
 )
 
 @app.route("/", methods=["OPTIONS"])
@@ -100,6 +123,14 @@ def handle_options_preflight(remaining=None):
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
     return resp
 
+
+# Explicit OPTIONS handlers for finance export (CORS preflight); registered before blueprint so they take precedence
+@app.route("/api/finance/export/proposal-summary", methods=["OPTIONS"])
+@app.route("/api/finance/export/client-report", methods=["OPTIONS"])
+@app.route("/api/finance/export/summary-stats", methods=["OPTIONS"])
+def finance_export_options_preflight():
+    return handle_options_preflight()
+
 # Register API blueprints
 from api.routes.auth import bp as auth_bp
 from api.routes.proposals import bp as proposals_bp
@@ -112,6 +143,8 @@ from api.routes.approver import bp as approver_bp
 from api.routes.cycle_time import bp as cycle_time_bp
 from api.routes.pipeline import bp as pipeline_bp
 from api.routes.risk_gate import bp as risk_gate_bp
+from api.routes.finance_export import bp as finance_export_bp
+from api.routes.finance_audit import bp as finance_audit_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -124,6 +157,8 @@ app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp)
+app.register_blueprint(finance_export_bp, url_prefix='/api')
+app.register_blueprint(finance_audit_bp, url_prefix='/api')
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -139,7 +174,10 @@ limiter = Limiter(
             "default_limits": (
                 ["1000000 per day", "100000 per hour"]
                 if os.getenv("DEV_BYPASS_AUTH", "false").lower() in ("1", "true", "yes")
-                else ["200 per day", "50 per hour"]
+                else [
+                    os.getenv("RATE_LIMIT_PER_DAY", "5000 per day"),
+                    os.getenv("RATE_LIMIT_PER_HOUR", "500 per hour"),
+                ]
             ),
             **(
                 {"request_filter": (lambda: request.method == "OPTIONS")}
@@ -189,8 +227,16 @@ def _build_db_config_from_env():
         from urllib.parse import urlparse, parse_qs
 
         parsed = urlparse(database_url)
-        if parsed.scheme not in ('postgres', 'postgresql'):
-            raise ValueError('DATABASE_URL must start with postgres:// or postgresql://')
+        # Accept common Postgres URL scheme variants.
+        # psycopg2 uses a standard Postgres DSN; SQLAlchemy URLs may include a driver.
+        scheme = (parsed.scheme or '').lower()
+        if scheme.startswith('postgresql+'):
+            scheme = 'postgresql'
+        if scheme not in ('postgres', 'postgresql'):
+            raise ValueError(
+                'DATABASE_URL must start with postgres:// or postgresql:// '
+                '(optionally with a driver like postgresql+psycopg2://)'
+            )
 
         db_config = {
             'host': parsed.hostname,
@@ -235,6 +281,18 @@ def get_pg_pool():
         import psycopg2.pool
         try:
             db_config = _build_db_config_from_env()
+            # Helpful hint for a common Render misconfiguration:
+            # Render "Internal Database URL" hosts often look like "dpg-xxxx-a" (no dots).
+            # That value won't resolve outside Render's internal network; in that case you
+            # must use the External Database URL / full host like "dpg-xxxx-a.<region>-postgres.render.com".
+            host = (db_config.get('host') or '').strip()
+            if host.startswith('dpg-') and '.' not in host:
+                print(
+                    "[WARN] DB host looks like a Render internal hostname without a domain "
+                    f"({host!r}). If this service is not on Render's private network, "
+                    "set DATABASE_URL to the External Database URL (with a full *.render.com hostname) "
+                    "or set DB_HOST to the full hostname."
+                )
             if 'sslmode' in db_config:
                 print(f"[*] Using SSL mode: {db_config['sslmode']} for external connection")
             print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
@@ -340,6 +398,87 @@ def init_pg_schema():
         client_can_edit BOOLEAN DEFAULT false,
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS finance_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER,
+            username VARCHAR(255),
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(64) NOT NULL,
+            field_name VARCHAR(255) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            action_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_entity
+               ON finance_audit_logs(entity_type, entity_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_user
+               ON finance_audit_logs(user_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_compliance (
+            proposal_id INTEGER PRIMARY KEY,
+            status VARCHAR(20) NOT NULL,
+            reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_compliance_status
+               ON proposal_compliance(status, evaluated_at DESC)'''
+        )
+
+        # Ensure the status CHECK constraint supports the full workflow.
+        # This is critical for production (Render) where the constraint may already exist.
+        try:
+            cursor.execute("""
+                ALTER TABLE proposals
+                DROP CONSTRAINT IF EXISTS proposals_status_check;
+            """)
+
+            cursor.execute("""
+                ALTER TABLE proposals
+                ADD CONSTRAINT proposals_status_check
+                CHECK (
+                    status IN (
+                        'draft',
+                        'Draft',
+                        'submitted',
+                        'Submitted',
+                        'approved',
+                        'Approved',
+                        'rejected',
+                        'Rejected',
+                        'archived',
+                        'Archived',
+                        'Pending CEO Approval',
+                        'Pending Approval',
+                        'Pricing In Progress',
+                        'Priced',
+                        'Sent to Client',
+                        'Sent for Signature',
+                        'In Review',
+                        'Signed',
+                        'signed',
+                        'Client Signed',
+                        'Client Approved',
+                        'Client Declined'
+                    ) OR status IS NULL
+                );
+            """)
+        except Exception as e:
+            print(f"[WARN] Could not update proposals_status_check constraint: {e}")
 
         # Risk Gate runs + override audit trail
         cursor.execute(
@@ -577,6 +716,16 @@ def init_pg_schema():
 def init_db():
     """Initialize PostgreSQL schema on first request"""
     global _db_initialized
+    # If someone calls init_db() manually (e.g., from __main__ or a script),
+    # Flask's request proxy won't be available. Handle that gracefully.
+    if not has_request_context():
+        if _db_initialized:
+            return
+        print("[*] Initializing PostgreSQL schema (no request context)...")
+        init_pg_schema()
+        _db_initialized = True
+        print("[OK] Database schema initialized successfully")
+        return
     # Skip initialization for CORS preflight requests to avoid non-2xx responses
     # which will cause browsers to block the request due to failed preflight.
     if request.method == 'OPTIONS':
@@ -6813,7 +6962,12 @@ def initialize_database():
 if __name__ == '__main__':
     # When running with 'python app.py'
     try:
-        init_db()  # Initialize database before running
+        # Initialize schema up-front for local runs. Don't call init_db() here
+        # because it expects a Flask request context.
+        print("[*] Initializing PostgreSQL schema (startup)...")
+        init_pg_schema()
+        _db_initialized = True
+        print("[OK] Database schema initialized successfully")
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
     import os

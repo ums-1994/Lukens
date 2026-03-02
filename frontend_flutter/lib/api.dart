@@ -1,6 +1,7 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:convert';
 import 'dart:js' as js;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
@@ -441,14 +442,18 @@ class AppState extends ChangeNotifier {
   String _normalizeStatus(String? status) {
     if (status == null || status.isEmpty) return 'Draft';
 
-    final lowerStatus = status.toLowerCase().trim();
+    final lowerStatus = status.toLowerCase().trim().replaceAll('_', ' ');
 
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
     if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
-      return 'Pending CEO Approval';
+      return 'Pending Approval';
+    if (lowerStatus.contains('pending') && lowerStatus.contains('approval'))
+      return 'Pending Approval';
     if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
       return 'Sent to Client';
+    if (lowerStatus.contains('released')) return 'Sent to Client';
+    if (lowerStatus == 'sent') return 'Sent to Client';
     if (lowerStatus == 'signed' ||
         lowerStatus == 'approved' ||
         lowerStatus == 'client signed' ||
@@ -529,12 +534,17 @@ class AppState extends ChangeNotifier {
         headers: _headers,
         body: jsonEncode({"status": status}),
       );
-      if (r.statusCode == 200) {
-        await fetchProposals();
-        notifyListeners();
+      if (r.statusCode != 200) {
+        throw Exception(
+          'Failed to update proposal status (${r.statusCode}): ${r.body}',
+        );
       }
+
+      await fetchProposals();
+      notifyListeners();
     } catch (e) {
       print('Error updating proposal status: $e');
+      rethrow;
     }
   }
 
@@ -593,6 +603,8 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -605,6 +617,8 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -627,11 +641,19 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
     String? stage,
+    String? stageFilter,
   }) async {
     try {
+      final resolvedStage = (stage != null && stage.isNotEmpty)
+          ? stage
+          : (stageFilter != null && stageFilter.isNotEmpty)
+              ? stageFilter
+              : null;
       final uri = Uri.parse("$baseUrl/api/analytics/proposal-pipeline").replace(
         queryParameters: {
           if (startDate != null) 'start_date': startDate,
@@ -640,6 +662,8 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -664,6 +688,7 @@ class AppState extends ChangeNotifier {
     String? proposalType,
     String? client,
     String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -677,6 +702,7 @@ class AppState extends ChangeNotifier {
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
           if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -699,6 +725,8 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -712,6 +740,8 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -735,31 +765,40 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
     int? limit,
   }) async {
     try {
-      final uri = Uri.parse("$baseUrl/api/risk-gate/proposals").replace(
-        queryParameters: {
-          'risk_status': riskStatus,
-          if (startDate != null) 'start_date': startDate,
-          if (endDate != null) 'end_date': endDate,
-          if (owner != null && owner.isNotEmpty) 'owner': owner,
-          if (proposalType != null && proposalType.isNotEmpty)
-            'proposal_type': proposalType,
-          if (client != null && client.isNotEmpty) 'client': client,
-          if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty)
-            'department': department,
-          if (limit != null) 'limit': limit.toString(),
-        },
-      );
+      final queryParameters = <String, String>{
+        'risk_status': riskStatus,
+        if (startDate != null) 'start_date': startDate,
+        if (endDate != null) 'end_date': endDate,
+        if (owner != null && owner.isNotEmpty) 'owner': owner,
+        if (proposalType != null && proposalType.isNotEmpty)
+          'proposal_type': proposalType,
+        if (client != null && client.isNotEmpty) 'client': client,
+        if (region != null && region.isNotEmpty) 'region': region,
+        if (industry != null && industry.isNotEmpty) 'industry': industry,
+        if (scope != null && scope.isNotEmpty) 'scope': scope,
+        if (department != null && department.isNotEmpty)
+          'department': department,
+        if (limit != null) 'limit': limit.toString(),
+      };
 
-      final r = await http.get(uri, headers: _headers);
-      if (r.statusCode == 200) {
-        return jsonDecode(r.body);
-      }
+      final analyticsUri =
+          Uri.parse("$baseUrl/api/analytics/risk-gate-proposals")
+              .replace(queryParameters: queryParameters);
+      final legacyUri = Uri.parse("$baseUrl/api/risk-gate/proposals")
+          .replace(queryParameters: queryParameters);
+
+      final r1 = await http.get(analyticsUri, headers: _headers);
+      if (r1.statusCode == 200) return jsonDecode(r1.body);
+
+      final r2 = await http.get(legacyUri, headers: _headers);
+      if (r2.statusCode == 200) return jsonDecode(r2.body);
     } catch (e) {
       print('Error fetching risk gate proposals: $e');
     }
@@ -772,28 +811,36 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
     try {
-      final uri = Uri.parse("$baseUrl/api/risk-gate/summary").replace(
-        queryParameters: {
-          if (startDate != null) 'start_date': startDate,
-          if (endDate != null) 'end_date': endDate,
-          if (owner != null && owner.isNotEmpty) 'owner': owner,
-          if (proposalType != null && proposalType.isNotEmpty)
-            'proposal_type': proposalType,
-          if (client != null && client.isNotEmpty) 'client': client,
-          if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty)
-            'department': department,
-        },
-      );
+      final queryParameters = <String, String>{
+        if (startDate != null) 'start_date': startDate,
+        if (endDate != null) 'end_date': endDate,
+        if (owner != null && owner.isNotEmpty) 'owner': owner,
+        if (proposalType != null && proposalType.isNotEmpty)
+          'proposal_type': proposalType,
+        if (client != null && client.isNotEmpty) 'client': client,
+        if (region != null && region.isNotEmpty) 'region': region,
+        if (industry != null && industry.isNotEmpty) 'industry': industry,
+        if (scope != null && scope.isNotEmpty) 'scope': scope,
+        if (department != null && department.isNotEmpty)
+          'department': department,
+      };
 
-      final r = await http.get(uri, headers: _headers);
-      if (r.statusCode == 200) {
-        return jsonDecode(r.body);
-      }
+      final analyticsUri = Uri.parse("$baseUrl/api/analytics/risk-gate-summary")
+          .replace(queryParameters: queryParameters);
+      final legacyUri = Uri.parse("$baseUrl/api/risk-gate/summary")
+          .replace(queryParameters: queryParameters);
+
+      final r1 = await http.get(analyticsUri, headers: _headers);
+      if (r1.statusCode == 200) return jsonDecode(r1.body);
+
+      final r2 = await http.get(legacyUri, headers: _headers);
+      if (r2.statusCode == 200) return jsonDecode(r2.body);
     } catch (e) {
       print('Error fetching risk gate summary: $e');
     }
@@ -1105,17 +1152,20 @@ class AppState extends ChangeNotifier {
   // Proposal Analytics
   Future<Map<String, dynamic>?> getProposalAnalytics(String proposalId) async {
     try {
-      final r = await http.get(
+      final response = await http.get(
         Uri.parse("$baseUrl/api/proposals/$proposalId/analytics"),
         headers: _headers,
       );
-      if (r.statusCode == 200) {
-        return jsonDecode(r.body);
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        print('Error fetching analytics: ${response.statusCode}');
+        return null;
       }
     } catch (e) {
-      print('Error fetching proposal analytics: $e');
+      print('Error fetching analytics: $e');
+      return null;
     }
-    return null;
   }
 
   // Cycle Time Analytics
@@ -1125,6 +1175,9 @@ class AppState extends ChangeNotifier {
     String? status,
     String? owner,
     String? proposalType,
+    String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -1137,6 +1190,9 @@ class AppState extends ChangeNotifier {
           if (owner != null && owner.isNotEmpty) 'owner': owner,
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -1469,10 +1525,52 @@ class AppState extends ChangeNotifier {
     proposals = [];
     currentProposal = null;
     dashboardCounts = {};
+    _isSidebarCollapsed = false;
+    _currentNavLabel = 'Dashboard';
+    _isAdminSidebarCollapsed = true;
+    _adminNavLabel = 'Dashboard';
 
     // IMPORTANT: Sync logout with AuthService
     AuthService.logout();
 
+    notifyListeners();
+  }
+
+  // Navigation and sidebar state management
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'Dashboard';
+  bool _isAdminSidebarCollapsed = true;
+  String _adminNavLabel = 'Dashboard';
+
+  bool get isSidebarCollapsed => _isSidebarCollapsed;
+  String get currentNavLabel => _currentNavLabel;
+  bool get isAdminSidebarCollapsed => _isAdminSidebarCollapsed;
+  String get adminNavLabel => _adminNavLabel;
+
+  void toggleSidebar() {
+    _isSidebarCollapsed = !_isSidebarCollapsed;
+    notifyListeners();
+  }
+
+  void setCurrentNavLabel(String label) {
+    _currentNavLabel = label;
+    notifyListeners();
+  }
+
+  void toggleAdminSidebar() {
+    _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed;
+    notifyListeners();
+  }
+
+  void setAdminSidebarCollapsed(bool collapsed) {
+    if (_isAdminSidebarCollapsed == collapsed) return;
+    _isAdminSidebarCollapsed = collapsed;
+    notifyListeners();
+  }
+
+  void setAdminNavLabel(String label) {
+    if (_adminNavLabel == label) return;
+    _adminNavLabel = label;
     notifyListeners();
   }
 }

@@ -4,7 +4,6 @@ import 'api_service.dart';
 
 class ClientService {
   static String get baseUrl => ApiService.baseUrl;
-
   static String get _clientsBase => '$baseUrl/api/clients';
 
   // Get headers with token
@@ -88,7 +87,6 @@ class ClientService {
       final cleanAddress = clean(address);
       final cleanClientContactEmail = clean(clientContactEmail);
       final cleanClientContactMobile = clean(clientContactMobile);
-
       final response = await http.patch(
         Uri.parse('$_clientsBase/$clientId'),
         headers: _getHeaders(token),
@@ -137,7 +135,6 @@ class ClientService {
       return false;
     }
   }
-
   // ============================================================
   // CLIENT MANAGEMENT
   // ============================================================

@@ -200,13 +200,19 @@ class SectionWidget extends StatelessWidget {
               // Display tables below text (with drag and drop)
               if (section.tables.isNotEmpty)
                 ReorderableListView(
+                  padding: EdgeInsets.zero,
+                  primary: false,
+                  buildDefaultDragHandles: false,
                   shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
+                  physics: const ClampingScrollPhysics(),
                   onReorder: onReorderTables,
                   children: section.tables.asMap().entries.map((entry) {
                     final tableIndex = entry.key;
                     final table = entry.value;
-                    return buildInteractiveTable(tableIndex, table);
+                    return KeyedSubtree(
+                      key: ObjectKey(table),
+                      child: buildInteractiveTable(tableIndex, table),
+                    );
                   }).toList(),
                 )
               else

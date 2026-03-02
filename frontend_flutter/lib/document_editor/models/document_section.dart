@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'inline_image.dart';
 import 'document_table.dart';
+import 'positioned_pricing_table.dart';
 
 class DocumentSection {
   String title;
@@ -16,6 +17,7 @@ class DocumentSection {
   bool isCoverPage;
   List<InlineImage> inlineImages; // Inline content images (not backgrounds)
   List<DocumentTable> tables; // Tables in this section
+  List<PositionedPricingTable> positionedPricingTables;
 
   DocumentSection({
     required this.title,
@@ -26,10 +28,12 @@ class DocumentSection {
     this.isCoverPage = false,
     List<InlineImage>? inlineImages,
     List<DocumentTable>? tables,
+    List<PositionedPricingTable>? positionedPricingTables,
   })  : controller = TextEditingController(text: content),
         titleController = TextEditingController(text: title),
         contentFocus = FocusNode(),
         titleFocus = FocusNode(),
         inlineImages = inlineImages ?? [],
-        tables = tables ?? [];
+        tables = tables ?? [],
+        positionedPricingTables = positionedPricingTables ?? [];
 }

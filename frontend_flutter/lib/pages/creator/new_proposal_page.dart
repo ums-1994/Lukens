@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/api_service.dart';
+import 'blank_document_editor_page.dart';
 
 class NewProposalPage extends StatefulWidget {
   const NewProposalPage({super.key});
@@ -31,7 +32,7 @@ class _NewProposalPageState extends State<NewProposalPage> {
     setState(() => _isLoading = true);
     try {
       final app = context.read<AppState>();
-      final created = await app.createProposal(
+      await app.createProposal(
         _titleController.text.trim(),
         _clientController.text.trim(),
       );
@@ -40,14 +41,8 @@ class _NewProposalPageState extends State<NewProposalPage> {
         const SnackBar(content: Text('Proposal created')),
       );
 
-      final proposalId = created?['id']?.toString();
-      Navigator.pushReplacementNamed(
-        context,
-        '/finance_dashboard',
-        arguments: {
-          'openProposalId': proposalId,
-        },
-      );
+      // After creating, go to proposals list
+      Navigator.pushReplacementNamed(context, '/proposals');
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error creating proposal: $e')),
@@ -318,8 +313,8 @@ class _NewProposalPageState extends State<NewProposalPage> {
       showDialog(
         context: context,
         barrierDismissible: false,
-        builder: (context) => WillPopScope(
-          onWillPop: () async => false,
+        builder: (context) => PopScope(
+          canPop: false,
           child: AlertDialog(
             content: Column(
               mainAxisSize: MainAxisSize.min,
@@ -376,22 +371,22 @@ Generate a detailed, professional proposal with all necessary sections.
 
       if (result != null && result['sections'] != null) {
         // Create proposal first
-        final created = await app.createProposal(
+        await app.createProposal(
           _titleController.text.trim(),
           _clientController.text.trim(),
         );
 
         if (!mounted) return;
 
-        final proposalId = created?['id']?.toString();
-        Navigator.pushReplacementNamed(
+        // Navigate to blank document editor with AI-generated content
+        Navigator.pushReplacement(
           context,
-          '/finance_dashboard',
-          arguments: {
-            'openProposalId': proposalId,
-            'aiGeneratedSections': result['sections'] as Map<String, dynamic>,
-            'initialTitle': _titleController.text,
-          },
+          MaterialPageRoute(
+            builder: (context) => BlankDocumentEditorPage(
+              initialTitle: _titleController.text,
+              aiGeneratedSections: result['sections'] as Map<String, dynamic>,
+            ),
+          ),
         );
 
         // Show success message

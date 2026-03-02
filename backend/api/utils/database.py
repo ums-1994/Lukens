@@ -236,6 +236,87 @@ def init_pg_schema():
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
 
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS finance_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER,
+            username VARCHAR(255),
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(64) NOT NULL,
+            field_name VARCHAR(255) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            action_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_entity
+               ON finance_audit_logs(entity_type, entity_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_user
+               ON finance_audit_logs(user_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_compliance (
+            proposal_id INTEGER PRIMARY KEY,
+            status VARCHAR(20) NOT NULL,
+            reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_compliance_status
+               ON proposal_compliance(status, evaluated_at DESC)'''
+        )
+
+        try:
+            cursor.execute("""
+                ALTER TABLE proposals
+                DROP CONSTRAINT IF EXISTS proposals_status_check;
+            """)
+
+            cursor.execute("""
+                ALTER TABLE proposals
+                ADD CONSTRAINT proposals_status_check
+                CHECK (
+                    status IN (
+                        'draft',
+                        'Draft',
+                        'submitted',
+                        'Submitted',
+                        'approved',
+                        'Approved',
+                        'rejected',
+                        'Rejected',
+                        'archived',
+                        'Archived',
+                        'Pending CEO Approval',
+                        'Pending Approval',
+                        'Pricing In Progress',
+                        'Priced',
+                        'Changes Requested',
+                        'changes requested',
+                        'Sent to Client',
+                        'Sent for Signature',
+                        'In Review',
+                        'Signed',
+                        'signed',
+                        'Client Signed',
+                        'Client Approved',
+                        'Client Declined'
+                    ) OR status IS NULL
+                );
+            """)
+        except Exception as e:
+            print(f"[WARN] Could not update proposals_status_check constraint: {e}")
+
         # Ensure client_email column exists for storing client contact email
         try:
             cursor.execute('''

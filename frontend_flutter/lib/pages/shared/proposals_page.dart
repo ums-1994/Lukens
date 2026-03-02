@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
+
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
-import '../../services/asset_service.dart';
 import 'package:provider/provider.dart';
 import '../../api.dart';
-import '../../widgets/footer.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/app_side_nav.dart';
 
 class ProposalsPage extends StatefulWidget {
   const ProposalsPage({super.key});
@@ -17,36 +17,87 @@ class ProposalsPage extends StatefulWidget {
 
 class _ProposalsPageState extends State<ProposalsPage>
     with TickerProviderStateMixin {
-  static const Color _navSurface = Color(0xFF1A1F2B);
-  static const Color _navBorder = Color(0xFF1F2A3D);
   String _filterStatus = 'All Statuses';
   final TextEditingController _searchController = TextEditingController();
   List<Map<String, dynamic>> proposals = [];
   bool _isLoading = true;
   String? _token;
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'My Proposals';
 
-  // Sidebar state
-  bool _isSidebarCollapsed = true;
-  late AnimationController _animationController;
-  String _currentPage = 'My Proposals';
+  void _navigateToPage(BuildContext context, String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/dashboard');
+        break;
+      case 'My Proposals':
+        // Already on proposals page
+        break;
+      case 'Templates':
+        Navigator.pushReplacementNamed(context, '/templates');
+        break;
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/client_management');
+        break;
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        break;
+      case 'Analytics (My Pipeline)':
+        Navigator.pushReplacementNamed(context, '/analytics');
+        break;
+      case 'Logout':
+        _handleLogout(context);
+        break;
+    }
+  }
+
+  void _handleLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                final app = context.read<dynamic>();
+                app.logout();
+                AuthService.logout();
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE74C3C),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   final ScrollController _scrollController = ScrollController();
   bool _hasLoadedOnce = false;
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    // Start collapsed
-    _animationController.value = 1.0;
     _loadProposals();
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -59,17 +110,6 @@ class _ProposalsPageState extends State<ProposalsPage>
       _hasLoadedOnce = true;
       _loadProposals();
     }
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
   }
 
   Future<void> _loadProposals() async {
@@ -129,7 +169,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF2563EB).withOpacity(0.1),
+                  color: const Color(0xFF2563EB).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Icon(
@@ -170,7 +210,8 @@ class _ProposalsPageState extends State<ProposalsPage>
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF3498DB).withOpacity(0.1),
+                            color:
+                                const Color(0xFF3498DB).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
@@ -234,7 +275,8 @@ class _ProposalsPageState extends State<ProposalsPage>
                           width: 40,
                           height: 40,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF2ECC71).withOpacity(0.1),
+                            color:
+                                const Color(0xFF2ECC71).withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Icon(
@@ -331,17 +373,42 @@ class _ProposalsPageState extends State<ProposalsPage>
         bottom: false,
         child: Container(
           color: Colors.transparent,
-          child: Column(
+          child: Row(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-                child: _buildHeader(context, app, userRole),
+              // Consistent Sidebar using AppSideNav
+              Consumer<AppState>(
+                builder: (context, app, child) {
+                  final role = (app.currentUser?['role'] ?? '')
+                      .toString()
+                      .toLowerCase()
+                      .trim();
+                  final isAdmin = role == 'admin' || role == 'ceo';
+                  return AppSideNav(
+                    isCollapsed: _isSidebarCollapsed,
+                    currentLabel: _currentNavLabel,
+                    isAdmin: isAdmin,
+                    onToggle: () => setState(
+                      () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                    ),
+                    onSelect: (label) {
+                      setState(() => _currentNavLabel = label);
+                      _navigateToPage(context, label);
+                    },
+                  );
+                },
               ),
+
+              // Main Content Area
               Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                child: Column(
                   children: [
-                    _buildSidebar(context),
+                    // Header
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+                      child: _buildHeader(context, app, userRole),
+                    ),
+
+                    // Content Area
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
@@ -367,10 +434,6 @@ class _ProposalsPageState extends State<ProposalsPage>
                   ],
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: const Footer(),
-              ),
             ],
           ),
         ),
@@ -384,10 +447,10 @@ class _ProposalsPageState extends State<ProposalsPage>
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
       gradientStart: const Color(0xFF1D2B64),
       gradientEnd: const Color(0xFF1D4350),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 760;
+          final titleBlock = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               Text(
@@ -404,40 +467,55 @@ class _ProposalsPageState extends State<ProposalsPage>
                 style: TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ],
-          ),
-          Row(
+          );
+
+          // Ensure the header never overflows when the sidebar expands/collapses.
+          final maxNameWidth = (constraints.maxWidth - 56 - 12 - 40 - 24)
+              .clamp(140.0, isNarrow ? double.infinity : 240.0);
+
+          final userBlock = Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               ClipOval(
                 child: Image.asset(
                   'assets/images/User_Profile.png',
-                  width: 64,
-                  height: 64,
+                  width: 56,
+                  height: 56,
                   fit: BoxFit.cover,
                 ),
               ),
               const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _getUserName(app.currentUser),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxNameWidth),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _getUserName(app.currentUser),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
-                  ),
-                  Text(
-                    userRole,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                  ),
-                ],
+                    Text(
+                      userRole,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style:
+                          const TextStyle(color: Colors.white70, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, color: Colors.white),
                 onSelected: (value) {
                   if (value == 'logout') {
-                    _handleLogout(context, app);
+                    _handleLogout(context);
                   }
                 },
                 itemBuilder: (BuildContext context) => [
@@ -454,128 +532,28 @@ class _ProposalsPageState extends State<ProposalsPage>
                 ],
               ),
             ],
-          ),
-        ],
-      ),
-    );
-  }
+          );
 
-  Widget _buildSidebar(BuildContext context) {
-    final sidebar = AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      width: _isSidebarCollapsed ? 90.0 : 250.0,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.black.withOpacity(0.35),
-            Colors.black.withOpacity(0.2),
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-        border: Border(
-          right: BorderSide(
-            color: PremiumTheme.glassWhiteBorder,
-            width: 1,
-          ),
-        ),
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: InkWell(
-                onTap: _toggleSidebar,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.glassWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.glassWhiteBorder,
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: _isSidebarCollapsed
-                        ? MainAxisAlignment.center
-                        : MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (!_isSidebarCollapsed)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'Navigation',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
-                          ),
-                        ),
-                      Padding(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: _isSidebarCollapsed ? 0 : 8),
-                        child: Icon(
-                          _isSidebarCollapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_left,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-                _currentPage == 'Dashboard', context),
-            _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
-                _currentPage == 'My Proposals', context),
-            _buildNavItem('Templates', 'assets/images/content_library.png',
-                _currentPage == 'Templates', context),
-            _buildNavItem(
-                'Content Library',
-                'assets/images/content_library.png',
-                _currentPage == 'Content Library',
-                context),
-            _buildNavItem(
-                'Client Management',
-                'assets/images/collaborations.png',
-                _currentPage == 'Client Management',
-                context),
-            _buildNavItem(
-                'Approved Proposals',
-                'assets/images/Time Allocation_Approval_Blue.png',
-                _currentPage == 'Approved Proposals',
-                context),
-            _buildNavItem(
-                'Analytics (My Pipeline)',
-                'assets/images/analytics.png',
-                _currentPage == 'Analytics (My Pipeline)',
-                context),
-            const SizedBox(height: 20),
-            if (!_isSidebarCollapsed)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                height: 1,
-                color: PremiumTheme.glassWhiteBorder.withValues(alpha: 0.6),
-              ),
-            const SizedBox(height: 12),
-            _buildNavItem(
-                'Logout', 'assets/images/Logout_KhonoBuzz.png', false, context),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                titleBlock,
+                const SizedBox(height: 14),
+                userBlock,
+              ],
+            );
+          }
 
-    return GestureDetector(
-      onTap: () {
-        if (_isSidebarCollapsed) _toggleSidebar();
-      },
-      behavior: HitTestBehavior.opaque,
-      child: sidebar,
+          return Row(
+            children: [
+              Expanded(child: titleBlock),
+              const SizedBox(width: 16),
+              userBlock,
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -821,170 +799,6 @@ class _ProposalsPageState extends State<ProposalsPage>
             ),
         ],
       ),
-    );
-  }
-
-  // Helper methods from dashboard
-  Widget _buildNavItem(
-      String label, String assetPath, bool isActive, BuildContext context) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              setState(() => _currentPage = label);
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: isActive
-                    ? PremiumTheme.purple.withValues(alpha: 0.3)
-                    : _navSurface,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? PremiumTheme.purple
-                      : _navBorder.withValues(alpha: 0.6),
-                  width: isActive ? 2 : 1,
-                ),
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          setState(() => _currentPage = label);
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive
-                ? PremiumTheme.purple.withValues(alpha: 0.25)
-                : _navSurface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isActive
-                  ? PremiumTheme.purple
-                  : _navBorder.withValues(alpha: 0.7),
-              width: isActive ? 1.5 : 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: isActive
-                      ? PremiumTheme.purple.withValues(alpha: 0.3)
-                      : _navSurface.withValues(alpha: 0.8),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? PremiumTheme.purple
-                        : _navBorder.withValues(alpha: 0.6),
-                    width: isActive ? 2 : 1,
-                  ),
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : Colors.white70,
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
-      case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/home');
-        break;
-      case 'My Proposals':
-        // Already on proposals page
-        break;
-      case 'Templates':
-        // Templates functionality - redirect to content library for now
-        Navigator.pushReplacementNamed(context, '/templates');
-        break;
-      case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/client_management');
-        break;
-      case 'Approved Proposals':
-        Navigator.pushReplacementNamed(context, '/approved_proposals');
-        break;
-      case 'Analytics (My Pipeline)':
-        Navigator.pushReplacementNamed(context, '/analytics');
-        break;
-      case 'Logout':
-        _handleLogout(context, context.read<AppState>());
-        break;
-    }
-  }
-
-  void _handleLogout(BuildContext context, AppState app) {
-    // Show confirmation dialog
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushReplacementNamed(context, '/login');
-              },
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
     );
   }
 
