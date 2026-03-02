@@ -92,26 +92,10 @@ class ApiService {
   }
 
   // Get headers with Firebase token
-  static const String _deviceStorageKey = 'lukens_device_id';
-
-  static String? _getDeviceId() {
-    if (!kIsWeb) return null;
-    try {
-      final v = web.window.localStorage.getItem(_deviceStorageKey);
-      final cleaned = v?.trim();
-      if (cleaned == null || cleaned.isEmpty) return null;
-      return cleaned;
-    } catch (_) {
-      return null;
-    }
-  }
-
   static Map<String, String> _getHeaders(String? token) {
-    final deviceId = _getDeviceId();
     return {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
-      if (deviceId != null) 'X-Device-Id': deviceId,
     };
   }
 

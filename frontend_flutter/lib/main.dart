@@ -1068,8 +1068,8 @@ class _HomeShellState extends State<HomeShell> {
                 Navigator.of(dialogContext).pop();
                 // Perform logout
                 final app = context.read<AppState>();
-                await AuthService.logoutAndRevoke();
                 app.logout();
+                AuthService.logout();
                 Navigator.pushNamedAndRemoveUntil(
                     context, '/login', (route) => false);
               },

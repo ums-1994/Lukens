@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
-import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web/web.dart' as web;
@@ -68,7 +67,6 @@ class AuthService {
   }
   static String? _token;
   static Map<String, dynamic>? _currentUser;
-  static String? _deviceId;
 
   // Get current user
   static Map<String, dynamic>? get currentUser => _currentUser;
@@ -77,30 +75,6 @@ class AuthService {
 
   // Persist session in web localStorage so back/refresh keeps user logged in
   static const String _storageKey = 'lukens_auth_session';
-  static const String _deviceStorageKey = 'lukens_device_id';
-
-  static String _generateDeviceId() {
-    final rnd = Random.secure();
-    final bytes = List<int>.generate(16, (_) => rnd.nextInt(256));
-    return base64UrlEncode(bytes).replaceAll('=', '');
-  }
-
-  static String getOrCreateDeviceId() {
-    if (_deviceId != null && _deviceId!.isNotEmpty) return _deviceId!;
-    if (kIsWeb) {
-      final existing = web.window.localStorage.getItem(_deviceStorageKey);
-      if (existing != null && existing.trim().isNotEmpty) {
-        _deviceId = existing.trim();
-        return _deviceId!;
-      }
-      final created = _generateDeviceId();
-      web.window.localStorage.setItem(_deviceStorageKey, created);
-      _deviceId = created;
-      return created;
-    }
-    _deviceId = _generateDeviceId();
-    return _deviceId!;
-  }
 
   static void _persistSession() {
     try {
@@ -110,9 +84,6 @@ class AuthService {
       print('💾 Is Web: $kIsWeb');
 
       if (kIsWeb && _token != null && _currentUser != null) {
-        if (_deviceId != null && _deviceId!.isNotEmpty) {
-          web.window.localStorage.setItem(_deviceStorageKey, _deviceId!);
-        }
         final data = json.encode({'token': _token, 'user': _currentUser});
         print('💾 Data to store length: ${data.length}');
         web.window.localStorage.setItem(_storageKey, data);
@@ -134,10 +105,6 @@ class AuthService {
     try {
       print('🔄 AuthService: Attempting to restore session from storage...');
       if (kIsWeb) {
-        final device = web.window.localStorage.getItem(_deviceStorageKey);
-        if (device != null && device.trim().isNotEmpty) {
-          _deviceId = device.trim();
-        }
         final data = web.window.localStorage.getItem(_storageKey);
         print('📦 localStorage key: $_storageKey');
         print('📦 Data exists: ${data != null}');
@@ -163,9 +130,6 @@ class AuthService {
             print('✅ Session restored successfully!');
             print('✅ Token: ${_token!.substring(0, 20)}...');
             print('✅ User email: ${_currentUser!['email']}');
-            if (_deviceId != null) {
-              print('✅ Device ID: $_deviceId');
-            }
           } else {
             print('❌ Token or user is null in parsed data');
           }
@@ -185,7 +149,6 @@ class AuthService {
     try {
       if (kIsWeb) {
         web.window.localStorage.removeItem(_storageKey);
-        web.window.localStorage.removeItem(_deviceStorageKey);
       }
     } catch (_) {}
   }
@@ -396,9 +359,6 @@ class AuthService {
     print('💾 Setting user: ${userData['email']}');
     _currentUser = userData;
     _token = token;
-    if (kIsWeb) {
-      _deviceId ??= web.window.localStorage.getItem(_deviceStorageKey);
-    }
     // IMPORTANT: Persist to localStorage so it survives navigation/refresh
     _persistSession();
     print('💾 Session data set and persisted');
@@ -411,29 +371,11 @@ class AuthService {
     _clearSessionStorage();
   }
 
-  static Future<void> logoutAndRevoke() async {
-    final token = _token;
-    try {
-      if (token != null && token.trim().isNotEmpty) {
-        await http.post(
-          Uri.parse('$baseUrl/api/auth/device-session/logout'),
-          headers: getAuthHeaders(),
-        );
-      }
-    } catch (e) {
-      print('Logout revoke error: $e');
-    } finally {
-      logout();
-    }
-  }
-
   // Get headers for authenticated requests
   static Map<String, String> getAuthHeaders() {
-    final deviceId = getOrCreateDeviceId();
     return {
       'Content-Type': 'application/json',
       if (_token != null) 'Authorization': 'Bearer $_token',
-      if (deviceId.isNotEmpty) 'X-Device-Id': deviceId,
     };
   }
 }

@@ -102,38 +102,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  Future<String?> _promptForOtp() async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Verify new device'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: 'Email OTP code',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(null),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(ctx).pop(controller.text),
-              child: const Text('Verify'),
-            ),
-          ],
-        );
-      },
-    );
-    controller.dispose();
-    return result;
-  }
-
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -209,75 +177,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
       final result = json.decode(response.body);
       final userProfile = result['user'] as Map<String, dynamic>?;
-      String? sessionToken;
-
-      // Step 4: Start backend per-device session (OTP only for new device)
-      final deviceId = AuthService.getOrCreateDeviceId();
-      final startSessionResp = await http.post(
-        Uri.parse('${AuthService.baseUrl}/api/auth/device-session/start'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id_token': firebaseIdToken, 'device_id': deviceId}),
-      );
-
-      if (startSessionResp.statusCode != 200) {
-        final error = json.decode(startSessionResp.body);
-        if (mounted) {
-          setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(error['detail'] ?? 'Failed to start session'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-        return;
-      }
-
-      final startData = json.decode(startSessionResp.body) as Map<String, dynamic>;
-      final otpRequired = startData['otp_required'] == true;
-
-      if (!otpRequired) {
-        sessionToken = startData['session_token']?.toString();
-      } else {
-        final challengeId = startData['challenge_id']?.toString();
-        if (challengeId == null || challengeId.isEmpty) {
-          throw Exception('OTP required but missing challenge_id');
-        }
-
-        final otp = await _promptForOtp();
-        if (otp == null || otp.trim().isEmpty) {
-          if (mounted) {
-            setState(() => _isLoading = false);
-          }
-          return;
-        }
-
-        final verifyResp = await http.post(
-          Uri.parse('${AuthService.baseUrl}/api/auth/device-session/verify-otp'),
-          headers: {'Content-Type': 'application/json'},
-          body: json.encode({'challenge_id': challengeId, 'otp': otp.trim()}),
-        );
-        if (verifyResp.statusCode != 200) {
-          final error = json.decode(verifyResp.body);
-          if (mounted) {
-            setState(() => _isLoading = false);
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(error['detail'] ?? 'OTP verification failed'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-          return;
-        }
-
-        final verifyData = json.decode(verifyResp.body) as Map<String, dynamic>;
-        sessionToken = verifyData['session_token']?.toString();
-      }
-
-      if (sessionToken == null || sessionToken.isEmpty) {
-        throw Exception('Failed to obtain session token');
-      }
+      final String authToken = firebaseIdToken;
 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -285,12 +185,12 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         if (userProfile != null) {
           final appState = context.read<AppState>();
 
-          // Use backend session token (per-device, 12h TTL)
-          appState.authToken = sessionToken;
+          // Use Firebase ID token (not legacy token)
+          appState.authToken = authToken;
           appState.currentUser = userProfile;
 
-          // IMPORTANT: Store backend session token in AuthService
-          AuthService.setUserData(userProfile, sessionToken);
+          // IMPORTANT: Store Firebase ID token in AuthService
+          AuthService.setUserData(userProfile, authToken);
 
           // Initialize role service with user's role
           final roleService = context.read<RoleService>();

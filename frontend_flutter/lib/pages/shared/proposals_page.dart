@@ -72,7 +72,6 @@ class _ProposalsPageState extends State<ProposalsPage>
               onPressed: () async {
                 Navigator.of(dialogContext).pop();
                 final app = context.read<AppState>();
-                await AuthService.logoutAndRevoke();
                 app.logout();
                 await context.read<RoleService>().reset();
                 await FirebaseService.signOut();

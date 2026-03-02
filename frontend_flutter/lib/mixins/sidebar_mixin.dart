@@ -73,7 +73,6 @@ mixin SidebarMixin<T extends StatefulWidget> on State<T> {
               onPressed: () async {
                 Navigator.of(dialogContext).pop();
                 final app = context.read<AppState>();
-                await AuthService.logoutAndRevoke();
                 app.logout();
                 await context.read<RoleService>().reset();
                 await FirebaseService.signOut();
