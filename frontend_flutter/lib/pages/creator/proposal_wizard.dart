@@ -64,7 +64,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
 
-  int _countIssuesByPriority(List<Map<String, dynamic>> issues, Set<String> priorities) {
+  int _countIssuesByPriority(
+      List<Map<String, dynamic>> issues, Set<String> priorities) {
     return issues.where((i) {
       final p = (i['priority']?.toString() ?? '').toLowerCase().trim();
       return priorities.contains(p);
@@ -78,10 +79,11 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   List<Map<String, dynamic>> get kbCitations => [];
   bool get _isClientSigned => false;
   void Function()? get _sendToClient => () {
-    // TODO: Implement send to client functionality
-  };
+        // TODO: Implement send to client functionality
+      };
   String get dateLabel => DateTime.now().toString().split(' ')[0];
-  Map<String, String> get moduleContents => Map<String, String>.from(_formData['moduleContents'] ?? {});
+  Map<String, String> get moduleContents =>
+      Map<String, String>.from(_formData['moduleContents'] ?? {});
 
   // Missing methods
   bool _isRiskGateBlockedWithoutOverride() {
@@ -98,11 +100,11 @@ class _ProposalWizardPageState extends State<ProposalWizard>
 
   Map<String, dynamic> _parseAdditionalInfo(dynamic info) {
     if (info == null) return {};
-    
+
     if (info is Map<String, dynamic>) {
       return info;
     }
-    
+
     if (info is String) {
       try {
         final decoded = json.decode(info);
@@ -113,7 +115,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         // If parsing fails, return empty map
       }
     }
-    
+
     return {};
   }
 
@@ -165,7 +167,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     child: Row(
                       children: [
                         const Text(
@@ -207,36 +210,46 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                             itemCount: issues.length,
                             itemBuilder: (context, index) {
                               final issue = issues[index];
-                              final title = issue['title']?.toString() ?? 'Issue';
-                              final description = issue['description']?.toString() ?? '';
-                              final priority = (issue['priority']?.toString() ?? 'info')
-                                  .toLowerCase()
-                                  .trim();
+                              final title =
+                                  issue['title']?.toString() ?? 'Issue';
+                              final description =
+                                  issue['description']?.toString() ?? '';
+                              final priority =
+                                  (issue['priority']?.toString() ?? 'info')
+                                      .toLowerCase()
+                                      .trim();
                               final type = issue['type']?.toString();
-                              final sectionId = _mapSectionTitleToModuleId(title);
+                              final sectionId =
+                                  _mapSectionTitleToModuleId(title);
                               final bool canAutoAddModule =
-                                  (type == 'missing_section' || type == 'incomplete_content') &&
+                                  (type == 'missing_section' ||
+                                          type == 'incomplete_content') &&
                                       sectionId != null;
 
                               Color priorityColor;
-                              if (priority == 'critical' || priority == 'high') {
+                              if (priority == 'critical' ||
+                                  priority == 'high') {
                                 priorityColor = const Color(0xFFDC2626);
-                              } else if (priority == 'warning' || priority == 'medium') {
+                              } else if (priority == 'warning' ||
+                                  priority == 'medium') {
                                 priorityColor = const Color(0xFFF59E0B);
                               } else {
                                 priorityColor = const Color(0xFF00BCD4);
                               }
 
                               return Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
                                 child: Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.grey[200]!, width: 1),
+                                    border: Border.all(
+                                        color: Colors.grey[200]!, width: 1),
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -273,22 +286,27 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                       if (canAutoAddModule) ...[
                                         const SizedBox(height: 10),
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.end,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
                                           children: [
                                             TextButton(
                                               onPressed: () async {
                                                 Navigator.pop(context);
-                                                _ensureModuleSelected(sectionId);
-                                                await _openContentLibraryAndInsert(sectionId);
+                                                _ensureModuleSelected(
+                                                    sectionId);
+                                                await _openContentLibraryAndInsert(
+                                                    sectionId);
                                               },
                                               child: const Text('Add module'),
                                             ),
                                             const SizedBox(width: 8),
                                             ElevatedButton.icon(
                                               style: ElevatedButton.styleFrom(
-                                                backgroundColor: PremiumTheme.teal,
+                                                backgroundColor:
+                                                    PremiumTheme.teal,
                                                 foregroundColor: Colors.white,
-                                                padding: const EdgeInsets.symmetric(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
                                                   horizontal: 12,
                                                   vertical: 8,
                                                 ),
@@ -297,7 +315,9 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                                 Navigator.pop(context);
                                                 _addModuleWithAI(sectionId);
                                               },
-                                              icon: const Icon(Icons.auto_awesome, size: 16),
+                                              icon: const Icon(
+                                                  Icons.auto_awesome,
+                                                  size: 16),
                                               label: const Text('Add with AI'),
                                             ),
                                           ],
@@ -639,10 +659,11 @@ class _ProposalWizardPageState extends State<ProposalWizard>
 
   String _riskGateStatusUpper() {
     if (_riskAssessment.isEmpty) return 'UNKNOWN';
-    
-    final String riskLevel = (_riskAssessment['risk_level'] as String?)?.toUpperCase() ?? 'UNKNOWN';
+
+    final String riskLevel =
+        (_riskAssessment['risk_level'] as String?)?.toUpperCase() ?? 'UNKNOWN';
     final int riskScore = (_riskAssessment['risk_score'] as int?) ?? 0;
-    
+
     // Map risk levels to status
     switch (riskLevel) {
       case 'LOW':
@@ -659,7 +680,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         if (riskScore >= 40) return 'AT_RISK';
         return 'UNKNOWN';
     }
-
   }
 
   Future<bool> _handleRiskGateOverride() async {
@@ -1467,7 +1487,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                 height: 3,
                                 width: 40,
                                 decoration: BoxDecoration(
-                                  color: PremiumTheme.teal.withValues(alpha: 0.9),
+                                  color:
+                                      PremiumTheme.teal.withValues(alpha: 0.9),
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                               ),
@@ -3481,7 +3502,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                 if (!canAutoAddModule) return;
                                 final targetSectionId = sectionId;
                                 _ensureModuleSelected(targetSectionId);
-                                await _openContentLibraryAndInsert(targetSectionId);
+                                await _openContentLibraryAndInsert(
+                                    targetSectionId);
                               },
                               child: const Text('Add module'),
                             ),
@@ -3601,7 +3623,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: riskColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999),
@@ -3713,7 +3736,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             ],
           ),
         ),
-        
+
         if (recommendations.isNotEmpty) ...[
           Text(
             'AI Recommendations',
@@ -3765,7 +3788,9 @@ class _ProposalWizardPageState extends State<ProposalWizard>
           ),
           const SizedBox(height: 12),
           ...issues.map<Widget>((issue) {
-            final title = issue["title"]?.toString() ?? issue["section"]?.toString() ?? "Issue";
+            final title = issue["title"]?.toString() ??
+                issue["section"]?.toString() ??
+                "Issue";
             final section = issue["section"]?.toString() ?? "";
             final description = issue['description']?.toString() ?? '';
             final action = issue["recommendation"]?.toString() ?? "";
@@ -3818,28 +3843,28 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Text(
+                                title,
+                                style: PremiumTheme.bodyLarge.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (section.isNotEmpty) ...[
+                                const SizedBox(height: 4),
                                 Text(
-                                  title,
-                                  style: PremiumTheme.bodyLarge.copyWith(
-                                    fontWeight: FontWeight.w600,
+                                  section,
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: PremiumTheme.textSecondary,
                                   ),
                                 ),
-                                if (section.isNotEmpty) ...[
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    section,
-                                    style: PremiumTheme.bodyMedium.copyWith(
-                                      color: PremiumTheme.textSecondary,
-                                    ),
-                                  ),
-                                ],
+                              ],
                               if (description.isNotEmpty) ...[
                                 const SizedBox(height: 6),
                                 Text(
                                   description,
                                   style: PremiumTheme.bodyMedium,
                                 ),
-                              ),
+                              ],
                             ],
                           ),
                         ),
@@ -4083,17 +4108,18 @@ class _ProposalWizardPageState extends State<ProposalWizard>
           List<String>.from(analysis['recommendations'] ?? const []);
       final bool canRelease = analysis['can_release'] ?? false;
       final int totalIssues = analysis['total_issues'] ?? 0;
-      final Map<String, int> priorityBreakdown = Map<String, int>.from(analysis['priority_breakdown'] ?? const {});
+      final Map<String, int> priorityBreakdown =
+          Map<String, int>.from(analysis['priority_breakdown'] ?? const {});
 
       // HF can return issues=[] and risk_score=0 while still flagging missing
       // sections/clauses in recommendations. Derive a meaningful display.
       if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
-        final missingSectionsMatch = RegExp(r'Add\s+(\d+)\s+missing\s+sections',
-                caseSensitive: false)
-            .firstMatch(recommendations.join(' '));
-        final clauseIssuesMatch = RegExp(r'Fix\s+(\d+)\s+clause\s+issues',
-                caseSensitive: false)
-            .firstMatch(recommendations.join(' '));
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
 
         final missingSections = missingSectionsMatch != null
             ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
@@ -4144,7 +4170,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
           : _formData['opportunityName']?.toString() ?? '',
       'opportunityName': _formData['opportunityName'] ?? '',
       'templateId': _formData['templateId'] ?? _formData['templateType'] ?? '',
-      'templateType': _formData['templateType'] ?? _formData['templateId'] ?? '',
+      'templateType':
+          _formData['templateType'] ?? _formData['templateId'] ?? '',
       'clientName': _formData['clientName'] ?? '',
       'clientEmail': _formData['clientEmail'] ?? '',
       'projectType': _formData['projectType'] ?? '',
@@ -4154,7 +4181,10 @@ class _ProposalWizardPageState extends State<ProposalWizard>
 
     // IMPORTANT: proposals created from scratch can have content in moduleContents
     // even if the user never explicitly selected modules.
-    final moduleIdsToSend = <String>{...selectedModules, ...moduleContents.keys};
+    final moduleIdsToSend = <String>{
+      ...selectedModules,
+      ...moduleContents.keys
+    };
     for (final moduleId in moduleIdsToSend) {
       final content = moduleContents[moduleId] ?? '';
       if (content.trim().isEmpty) continue;
@@ -4240,12 +4270,12 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       int missingSections = 0;
       int clauseIssues = 0;
       if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
-        final missingSectionsMatch = RegExp(r'Add\s+(\d+)\s+missing\s+sections',
-                caseSensitive: false)
-            .firstMatch(recommendations.join(' '));
-        final clauseIssuesMatch = RegExp(r'Fix\s+(\d+)\s+clause\s+issues',
-                caseSensitive: false)
-            .firstMatch(recommendations.join(' '));
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
 
         missingSections = missingSectionsMatch != null
             ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
@@ -4254,8 +4284,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             ? int.tryParse(clauseIssuesMatch.group(1) ?? '') ?? 0
             : 0;
 
-        riskScore =
-            ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
+        riskScore = ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
       }
 
       // Readiness score (higher is better) - MUST be based on the final riskScore
@@ -4300,9 +4329,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         };
       }).toList();
 
-      final bool hasActionableRecos = recommendations.isNotEmpty ||
-          missingSections > 0 ||
-          clauseIssues > 0;
+      final bool hasActionableRecos =
+          recommendations.isNotEmpty || missingSections > 0 || clauseIssues > 0;
       final String computedStatus = hasActionableRecos
           ? 'At Risk'
           : (canRelease
@@ -4400,6 +4428,4 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       );
     }
   }
-
-  
 }
