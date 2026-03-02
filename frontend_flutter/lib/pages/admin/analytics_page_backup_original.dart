@@ -1,1321 +1,891 @@
+/*
+// This file contains the AnalyticsPage implementation.
+//
+// The previous in-file implementation had become corrupted (parse errors),
+// which caused cascading analyzer errors (including "missing build()").
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:js_interop';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:fl_chart/fl_chart.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
-import '../../widgets/app_side_nav.dart';
 import '../../widgets/custom_scrollbar.dart';
+import '../../widgets/app_side_nav.dart';
 
-class AnalyticsPage extends StatelessWidget {
+class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
 
   @override
   State<AnalyticsPage> createState() => _AnalyticsPageState();
 }
 
-class _AnalyticsPageState extends State<AnalyticsPage> {
-  bool _loading = true;
-  String _scope = 'self';
-  String _period = '30d';
-
-  final TextEditingController _ownerCtrl = TextEditingController();
-  final TextEditingController _clientCtrl = TextEditingController();
-  final TextEditingController _proposalTypeCtrl = TextEditingController();
-
-  DateTime? _customStart;
-  DateTime? _customEnd;
-  bool _useCustomDates = false;
-
-  Map<String, dynamic>? _pipeline;
-  Map<String, dynamic>? _cycleTime;
-  Map<String, dynamic>? _completion;
-  Map<String, dynamic>? _engagement;
-  Map<String, dynamic>? _collaboration;
-  Map<String, dynamic>? _riskGateSummary;
-
+class _AnalyticsPageState extends State<AnalyticsPage>
+    with TickerProviderStateMixin {
+  String _selectedPeriod = 'Last 30 Days';
+  String _cycleTimeScope = 'team';
+  bool _cycleTimeAutoRefresh = true;
+  int _cycleTimeRefreshTick = 0;
+  Timer? _cycleTimeRefreshTimer;
+  String? _pipelineStageFilter;
+  final TextEditingController _cycleTimeOwnerCtrl = TextEditingController();
+  final TextEditingController _cycleTimeProposalTypeCtrl =
+      TextEditingController();
+  final TextEditingController _globalClientCtrl = TextEditingController();
+  final TextEditingController _globalRegionCtrl = TextEditingController();
+  final TextEditingController _globalOwnerCtrl = TextEditingController();
+  final TextEditingController _globalProposalTypeCtrl = TextEditingController();
+  bool _isSidebarCollapsed = true;
+  late AnimationController _animationController;
   final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      final app = context.read<AppState>();
+      app.fetchProposals();
+    });
+
+    _cycleTimeRefreshTimer =
+        Timer.periodic(const Duration(seconds: 60), (timer) {
       if (!mounted) return;
-      _refresh();
+      if (!_cycleTimeAutoRefresh) return;
+      setState(() => _cycleTimeRefreshTick++);
     });
   }
 
-  @override
-  void dispose() {
-    _ownerCtrl.dispose();
-    _clientCtrl.dispose();
-    _proposalTypeCtrl.dispose();
-    _scrollController.dispose();
-    super.dispose();
-  }
+  Future<Map<String, dynamic>?> _fetchClientEngagement() async {
+    try {
+      final now = DateTime.now();
+      final start = _periodStart(now);
+      final fmt = DateFormat('yyyy-MM-dd');
+      final startDate = start != null ? fmt.format(start) : null;
+      final endDate = fmt.format(now);
 
-  DateTime? _periodStart(DateTime now) {
-    switch (_period) {
-      case '7d':
-        return now.subtract(const Duration(days: 7));
-      case '30d':
-        return now.subtract(const Duration(days: 30));
-      case '90d':
-        return now.subtract(const Duration(days: 90));
-      case 'ytd':
-        return DateTime(now.year, 1, 1);
-      case 'all':
-        return null;
-      default:
-        return now.subtract(const Duration(days: 30));
+      final owner = _globalOwnerCtrl.text.trim();
+      final proposalType = _globalProposalTypeCtrl.text.trim();
+      final client = _globalClientCtrl.text.trim();
+      final region = _globalRegionCtrl.text.trim();
+      final currentUser = context.read<AppState>().currentUser;
+      final department = (currentUser?['department'] ?? '').toString().trim();
+
+      final data = await context.read<AppState>().getClientEngagementAnalytics(
+            startDate: startDate,
+            endDate: endDate,
+            owner: owner.isEmpty ? null : owner,
+            proposalType: proposalType.isEmpty ? null : proposalType,
+            client: client.isEmpty ? null : client,
+            region: region.isEmpty ? null : region,
+            scope: _cycleTimeScope,
+            department: department.isEmpty ? null : department,
+          );
+      return data;
+    } catch (e) {
+      print('Client engagement exception: $e');
+      return null;
     }
   }
 
-  Future<void> _refresh() async {
-    setState(() {
-      _loading = true;
-    });
-
+  Future<Map<String, dynamic>?> _fetchPipelineBundle() async {
     try {
-      final app = context.read<AppState>();
       final now = DateTime.now();
+      final start = _periodStart(now);
       final fmt = DateFormat('yyyy-MM-dd');
+      final startDate = start != null ? fmt.format(start) : null;
+      final endDate = fmt.format(now);
 
-      final owner = _ownerCtrl.text.trim();
-      final client = _clientCtrl.text.trim();
-      final proposalType = _proposalTypeCtrl.text.trim();
-
-      final DateTime? start = _useCustomDates ? _customStart : _periodStart(now);
-      final DateTime end = _useCustomDates ? (_customEnd ?? now) : now;
-      final startDate = start == null ? null : fmt.format(start);
-      final endDate = fmt.format(end);
-
-      final user = AuthService.currentUser ?? app.currentUser;
-      final department = (user?['department'] ?? '').toString().trim();
+      final owner = _globalOwnerCtrl.text.trim();
+      final proposalType = _globalProposalTypeCtrl.text.trim();
+      final client = _globalClientCtrl.text.trim();
+      final currentUser = context.read<AppState>().currentUser;
+      final department = (currentUser?['department'] ?? '').toString().trim();
+      final app = context.read<AppState>();
 
       final results = await Future.wait([
         app.getProposalPipelineAnalytics(
           startDate: startDate,
           endDate: endDate,
           owner: owner.isEmpty ? null : owner,
-          client: client.isEmpty ? null : client,
           proposalType: proposalType.isEmpty ? null : proposalType,
-          scope: _scope,
-          department: department.isEmpty ? null : department,
-        ),
-        app.getCycleTimeAnalytics(
-          startDate: startDate,
-          endDate: endDate,
-          owner: owner.isEmpty ? null : owner,
           client: client.isEmpty ? null : client,
-          proposalType: proposalType.isEmpty ? null : proposalType,
-          scope: _scope,
+          scope: _cycleTimeScope,
           department: department.isEmpty ? null : department,
+          stage: _pipelineStageFilter,
         ),
         app.getCompletionRatesAnalytics(
           startDate: startDate,
           endDate: endDate,
           owner: owner.isEmpty ? null : owner,
-          client: client.isEmpty ? null : client,
           proposalType: proposalType.isEmpty ? null : proposalType,
-          scope: _scope,
-          department: department.isEmpty ? null : department,
-        ),
-        app.getClientEngagementAnalytics(
-          startDate: startDate,
-          endDate: endDate,
-          owner: owner.isEmpty ? null : owner,
           client: client.isEmpty ? null : client,
-          proposalType: proposalType.isEmpty ? null : proposalType,
-          scope: _scope,
-          department: department.isEmpty ? null : department,
-        ),
-        app.getCollaborationLoadAnalytics(
-          startDate: startDate,
-          endDate: endDate,
-          owner: owner.isEmpty ? null : owner,
-          client: client.isEmpty ? null : client,
-          proposalType: proposalType.isEmpty ? null : proposalType,
-          scope: _scope,
-          department: department.isEmpty ? null : department,
-        ),
-        app.getRiskGateSummary(
-          startDate: startDate,
-          endDate: endDate,
-          owner: owner.isEmpty ? null : owner,
-          client: client.isEmpty ? null : client,
-          proposalType: proposalType.isEmpty ? null : proposalType,
-          scope: _scope,
+          scope: _cycleTimeScope,
           department: department.isEmpty ? null : department,
         ),
       ]);
 
-      if (!mounted) return;
-      setState(() {
-        _pipeline = results[0];
-        _cycleTime = results[1];
-        _completion = results[2];
-        _engagement = results[3];
-        _collaboration = results[4];
-        _riskGateSummary = results[5];
-      });
+      return {
+        'pipeline': results[0],
+        'completion_rates': results[1],
+      };
     } catch (e) {
-      // Keep UI alive even if a call fails.
-      if (!mounted) return;
-    } finally {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-      });
+      print('Pipeline bundle exception: $e');
+      return null;
     }
   }
 
-  Widget _glassCard({required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: child,
-    );
+  Map<String, int> _pipelineCountsFromResponse(Map<String, dynamic>? data) {
+    final counts = <String, int>{
+      'Draft': 0,
+      'In Review': 0,
+      'Released': 0,
+      'Signed': 0,
+      'Archived': 0,
+    };
+    final stages = (data?['stages'] as List?) ?? [];
+    for (final s in stages) {
+      if (s is! Map) continue;
+      final stageName = (s['stage'] ?? '').toString();
+      final cnt = (s['count'] is num) ? (s['count'] as num).toInt() : 0;
+      if (counts.containsKey(stageName)) {
+        counts[stageName] = cnt;
+      }
+    }
+    return counts;
   }
 
-  Widget _sectionTitle(String title, {String? subtitle}) {
+  Future<void> _showCompletionRatesDialog(Map<String, dynamic>? data) async {
+    try {
+      final low = (data?['low_proposals'] as List?) ?? [];
+      await showDialog(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                child: Container(
+                  constraints:
+                      const BoxConstraints(maxWidth: 980, maxHeight: 720),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withValues(alpha: 0.12),
+                        Colors.white.withValues(alpha: 0.06),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: PremiumTheme.glassWhiteBorder,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Completion Rates: Low Readiness',
+                              style: PremiumTheme.titleLarge
+                                  .copyWith(color: Colors.white),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (low.isEmpty)
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              'All proposals are passing mandatory section checks under the current filters.',
+                              style: PremiumTheme.bodyMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        )
+                      else
+                        Expanded(
+                          child: ListView.separated(
+                            itemCount: low.length,
+                            separatorBuilder: (_, __) => Divider(
+                              height: 1,
+                              color: Colors.white.withValues(alpha: 0.08),
+                            ),
+                            itemBuilder: (context, i) {
+                              final p = (low[i] as Map).cast<String, dynamic>();
+                              final id = (p['proposal_id'] ?? '').toString();
+                              final title =
+                                  (p['title'] ?? 'Untitled').toString();
+                              final clientName = (p['client'] ?? '').toString();
+                              final status = (p['status'] ?? '').toString();
+                              final score = (p['readiness_score'] is num)
+                                  ? (p['readiness_score'] as num).toInt()
+                                  : int.tryParse((p['readiness_score'] ?? '')
+                                          .toString()) ??
+                                      0;
+                              final issues =
+                                  (p['readiness_issues'] as List?) ?? const [];
+
+                              return InkWell(
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  Navigator.pushNamed(
+                                    this.context,
+                                    '/proposal_review',
+                                    arguments: {
+                                      'id': id,
+                                      'title': title,
+                                    },
+                                  );
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 12),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 4,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              title,
+                                              style: PremiumTheme.bodyMedium
+                                                  .copyWith(
+                                                color: Colors.white,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              issues.isEmpty
+                                                  ? ''
+                                                  : (issues
+                                                      .take(2)
+                                                      .join(' • ')),
+                                              style: PremiumTheme.bodySmall
+                                                  .copyWith(
+                                                color: Colors.white70,
+                                              ),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 3,
+                                        child: Text(
+                                          clientName.isEmpty ? '-' : clientName,
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
+                                            color: Colors.white70,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text(
+                                          status.isEmpty ? '-' : status,
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
+                                            color: Colors.white70,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          '$score%',
+                                          textAlign: TextAlign.right,
+                                          style:
+                                              PremiumTheme.bodyMedium.copyWith(
+                                            color: score >= 90
+                                                ? PremiumTheme.success
+                                                : score >= 60
+                                                    ? PremiumTheme.warning
+                                                    : PremiumTheme.error,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } catch (e) {
+      print('Completion rates dialog error: $e');
+    }
+  }
+
+  Widget _buildProposalPipelineView(Map<String, dynamic>? data) {
+    final stagesRaw = (data?['stages'] as List?) ?? [];
+    if (stagesRaw.isEmpty) {
+      return Center(
+        child: Text(
+          'No pipeline proposals match these filters yet',
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+        ),
+      );
+    }
+
+    final stages = <Map<String, dynamic>>[];
+    for (final item in stagesRaw) {
+      if (item is Map) {
+        stages.add(item.cast<String, dynamic>());
+      }
+    }
+
+    String formatDate(String? iso) {
+      if (iso == null || iso.isEmpty) return '--';
+      try {
+        final dt = DateTime.parse(iso);
+        return DateFormat('MMM d').format(dt);
+      } catch (_) {
+        return iso.length >= 10 ? iso.substring(0, 10) : iso;
+      }
+    }
+
+    Color stageColor(String stage) {
+      switch (stage) {
+        case 'Signed':
+          return PremiumTheme.success;
+        case 'Released':
+          return PremiumTheme.info;
+        case 'In Review':
+          return PremiumTheme.warning;
+        case 'Archived':
+          return Colors.white70;
+        default:
+          return PremiumTheme.orange;
+      }
+    }
+
+    Widget stageHeader(String stage, int count) {
+      final active =
+          (_pipelineStageFilter ?? '').toLowerCase() == stage.toLowerCase();
+      return InkWell(
+        onTap: () {
+          setState(() {
+            if (active) {
+              _pipelineStageFilter = null;
+            } else {
+              _pipelineStageFilter = stage;
+            }
+            _cycleTimeRefreshTick++;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: stageColor(stage).withValues(alpha: active ? 0.22 : 0.10),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: stageColor(stage).withValues(alpha: active ? 0.55 : 0.25),
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  stage,
+                  overflow: TextOverflow.ellipsis,
+                  style: PremiumTheme.bodyMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  count.toString(),
+                  style: PremiumTheme.labelMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget proposalCard(Map<String, dynamic> p) {
+      final id = (p['proposal_id'] ?? '').toString();
+      final title = (p['title'] ?? 'Untitled').toString();
+      final client = (p['client'] ?? '').toString();
+      final owner = (p['owner'] ?? '').toString();
+      final updated = (p['updated_at'] ?? p['created_at'])?.toString();
+      final status = (p['status'] ?? '').toString();
+      return InkWell(
+        onTap: () {
+          Navigator.pushNamed(
+            context,
+            '/proposal_review',
+            arguments: {
+              'id': id,
+              'title': title,
+            },
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: PremiumTheme.bodyMedium.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      client.isEmpty ? '-' : client,
+                      overflow: TextOverflow.ellipsis,
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    formatDate(updated),
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      owner.isEmpty ? '-' : owner,
+                      overflow: TextOverflow.ellipsis,
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    status.isEmpty ? '-' : status,
+                    overflow: TextOverflow.ellipsis,
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    Widget stageColumn(Map<String, dynamic> stage) {
+      final stageName = (stage['stage'] ?? '').toString();
+      final count =
+          (stage['count'] is num) ? (stage['count'] as num).toInt() : 0;
+      final proposals = (stage['proposals'] as List?) ?? [];
+      final cards = <Map<String, dynamic>>[];
+      for (final p in proposals) {
+        if (p is Map) {
+          cards.add(p.cast<String, dynamic>());
+        }
+      }
+      return SizedBox(
+        width: 260,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            stageHeader(stageName, count),
+            const SizedBox(height: 10),
+            Expanded(
+              child: cards.isEmpty
+                  ? Center(
+                      child: Text(
+                        'No proposals',
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          color: Colors.white54,
+                          fontSize: 12,
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: cards.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (context, i) => proposalCard(cards[i]),
+                    ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          title,
-          style: PremiumTheme.titleMedium.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        if (subtitle != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            subtitle,
-            style: PremiumTheme.labelMedium.copyWith(color: Colors.white60),
-          ),
-        ],
-      ],
-    );
-  }
-
-  List<Map<String, dynamic>> _coerceListOfMaps(dynamic raw) {
-    if (raw is! List) return const [];
-    final out = <Map<String, dynamic>>[];
-    for (final item in raw) {
-      if (item is Map<String, dynamic>) {
-        out.add(item);
-      } else if (item is Map) {
-        out.add(item.map((k, v) => MapEntry(k.toString(), v)));
-      }
-    }
-    return out;
-  }
-
-  Color _riskColor(String level) {
-    final v = level.trim().toUpperCase();
-    if (v == 'BLOCK') return const Color(0xFFEF4444);
-    if (v == 'REVIEW') return const Color(0xFFF59E0B);
-    if (v == 'PASS') return const Color(0xFF22C55E);
-    return Colors.white54;
-  }
-
-  String _formatDateLabel(DateTime d) {
-    return DateFormat('yyyy-MM-dd').format(d);
-  }
-
-  Future<void> _pickStartDate() async {
-    final initial = _customStart ?? DateTime.now().subtract(const Duration(days: 30));
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2018, 1, 1),
-      lastDate: DateTime.now(),
-    );
-    if (picked == null) return;
-    setState(() {
-      _customStart = picked;
-      _useCustomDates = true;
-    });
-  }
-
-  Future<void> _pickEndDate() async {
-    final initial = _customEnd ?? DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initial,
-      firstDate: DateTime(2018, 1, 1),
-      lastDate: DateTime.now(),
-    );
-    if (picked == null) return;
-    setState(() {
-      _customEnd = picked;
-      _useCustomDates = true;
-    });
-  }
-
-  Future<void> _exportReport() async {
-    final payload = {
-      'filters': {
-        'scope': _scope,
-        'period': _period,
-        'owner': _ownerCtrl.text.trim(),
-        'client': _clientCtrl.text.trim(),
-        'proposal_type': _proposalTypeCtrl.text.trim(),
-        'custom_start': _customStart?.toIso8601String(),
-        'custom_end': _customEnd?.toIso8601String(),
-        'use_custom_dates': _useCustomDates,
-      },
-      'pipeline': _pipeline,
-      'cycle_time': _cycleTime,
-      'completion_rates': _completion,
-      'client_engagement': _engagement,
-      'collaboration_load': _collaboration,
-      'risk_gate_summary': _riskGateSummary,
-      'exported_at': DateTime.now().toIso8601String(),
-    };
-
-    final text = payload.toString();
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Analytics report copied to clipboard')),
-    );
-  }
-
-  Widget _buildFiltersBar() {
-    final startLabel = _customStart == null ? 'Start date' : _formatDateLabel(_customStart!);
-    final endLabel = _customEnd == null ? 'End date' : _formatDateLabel(_customEnd!);
-
-    InputDecoration deco(String hint) {
-      return InputDecoration(
-        hintText: hint,
-        hintStyle: PremiumTheme.labelMedium.copyWith(color: Colors.white38),
-        isDense: true,
-        filled: true,
-        fillColor: Colors.white.withValues(alpha: 0.04),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-      );
-    }
-
-    return _glassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionTitle('Filters', subtitle: 'Slice by owner, client, type, or date range'),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: 220,
-                child: TextField(
-                  controller: _ownerCtrl,
-                  style: PremiumTheme.bodyMedium.copyWith(color: Colors.white),
-                  decoration: deco('Owner (username/email/id)'),
-                ),
-              ),
-              SizedBox(
-                width: 220,
-                child: TextField(
-                  controller: _clientCtrl,
-                  style: PremiumTheme.bodyMedium.copyWith(color: Colors.white),
-                  decoration: deco('Client'),
-                ),
-              ),
-              SizedBox(
-                width: 220,
-                child: TextField(
-                  controller: _proposalTypeCtrl,
-                  style: PremiumTheme.bodyMedium.copyWith(color: Colors.white),
-                  decoration: deco('Proposal type'),
-                ),
-              ),
-              SizedBox(
-                width: 170,
-                child: ElevatedButton.icon(
-                  onPressed: _pickStartDate,
-                  icon: const Icon(Icons.date_range, size: 18),
-                  label: Text(startLabel),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white.withValues(alpha: 0.08),
-                    foregroundColor: Colors.white,
+        if ((_pipelineStageFilter ?? '').isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(999),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.18)),
+                  ),
+                  child: Text(
+                    'Filtered: ${_pipelineStageFilter!}',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
-              ),
-              SizedBox(
-                width: 170,
-                child: ElevatedButton.icon(
-                  onPressed: _pickEndDate,
-                  icon: const Icon(Icons.event, size: 18),
-                  label: Text(endLabel),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white.withValues(alpha: 0.08),
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 130,
-                child: ElevatedButton(
-                  onPressed: () {
+                _buildGlassButton(
+                  'Clear',
+                  Icons.close,
+                  () {
                     setState(() {
-                      _useCustomDates = false;
-                      _customStart = null;
-                      _customEnd = null;
+                      _pipelineStageFilter = null;
+                      _cycleTimeRefreshTick++;
                     });
-                    _refresh();
                   },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white.withValues(alpha: 0.06),
-                    foregroundColor: Colors.white70,
-                  ),
-                  child: const Text('Reset dates'),
-                ),
-              ),
-              SizedBox(
-                width: 120,
-                child: ElevatedButton(
-                  onPressed: _refresh,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00BCD4),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Apply'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRiskGateCard() {
-    final overall = (_riskGateSummary?['overall_level'] ?? 'NONE').toString();
-    final counts = (_riskGateSummary?['counts'] is Map) ? (_riskGateSummary?['counts'] as Map) : const {};
-    int n(dynamic v) {
-      if (v is int) return v;
-      if (v is num) return v.toInt();
-      return 0;
-    }
-
-    final pass = n(counts['PASS']);
-    final review = n(counts['REVIEW']);
-    final block = n(counts['BLOCK']);
-    final none = n(counts['NONE']);
-    final total = (_riskGateSummary?['total_proposals'] is num)
-        ? (_riskGateSummary?['total_proposals'] as num).toInt()
-        : (pass + review + block + none);
-    final analyzed = (_riskGateSummary?['analyzed_proposals'] is num)
-        ? (_riskGateSummary?['analyzed_proposals'] as num).toInt()
-        : (pass + review + block);
-
-    final color = _riskColor(overall);
-
-    return _glassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionTitle('Risk Gate', subtitle: 'Governance risk status summary'),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: color.withValues(alpha: 0.5)),
-                ),
-                child: Text(
-                  overall.toUpperCase(),
-                  style: PremiumTheme.labelMedium.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Analyzed: $analyzed / $total',
-                  style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _kpiTile(label: 'PASS', value: pass.toString()),
-              _kpiTile(label: 'REVIEW', value: review.toString()),
-              _kpiTile(label: 'BLOCK', value: block.toString()),
-              _kpiTile(label: 'NONE', value: none.toString()),
-            ].map((w) => SizedBox(width: 160, child: w)).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCollaborationHeatmap() {
-    final heatmap = (_collaboration?['heatmap'] is Map)
-        ? (_collaboration?['heatmap'] as Map)
-        : null;
-    final byDay = _coerceListOfMaps(heatmap?['by_day']);
-    if (byDay.isEmpty) {
-      return Text(
-        'No collaboration heatmap data yet.',
-        style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-      );
-    }
-
-    final counts = <String, int>{};
-    for (final p in byDay) {
-      final date = (p['date'] ?? '').toString();
-      final interactions = (p['interactions'] is num)
-          ? (p['interactions'] as num).toInt()
-          : 0;
-      if (date.isEmpty) continue;
-      counts[date] = interactions;
-    }
-
-    final keys = counts.keys.toList()..sort();
-    final lastKeys = keys.length <= 28 ? keys : keys.sublist(keys.length - 28);
-    final maxVal = counts.values.fold<int>(0, (p, e) => math.max(p, e));
-
-    Color cellColor(int v) {
-      if (v <= 0) return Colors.white.withValues(alpha: 0.06);
-      final denom = maxVal <= 0 ? 1 : maxVal;
-      final t = (v / denom).clamp(0.0, 1.0);
-      final a = 0.16 + (0.62 * t);
-      return const Color(0xFF06B6D4).withValues(alpha: a);
-    }
-
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      children: [
-        for (final k in lastKeys)
-          Tooltip(
-            message: '$k: ${counts[k] ?? 0} interactions',
-            child: Container(
-              width: 16,
-              height: 16,
-              decoration: BoxDecoration(
-                color: cellColor(counts[k] ?? 0),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildPipelineFunnel() {
-    final stages = _coerceListOfMaps(_pipeline?['stages']);
-    final items = <Map<String, dynamic>>[];
-    for (final s in stages) {
-      final stage = (s['stage'] ?? '').toString();
-      final count = (s['count'] is num) ? (s['count'] as num).toInt() : 0;
-      if (stage.isEmpty) continue;
-      items.add({'stage': stage, 'count': count});
-    }
-    if (items.isEmpty) {
-      return Text(
-        'No pipeline data yet for this period.',
-        style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-      );
-    }
-
-    final maxCount = items.fold<int>(1, (p, e) => math.max(p, (e['count'] as int?) ?? 0));
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final full = constraints.maxWidth;
-        final baseWidth = math.max(220.0, math.min(full, 720.0));
-
-        return Column(
-          children: [
-            for (var i = 0; i < items.length; i++)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _FunnelStage(
-                  label: items[i]['stage'] as String,
-                  value: items[i]['count'] as int,
-                  width: baseWidth * (((items[i]['count'] as int) / maxCount).clamp(0.15, 1.0)),
-                  color: const Color(0xFF06B6D4),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildPipelineChart() {
-    return _buildPipelineFunnel();
-  }
-
-  Widget _buildCycleTimeChart() {
-    final byStage = _coerceListOfMaps(_cycleTime?['by_stage']);
-    final labels = <String>[];
-    final values = <double>[];
-    for (final s in byStage) {
-      final stage = (s['stage'] ?? s['status'] ?? '').toString();
-      final avg = (s['avg_days'] is num)
-          ? (s['avg_days'] as num).toDouble()
-          : (s['avg'] is num)
-              ? (s['avg'] as num).toDouble()
-              : null;
-      if (stage.isEmpty || avg == null) continue;
-      labels.add(stage);
-      values.add(avg);
-    }
-    if (labels.isEmpty) {
-      return Text(
-        'No cycle time data yet for this period.',
-        style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-      );
-    }
-
-    final maxY = values.fold<double>(0, (p, e) => math.max(p, e));
-    return SizedBox(
-      height: 260,
-      child: BarChart(
-        BarChartData(
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            getDrawingHorizontalLine: (value) => FlLine(
-              color: Colors.white.withValues(alpha: 0.08),
-              strokeWidth: 1,
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-          alignment: BarChartAlignment.spaceAround,
-          maxY: maxY <= 0 ? 1 : maxY * 1.25,
-          titlesData: FlTitlesData(
-            topTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 38,
-                getTitlesWidget: (value, meta) {
-                  return Text(
-                    value.toStringAsFixed(0),
-                    style: PremiumTheme.labelMedium.copyWith(
-                      color: Colors.white54,
-                    ),
-                  );
-                },
-              ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                getTitlesWidget: (value, meta) {
-                  final i = value.toInt();
-                  if (i < 0 || i >= labels.length) {
-                    return const SizedBox.shrink();
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      labels[i],
-                      style: PremiumTheme.labelMedium.copyWith(
-                        color: Colors.white54,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          barGroups: List.generate(labels.length, (i) {
-            return BarChartGroupData(
-              x: i,
-              barRods: [
-                BarChartRodData(
-                  toY: values[i],
-                  width: 18,
-                  color: const Color(0xFF8B5CF6),
-                  borderRadius: BorderRadius.circular(6),
                 ),
               ],
-            );
-          }),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCompletionSummary() {
-    final totals = (_completion?['totals'] is Map) ? (_completion?['totals'] as Map) : null;
-    final passRate = totals?['pass_rate'];
-    final passed = totals?['passed'] ?? 0;
-    final total = totals?['total'] ?? 0;
-
-    final rateLabel = passRate is num ? '${passRate.toStringAsFixed(0)}%' : '--';
-    return _glassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionTitle('Completion rate', subtitle: 'Readiness score pass rate'),
-          const SizedBox(height: 10),
-          Text(
-            rateLabel,
-            style: PremiumTheme.displayMedium.copyWith(
-              color: Colors.white,
-              fontSize: 26,
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            '$passed / $total',
-            style: PremiumTheme.labelMedium.copyWith(color: Colors.white60),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _kpiTile({required String label, required String value}) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label,
-              style: PremiumTheme.labelMedium.copyWith(color: Colors.white60)),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: PremiumTheme.titleMedium.copyWith(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEngagementSection() {
-    final viewsTotal = (_engagement?['views_total'] is num)
-        ? (_engagement?['views_total'] as num).toInt()
-        : 0;
-    final uniqueClients = (_engagement?['unique_clients'] is num)
-        ? (_engagement?['unique_clients'] as num).toInt()
-        : 0;
-    final sessions = (_engagement?['sessions_count'] is num)
-        ? (_engagement?['sessions_count'] as num).toInt()
-        : 0;
-    final timeSpentSeconds = (_engagement?['time_spent_seconds'] is num)
-        ? (_engagement?['time_spent_seconds'] as num).toInt()
-        : 0;
-    final timeToSign = (_engagement?['time_to_sign'] is Map)
-        ? (_engagement?['time_to_sign'] as Map)
-        : null;
-    final ttsSamples = (timeToSign?['samples'] is num)
-        ? (timeToSign?['samples'] as num).toInt()
-        : 0;
-    final ttsAvgDays = (timeToSign?['avg_days'] is num)
-        ? (timeToSign?['avg_days'] as num).toDouble()
-        : null;
-
-    final conversion = (_engagement?['conversion'] is Map)
-        ? (_engagement?['conversion'] as Map)
-        : null;
-    final released = (conversion?['released'] is num)
-        ? (conversion?['released'] as num).toInt()
-        : 0;
-    final signed = (conversion?['signed'] is num)
-        ? (conversion?['signed'] as num).toInt()
-        : 0;
-    final convRate = (conversion?['rate_percent'] is num)
-        ? (conversion?['rate_percent'] as num).toDouble()
-        : null;
-
-    String fmtHours(int secs) {
-      if (secs <= 0) return '0h';
-      final hours = secs / 3600.0;
-      if (hours >= 1.0) return '${hours.toStringAsFixed(1)}h';
-      final mins = secs / 60.0;
-      return '${mins.toStringAsFixed(0)}m';
-    }
-
-    final rawByDay = _coerceListOfMaps(_engagement?['views_by_day']);
-    final spots = <FlSpot>[];
-    for (var i = 0; i < rawByDay.length; i++) {
-      final m = rawByDay[i];
-      final v = (m['views'] is num)
-          ? (m['views'] as num).toDouble()
-          : (m['count'] is num)
-              ? (m['count'] as num).toDouble()
-              : 0.0;
-      spots.add(FlSpot(i.toDouble(), v));
-    }
-    final maxY = spots.isEmpty
-        ? 1.0
-        : spots.fold<double>(0.0, (p, e) => math.max(p, e.y)) * 1.25;
-
-    return _glassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionTitle('Client engagement',
-              subtitle: 'Views, time spent, and conversion'),
-          const SizedBox(height: 12),
-          LayoutBuilder(
+        Expanded(
+          child: LayoutBuilder(
             builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 760;
-              final tiles = [
-                _kpiTile(label: 'Views', value: viewsTotal.toString()),
-                _kpiTile(label: 'Unique clients', value: uniqueClients.toString()),
-                _kpiTile(label: 'Sessions', value: sessions.toString()),
-                _kpiTile(label: 'Time spent', value: fmtHours(timeSpentSeconds)),
-                _kpiTile(
-                  label: 'Time to sign',
-                  value: ttsAvgDays == null
-                      ? '--'
-                      : '${ttsAvgDays.toStringAsFixed(1)}d ($ttsSamples)',
+              return SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: math.max(constraints.maxWidth,
+                      260.0 * stages.length + 20.0 * (stages.length - 1)),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (int i = 0; i < stages.length; i++) ...[
+                        Expanded(
+                          child: stageColumn(stages[i]),
+                        ),
+                        if (i != stages.length - 1) const SizedBox(width: 20),
+                      ],
+                    ],
+                  ),
                 ),
-                _kpiTile(
-                  label: 'Conversion',
-                  value: convRate == null
-                      ? '$signed/$released'
-                      : '${convRate.toStringAsFixed(1)}% ($signed/$released)',
-                ),
-              ];
-
-              if (isNarrow) {
-                return Column(
-                  children: [
-                    for (final t in tiles) ...[
-                      t,
-                      const SizedBox(height: 10),
-                    ]
-                  ],
-                );
-              }
-
-              return Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: tiles
-                    .map((t) => SizedBox(width: 230, child: t))
-                    .toList(),
               );
             },
           ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 200,
-            child: rawByDay.isEmpty
-                ? Text(
-                    'No daily views yet for this period.',
-                    style:
-                        PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-                  )
-                : LineChart(
-                    LineChartData(
-                      gridData: FlGridData(
-                        show: true,
-                        drawVerticalLine: false,
-                        getDrawingHorizontalLine: (value) => FlLine(
-                          color: Colors.white.withValues(alpha: 0.08),
-                          strokeWidth: 1,
-                        ),
-                      ),
-                      borderData: FlBorderData(show: false),
-                      titlesData: const FlTitlesData(
-                        topTitles: AxisTitles(
-                            sideTitles: SideTitles(showTitles: false)),
-                        rightTitles: AxisTitles(
-                            sideTitles: SideTitles(showTitles: false)),
-                        bottomTitles: AxisTitles(
-                            sideTitles: SideTitles(showTitles: false)),
-                        leftTitles:
-                            AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      ),
-                      minY: 0,
-                      maxY: maxY <= 0 ? 1 : maxY,
-                      lineBarsData: [
-                        LineChartBarData(
-                          spots: spots,
-                          isCurved: true,
-                          barWidth: 3,
-                          color: const Color(0xFF22C55E),
-                          dotData: const FlDotData(show: false),
-                          belowBarData: BarAreaData(
-                            show: true,
-                            color: const Color(0xFF22C55E)
-                                .withValues(alpha: 0.12),
-                          ),
-                        ),
-                      ],
+        ),
+      ],
+    );
+  }
+
+  String _formatDurationSeconds(int seconds) {
+    if (seconds <= 0) return '0m';
+    final h = seconds ~/ 3600;
+    final m = (seconds % 3600) ~/ 60;
+    if (h > 0) {
+      return '${h}h ${m}m';
+    }
+    if (m > 0) {
+      return '${m}m';
+    }
+    return '${seconds}s';
+  }
+
+  Widget _buildClientEngagementChart(List<Map<String, dynamic>> points) {
+    if (points.isEmpty) {
+      return const Center(
+        child: Text(
+          'No client engagement data yet',
+          style: TextStyle(color: Colors.white70),
+        ),
+      );
+    }
+
+    final maxValue = points.fold<double>(
+      0,
+      (p, e) => math.max(
+          p, (e['views'] is num) ? (e['views'] as num).toDouble() : 0.0),
+    );
+    final yMax = maxValue == 0 ? 1.0 : maxValue * 1.2;
+    final spots = <FlSpot>[
+      for (int i = 0; i < points.length; i++)
+        FlSpot(
+          i.toDouble(),
+          (points[i]['views'] is num)
+              ? (points[i]['views'] as num).toDouble()
+              : 0.0,
+        )
+    ];
+
+    String _labelForIndex(int index) {
+      if (index < 0 || index >= points.length) return '';
+      final raw = (points[index]['date'] ?? '').toString();
+      if (raw.length >= 10) {
+        final mmdd = raw.substring(5, 10);
+        return mmdd.replaceAll('-', '/');
+      }
+      return raw;
+    }
+
+    return LineChart(
+      LineChartData(
+        gridData: FlGridData(
+          show: true,
+          drawVerticalLine: false,
+          horizontalInterval: yMax / 4,
+          getDrawingHorizontalLine: (value) => FlLine(
+            color: const Color(0xFF2D3748),
+            strokeWidth: 1,
+          ),
+        ),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              getTitlesWidget: (value, meta) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: Text(
+                    value.toInt().toString(),
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 12,
                     ),
                   ),
+                );
+              },
+            ),
+          ),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 30,
+              interval: (points.length / 6).clamp(1, 999).toDouble(),
+              getTitlesWidget: (value, meta) {
+                final index = value.toInt();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    _labelForIndex(index),
+                    style: const TextStyle(
+                      color: Color(0xFF6B7280),
+                      fontSize: 12,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        minX: 0,
+        maxX: (points.length - 1).toDouble(),
+        minY: 0,
+        maxY: yMax,
+        lineBarsData: [
+          LineChartBarData(
+            spots: spots,
+            isCurved: true,
+            color: const Color(0xFF06B6D4),
+            barWidth: 3,
+            isStrokeCapRound: true,
+            dotData: FlDotData(
+              show: true,
+              getDotPainter: (spot, percent, barData, index) {
+                return FlDotCirclePainter(
+                  radius: 4,
+                  color: const Color(0xFF06B6D4),
+                  strokeWidth: 2,
+                  strokeColor: Colors.black.withValues(alpha: 0.3),
+                );
+              },
+            ),
+            belowBarData: BarAreaData(
+              show: true,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  const Color(0xFF06B6D4).withValues(alpha: 0.3),
+                  const Color(0xFF06B6D4).withValues(alpha: 0.0),
+                ],
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCollaborationSection() {
-    final totals = (_collaboration?['totals'] is Map)
-        ? (_collaboration?['totals'] as Map)
-        : null;
+  Widget _buildClientEngagementCard(Map<String, dynamic>? data) {
+    final viewsByDayRaw = (data?['views_by_day'] as List?) ?? [];
+    final points = <Map<String, dynamic>>[
+      for (final item in viewsByDayRaw)
+        if (item is Map)
+          {
+            'date': item['date'],
+            'views': item['views'],
+          }
+    ];
+
     int n(dynamic v) {
       if (v is int) return v;
       if (v is num) return v.toInt();
       return 0;
     }
 
-    final totalProposals = n(_collaboration?['total_proposals']);
-    final comments = n(totals?['comments']);
-    final versions = n(totals?['versions']);
-    final approvals = n(totals?['approvals']);
-    final reviewers = n(totals?['reviewers']);
-    final activity = n(totals?['activity_events']);
-    final interactions = n(totals?['interactions']);
+    final viewsTotal = n(data?['views_total']);
+    final uniqueClients = n(data?['unique_clients']);
+    final timeSpentSeconds = n(data?['time_spent_seconds']);
+    final sessionsCount = n(data?['sessions_count']);
 
-    final turnaround = (_collaboration?['reviewer_turnaround'] is Map)
-        ? (_collaboration?['reviewer_turnaround'] as Map)
-        : null;
-    final turnaroundSamples = n(turnaround?['samples']);
-    final turnaroundAvgDays = (turnaround?['avg_days'] is num)
-        ? (turnaround?['avg_days'] as num).toDouble()
-        : null;
+    final timeToSign = (data?['time_to_sign'] as Map?) ?? {};
+    final ttsSamples = n(timeToSign['samples']);
+    final avgDaysRaw = timeToSign['avg_days'];
+    final avgDays = (avgDaysRaw is num) ? avgDaysRaw.toDouble() : null;
+    final avgDaysLabel =
+        avgDays == null ? '--' : '${avgDays.toStringAsFixed(1)} days';
 
-    final highLoad = (_collaboration?['high_load'] is Map)
-        ? (_collaboration?['high_load'] as Map)
-        : null;
-    final highLoadCount = n(highLoad?['count']);
-    final highLoadThreshold = n(highLoad?['threshold']);
+    final conversion = (data?['conversion'] as Map?) ?? {};
+    final released = n(conversion['released']);
+    final signed = n(conversion['signed']);
+    final rateRaw = conversion['rate_percent'];
+    final rate = (rateRaw is num) ? rateRaw.toDouble() : null;
+    final conversionLabel =
+        rate == null ? '--' : '${rate.toStringAsFixed(1)}% ($signed/$released)';
 
-    final top = _coerceListOfMaps(_collaboration?['top_proposals']);
-
-    String fmtDays(double? days) {
-      if (days == null) return '--';
-      if (days >= 1) return '${days.toStringAsFixed(1)}d';
-      final hours = days * 24.0;
-      if (hours >= 1) return '${hours.toStringAsFixed(1)}h';
-      final minutes = hours * 60.0;
-      return '${minutes.toStringAsFixed(0)}m';
+    Widget statChip(String label, String value, Color color) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          '$label: $value',
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+          ),
+        ),
+      );
     }
 
-    return _glassCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionTitle('Collaboration load',
-              subtitle: 'Comments, versions, approvals, activity'),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              SizedBox(
-                  width: 220,
-                  child: _kpiTile(label: 'Proposals', value: '$totalProposals')),
-              SizedBox(
-                  width: 220,
-                  child: _kpiTile(label: 'Interactions', value: '$interactions')),
-              SizedBox(
-                  width: 220,
-                  child: _kpiTile(label: 'Comments', value: '$comments')),
-              SizedBox(
-                  width: 220,
-                  child: _kpiTile(label: 'Versions', value: '$versions')),
-              SizedBox(
-                  width: 220,
-                  child: _kpiTile(label: 'Approvals', value: '$approvals')),
-              SizedBox(
-                  width: 220,
-                  child: _kpiTile(label: 'Reviewers', value: '$reviewers')),
-              SizedBox(
-                  width: 220,
-                  child: _kpiTile(label: 'Activity', value: '$activity')),
-              SizedBox(
-                width: 220,
-                child: _kpiTile(
-                  label: 'Turnaround',
-                  value: '${fmtDays(turnaroundAvgDays)} ($turnaroundSamples)',
-                ),
-              ),
-              SizedBox(
-                width: 220,
-                child: _kpiTile(
-                  label: 'High-load',
-                  value: highLoadCount <= 0
-                      ? '0'
-                      : '$highLoadCount (≥$highLoadThreshold)',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            'Heatmap (last 28 days)',
-            style: PremiumTheme.titleMedium.copyWith(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          _buildCollaborationHeatmap(),
-          const SizedBox(height: 14),
-          Text(
-            'Top active proposals',
-            style: PremiumTheme.titleMedium.copyWith(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (top.isEmpty)
-            Text(
-              'No collaboration activity found for this period.',
-              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-            )
-          else
-            Column(
-              children: [
-                for (final p in top.take(8))
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(12),
-                      border:
-                          Border.all(color: Colors.white.withValues(alpha: 0.06)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            (p['title'] ?? 'Untitled').toString(),
-                            style: PremiumTheme.bodyMedium
-                                .copyWith(color: Colors.white),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Text(
-                          '${(p['interactions'] ?? 0)} interactions',
-                          style: PremiumTheme.labelMedium
-                              .copyWith(color: Colors.white60),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final app = context.watch<AppState>();
-    final user = AuthService.currentUser ?? app.currentUser;
-    final role = (user?['role'] ?? '').toString().toLowerCase().trim();
-    final isAdmin = role == 'admin' || role == 'ceo';
-
-    return Scaffold(
-      backgroundColor: const Color(0xFF0B1220),
-      body: Row(
-        children: [
-          AppSideNav(
-            isCollapsed: app.isSidebarCollapsed,
-            currentLabel: app.currentNavLabel,
-            isAdmin: isAdmin,
-            isLightMode: app.isLightMode,
-            onToggleThemeMode: app.toggleThemeMode,
-            onToggle: app.toggleSidebar,
-            onSelect: (label) {
-              app.setCurrentNavLabel(label);
-              if (label.toLowerCase().contains('analytics')) {
-                Navigator.pushNamed(context, '/analytics');
-              }
-            },
-          ),
-          Expanded(
-            child: CustomScrollbar(
-              controller: _scrollController,
-              child: SingleChildScrollView(
-                controller: _scrollController,
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'Analytics',
-                            style: PremiumTheme.displayMedium.copyWith(
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                        DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _scope,
-                            dropdownColor: const Color(0xFF0B1220),
-                            style: PremiumTheme.labelMedium
-                                .copyWith(color: Colors.white),
-                            items: const [
-                              DropdownMenuItem(
-                                  value: 'self', child: Text('My data')),
-                              DropdownMenuItem(
-                                  value: 'team', child: Text('Team')),
-                              DropdownMenuItem(
-                                  value: 'all', child: Text('All')),
-                            ],
-                            onChanged: (v) {
-                              if (v == null) return;
-                              setState(() {
-                                _scope = v;
-                              });
-                              _refresh();
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        DropdownButtonHideUnderline(
-                          child: DropdownButton<String>(
-                            value: _period,
-                            dropdownColor: const Color(0xFF0B1220),
-                            style: PremiumTheme.labelMedium
-                                .copyWith(color: Colors.white),
-                            items: const [
-                              DropdownMenuItem(
-                                  value: '7d', child: Text('7 days')),
-                              DropdownMenuItem(
-                                  value: '30d', child: Text('30 days')),
-                              DropdownMenuItem(
-                                  value: '90d', child: Text('90 days')),
-                              DropdownMenuItem(
-                                  value: 'ytd', child: Text('YTD')),
-                              DropdownMenuItem(
-                                  value: 'all', child: Text('All time')),
-                            ],
-                            onChanged: (v) {
-                              if (v == null) return;
-                              setState(() {
-                                _period = v;
-                              });
-                              _refresh();
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pushNamed(context, '/new-proposal');
-                          },
-                          icon: const Icon(Icons.add, size: 18),
-                          label: const Text('New Proposal'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white.withValues(alpha: 0.08),
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        ElevatedButton.icon(
-                          onPressed: _exportReport,
-                          icon: const Icon(Icons.download, size: 18),
-                          label: const Text('Export'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.white.withValues(alpha: 0.08),
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        ElevatedButton.icon(
-                          onPressed: _refresh,
-                          icon: _loading
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white),
-                                  ),
-                                )
-                              : const Icon(Icons.refresh, size: 18),
-                          label: const Text('Refresh'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00BCD4),
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    _buildFiltersBar(),
-                    const SizedBox(height: 18),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        if (constraints.maxWidth < 860) {
-                          return Column(
-                            children: [
-                              _buildCompletionSummary(),
-                              const SizedBox(height: 18),
-                              _buildRiskGateCard(),
-                            ],
-                          );
-                        }
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: _buildCompletionSummary()),
-                            const SizedBox(width: 18),
-                            Expanded(child: _buildRiskGateCard()),
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 18),
-                    _glassCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _sectionTitle('Pipeline',
-                              subtitle: 'Proposals by stage'),
-                          const SizedBox(height: 12),
-                          _buildPipelineChart(),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    _glassCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _sectionTitle('Cycle time',
-                              subtitle: 'Average days by stage'),
-                          const SizedBox(height: 12),
-                          _buildCycleTimeChart(),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    _buildEngagementSection(),
-                    const SizedBox(height: 18),
-                    _buildCollaborationSection(),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _FunnelStage extends StatelessWidget {
-  const _FunnelStage({
-    required this.label,
-    required this.value,
-    required this.width,
-    required this.color,
-  });
-
-  final String label;
-  final int value;
-  final double width;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        width: width,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.14),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.45)),
-        ),
-        child: Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
           children: [
-            Expanded(
-              child: Text(
-                label,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                    ),
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              value.toString(),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                  ),
-            ),
+            statChip('Views', viewsTotal.toString(),
+                Colors.white.withValues(alpha: 0.9)),
+            statChip(
+                'Unique Clients', uniqueClients.toString(), PremiumTheme.cyan),
+            statChip('Time Spent', _formatDurationSeconds(timeSpentSeconds),
+                PremiumTheme.teal),
+            statChip('Sessions', sessionsCount.toString(), PremiumTheme.info),
+            statChip('Conversion', conversionLabel, PremiumTheme.success),
+            statChip('Avg Time To Sign', avgDaysLabel, PremiumTheme.purple),
+            statChip('Samples', ttsSamples.toString(), Colors.white70),
           ],
         ),
-      ),
+        const SizedBox(height: 14),
+        Expanded(child: _buildClientEngagementChart(points)),
+      ],
     );
   }
-}
 
-/*
+  Future<Map<String, dynamic>?> _fetchCollaborationLoad() async {
+    try {
+      final now = DateTime.now();
+      final start = _periodStart(now);
+      final fmt = DateFormat('yyyy-MM-dd');
+      final startDate = start != null ? fmt.format(start) : null;
+      final endDate = fmt.format(now);
 
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
-      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -1325,7 +895,6 @@ class _FunnelStage extends StatelessWidget {
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
-            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );
@@ -1350,26 +919,10 @@ class _FunnelStage extends StatelessWidget {
 
     final comments = n(totals['comments']);
     final versions = n(totals['versions']);
-    final approvals = n(totals['approvals']);
-    final reviewers = n(totals['reviewers']);
     final events = n(totals['activity_events']);
     final interactions = n(totals['interactions']);
 
     final top = (data?['top_proposals'] as List?) ?? [];
-
-    final reviewerTurnaround = (data?['reviewer_turnaround'] as Map?) ?? {};
-    final turnaroundSamples = n(reviewerTurnaround['samples']);
-    final turnaroundAvgDays = (reviewerTurnaround['avg_days'] is num)
-        ? (reviewerTurnaround['avg_days'] as num).toDouble()
-        : null;
-
-    final heatmap = (data?['heatmap'] as Map?) ?? {};
-    final heatmapByDay = (heatmap['by_day'] as List?) ?? const [];
-
-    final highLoad = (data?['high_load'] as Map?) ?? {};
-    final highLoadThreshold = n(highLoad['threshold']);
-    final highLoadCount = n(highLoad['count']);
-    final highLoadProposals = (highLoad['proposals'] as List?) ?? const [];
 
     Widget statChip(String label, int value, Color color) {
       return Container(
@@ -1390,257 +943,71 @@ class _FunnelStage extends StatelessWidget {
       );
     }
 
-    String fmtDays(double? days) {
-      if (days == null) return '--';
-      if (days >= 1.0) return '${days.toStringAsFixed(1)}d';
-      final hours = days * 24.0;
-      if (hours >= 1.0) return '${hours.toStringAsFixed(1)}h';
-      final minutes = hours * 60.0;
-      return '${minutes.toStringAsFixed(0)}m';
-    }
-
-    Widget buildHeatmap() {
-      if (heatmapByDay.isEmpty) {
-        return Text(
-          'No collaboration heatmap data yet.',
-          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-        );
-      }
-
-      final points = <Map<String, dynamic>>[];
-      for (final raw in heatmapByDay) {
-        if (raw is Map) {
-          points.add({
-            'date': (raw['date'] ?? '').toString(),
-            'interactions': n(raw['interactions']),
-          });
-        }
-      }
-      if (points.isEmpty) {
-        return Text(
-          'No collaboration heatmap data yet.',
-          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-        );
-      }
-
-      final maxVal =
-          points.fold<int>(0, (p, e) => math.max(p, n(e['interactions'])));
-      final squares = points.take(28).toList();
-
-      Color cellColor(int v) {
-        if (v <= 0) return Colors.white.withValues(alpha: 0.06);
-        final denom = maxVal <= 0 ? 1 : maxVal;
-        final t = (v / denom).clamp(0.0, 1.0);
-        final a = 0.14 + (0.55 * t);
-        return PremiumTheme.teal.withValues(alpha: a);
-      }
-
-      return Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: [
-          for (final p in squares)
-            Tooltip(
-              message: '${p['date']}: ${n(p['interactions'])} interactions',
-              child: Container(
-                width: 16,
-                height: 16,
-                decoration: BoxDecoration(
-                  color: cellColor(n(p['interactions'])),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.08),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      );
-    }
-
-    return SingleChildScrollView(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              statChip('Interactions', interactions,
-                  Colors.white.withValues(alpha: 0.9)),
-              statChip('Comments', comments, PremiumTheme.teal),
-              statChip('Versions', versions, PremiumTheme.purple),
-              statChip('Approvals', approvals, PremiumTheme.success),
-              statChip('Reviewers', reviewers, Colors.white70),
-              statChip('Activity', events, PremiumTheme.info),
-              statChip('Proposals', totalProposals, Colors.white70),
-            ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            statChip('Interactions', interactions,
+                Colors.white.withValues(alpha: 0.9)),
+            statChip('Comments', comments, PremiumTheme.teal),
+            statChip('Versions', versions, PremiumTheme.purple),
+            statChip('Activity', events, PremiumTheme.info),
+            statChip('Proposals', totalProposals, Colors.white70),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          'Top active proposals',
+          style: PremiumTheme.titleMedium.copyWith(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Reviewer turnaround: ${fmtDays(turnaroundAvgDays)}'
-                  ' (${turnaroundSamples.toString()} sample${turnaroundSamples == 1 ? '' : 's'})',
-                  style:
-                      PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 12),
-              if (highLoadCount > 0)
-                Text(
-                  'High-load: $highLoadCount (≥$highLoadThreshold)',
-                  style: PremiumTheme.bodyMedium.copyWith(
-                    color: PremiumTheme.warning,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          buildHeatmap(),
-          const SizedBox(height: 16),
+        ),
+        const SizedBox(height: 10),
+        if (top.isEmpty)
           Text(
-            'Top active proposals',
-            style: PremiumTheme.titleMedium.copyWith(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 10),
-          if (top.isEmpty)
-            Text(
-              'No collaboration activity found in this period.',
-              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-            )
-          else
-            SizedBox(
-              height: 220,
-              child: ListView.separated(
-                itemCount: top.length,
-                separatorBuilder: (_, __) => Divider(
-                  height: 1,
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-                itemBuilder: (context, i) {
-                  final row = top[i];
-                  final id = (row['proposal_id'] ?? '').toString();
-                  final title = (row['title'] ?? 'Untitled').toString();
-                  final client = (row['client'] ?? '').toString();
-                  final status = (row['status'] ?? '').toString();
-                  final rowInteractions = n(row['interactions']);
-                  final rowComments = n(row['comments']);
-                  final rowVersions = n(row['versions']);
-                  final rowApprovals = n(row['approvals']);
-                  final rowReviewers = n(row['reviewers']);
-                  final isHighLoad = (row['high_load'] == true);
+            'No collaboration activity found in this period.',
+            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+          )
+        else
+          SizedBox(
+            height: 220,
+            child: ListView.separated(
+              itemCount: top.length,
+              separatorBuilder: (_, __) => Divider(
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.08),
+              ),
+              itemBuilder: (context, i) {
+                final row = top[i];
+                final id = (row['proposal_id'] ?? '').toString();
+                final title = (row['title'] ?? 'Untitled').toString();
+                final client = (row['client'] ?? '').toString();
+                final status = (row['status'] ?? '').toString();
+                final rowInteractions = n(row['interactions']);
 
-                  return InkWell(
-                    onTap: () {
-                      _openProposalFromAnalytics(id: id, title: title);
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 10),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            flex: 5,
-                            child: Text(
-                              title,
-                              style: PremiumTheme.bodyMedium.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Expanded(
-                            flex: 3,
-                            child: Text(
-                              client.isEmpty ? '-' : client,
-                              style: PremiumTheme.bodyMedium
-                                  .copyWith(color: Colors.white70),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              status.isEmpty ? '-' : status,
-                              style: PremiumTheme.bodyMedium
-                                  .copyWith(color: Colors.white70),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          SizedBox(
-                            width: 170,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  rowInteractions.toString(),
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    color: isHighLoad
-                                        ? PremiumTheme.warning
-                                        : Colors.white70,
-                                    fontWeight: isHighLoad
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                  ),
-                                  textAlign: TextAlign.right,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'C$rowComments  V$rowVersions  A$rowApprovals  R$rowReviewers',
-                                  style: PremiumTheme.bodySmall.copyWith(
-                                    color: Colors.white.withValues(alpha: 0.55),
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.right,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          if (highLoadProposals.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text(
-              'High-load proposals',
-              style: PremiumTheme.titleMedium.copyWith(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              height: 110,
-              child: ListView.separated(
-                itemCount: math.min(5, highLoadProposals.length),
-                separatorBuilder: (_, __) => Divider(
-                  height: 1,
-                  color: Colors.white.withValues(alpha: 0.08),
-                ),
-                itemBuilder: (context, i) {
-                  final row = highLoadProposals[i];
-                  final title = (row['title'] ?? 'Untitled').toString();
-                  final value = n(row['interactions']);
-                  return Padding(
+                return InkWell(
+                  onTap: () {
+                    Navigator.pushNamed(
+                      context,
+                      '/proposal_review',
+                      arguments: {
+                        'id': id,
+                        'title': title,
+                      },
+                    );
+                  },
+                  child: Padding(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                     child: Row(
                       children: [
                         Expanded(
+                          flex: 5,
                           child: Text(
                             title,
                             style: PremiumTheme.bodyMedium.copyWith(
@@ -1650,23 +1017,41 @@ class _FunnelStage extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Text(
-                          value.toString(),
-                          style: PremiumTheme.bodyMedium.copyWith(
-                            color: PremiumTheme.warning,
-                            fontWeight: FontWeight.w700,
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            client.isEmpty ? '-' : client,
+                            style: PremiumTheme.bodyMedium
+                                .copyWith(color: Colors.white70),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            status.isEmpty ? '-' : status,
+                            style: PremiumTheme.bodyMedium
+                                .copyWith(color: Colors.white70),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        SizedBox(
+                          width: 110,
+                          child: Text(
+                            rowInteractions.toString(),
+                            style: PremiumTheme.bodyMedium
+                                .copyWith(color: Colors.white70),
+                            textAlign: TextAlign.right,
                           ),
                         ),
                       ],
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
-          ],
-        ],
-      ),
+          ),
+      ],
     );
   }
 
@@ -1678,10 +1063,20 @@ class _FunnelStage extends StatelessWidget {
     _cycleTimeProposalTypeCtrl.dispose();
     _globalClientCtrl.dispose();
     _globalRegionCtrl.dispose();
-    _globalIndustryCtrl.dispose();
     _globalOwnerCtrl.dispose();
     _globalProposalTypeCtrl.dispose();
     super.dispose();
+  }
+
+  void _toggleSidebar() {
+    setState(() {
+      _isSidebarCollapsed = !_isSidebarCollapsed;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+    });
   }
 
   void _exportAsCSV() {
@@ -1824,7 +1219,6 @@ class _FunnelStage extends StatelessWidget {
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
-      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -1834,7 +1228,6 @@ class _FunnelStage extends StatelessWidget {
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
-            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );
@@ -1856,7 +1249,6 @@ class _FunnelStage extends StatelessWidget {
       final owner = _globalOwnerCtrl.text.trim();
       final proposalType = _globalProposalTypeCtrl.text.trim();
       final client = _globalClientCtrl.text.trim();
-      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -1920,7 +1312,6 @@ class _FunnelStage extends StatelessWidget {
                                 proposalType:
                                     proposalType.isEmpty ? null : proposalType,
                                 client: client.isEmpty ? null : client,
-                                industry: industry.isEmpty ? null : industry,
                                 scope: _cycleTimeScope,
                                 department:
                                     department.isEmpty ? null : department,
@@ -1964,16 +1355,17 @@ class _FunnelStage extends StatelessWidget {
                                 final risk =
                                     (p['risk_status'] ?? 'NONE').toString();
                                 final score = p['risk_score'];
-                                final readiness = p['readiness_score'];
-                                final issuesCount = p['issues_count'];
-                                final canRelease = (p['can_release'] == true);
 
                                 return InkWell(
                                   onTap: () {
                                     Navigator.pop(context);
-                                    _openProposalFromAnalytics(
-                                      id: id,
-                                      title: title,
+                                    Navigator.pushNamed(
+                                      this.context,
+                                      '/proposal_review',
+                                      arguments: {
+                                        'id': id,
+                                        'title': title,
+                                      },
                                     );
                                   },
                                   child: Padding(
@@ -2024,45 +1416,23 @@ class _FunnelStage extends StatelessWidget {
                                             risk,
                                             style: PremiumTheme.bodyMedium
                                                 .copyWith(
-                                              color: canRelease
-                                                  ? Colors.white70
-                                                  : PremiumTheme.error,
-                                              fontWeight: canRelease
-                                                  ? FontWeight.w500
-                                                  : FontWeight.w700,
+                                              color: Colors.white70,
                                             ),
                                             overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                         SizedBox(
-                                          width: 160,
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.end,
-                                            children: [
-                                              Text(
-                                                score == null
-                                                    ? '-'
-                                                    : score.toString(),
-                                                style: PremiumTheme.bodyMedium
-                                                    .copyWith(
-                                                  color: Colors.white70,
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                                textAlign: TextAlign.right,
-                                              ),
-                                              const SizedBox(height: 2),
-                                              Text(
-                                                'Ready: ${readiness ?? '--'}%  •  Issues: ${issuesCount ?? 0}',
-                                                style: PremiumTheme.bodySmall
-                                                    .copyWith(
-                                                  color: Colors.white
-                                                      .withValues(alpha: 0.55),
-                                                ),
-                                                overflow: TextOverflow.ellipsis,
-                                                textAlign: TextAlign.right,
-                                              ),
-                                            ],
+                                          width: 90,
+                                          child: Text(
+                                            score == null
+                                                ? '-'
+                                                : score.toString(),
+                                            style: PremiumTheme.bodyMedium
+                                                .copyWith(
+                                              color: Colors.white70,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.right,
                                           ),
                                         ),
                                       ],
@@ -2101,17 +1471,6 @@ class _FunnelStage extends StatelessWidget {
         }
       }
     }
-
-    final avgReadiness = (data?['avg_readiness_score'] is num)
-        ? (data?['avg_readiness_score'] as num).toInt()
-        : null;
-    final issuesSummary = (data?['issues_summary'] as Map?) ?? {};
-    final issuesTotal = (issuesSummary['total'] is num)
-        ? (issuesSummary['total'] as num).toInt()
-        : 0;
-    final proposalsWithIssues = (issuesSummary['proposals_with_issues'] is num)
-        ? (issuesSummary['proposals_with_issues'] as num).toInt()
-        : 0;
 
     Color levelColor() {
       switch (overall) {
@@ -2196,15 +1555,6 @@ class _FunnelStage extends StatelessWidget {
             chip('NONE', counts['NONE'] ?? 0,
                 Colors.white.withValues(alpha: 0.7)),
           ],
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'Readiness: ${avgReadiness == null ? "--" : "$avgReadiness%"}  •  Issues: $issuesTotal'
-          '${proposalsWithIssues > 0 ? " across $proposalsWithIssues proposal${proposalsWithIssues == 1 ? "" : "s"}" : ""}',
-          style: PremiumTheme.bodyMedium.copyWith(
-            color: Colors.white70,
-          ),
-          overflow: TextOverflow.ellipsis,
         ),
         const SizedBox(height: 12),
         Text(
@@ -2610,7 +1960,6 @@ class _FunnelStage extends StatelessWidget {
     final clientQ = _globalClientCtrl.text.trim().toLowerCase();
     final ownerQ = _globalOwnerCtrl.text.trim().toLowerCase();
     final typeQ = _globalProposalTypeCtrl.text.trim().toLowerCase();
-    final industryQ = _globalIndustryCtrl.text.trim().toLowerCase();
 
     bool matchesAny(dynamic value, String query) {
       if (query.isEmpty) return true;
@@ -2646,13 +1995,6 @@ class _FunnelStage extends StatelessWidget {
             matchesAny(p['templateType'], typeQ) ||
             matchesAny(p['template_key'], typeQ) ||
             matchesAny(p['templateKey'], typeQ);
-        if (!ok) return false;
-      }
-
-      if (industryQ.isNotEmpty) {
-        final ok = matchesAny(p['industry'], industryQ) ||
-            matchesAny(p['client_industry'], industryQ) ||
-            matchesAny(p['clientIndustry'], industryQ);
         if (!ok) return false;
       }
 
@@ -2756,22 +2098,6 @@ class _FunnelStage extends StatelessWidget {
             ),
           ),
         ),
-        SizedBox(
-          width: 240,
-          child: glassField(
-            child: TextField(
-              controller: _globalIndustryCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                hintText: 'Industry (optional)',
-                hintStyle: TextStyle(color: Colors.white54),
-              ),
-              onSubmitted: (_) => setState(() {}),
-            ),
-          ),
-        ),
         glassField(
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -2783,7 +2109,6 @@ class _FunnelStage extends StatelessWidget {
                   setState(() {
                     _globalClientCtrl.clear();
                     _globalRegionCtrl.clear();
-                    _globalIndustryCtrl.clear();
                     _globalOwnerCtrl.clear();
                     _globalProposalTypeCtrl.clear();
                     _cycleTimeRefreshTick++;
@@ -2878,6 +2203,12 @@ class _FunnelStage extends StatelessWidget {
         user['email']?.split('@')[0];
 
     return name ?? 'User';
+  }
+
+  bool _isAdminUser() {
+    final user = AuthService.currentUser;
+    final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
+    return backendRole == 'admin' || backendRole == 'ceo';
   }
 
   String? _pipelineStageForStatus(String statusLower) {
@@ -3017,90 +2348,60 @@ class _FunnelStage extends StatelessWidget {
         (totals['total'] is num) ? (totals['total'] as num).toInt() : 0;
     final passed =
         (totals['passed'] is num) ? (totals['passed'] as num).toInt() : 0;
-    final passRateRaw = totals['pass_rate'];
-    int passRate = 0;
-    if (passRateRaw is num) {
-      final v = passRateRaw.toDouble();
-      passRate = (v <= 1.0) ? (v * 100).round() : v.round();
-    }
-    final ratio = (passRate / 100.0).clamp(0.0, 1.0);
+    final passRate =
+        (totals['pass_rate'] is num) ? (totals['pass_rate'] as num).toInt() : 0;
+    final ratio = total <= 0 ? 0.0 : (passed / total).clamp(0.0, 1.0);
 
     return Center(
       child: InkWell(
         onTap: () => _showCompletionRatesDialog(data),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final maxW =
-                constraints.maxWidth.isFinite ? constraints.maxWidth : 180.0;
-            final maxH =
-                constraints.maxHeight.isFinite ? constraints.maxHeight : 180.0;
-            final size = math.max(48.0, math.min(180.0, math.min(maxW, maxH)));
-            final compact = size < 140;
-
-            return SizedBox(
-              width: size,
-              height: size,
-              child: Stack(
-                alignment: Alignment.center,
+        child: SizedBox(
+          width: 180,
+          height: 180,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 180,
+                height: 180,
+                child: CircularProgressIndicator(
+                  value: ratio,
+                  strokeWidth: 12,
+                  backgroundColor: Colors.white.withValues(alpha: 0.10),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    passRate >= 90
+                        ? PremiumTheme.success
+                        : passRate >= 60
+                            ? PremiumTheme.warning
+                            : PremiumTheme.error,
+                  ),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    width: size,
-                    height: size,
-                    child: CircularProgressIndicator(
-                      value: ratio,
-                      strokeWidth: compact ? 10 : 12,
-                      backgroundColor: Colors.white.withValues(alpha: 0.10),
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        passRate >= 90
-                            ? PremiumTheme.success
-                            : passRate >= 60
-                                ? PremiumTheme.warning
-                                : PremiumTheme.error,
-                      ),
+                  Text(
+                    '$passRate%',
+                    style: PremiumTheme.displayMedium.copyWith(fontSize: 34),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '$passed of $total passing',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: PremiumTheme.textSecondary,
                     ),
                   ),
-                  Padding(
-                    padding: EdgeInsets.all(compact ? 6 : 10),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            '$passRate%',
-                            style: PremiumTheme.displayMedium
-                                .copyWith(fontSize: compact ? 26 : 34),
-                          ),
-                        ),
-                        SizedBox(height: compact ? 4 : 6),
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            '$passed of $total passing',
-                            style: PremiumTheme.bodyMedium.copyWith(
-                              color: PremiumTheme.textSecondary,
-                              fontSize: compact ? 11 : null,
-                            ),
-                          ),
-                        ),
-                        SizedBox(height: compact ? 4 : 6),
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            'Tap to drill down',
-                            style: PremiumTheme.bodySmall.copyWith(
-                              color: Colors.white70,
-                              fontSize: compact ? 10 : null,
-                            ),
-                          ),
-                        ),
-                      ],
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tap to drill down',
+                    style: PremiumTheme.bodySmall.copyWith(
+                      color: Colors.white70,
                     ),
                   ),
                 ],
               ),
-            );
-          },
+            ],
+          ),
         ),
       ),
     );
@@ -3118,6 +2419,7 @@ class _FunnelStage extends StatelessWidget {
     final signedCount = pipelineCounts['Signed'] ?? 0;
     final userName = _getUserName(app.currentUser);
     final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : 'U';
+    final isAdminUser = _isAdminUser();
     return Scaffold(
       body: Container(
         color: Colors.transparent,
@@ -3518,7 +2820,7 @@ class _FunnelStage extends StatelessWidget {
                                   Expanded(
                                     child: FutureBuilder<Map<String, dynamic>?>(
                                       key: ValueKey(
-                                          'pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
+                                          'pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
                                       future: _fetchPipelineBundle(),
                                       builder: (context, snapshot) {
                                         final waiting =
@@ -3640,7 +2942,7 @@ class _FunnelStage extends StatelessWidget {
                                 'Risk Gate',
                                 FutureBuilder<Map<String, dynamic>?>(
                                   key: ValueKey(
-                                      'risk_gate_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                      'risk_gate_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
                                   future: _fetchRiskGateSummary(),
                                   builder: (context, snapshot) {
                                     if (snapshot.connectionState ==
@@ -3670,7 +2972,7 @@ class _FunnelStage extends StatelessWidget {
                                 'Collaboration Load',
                                 FutureBuilder<Map<String, dynamic>?>(
                                   key: ValueKey(
-                                      'collab_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                      'collab_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
                                   future: _fetchCollaborationLoad(),
                                   builder: (context, snapshot) {
                                     if (snapshot.connectionState ==
@@ -3700,7 +3002,7 @@ class _FunnelStage extends StatelessWidget {
                                 'Client Engagement',
                                 FutureBuilder<Map<String, dynamic>?>(
                                   key: ValueKey(
-                                      'engagement_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalIndustryCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                      'engagement_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
                                   future: _fetchClientEngagement(),
                                   builder: (context, snapshot) {
                                     if (snapshot.connectionState ==
@@ -4500,8 +3802,6 @@ class _FunnelStage extends StatelessWidget {
       final proposalType = _cycleTimeProposalTypeCtrl.text.trim().isNotEmpty
           ? _cycleTimeProposalTypeCtrl.text.trim()
           : _globalProposalTypeCtrl.text.trim();
-      final client = _globalClientCtrl.text.trim();
-      final industry = _globalIndustryCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
 
@@ -4510,8 +3810,6 @@ class _FunnelStage extends StatelessWidget {
             endDate: endDate,
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
-            client: client.isEmpty ? null : client,
-            industry: industry.isEmpty ? null : industry,
             scope: _cycleTimeScope,
             department: department.isEmpty ? null : department,
           );
@@ -4596,7 +3894,7 @@ class _FunnelStage extends StatelessWidget {
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: _cycleTimeScope,
-              dropdownColor: const Color(0xFF1A1F26),
+              dropdownColor: const Color(0xFF0A0E27),
               style: const TextStyle(color: Colors.white),
               icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
               items: const [
@@ -4783,4 +4081,5 @@ class _FunnelStage extends StatelessWidget {
     if (date == null) return 'No date';
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
   }
+}
 */

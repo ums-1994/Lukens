@@ -5,6 +5,11 @@
   <meta name='viewport' content='width=device-width, initial-scale=1.0'>
   <base href="$FLUTTER_BASE_HREF">
   <title>Proposal & SOW Builder v2</title>
+  <!-- Force Flutter web to use local backend when running locally -->
+  <script>
+    // Force Flutter web to use your local backend
+    window.USE_LOCAL_API = true;
+  </script>
   <!-- App Configuration - Load before Flutter app -->
   <script src="config.js"></script>
 </head>

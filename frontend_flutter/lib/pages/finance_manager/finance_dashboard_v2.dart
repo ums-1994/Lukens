@@ -2,12 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http/http.dart' as http;
+
+import 'dart:convert';
+import 'dart:html' as html;
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
+import '../../widgets/finance/finance_sidebar.dart';
 import '../../widgets/footer.dart';
 import '../creator/blank_document_editor_page.dart';
 import 'finance_client_management_page.dart';
@@ -199,6 +205,28 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is! Map) return;
 
+    final String? initialTab = args['initialTab']?.toString();
+    if (initialTab != null && initialTab.trim().isNotEmpty) {
+      final t = initialTab.trim().toLowerCase();
+      if (t == 'audit') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() => _currentTab = 'audit');
+          _loadAuditLogs();
+        });
+      } else if (t == 'dashboard' || t == 'proposals' || t == 'clients') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() => _currentTab = t);
+        });
+      } else if (t == 'client management') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          setState(() => _currentTab = 'clients');
+        });
+      }
+    }
+
     final dynamic openIdRaw = args['openProposalId'] ?? args['proposalId'];
     final String? openProposalId =
         openIdRaw?.toString().trim().isNotEmpty == true
@@ -234,7 +262,129 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
+    _auditUserController.dispose();
+    _auditEntityTypeController.dispose();
+    _auditActionTypeController.dispose();
     super.dispose();
+  }
+
+  bool _canAccessAudit(AppState app) {
+    final role = (app.currentUser?['role'] ?? '').toString().toLowerCase();
+    return role == 'finance_manager' || role == 'admin' || role == 'ceo';
+  }
+
+  Map<String, String> _auditQueryParams({
+    required int limit,
+    required int offset,
+  }) {
+    final params = <String, String>{
+      'limit': limit.toString(),
+      'offset': offset.toString(),
+    };
+
+    if (_auditFrom != null) {
+      params['date_from'] = _auditFrom!.toUtc().toIso8601String();
+    }
+    if (_auditTo != null) {
+      params['date_to'] = _auditTo!.toUtc().toIso8601String();
+    }
+    final u = _auditUserController.text.trim();
+    if (u.isNotEmpty) params['user'] = u;
+    final et = _auditEntityTypeController.text.trim();
+    if (et.isNotEmpty) params['entity_type'] = et;
+    final at = _auditActionTypeController.text.trim();
+    if (at.isNotEmpty) params['action_type'] = at;
+    return params;
+  }
+
+  Future<void> _loadAuditLogs() async {
+    if (_auditLoading) return;
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+    if (token == null) return;
+
+    setState(() => _auditLoading = true);
+    try {
+      final uri = Uri.parse('${baseUrl}/api/finance/audit-logs').replace(
+        queryParameters: _auditQueryParams(limit: 250, offset: 0),
+      );
+
+      final resp = await http.get(
+        uri,
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (resp.statusCode == 200) {
+        final decoded = jsonDecode(resp.body);
+        final itemsAny = (decoded is Map) ? decoded['items'] : null;
+        final items = <Map<String, dynamic>>[];
+        if (itemsAny is List) {
+          for (final r in itemsAny) {
+            if (r is Map<String, dynamic>) {
+              items.add(r);
+            } else if (r is Map) {
+              items.add(r.map((k, v) => MapEntry(k.toString(), v)));
+            }
+          }
+        }
+        setState(() => _auditItems = items);
+      } else {
+        debugPrint('Audit logs error: ${resp.statusCode} ${resp.body}');
+        setState(() => _auditItems = []);
+      }
+    } catch (e) {
+      debugPrint('Audit logs exception: $e');
+      setState(() => _auditItems = []);
+    } finally {
+      if (mounted) setState(() => _auditLoading = false);
+    }
+  }
+
+  Future<void> _exportAuditLogs(String format) async {
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+    if (token == null) return;
+
+    final uri = Uri.parse('${baseUrl}/api/finance/audit-logs/export').replace(
+      queryParameters: {
+        ..._auditQueryParams(limit: 5000, offset: 0),
+        'format': format,
+      },
+    );
+
+    final resp = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': format == 'pdf' ? 'application/pdf' : 'text/csv',
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      debugPrint('Audit export failed: ${resp.statusCode} ${resp.body}');
+      return;
+    }
+
+    if (kIsWeb) {
+      final bytes = resp.bodyBytes;
+      final mime = format == 'pdf' ? 'application/pdf' : 'text/csv';
+      final fileName =
+          'finance_audit_${DateTime.now().millisecondsSinceEpoch}.${format == 'pdf' ? 'pdf' : 'csv'}';
+      final blob = html.Blob([bytes], mime);
+      final url = html.Url.createObjectUrlFromBlob(blob);
+      final anchor = html.AnchorElement(href: url)
+        ..setAttribute('download', fileName)
+        ..style.display = 'none';
+      html.document.body?.children.add(anchor);
+      anchor.click();
+      html.document.body?.children.remove(anchor);
+      Future.delayed(const Duration(milliseconds: 500), () {
+        html.Url.revokeObjectUrl(url);
+      });
+    }
   }
 
   Future<void> _loadData() async {
@@ -258,6 +408,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
       await Future.wait([
         app.fetchProposals(),
         app.fetchDashboard(),
+        app.fetchNotifications(),
       ]);
 
       await _fetchFinanceMetrics(app);
@@ -382,7 +533,134 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
       final parsed = double.tryParse(cleaned);
       if (parsed != null) return parsed;
     }
-    return 0;
+
+    double _parseNum(dynamic v) {
+      if (v == null) return 0;
+      if (v is num) return v.toDouble();
+      final cleaned = v.toString().replaceAll(RegExp(r'[^0-9.\-]'), '');
+      return double.tryParse(cleaned) ?? 0;
+    }
+
+    int? _findHeaderIndex(List<dynamic> headers, List<String> needles) {
+      for (int i = 0; i < headers.length; i++) {
+        final h = headers[i].toString().toLowerCase().trim();
+        for (final n in needles) {
+          if (h == n || h.contains(n)) return i;
+        }
+      }
+      return null;
+    }
+
+    double _tableSubtotalFromCells(List<dynamic> cellsRaw) {
+      if (cellsRaw.isEmpty) return 0;
+      final headerRow = cellsRaw.first;
+      if (headerRow is! List) return 0;
+
+      final totalCol =
+          _findHeaderIndex(headerRow, ['total', 'amount', 'line total']) ?? 4;
+      final qtyCol = _findHeaderIndex(headerRow, ['quantity', 'qty']) ?? 2;
+      final unitCol = _findHeaderIndex(headerRow, ['unit price', 'price']) ?? 3;
+
+      double subtotal = 0;
+      for (int i = 1; i < cellsRaw.length; i++) {
+        final rowAny = cellsRaw[i];
+        if (rowAny is! List) continue;
+
+        final row = rowAny;
+        double rowTotal = 0;
+        if (totalCol >= 0 && totalCol < row.length) {
+          rowTotal = _parseNum(row[totalCol]);
+        }
+
+        if (rowTotal == 0) {
+          final qty = (qtyCol >= 0 && qtyCol < row.length)
+              ? _parseNum(row[qtyCol])
+              : 0.0;
+          final unit = (unitCol >= 0 && unitCol < row.length)
+              ? _parseNum(row[unitCol])
+              : 0.0;
+          rowTotal = qty * unit;
+        }
+
+        subtotal += rowTotal;
+      }
+      return subtotal;
+    }
+
+    double _sumPriceTablesFromSections(dynamic sectionsAny) {
+      final List<dynamic> sectionsList;
+      if (sectionsAny is List) {
+        sectionsList = sectionsAny;
+      } else if (sectionsAny is Map && sectionsAny['sections'] is List) {
+        sectionsList = sectionsAny['sections'] as List;
+      } else {
+        return 0;
+      }
+
+      double _sumPriceTablesFromSectionMap(Map sAny) {
+        double total = 0;
+
+        void sumTablesList(dynamic tablesAny) {
+          if (tablesAny is! List) return;
+          for (final tAny in tablesAny) {
+            if (tAny is! Map) continue;
+            final type = (tAny['type'] ?? '').toString().toLowerCase().trim();
+            if (type != 'price') continue;
+            final cellsAny = tAny['cells'];
+            if (cellsAny is! List) continue;
+            final subtotal = _tableSubtotalFromCells(cellsAny);
+            final vatRate = _parseNum(tAny['vatRate']);
+            final vat = vatRate > 0 ? subtotal * vatRate : 0;
+            total += (subtotal + vat);
+          }
+        }
+
+        void sumPositionedTables(dynamic positionedAny) {
+          if (positionedAny is! List) return;
+          for (final pAny in positionedAny) {
+            if (pAny is! Map) continue;
+            final tableAny = pAny['table'];
+            if (tableAny is! Map) continue;
+            sumTablesList([tableAny]);
+          }
+        }
+
+        sumTablesList(sAny['tables']);
+        sumPositionedTables(sAny['positionedPricingTables']);
+
+        final bodyAny = sAny['body'] ?? sAny['content'];
+        if (bodyAny is Map) {
+          sumTablesList(bodyAny['tables']);
+          sumPositionedTables(bodyAny['positionedPricingTables']);
+        }
+
+        return total;
+      }
+
+      double total = 0;
+      for (final sAny in sectionsList) {
+        if (sAny is! Map) continue;
+        total += _sumPriceTablesFromSectionMap(sAny);
+      }
+      return total;
+    }
+
+    dynamic sectionsAny = p['sections'];
+    if (sectionsAny == null) {
+      final contentAny = p['content'];
+      if (contentAny is Map) {
+        sectionsAny = contentAny['sections'] ?? contentAny;
+      } else if (contentAny is String) {
+        try {
+          final decoded = jsonDecode(contentAny);
+          if (decoded is Map || decoded is List) {
+            sectionsAny = decoded;
+          }
+        } catch (_) {}
+      }
+    }
+
+    return _sumPriceTablesFromSections(sectionsAny);
   }
 
   String _formatCurrency(double amount) {
@@ -404,6 +682,495 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     final pct = (value * 100).clamp(0, 999);
     if (pct.isNaN || pct.isInfinite) return '--';
     return '${pct.toStringAsFixed(0)}%';
+  }
+
+  String _financePipelineBucket(String rawStatus) {
+    final s = rawStatus.toLowerCase();
+    if (_isPricingInProgressStatus(s)) return 'In Pricing';
+    if (s.contains('pending review') || s.contains('pending approval')) {
+      return 'Pending Review';
+    }
+    if (s.contains('changes requested') || s.contains('needs changes')) {
+      return 'Changes Requested';
+    }
+    if (s.contains('released') || s.contains('sent to client')) {
+      return 'Released';
+    }
+    if (s.contains('signed') || s.contains('approved')) {
+      return 'Signed';
+    }
+    return 'Unknown';
+  }
+
+  Widget _buildAuditPanel() {
+    final dateFmt = DateFormat('yyyy-MM-dd');
+    final fromLabel = _auditFrom == null ? 'From' : dateFmt.format(_auditFrom!);
+    final toLabel = _auditTo == null ? 'To' : dateFmt.format(_auditTo!);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: Colors.white.withOpacity(0.04),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Text('Audit Logs', style: PremiumTheme.titleMedium),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: () => _exportAuditLogs('csv'),
+                icon:
+                    const Icon(Icons.download, color: Colors.white70, size: 18),
+                label:
+                    const Text('CSV', style: TextStyle(color: Colors.white70)),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: () => _exportAuditLogs('pdf'),
+                icon: const Icon(Icons.picture_as_pdf,
+                    color: Colors.white70, size: 18),
+                label:
+                    const Text('PDF', style: TextStyle(color: Colors.white70)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _auditFrom ?? DateTime.now(),
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked == null) return;
+                  setState(() => _auditFrom = picked);
+                  _loadAuditLogs();
+                },
+                icon: const Icon(Icons.date_range, color: Colors.white70),
+                label: Text(fromLabel,
+                    style: const TextStyle(color: Colors.white70)),
+              ),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: _auditTo ?? DateTime.now(),
+                    firstDate: DateTime(2020),
+                    lastDate: DateTime(2100),
+                  );
+                  if (picked == null) return;
+                  setState(() => _auditTo = picked);
+                  _loadAuditLogs();
+                },
+                icon: const Icon(Icons.date_range, color: Colors.white70),
+                label: Text(toLabel,
+                    style: const TextStyle(color: Colors.white70)),
+              ),
+              SizedBox(
+                width: 220,
+                child: TextField(
+                  controller: _auditUserController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'User',
+                    labelStyle: TextStyle(color: Colors.white70),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: PremiumTheme.teal),
+                    ),
+                  ),
+                  onSubmitted: (_) => _loadAuditLogs(),
+                ),
+              ),
+              SizedBox(
+                width: 220,
+                child: TextField(
+                  controller: _auditEntityTypeController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Entity Type',
+                    labelStyle: TextStyle(color: Colors.white70),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: PremiumTheme.teal),
+                    ),
+                  ),
+                  onSubmitted: (_) => _loadAuditLogs(),
+                ),
+              ),
+              SizedBox(
+                width: 220,
+                child: TextField(
+                  controller: _auditActionTypeController,
+                  style: const TextStyle(color: Colors.white),
+                  decoration: const InputDecoration(
+                    labelText: 'Action Type',
+                    labelStyle: TextStyle(color: Colors.white70),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: Colors.white24),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(color: PremiumTheme.teal),
+                    ),
+                  ),
+                  onSubmitted: (_) => _loadAuditLogs(),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          if (_auditLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(18),
+                child: CircularProgressIndicator(color: PremiumTheme.teal),
+              ),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: const [
+                  DataColumn(label: Text('Time')),
+                  DataColumn(label: Text('User')),
+                  DataColumn(label: Text('Entity')),
+                  DataColumn(label: Text('Action')),
+                  DataColumn(label: Text('Field')),
+                  DataColumn(label: Text('Old')),
+                  DataColumn(label: Text('New')),
+                ],
+                rows: _auditItems.map((r) {
+                  final createdAt = (r['created_at'] ?? '').toString();
+                  final uname = (r['username'] ?? '').toString();
+                  final entity =
+                      '${(r['entity_type'] ?? '').toString()}#${(r['entity_id'] ?? '').toString()}';
+                  final action = (r['action_type'] ?? '').toString();
+                  final field = (r['field_name'] ?? '').toString();
+                  final oldV = (r['old_value'] ?? '').toString();
+                  final newV = (r['new_value'] ?? '').toString();
+
+                  Text cell(String v) => Text(
+                        v,
+                        style: PremiumTheme.bodySmall
+                            .copyWith(color: Colors.white70),
+                        overflow: TextOverflow.ellipsis,
+                      );
+
+                  return DataRow(cells: [
+                    DataCell(cell(createdAt)),
+                    DataCell(cell(uname)),
+                    DataCell(cell(entity)),
+                    DataCell(cell(action)),
+                    DataCell(cell(field)),
+                    DataCell(cell(oldV)),
+                    DataCell(cell(newV)),
+                  ]);
+                }).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotificationButton(AppState app) {
+    final unread = app.unreadNotifications;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        SizedBox(
+          width: 44,
+          height: 44,
+          child: IconButton(
+            tooltip: 'Notifications',
+            icon: Icon(
+              unread > 0
+                  ? Icons.notifications_active
+                  : Icons.notifications_none,
+              color: Colors.white,
+            ),
+            onPressed: () async {
+              await app.fetchNotifications();
+              if (!mounted) return;
+              _showNotificationsSheet(app);
+            },
+          ),
+        ),
+        if (unread > 0)
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: const BoxDecoration(
+                color: Color(0xFFE74C3C),
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+              ),
+              child: Text(
+                unread > 99 ? '99+' : unread.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showNotificationsSheet(AppState app) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (bottomSheetContext) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1A1A2A),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              final notifications = app.notifications;
+              final unreadCount = app.unreadNotifications;
+
+              return Container(
+                constraints: BoxConstraints(
+                  maxHeight:
+                      MediaQuery.of(bottomSheetContext).size.height * 0.8,
+                ),
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(bottomSheetContext).viewInsets.bottom,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                            color: Color(0xFF2C3E50),
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Notifications',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              if (unreadCount > 0)
+                                TextButton(
+                                  onPressed: () async {
+                                    await app.markAllNotificationsRead();
+                                    setModalState(() {});
+                                  },
+                                  style: TextButton.styleFrom(
+                                    backgroundColor: const Color(0xFF3498DB),
+                                  ),
+                                  child: const Text(
+                                    'Mark all read',
+                                    style: TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                          horizontal: 16,
+                        ),
+                        child: notifications.isEmpty
+                            ? const Center(
+                                child: Text(
+                                  'No notifications yet.',
+                                  style: TextStyle(
+                                    color: Color(0xFF4A4A4A),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: const EdgeInsets.symmetric(
+                                    vertical: 12, horizontal: 16),
+                                itemCount: notifications.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 16),
+                                itemBuilder: (context, index) {
+                                  final rawItem = notifications[index];
+                                  final Map<String, dynamic> notification =
+                                      rawItem is Map<String, dynamic>
+                                          ? rawItem
+                                          : (rawItem is Map
+                                              ? <String, dynamic>{}
+                                              : <String, dynamic>{});
+
+                                  final title =
+                                      notification['title']?.toString().trim();
+                                  final message = notification['message']
+                                          ?.toString()
+                                          .trim() ??
+                                      '';
+                                  final proposalTitle =
+                                      notification['proposal_title']
+                                          ?.toString()
+                                          .trim();
+                                  final isRead =
+                                      notification['is_read'] == true;
+                                  final timeLabel =
+                                      _formatNotificationTimestamp(
+                                          notification['created_at']);
+
+                                  final dynamic notificationIdRaw =
+                                      notification['id'];
+                                  final int? notificationId = notificationIdRaw
+                                          is int
+                                      ? notificationIdRaw
+                                      : int.tryParse(
+                                          notificationIdRaw?.toString() ?? '',
+                                        );
+
+                                  return ListTile(
+                                    onTap: () async {
+                                      Navigator.of(bottomSheetContext).pop();
+                                      await _handleNotificationTap(
+                                        app,
+                                        notification,
+                                        notificationId,
+                                        isAlreadyRead: isRead,
+                                      );
+                                    },
+                                    leading: Icon(
+                                      isRead
+                                          ? Icons.notifications_none_outlined
+                                          : Icons.notifications_active,
+                                      color: isRead
+                                          ? const Color(0xFF95A5A6)
+                                          : const Color(0xFF3498DB),
+                                    ),
+                                    title: Text(
+                                      title?.isNotEmpty == true
+                                          ? title!
+                                          : 'Notification',
+                                      style: TextStyle(
+                                        color: const Color(0xFF2C3E50),
+                                        fontWeight: isRead
+                                            ? FontWeight.normal
+                                            : FontWeight.bold,
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      message,
+                                      style: TextStyle(
+                                        color: const Color(0xFF64748B),
+                                        fontSize: 14,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _handleNotificationTap(
+      AppState app, Map<String, dynamic> notification, int? notificationId,
+      {required bool isAlreadyRead}) async {
+    // Handle notification tap based on type
+    final notificationType = notification['notification_type']?.toString();
+
+    if (notificationType == 'changes_requested') {
+      // Handle change requests - navigate to proposal review
+      final proposalId = notification['proposal_id'];
+      if (proposalId != null) {
+        Navigator.of(context).pop();
+        Navigator.pushNamed(
+          context,
+          '/admin/proposal_review',
+          arguments: {'proposalId': proposalId.toString()},
+        );
+      }
+    } else if (notificationType == 'proposal_approved') {
+      // Handle proposal approvals
+      final proposalId = notification['proposal_id'];
+      if (proposalId != null) {
+        Navigator.of(context).pop();
+        Navigator.pushNamed(
+          context,
+          '/admin/proposal_review',
+          arguments: {'proposalId': proposalId.toString()},
+        );
+      }
+    }
+
+    // Mark as read if not already read
+    if (!isAlreadyRead && notificationId != null) {
+      try {
+        await app.markNotificationRead(notificationId);
+      } catch (e) {
+        debugPrint('Error marking notification as read: $e');
+      }
+    }
+  }
+
+  String _formatNotificationTimestamp(dynamic timestamp) {
+    if (timestamp == null) return '';
+    try {
+      final dateTime = DateTime.parse(timestamp.toString());
+      final now = DateTime.now();
+      final difference = now.difference(dateTime);
+
+      if (difference.inDays > 0) {
+        return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
+      } else if (difference.inHours > 0) {
+        return '${difference.inHours}h ago';
+      } else if (difference.inMinutes > 0) {
+        return '${difference.inMinutes}m ago';
+      } else {
+        return 'Just now';
+      }
+    } catch (e) {
+      return '';
+    }
   }
 
   double _computeAvgCycleTimeDays(List<Map<String, dynamic>> proposals) {
@@ -439,6 +1206,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     final proposalsTabProposals = _getFilteredProposals(app);
     final proposals =
         _currentTab == 'dashboard' ? dashboardProposals : proposalsTabProposals;
+
+    final pendingBadge = app.proposals
+        .where((p) =>
+            (p is Map) &&
+            _isPricingInProgressStatus((p['status'] ?? '').toString()))
+        .length;
 
     final pricingCount = proposals
         .where(
@@ -488,7 +1261,58 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
             Expanded(
               child: Row(
                 children: [
-                  _buildSidebar(),
+                  FinanceSidebar(
+                    isCollapsed: _isSidebarCollapsed,
+                    currentPage: _currentTab == 'dashboard'
+                        ? 'Dashboard'
+                        : _currentTab == 'proposals'
+                            ? 'Proposals'
+                            : _currentTab == 'clients'
+                                ? 'Client Management'
+                                : _currentTab == 'audit'
+                                    ? 'Audit'
+                                    : 'Dashboard',
+                    showAudit: _canAccessAudit(app),
+                    pendingBadge: pendingBadge > 0 ? pendingBadge : null,
+                    onToggle: () {
+                      setState(() {
+                        _isSidebarCollapsed = !_isSidebarCollapsed;
+                      });
+                    },
+                    onSelect: (label) {
+                      if (label == 'Dashboard') {
+                        setState(() => _currentTab = 'dashboard');
+                        return;
+                      }
+                      if (label == 'Proposals') {
+                        setState(() => _currentTab = 'proposals');
+                        return;
+                      }
+                      if (label == 'Client Management') {
+                        setState(() => _currentTab = 'clients');
+                        return;
+                      }
+                      if (label == 'Audit') {
+                        setState(() => _currentTab = 'audit');
+                        _loadAuditLogs();
+                        return;
+                      }
+                      if (label == 'Analytics') {
+                        Navigator.pushNamed(context, '/analytics');
+                        return;
+                      }
+                      if (label == 'Settings') {
+                        Navigator.pushNamed(context, '/settings');
+                        return;
+                      }
+                      if (label == 'Sign Out') {
+                        app.logout();
+                        AuthService.logout();
+                        Navigator.pushNamed(context, '/login');
+                        return;
+                      }
+                    },
+                  ),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
@@ -496,45 +1320,43 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                           ? const FinanceClientManagementPage()
                           : CustomScrollbar(
                               controller: _scrollController,
-                              child: RefreshIndicator(
-                                onRefresh: _loadData,
-                                color: PremiumTheme.teal,
-                                child: SingleChildScrollView(
-                                  controller: _scrollController,
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      _buildBreadcrumb(),
+                              child: SingleChildScrollView(
+                                controller: _scrollController,
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _buildBreadcrumb(),
+                                    const SizedBox(height: 16),
+                                    if (_currentTab == 'dashboard') ...[
+                                      _buildDashboardTitle(),
                                       const SizedBox(height: 16),
-                                      if (_currentTab == 'dashboard') ...[
-                                        _buildDashboardTitle(),
-                                        const SizedBox(height: 16),
-                                        _buildSummaryRow(
-                                          proposals: dashboardProposals,
-                                          pendingCount: pricingCount,
-                                          approvedCount: approvedCount,
-                                          sentToClientCount: sentToClientCount,
-                                          totalAmount: totalAmount,
-                                        ),
-                                        const SizedBox(height: 16),
-                                        _buildDashboardPanels(),
-                                        const SizedBox(height: 12),
-                                        _buildRequiresAttention(
-                                            requiresAttention),
-                                        const SizedBox(height: 24),
-                                        const Footer(),
-                                      ] else ...[
-                                        _buildFilters(),
-                                        const SizedBox(height: 16),
-                                        _buildTable(proposalsTabProposals),
-                                        const SizedBox(height: 24),
-                                        const Footer(),
-                                      ],
+                                      _buildSummaryRow(
+                                        proposals: dashboardProposals,
+                                        pendingCount: pricingCount,
+                                        approvedCount: approvedCount,
+                                        sentToClientCount: sentToClientCount,
+                                        totalAmount: totalAmount,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      _buildDashboardPanels(),
+                                      const SizedBox(height: 12),
+                                      _buildRequiresAttention(
+                                          requiresAttention),
+                                      const SizedBox(height: 24),
+                                      const Footer(),
+                                    ] else if (_currentTab == 'audit') ...[
+                                      _buildAuditPanel(),
+                                      const SizedBox(height: 24),
+                                      const Footer(),
+                                    ] else ...[
+                                      _buildFilters(),
+                                      const SizedBox(height: 16),
+                                      _buildTable(proposalsTabProposals),
+                                      const SizedBox(height: 24),
+                                      const Footer(),
                                     ],
-                                  ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -552,7 +1374,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   Widget _buildBreadcrumb() {
     final label = _currentTab == 'dashboard'
         ? 'Dashboard'
-        : (_currentTab == 'clients' ? 'Client Management' : 'Proposals');
+        : (_currentTab == 'clients'
+            ? 'Client Management'
+            : (_currentTab == 'audit' ? 'Audit' : 'Proposals'));
     return Row(
       children: [
         Text(
@@ -1046,19 +1870,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  tooltip: 'Refresh',
-                  onPressed: _isLoading ? null : _loadData,
-                  icon: const Icon(Icons.refresh, color: Colors.white),
-                ),
-                ClipOval(
-                  child: Image.asset(
-                    'assets/images/User_Profile.png',
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.cover,
-                  ),
-                ),
+                _buildNotificationButton(app),
                 if (!isMobile) ...[
                   const SizedBox(width: 10),
                   Column(
@@ -1899,12 +2711,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
               style: PremiumTheme.bodyMedium.copyWith(
                 color: Colors.white.withValues(alpha: 0.8),
               ),
-            ),
-            const SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: _loadData,
-              icon: const Icon(Icons.refresh),
-              label: const Text('Refresh'),
             ),
           ],
         ),

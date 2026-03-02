@@ -29,6 +29,7 @@ from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.helpers import log_status_change
 from api.utils.ai_safety import AISafetyError
+from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
 
 bp = Blueprint('creator', __name__, url_prefix='')
 
@@ -758,9 +759,9 @@ def send_for_approval(username=None, proposal_id=None, user_id=None, email=None)
                     'detail': 'Proposals table is missing owner column; cannot verify ownership'
                 }, 500
 
-            # Check if proposal exists and belongs to user (cast owner column to text for type safety)
+            # Check if proposal exists and belongs to user, and get current status
             cursor.execute(
-                f"SELECT id FROM proposals WHERE id = %s AND {owner_col}::text = %s",
+                f"SELECT id, status FROM proposals WHERE id = %s AND {owner_col}::text = %s",
                 (proposal_id, str(user_id)),
             )
             proposal = cursor.fetchone()
@@ -776,6 +777,38 @@ def send_for_approval(username=None, proposal_id=None, user_id=None, email=None)
                 '''UPDATE proposals SET status = 'Pending Finance', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
                 (proposal_id,)
             )
+            
+            # If resubmission, notify admin users
+            if is_resubmission:
+                from api.utils.helpers import create_notification
+                
+                # Get proposal title for notification
+                cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
+                proposal_title_row = cursor.fetchone()
+                proposal_title = proposal_title_row[0] if proposal_title_row else f'Proposal {proposal_id}'
+                
+                # Get all admin users
+                cursor.execute(
+                    "SELECT id FROM users WHERE role ILIKE '%admin%' OR role ILIKE '%ceo%'"
+                )
+                admin_users = cursor.fetchall()
+                
+                # Notify each admin
+                for admin_row in admin_users:
+                    admin_id = admin_row[0]
+                    create_notification(
+                        user_id=admin_id,
+                        notification_type='proposal_resubmitted',
+                        title='Proposal Resubmitted',
+                        message=f"Proposal '{proposal_title}' has been resubmitted after changes were requested.",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'previous_status': current_status,
+                            'new_status': new_status,
+                            'resubmitted_by': user_id
+                        }
+                    )
+            
             conn.commit()
 
             if old_status is not None and old_status != 'Pending Finance':
@@ -844,6 +877,7 @@ def send_to_client(username=None, proposal_id=None):
                 f"""
                 SELECT id,
                        title,
+                       status,
                        {client_expr} as client_name,
                        {client_email_expr} as client_email,
                        {owner_expr} as user_id,
@@ -959,6 +993,7 @@ def send_to_client(username=None, proposal_id=None):
             old_status = (srow.get('status') if hasattr(srow, 'get') else (srow[0] if srow else None))
             
             # Update status
+            old_status = proposal.get('status')
             new_status = 'Sent to Client'
             cursor.execute(
                 """UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",

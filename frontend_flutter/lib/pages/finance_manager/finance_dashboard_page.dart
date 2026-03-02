@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
+import 'dart:convert';
+
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
@@ -220,8 +222,11 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
 
     setState(() => _isLoading = true);
     try {
-      await app.fetchProposals();
-      await app.fetchDashboard();
+      await Future.wait([
+        app.fetchProposals(),
+        app.fetchDashboard(),
+        app.fetchNotifications(),
+      ]);
     } catch (e) {
       debugPrint('Error loading finance dashboard data: $e');
     } finally {
@@ -291,7 +296,134 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
       final parsed = double.tryParse(cleaned);
       if (parsed != null) return parsed;
     }
-    return 0;
+
+    double _parseNum(dynamic v) {
+      if (v == null) return 0;
+      if (v is num) return v.toDouble();
+      final cleaned = v.toString().replaceAll(RegExp(r'[^0-9.\-]'), '');
+      return double.tryParse(cleaned) ?? 0;
+    }
+
+    int? _findHeaderIndex(List<dynamic> headers, List<String> needles) {
+      for (int i = 0; i < headers.length; i++) {
+        final h = headers[i].toString().toLowerCase().trim();
+        for (final n in needles) {
+          if (h == n || h.contains(n)) return i;
+        }
+      }
+      return null;
+    }
+
+    double _tableSubtotalFromCells(List<dynamic> cellsRaw) {
+      if (cellsRaw.isEmpty) return 0;
+      final headerRow = cellsRaw.first;
+      if (headerRow is! List) return 0;
+
+      final totalCol =
+          _findHeaderIndex(headerRow, ['total', 'amount', 'line total']) ?? 4;
+      final qtyCol = _findHeaderIndex(headerRow, ['quantity', 'qty']) ?? 2;
+      final unitCol = _findHeaderIndex(headerRow, ['unit price', 'price']) ?? 3;
+
+      double subtotal = 0;
+      for (int i = 1; i < cellsRaw.length; i++) {
+        final rowAny = cellsRaw[i];
+        if (rowAny is! List) continue;
+
+        final row = rowAny;
+        double rowTotal = 0;
+        if (totalCol >= 0 && totalCol < row.length) {
+          rowTotal = _parseNum(row[totalCol]);
+        }
+
+        if (rowTotal == 0) {
+          final qty = (qtyCol >= 0 && qtyCol < row.length)
+              ? _parseNum(row[qtyCol])
+              : 0.0;
+          final unit = (unitCol >= 0 && unitCol < row.length)
+              ? _parseNum(row[unitCol])
+              : 0.0;
+          rowTotal = qty * unit;
+        }
+
+        subtotal += rowTotal;
+      }
+      return subtotal;
+    }
+
+    double _sumPriceTablesFromSections(dynamic sectionsAny) {
+      final List<dynamic> sectionsList;
+      if (sectionsAny is List) {
+        sectionsList = sectionsAny;
+      } else if (sectionsAny is Map && sectionsAny['sections'] is List) {
+        sectionsList = sectionsAny['sections'] as List;
+      } else {
+        return 0;
+      }
+
+      double _sumPriceTablesFromSectionMap(Map sAny) {
+        double total = 0;
+
+        void sumTablesList(dynamic tablesAny) {
+          if (tablesAny is! List) return;
+          for (final tAny in tablesAny) {
+            if (tAny is! Map) continue;
+            final type = (tAny['type'] ?? '').toString().toLowerCase().trim();
+            if (type != 'price') continue;
+            final cellsAny = tAny['cells'];
+            if (cellsAny is! List) continue;
+            final subtotal = _tableSubtotalFromCells(cellsAny);
+            final vatRate = _parseNum(tAny['vatRate']);
+            final vat = vatRate > 0 ? subtotal * vatRate : 0;
+            total += (subtotal + vat);
+          }
+        }
+
+        void sumPositionedTables(dynamic positionedAny) {
+          if (positionedAny is! List) return;
+          for (final pAny in positionedAny) {
+            if (pAny is! Map) continue;
+            final tableAny = pAny['table'];
+            if (tableAny is! Map) continue;
+            sumTablesList([tableAny]);
+          }
+        }
+
+        sumTablesList(sAny['tables']);
+        sumPositionedTables(sAny['positionedPricingTables']);
+
+        final bodyAny = sAny['body'] ?? sAny['content'];
+        if (bodyAny is Map) {
+          sumTablesList(bodyAny['tables']);
+          sumPositionedTables(bodyAny['positionedPricingTables']);
+        }
+
+        return total;
+      }
+
+      double total = 0;
+      for (final sAny in sectionsList) {
+        if (sAny is! Map) continue;
+        total += _sumPriceTablesFromSectionMap(sAny);
+      }
+      return total;
+    }
+
+    dynamic sectionsAny = p['sections'];
+    if (sectionsAny == null) {
+      final contentAny = p['content'];
+      if (contentAny is Map) {
+        sectionsAny = contentAny['sections'] ?? contentAny;
+      } else if (contentAny is String) {
+        try {
+          final decoded = jsonDecode(contentAny);
+          if (decoded is Map || decoded is List) {
+            sectionsAny = decoded;
+          }
+        } catch (_) {}
+      }
+    }
+
+    return _sumPriceTablesFromSections(sectionsAny);
   }
 
   String _formatCurrency(double amount) {
@@ -440,6 +572,15 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
                   tooltip: 'Refresh',
                   onPressed: _isLoading ? null : _loadData,
                   icon: const Icon(Icons.refresh, color: Colors.white),
+                ),
+                IconButton(
+                  tooltip: 'Notifications',
+                  icon: const Icon(Icons.notifications, color: Colors.white),
+                  onPressed: () async {
+                    await app.fetchNotifications();
+                    if (!mounted) return;
+                    _showNotificationsSheet(app);
+                  },
                 ),
                 ClipOval(
                   child: Image.asset(
@@ -1084,7 +1225,7 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                            ],
+                            ],\n                        ),
                           ),
                         ],
                         const SizedBox(width: 10),
@@ -1106,7 +1247,7 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
                                   Icon(Icons.logout),
                                   SizedBox(width: 8),
                                   Text('Logout'),
-                                ],
+                                ],\n                        ),
                               ),
                             ),
                           ],
@@ -1147,7 +1288,7 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
                                     foregroundColor: Colors.white,
                                   ),
                                 ),
-                              ],
+                              ],\n                        ),
                             ),
                           ),
                         )
@@ -1254,7 +1395,7 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
                                                               .toList(),
                                                       onOpen: openProposal,
                                                     ),
-                                                  ],
+                                                  ],\n                        ),
                                                 );
 
                                                 if (isDesktop) {
@@ -1272,7 +1413,7 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
                                                         child:
                                                             _buildDetailsPanel(),
                                                       ),
-                                                    ],
+                                                    ],\n                        ),
                                                   );
                                                 }
 
@@ -1284,13 +1425,13 @@ class _FinanceDashboardReviewPageState extends State<FinanceDashboardReviewPage>
                                                     leftColumn,
                                                     const SizedBox(height: 20),
                                                     _buildDetailsPanel(),
-                                                  ],
+                                                  ],\n                        ),
                                                 );
                                               },
                                             ),
                                             const SizedBox(height: 24),
                                             const Footer(),
-                                          ],
+                                          ],\n                        ),
                                         ),
                                       ),
                                     ),

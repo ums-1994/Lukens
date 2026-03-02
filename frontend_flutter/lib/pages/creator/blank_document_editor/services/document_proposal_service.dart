@@ -5,6 +5,7 @@ import '../../../../services/api_service.dart';
 import '../../../../document_editor/models/document_section.dart';
 import '../../../../document_editor/models/inline_image.dart';
 import '../../../../document_editor/models/document_table.dart';
+import '../../../../document_editor/models/positioned_pricing_table.dart';
 
 /// Service for handling document proposal API operations
 class DocumentProposalService {
@@ -99,7 +100,28 @@ class DocumentProposalService {
                   }
                 }).toList() ??
                 [],
+            positionedPricingTables:
+                (sectionData['positionedPricingTables'] as List<dynamic>?)
+                        ?.where((p) => p is Map)
+                        .map((p) => PositionedPricingTable.fromJson(
+                            Map<String, dynamic>.from(p as Map)))
+                        .toList() ??
+                    [],
           );
+
+          // Migrate legacy price tables stored in tables[] into positionedPricingTables.
+          if (newSection.tables.isNotEmpty) {
+            final legacyPriceTables =
+                newSection.tables.where((t) => t.type == 'price').toList();
+            if (legacyPriceTables.isNotEmpty) {
+              newSection.tables.removeWhere((t) => t.type == 'price');
+              for (final t in legacyPriceTables) {
+                newSection.positionedPricingTables.add(
+                  PositionedPricingTable(table: t, x: 0, y: 0, width: 700),
+                );
+              }
+            }
+          }
           sections.add(newSection);
         }
       } catch (e) {

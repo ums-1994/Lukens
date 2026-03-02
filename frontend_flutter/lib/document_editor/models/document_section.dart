@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'inline_image.dart';
 import 'document_table.dart';
+import 'positioned_pricing_table.dart';
 
 class DocumentSection {
   String title;

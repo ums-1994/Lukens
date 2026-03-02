@@ -180,6 +180,11 @@ def add_guest_comment():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@bp.route("/api/comments/document/<int:proposal_id>", methods=['OPTIONS'])
+def options_comments_document(proposal_id=None):
+    """Handle CORS preflight for comments document endpoint"""
+    return {}, 200
+
 @bp.post("/api/comments/document/<int:proposal_id>")
 @token_required
 def create_comment(username=None, proposal_id=None):

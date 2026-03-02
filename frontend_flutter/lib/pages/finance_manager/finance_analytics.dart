@@ -1,17 +1,22 @@
 import 'dart:math' as math;
 
+import 'dart:convert';
+import 'dart:html' as html;
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:http/http.dart' as http;
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
+import '../../widgets/finance/finance_sidebar.dart';
 import '../../widgets/footer.dart';
-import 'finance_client_management_page.dart';
 
 class FinanceAnalyticsPage extends StatefulWidget {
   const FinanceAnalyticsPage({super.key});
@@ -26,6 +31,11 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
   String _currentTab = 'analytics';
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
+
+  bool _canAccessAudit(AppState app) {
+    final role = (app.currentUser?['role'] ?? '').toString().toLowerCase();
+    return role == 'finance_manager' || role == 'admin' || role == 'ceo';
+  }
 
   @override
   void initState() {
@@ -44,6 +54,259 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _showExportDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        String selectedReport = 'proposal_summary';
+        String selectedFormat = 'csv';
+        bool isExporting = false;
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text(
+                'Export Financial Data',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Select report type and format:',
+                    style: TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Report Type Selection
+                  const Text(
+                    'Report Type:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  RadioListTile<String>(
+                    title: const Text('Proposal Financial Summary'),
+                    subtitle:
+                        const Text('Individual proposal details with amounts'),
+                    value: 'proposal_summary',
+                    groupValue: selectedReport,
+                    onChanged: (value) {
+                      setState(() {
+                        selectedReport = value!;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<String>(
+                    title: const Text('Client Financial Report'),
+                    subtitle: const Text('Aggregated data by client'),
+                    value: 'client_report',
+                    groupValue: selectedReport,
+                    onChanged: (value) {
+                      setState(() {
+                        selectedReport = value!;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Format Selection
+                  const Text(
+                    'Export Format:',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  RadioListTile<String>(
+                    title: const Text('Excel (.xlsx)'),
+                    subtitle: const Text(
+                        'Native Excel format, structured columns and sheets'),
+                    value: 'xlsx',
+                    groupValue: selectedFormat,
+                    onChanged: (value) {
+                      setState(() {
+                        selectedFormat = value!;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<String>(
+                    title: const Text('CSV'),
+                    subtitle: const Text(
+                        'Comma-separated values, opens in Excel with columns'),
+                    value: 'csv',
+                    groupValue: selectedFormat,
+                    onChanged: (value) {
+                      setState(() {
+                        selectedFormat = value!;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  RadioListTile<String>(
+                    title: const Text('PDF'),
+                    subtitle: const Text('Printable report'),
+                    value: 'pdf',
+                    groupValue: selectedFormat,
+                    onChanged: (value) {
+                      setState(() {
+                        selectedFormat = value!;
+                      });
+                    },
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isExporting
+                      ? null
+                      : () {
+                          Navigator.of(context).pop();
+                        },
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isExporting
+                      ? null
+                      : () async {
+                          setState(() {
+                            isExporting = true;
+                          });
+
+                          try {
+                            await _performExport(
+                                selectedReport, selectedFormat);
+                            if (mounted) {
+                              Navigator.of(context).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content:
+                                      Text('Export completed successfully!'),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              Navigator.of(context).pop();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Export failed: $e'),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                            }
+                          } finally {
+                            setState(() {
+                              isExporting = false;
+                            });
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: PremiumTheme.teal,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: isExporting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text('Export'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _performExport(String reportType, String format) async {
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+
+    if (token == null) {
+      throw Exception('Authentication required');
+    }
+
+    String endpoint;
+    if (reportType == 'proposal_summary') {
+      endpoint = '/api/finance/export/proposal-summary';
+    } else if (reportType == 'client_report') {
+      endpoint = '/api/finance/export/client-report';
+    } else {
+      throw Exception('Invalid report type');
+    }
+
+    final uri = Uri.parse('${baseUrl}$endpoint').replace(queryParameters: {
+      'format': format,
+    });
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': format == 'pdf' ? 'application/pdf' : 'text/csv',
+      },
+    ).timeout(
+      const Duration(seconds: 60),
+      onTimeout: () => throw Exception('Export request timed out'),
+    );
+
+    if (response.statusCode == 200) {
+      // Create download link
+      final bytes = response.bodyBytes;
+      if (bytes.isEmpty) {
+        throw Exception('Export returned empty data');
+      }
+      final ext = format == 'pdf' ? 'pdf' : 'csv';
+      final fileName =
+          '${reportType}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      // For web, create download link
+      if (kIsWeb) {
+        final contentType =
+            response.headers['content-type'] ?? 'application/octet-stream';
+        final blob = html.Blob([bytes], contentType);
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        final anchor = html.AnchorElement(href: url)
+          ..download = fileName
+          ..style.display = 'none';
+        html.document.body?.children.add(anchor);
+        anchor.click();
+        html.document.body?.children.remove(anchor);
+        // Delay revoke so the browser has time to start the download
+        Future.delayed(const Duration(milliseconds: 1200), () {
+          html.Url.revokeObjectUrl(url);
+        });
+      } else {
+        // For mobile/desktop, save to file
+        // You might want to use path_provider package here
+        print('Export saved: $fileName (${bytes.length} bytes)');
+      }
+    } else {
+      final body = response.body;
+      throw Exception(
+          'Export failed: ${response.statusCode}${body.isNotEmpty ? ' - $body' : ''}');
+    }
   }
 
   bool _isDraft(String status) => status.trim().toLowerCase() == 'draft';
@@ -71,7 +334,134 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
         if (d != null) return d;
       }
     }
-    return 0;
+
+    double _parseNum(dynamic v) {
+      if (v == null) return 0;
+      if (v is num) return v.toDouble();
+      final cleaned = v.toString().replaceAll(RegExp(r'[^0-9.\-]'), '');
+      return double.tryParse(cleaned) ?? 0;
+    }
+
+    int? _findHeaderIndex(List<dynamic> headers, List<String> needles) {
+      for (int i = 0; i < headers.length; i++) {
+        final h = headers[i].toString().toLowerCase().trim();
+        for (final n in needles) {
+          if (h == n || h.contains(n)) return i;
+        }
+      }
+      return null;
+    }
+
+    double _tableSubtotalFromCells(List<dynamic> cellsRaw) {
+      if (cellsRaw.isEmpty) return 0;
+      final headerRow = cellsRaw.first;
+      if (headerRow is! List) return 0;
+
+      final totalCol =
+          _findHeaderIndex(headerRow, ['total', 'amount', 'line total']) ?? 4;
+      final qtyCol = _findHeaderIndex(headerRow, ['quantity', 'qty']) ?? 2;
+      final unitCol = _findHeaderIndex(headerRow, ['unit price', 'price']) ?? 3;
+
+      double subtotal = 0;
+      for (int i = 1; i < cellsRaw.length; i++) {
+        final rowAny = cellsRaw[i];
+        if (rowAny is! List) continue;
+
+        final row = rowAny;
+        double rowTotal = 0;
+        if (totalCol >= 0 && totalCol < row.length) {
+          rowTotal = _parseNum(row[totalCol]);
+        }
+
+        if (rowTotal == 0) {
+          final qty = (qtyCol >= 0 && qtyCol < row.length)
+              ? _parseNum(row[qtyCol])
+              : 0.0;
+          final unit = (unitCol >= 0 && unitCol < row.length)
+              ? _parseNum(row[unitCol])
+              : 0.0;
+          rowTotal = qty * unit;
+        }
+
+        subtotal += rowTotal;
+      }
+      return subtotal;
+    }
+
+    double _sumPriceTablesFromSections(dynamic sectionsAny) {
+      final List<dynamic> sectionsList;
+      if (sectionsAny is List) {
+        sectionsList = sectionsAny;
+      } else if (sectionsAny is Map && sectionsAny['sections'] is List) {
+        sectionsList = sectionsAny['sections'] as List;
+      } else {
+        return 0;
+      }
+
+      double _sumPriceTablesFromSectionMap(Map sAny) {
+        double total = 0;
+
+        void sumTablesList(dynamic tablesAny) {
+          if (tablesAny is! List) return;
+          for (final tAny in tablesAny) {
+            if (tAny is! Map) continue;
+            final type = (tAny['type'] ?? '').toString().toLowerCase().trim();
+            if (type != 'price') continue;
+            final cellsAny = tAny['cells'];
+            if (cellsAny is! List) continue;
+            final subtotal = _tableSubtotalFromCells(cellsAny);
+            final vatRate = _parseNum(tAny['vatRate']);
+            final vat = vatRate > 0 ? subtotal * vatRate : 0;
+            total += (subtotal + vat);
+          }
+        }
+
+        void sumPositionedTables(dynamic positionedAny) {
+          if (positionedAny is! List) return;
+          for (final pAny in positionedAny) {
+            if (pAny is! Map) continue;
+            final tableAny = pAny['table'];
+            if (tableAny is! Map) continue;
+            sumTablesList([tableAny]);
+          }
+        }
+
+        sumTablesList(sAny['tables']);
+        sumPositionedTables(sAny['positionedPricingTables']);
+
+        final bodyAny = sAny['body'] ?? sAny['content'];
+        if (bodyAny is Map) {
+          sumTablesList(bodyAny['tables']);
+          sumPositionedTables(bodyAny['positionedPricingTables']);
+        }
+
+        return total;
+      }
+
+      double total = 0;
+      for (final sAny in sectionsList) {
+        if (sAny is! Map) continue;
+        total += _sumPriceTablesFromSectionMap(sAny);
+      }
+      return total;
+    }
+
+    dynamic sectionsAny = p['sections'];
+    if (sectionsAny == null) {
+      final contentAny = p['content'];
+      if (contentAny is Map) {
+        sectionsAny = contentAny['sections'] ?? contentAny;
+      } else if (contentAny is String) {
+        try {
+          final decoded = jsonDecode(contentAny);
+          if (decoded is Map || decoded is List) {
+            sectionsAny = decoded;
+          }
+        } catch (_) {}
+      }
+    }
+
+    return _sumPriceTablesFromSections(sectionsAny);
   }
 
   List<Map<String, dynamic>> _financeProposals(AppState app) {
@@ -110,46 +500,12 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
     String? subtitle,
     IconData? icon,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: PremiumTheme.labelMedium.copyWith(
-                    color: Colors.white70,
-                  ),
-                ),
-              ),
-              if (icon != null) Icon(icon, size: 18, color: Colors.white60),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            value,
-            style: PremiumTheme.displayMedium.copyWith(
-              color: Colors.white,
-              fontSize: 22,
-            ),
-          ),
-          if (subtitle != null) ...[
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              style: PremiumTheme.labelMedium.copyWith(color: Colors.white54),
-            ),
-          ],
-        ],
-      ),
+    return PremiumStatCard(
+      title: label,
+      value: value,
+      subtitle: subtitle,
+      icon: icon,
+      gradient: PremiumTheme.tealGradient,
     );
   }
 
@@ -157,19 +513,15 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
       {required String title,
       required String subtitle,
       required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
-      ),
+    return GlassContainer(
+      borderRadius: 20,
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: PremiumTheme.bodyLarge.copyWith(
+            style: PremiumTheme.titleMedium.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w600,
             ),
@@ -177,7 +529,7 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: PremiumTheme.labelMedium.copyWith(color: Colors.white60),
+            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
           ),
           const SizedBox(height: 14),
           child,
@@ -493,6 +845,12 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              IconButton(
+                tooltip: 'Export Financial Data',
+                icon: const Icon(Icons.download, color: Colors.white),
+                onPressed: _showExportDialog,
+              ),
+              const SizedBox(width: 8),
               ClipOval(
                 child: Image.asset(
                   'assets/images/User_Profile.png',
@@ -556,300 +914,15 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
     );
   }
 
-  Widget _buildSidebar() {
-    Widget navItem({
-      required IconData icon,
-      required String label,
-      required bool active,
-      required VoidCallback onTap,
-      int? badge,
-    }) {
-      final color = active ? PremiumTheme.teal : Colors.white70;
-      return Tooltip(
-        message: label,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: _isSidebarCollapsed ? 10 : 14,
-              vertical: 12,
-            ),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              color: active
-                  ? PremiumTheme.teal.withOpacity(0.14)
-                  : Colors.transparent,
-              border: Border.all(
-                color: active
-                    ? PremiumTheme.teal.withOpacity(0.6)
-                    : Colors.white.withOpacity(0.06),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: _isSidebarCollapsed
-                  ? MainAxisAlignment.center
-                  : MainAxisAlignment.start,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Icon(icon, size: 18, color: color),
-                    if (badge != null && _isSidebarCollapsed)
-                      Positioned(
-                        right: -6,
-                        top: -6,
-                        child: Container(
-                          width: 16,
-                          height: 16,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.12),
-                            ),
-                          ),
-                          child: Text(
-                            badge > 99 ? '99+' : badge.toString(),
-                            style: PremiumTheme.labelMedium.copyWith(
-                              color: Colors.white,
-                              fontSize: 9,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                if (!_isSidebarCollapsed) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: PremiumTheme.bodyMedium.copyWith(
-                        color: Colors.white,
-                        fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (badge != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        badge.toString(),
-                        style: PremiumTheme.labelMedium.copyWith(
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    final app = context.watch<AppState>();
-    final pendingBadge = _financeProposals(app)
-        .where((p) =>
-            (p['status'] ?? '').toString().toLowerCase().contains('pricing'))
-        .length;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      width: _isSidebarCollapsed ? 76 : 240,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.black.withOpacity(0.35),
-            Colors.black.withOpacity(0.18),
-          ],
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-        ),
-        border: Border(
-          right: BorderSide(
-            color: PremiumTheme.glassWhiteBorder,
-            width: 1,
-          ),
-        ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          _isSidebarCollapsed ? 10 : 16,
-          18,
-          _isSidebarCollapsed ? 10 : 16,
-          16,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.teal.withOpacity(0.18),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: PremiumTheme.teal.withOpacity(0.35),
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.account_balance,
-                    color: PremiumTheme.teal,
-                    size: 18,
-                  ),
-                ),
-                if (!_isSidebarCollapsed) ...[
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Finance Portal',
-                          style: PremiumTheme.bodyLarge
-                              .copyWith(color: Colors.white),
-                        ),
-                        Text(
-                          'Navigation',
-                          style: PremiumTheme.labelMedium
-                              .copyWith(color: Colors.white60),
-                        ),
-                      ],
-                    ),
-                  ),
-                ] else ...[
-                  const Spacer(),
-                ],
-                IconButton(
-                  tooltip: _isSidebarCollapsed
-                      ? 'Expand sidebar'
-                      : 'Collapse sidebar',
-                  onPressed: () {
-                    setState(() {
-                      _isSidebarCollapsed = !_isSidebarCollapsed;
-                    });
-                  },
-                  icon: Icon(
-                    _isSidebarCollapsed
-                        ? Icons.keyboard_double_arrow_right
-                        : Icons.keyboard_double_arrow_left,
-                    color: Colors.white70,
-                    size: 20,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            navItem(
-              icon: Icons.dashboard_outlined,
-              label: 'Dashboard',
-              active: _currentTab == 'dashboard',
-              onTap: () => Navigator.pushNamed(context, '/finance_dashboard'),
-            ),
-            const SizedBox(height: 10),
-            navItem(
-              icon: Icons.description_outlined,
-              label: 'Proposals',
-              badge: pendingBadge > 0 ? pendingBadge : null,
-              active: _currentTab == 'proposals',
-              onTap: () => Navigator.pushNamed(context, '/finance_dashboard'),
-            ),
-            const SizedBox(height: 10),
-            navItem(
-              icon: Icons.business_outlined,
-              label: 'Client Management',
-              active: _currentTab == 'clients',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const FinanceClientManagementPage(),
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            navItem(
-              icon: Icons.analytics_outlined,
-              label: 'Analytics',
-              active: true,
-              onTap: () {},
-            ),
-            const SizedBox(height: 10),
-            navItem(
-              icon: Icons.settings_outlined,
-              label: 'Settings',
-              active: false,
-              onTap: () => Navigator.pushNamed(context, '/settings'),
-            ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                color: Colors.white.withOpacity(0.04),
-                border: Border.all(color: Colors.white.withOpacity(0.06)),
-              ),
-              child: Row(
-                mainAxisAlignment: _isSidebarCollapsed
-                    ? MainAxisAlignment.center
-                    : MainAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: const Icon(Icons.person, color: Colors.white70),
-                  ),
-                  if (!_isSidebarCollapsed) ...[
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        (app.currentUser?['full_name'] ??
-                                app.currentUser?['first_name'] ??
-                                app.currentUser?['email'] ??
-                                'Finance User')
-                            .toString(),
-                        style: PremiumTheme.bodyMedium
-                            .copyWith(color: Colors.white),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                  IconButton(
-                    tooltip: 'Logout',
-                    onPressed: () {
-                      app.logout();
-                      AuthService.logout();
-                      Navigator.pushNamed(context, '/login');
-                    },
-                    icon: const Icon(Icons.logout, color: Colors.white70),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
     final proposals = _financeProposals(app);
+    final showAudit = _canAccessAudit(app);
+    final pendingBadge = proposals
+        .where((p) =>
+            (p['status'] ?? '').toString().toLowerCase().contains('pricing'))
+        .length;
 
     final now = DateTime.now();
     final quarterStart = _quarterStart(now);
@@ -960,7 +1033,52 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
             Expanded(
               child: Row(
                 children: [
-                  _buildSidebar(),
+                  FinanceSidebar(
+                    isCollapsed: _isSidebarCollapsed,
+                    currentPage: 'Analytics',
+                    showAudit: showAudit,
+                    pendingBadge: pendingBadge > 0 ? pendingBadge : null,
+                    onToggle: () {
+                      setState(() {
+                        _isSidebarCollapsed = !_isSidebarCollapsed;
+                      });
+                    },
+                    onSelect: (label) {
+                      if (label == 'Dashboard' || label == 'Proposals') {
+                        Navigator.pushNamed(context, '/finance_dashboard');
+                        return;
+                      }
+                      if (label == 'Client Management') {
+                        Navigator.pushNamed(
+                          context,
+                          '/finance_dashboard',
+                          arguments: const {'initialTab': 'clients'},
+                        );
+                        return;
+                      }
+                      if (label == 'Audit') {
+                        Navigator.pushNamed(
+                          context,
+                          '/finance_dashboard',
+                          arguments: const {'initialTab': 'audit'},
+                        );
+                        return;
+                      }
+                      if (label == 'Analytics') {
+                        return;
+                      }
+                      if (label == 'Settings') {
+                        Navigator.pushNamed(context, '/settings');
+                        return;
+                      }
+                      if (label == 'Sign Out') {
+                        app.logout();
+                        AuthService.logout();
+                        Navigator.pushNamed(context, '/login');
+                        return;
+                      }
+                    },
+                  ),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),

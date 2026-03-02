@@ -23,6 +23,7 @@ import 'governance_panel.dart';
 import '../../document_editor/models/document_section.dart';
 import '../../document_editor/models/inline_image.dart';
 import '../../document_editor/models/document_table.dart';
+import '../../document_editor/models/positioned_pricing_table.dart';
 // Block-based section widget
 import '../../document_editor/widgets/section_widget.dart';
 
@@ -70,6 +71,80 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   int _selectedSectionIndex =
       0; // Track which section is selected for content insertion
   String _selectedCurrency = 'Rand (ZAR)';
+
+  Widget _buildPositionedPricingTable(
+    int sectionIndex,
+    int positionedIndex,
+    PositionedPricingTable positioned,
+  ) {
+    return Positioned(
+      left: positioned.x,
+      top: positioned.y,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            positioned.x = (positioned.x + details.delta.dx).clamp(0.0, 700.0);
+            positioned.y = (positioned.y + details.delta.dy).clamp(0.0, 1000.0);
+          });
+        },
+        child: SizedBox(
+          width: positioned.width,
+          child: Stack(
+            children: [
+              _buildTableContainer(
+                sectionIndex,
+                -1,
+                positioned.table,
+                _getCurrencySymbol(),
+              ),
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00BCD4),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(
+                    Icons.drag_indicator,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Material(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _sections[sectionIndex]
+                            .positionedPricingTables
+                            .removeAt(positionedIndex);
+                      });
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.close,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   List<String> _uploadedImages = [];
   List<Map<String, dynamic>> _libraryImages = [];
   bool _isLoadingLibraryImages = false;
@@ -860,6 +935,26 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ?.map((e) => e.toString())
                       .toList(),
                 );
+
+                // Migrate legacy price tables stored in tables[] into positionedPricingTables.
+                if (newSection.tables.isNotEmpty) {
+                  final legacyPriceTables = newSection.tables
+                      .where((t) => t.type == 'price')
+                      .toList();
+                  if (legacyPriceTables.isNotEmpty) {
+                    newSection.tables.removeWhere((t) => t.type == 'price');
+                    for (final t in legacyPriceTables) {
+                      newSection.positionedPricingTables.add(
+                        PositionedPricingTable(
+                          table: t,
+                          x: 0,
+                          y: 0,
+                          width: 700,
+                        ),
+                      );
+                    }
+                  }
+                }
                 _sections.add(newSection);
 
                 // Add listeners
@@ -1545,6 +1640,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       for (final table in section.tables) {
         if (table.type == 'price') {
           total += table.getTotal();
+        }
+      }
+
+      for (final positioned in section.positionedPricingTables) {
+        if (positioned.table.type == 'price') {
+          total += positioned.table.getTotal();
         }
       }
     }
@@ -3181,6 +3282,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ?.map((e) => e.toString())
             .toList(),
       );
+
+      if (newSection.tables.isNotEmpty) {
+        final legacyPriceTables =
+            newSection.tables.where((t) => t.type == 'price').toList();
+        if (legacyPriceTables.isNotEmpty) {
+          newSection.tables.removeWhere((t) => t.type == 'price');
+          for (final t in legacyPriceTables) {
+            newSection.positionedPricingTables.add(
+              PositionedPricingTable(table: t, x: 0, y: 0, width: 700),
+            );
+          }
+        }
+      }
       _sections.add(newSection);
     }
 
@@ -4664,92 +4778,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          // When the sidebar opens/closes the available width changes; keep this
-          // header responsive to avoid RenderFlex overflows.
-          final isNarrow = constraints.maxWidth < 1100;
-
-          final titleAndBadge = Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[50],
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.grey[300]!, width: 1),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.edit,
-                          size: 16, color: Color(0xFF00BCD4)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: TextField(
-                          controller: _titleController,
-                          enabled: !widget
-                              .readOnly, // Disable editing in read-only mode
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A1A),
-                          ),
-                          decoration: InputDecoration(
-                            hintText: widget.readOnly
-                                ? '' // No hint in read-only mode
-                                : 'Click to edit document title...',
-                            hintStyle: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w400,
-                              color: Color(0xFFBDC3C7),
-                            ),
-                            border: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            contentPadding: EdgeInsets.zero,
-                            isDense: true,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              // View Only badge (show in read-only mode)
-              if (widget.readOnly) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF39C12),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: const [
-                      Icon(Icons.visibility, size: 12, color: Colors.white),
-                      SizedBox(width: 4),
-                      Text(
-                        'View Only',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          );
-
-          final actions = SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          // Title and badge
+          Expanded(
             child: Row(
-              mainAxisSize: MainAxisSize.min,
               children: [
                 // Price
                 Row(
@@ -4835,7 +4868,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   borderRadius: BorderRadius.circular(4),
                   child: Container(
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: _isSaving
                           ? Colors.blue.withOpacity(0.1)
@@ -4853,7 +4886,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ),
                     ),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
                         if (_isSaving)
                           const SizedBox(
@@ -5583,7 +5615,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             horizontal: 60,
                             vertical: 24,
                           ),
-                          child: _buildSectionContent(index),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              minHeight: 1100,
+                            ),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                _buildSectionContent(index),
+                                ...section.positionedPricingTables
+                                    .asMap()
+                                    .entries
+                                    .map(
+                                        (entry) => _buildPositionedPricingTable(
+                                              index,
+                                              entry.key,
+                                              entry.value,
+                                            ))
+                                    .toList(),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -5941,6 +5993,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             tables.insert(draggedIndex, draggedTable);
           }
         });
+        _onContentChanged();
       },
       builder: (context, candidateData, rejectedData) {
         final isActive = candidateData.isNotEmpty;
@@ -6004,7 +6057,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Widget _buildTableContainer(int sectionIndex, int tableIndex,
       DocumentTable table, String currencySymbol,
       {Key? key}) {
-    final isFinanceRole = context.watch<RoleService>().isFinance();
+    final isManagerRole = context.watch<RoleService>().isCreator();
+    final canReorderTables = !(widget.readOnly || isManagerRole);
     final totalColIndex =
         table.type == 'price' ? table.getResolvedPriceTotalColumnIndex() : -1;
 
@@ -6036,7 +6090,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Drag handle icon (for ReorderableListView)
-                    if (isFinanceRole)
+                    if (canReorderTables)
                       ReorderableDragStartListener(
                         index: tableIndex,
                         child: Icon(
@@ -6068,7 +6122,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 18),
-                      onPressed: () => setState(() => table.addRow()),
+                      onPressed: () {
+                        setState(() => table.addRow());
+                        _onContentChanged();
+                      },
                       tooltip: 'Add Row',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -6079,7 +6136,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       icon: const Icon(Icons.view_column, size: 18),
                       onPressed: table.type == 'price'
                           ? null
-                          : () => setState(() => table.addColumn()),
+                          : () {
+                              setState(() => table.addColumn());
+                              _onContentChanged();
+                            },
                       tooltip: table.type == 'price'
                           ? 'Price tables have fixed columns'
                           : 'Add Column',
@@ -6099,6 +6159,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               .blockOrder
                               .removeWhere((k) => k == 'table:${table.id}');
                         });
+                        _onContentChanged();
                       },
                       tooltip: 'Delete Table',
                       padding: EdgeInsets.zero,
@@ -6193,6 +6254,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         .recalculatePriceRowTotal(rowIndex + 1);
                                   }
                                 });
+                                _onContentChanged();
                               },
                               decoration: const InputDecoration(
                                 border: InputBorder.none,
@@ -9546,8 +9608,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                     const SizedBox(height: 24),
                                                     // Section content
                                                     Text(
-                                                      section.controller.text
-                                                              .isEmpty
+                                                      (section.controller.text
+                                                                  .isEmpty &&
+                                                              section.tables
+                                                                  .isEmpty &&
+                                                              section
+                                                                  .positionedPricingTables
+                                                                  .isEmpty)
                                                           ? '(No content in this section)'
                                                           : section
                                                               .controller.text,
@@ -9566,6 +9633,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                           .map((table) =>
                                                               _buildReadOnlyTable(
                                                                   table))
+                                                          .toList(),
+                                                      const SizedBox(
+                                                          height: 12),
+                                                    ],
+                                                    if (section
+                                                        .positionedPricingTables
+                                                        .isNotEmpty) ...[
+                                                      ...section
+                                                          .positionedPricingTables
+                                                          .map((p) =>
+                                                              _buildReadOnlyTable(
+                                                                  p.table))
                                                           .toList(),
                                                       const SizedBox(
                                                           height: 12),

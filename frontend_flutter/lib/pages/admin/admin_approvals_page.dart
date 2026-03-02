@@ -102,8 +102,6 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _enforceAccessAndLoad();
-      if (!mounted) return;
-      context.read<AppState>().setAdminNavLabel('Approvals');
     });
   }
 
