@@ -731,7 +731,6 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 updates.append('content = %s')
                 params.append(data['content'])
             if 'sections' in data and 'sections' in existing_columns:
-            if 'sections' in data and 'sections' in existing_columns:
                 updates.append('sections = %s')
                 try:
                     sections_json = json.dumps(data['sections'])
@@ -772,28 +771,6 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             params.append(proposal_id)
             cursor.execute(f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s''', params)
             conn.commit()
-
-            changes = []
-            if is_finance:
-                if 'content' in data:
-                    changes.append({'field': 'content', 'old': before_content, 'new': data.get('content')})
-                if 'sections' in data and 'sections' in existing_columns:
-                    changes.append({'field': 'sections', 'old': before_sections, 'new': data.get('sections')})
-                if 'budget' in data and 'budget' in existing_columns:
-                    changes.append({'field': 'budget', 'old': before_budget, 'new': data.get('budget')})
-                if changes:
-                    log_finance_audit_async(
-                        user_id=user_id,
-                        username=username,
-                        entity_type='proposal',
-                        entity_id=str(proposal_id),
-                        action_type='PRICING_UPDATE',
-                        changes=changes,
-                    )
-                    try:
-                        evaluate_proposal_compliance(proposal_id=proposal_id)
-                    except Exception as comp_err:
-                        print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id}: {comp_err}")
 
             changes = []
             if is_finance:
