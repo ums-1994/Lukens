@@ -790,9 +790,36 @@ class _ForgotPasswordFormState extends State<_ForgotPasswordForm> {
   Future<void> _sendResetLink() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
-    final error = await FirebaseService.sendPasswordResetEmail(
-      _emailController.text.trim(),
-    );
+    final email = _emailController.text.trim();
+
+    // Check with backend that this email exists in Firebase before sending reset
+    try {
+      final checkResponse = await http.post(
+        Uri.parse('${AuthService.baseUrl}/api/check-email-for-reset'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'email': email}),
+      );
+      if (!mounted) return;
+      if (checkResponse.statusCode == 404) {
+        setState(() => _loading = false);
+        final body = json.decode(checkResponse.body) as Map<String, dynamic>?;
+        final message = body?['detail'] as String? ?? 'No account found with this email.';
+        widget.onError(message);
+        return;
+      }
+      if (checkResponse.statusCode != 200) {
+        setState(() => _loading = false);
+        widget.onError('Could not verify email. Please try again.');
+        return;
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      widget.onError('Could not verify email. Please try again.');
+      return;
+    }
+
+    final error = await FirebaseService.sendPasswordResetEmail(email);
     if (!mounted) return;
     setState(() => _loading = false);
     if (error == null) {

@@ -253,6 +253,29 @@ def login_email():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@bp.post("/check-email-for-reset")
+def check_email_for_reset():
+    """Check if an email exists in our users table (same source as login). Returns 200 if exists, 404 if not."""
+    try:
+        data = request.get_json()
+        if data is None:
+            return jsonify({'detail': 'Invalid JSON or missing Content-Type header'}), 400
+        email = (data.get('email') or '').strip()
+        if not email:
+            return jsonify({'detail': 'Missing email'}), 400
+        conn = _pg_conn()
+        cursor = conn.cursor()
+        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+        result = cursor.fetchone()
+        release_pg_conn(conn)
+        if not result:
+            return jsonify({'detail': 'No account found with this email.'}), 404
+        return jsonify({'exists': True}), 200
+    except Exception as e:
+        print(f'Check email for reset error: {e}')
+        traceback.print_exc()
+        return jsonify({'detail': str(e)}), 500
+
 @bp.post("/forgot-password")
 def forgot_password():
     """Request password reset"""
