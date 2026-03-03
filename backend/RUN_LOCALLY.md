@@ -31,8 +31,10 @@ DEBUG=True
 cd backend
 python -m venv .venv
 
-# Windows:
-.venv\Scripts\activate
+# Windows (PowerShell - create .venv first if it doesn't exist):
+#   .\.venv\Scripts\Activate.ps1
+# Windows (CMD):
+#   .venv\Scripts\activate.bat
 
 # Mac/Linux:
 source .venv/bin/activate
