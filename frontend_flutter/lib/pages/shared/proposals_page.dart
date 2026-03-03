@@ -917,8 +917,15 @@ class ProposalItem extends StatelessWidget {
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () {
-                if ((proposal['status'] ?? '').toString().toLowerCase() ==
-                    'draft') {
+                final status =
+                    (proposal['status'] ?? '').toString().toLowerCase();
+                final editableStatuses = {
+                  'draft',
+                  'changes requested',
+                  'resubmitted',
+                };
+
+                if (editableStatuses.contains(status)) {
                   Navigator.pushNamed(context, '/compose', arguments: proposal)
                       .then((_) {
                     if (onRefresh != null) onRefresh!();
@@ -936,10 +943,10 @@ class ProposalItem extends StatelessWidget {
                   });
                 }
               },
-              child: Text(
-                  (proposal['status'] ?? '').toString().toLowerCase() == 'draft'
-                      ? 'Edit'
-                      : 'View'),
+              child: Text(editableStatuses.contains(
+                      (proposal['status'] ?? '').toString().toLowerCase())
+                  ? 'Edit'
+                  : 'View'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: PremiumTheme.purple,
                 foregroundColor: Colors.white,
