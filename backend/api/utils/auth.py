@@ -4,12 +4,24 @@ Authentication utilities - token management and password hashing
 import os
 import json
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 
 # Token storage (in production, use Redis or session manager)
 # File-based persistence to survive restarts
 TOKEN_FILE = os.path.join(os.path.dirname(__file__), '..', '..', 'auth_tokens.json')
+
+
+def _now_utc():
+    return datetime.now(timezone.utc)
+
+
+def _as_utc_aware(value):
+    if value is None or not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def load_tokens():
@@ -20,8 +32,12 @@ def load_tokens():
                 data = json.load(token_file)
                 # Convert string timestamps back to datetime objects
                 for token, token_data in data.items():
-                    token_data['created_at'] = datetime.fromisoformat(token_data['created_at'])
-                    token_data['expires_at'] = datetime.fromisoformat(token_data['expires_at'])
+                    token_data['created_at'] = _as_utc_aware(
+                        datetime.fromisoformat(token_data['created_at'])
+                    )
+                    token_data['expires_at'] = _as_utc_aware(
+                        datetime.fromisoformat(token_data['expires_at'])
+                    )
                 print(f"[INFO] Loaded {len(data)} tokens from file")
                 return data
     except Exception as exc:
@@ -64,10 +80,11 @@ def verify_password(stored_hash, password):
 def generate_token(username):
     """Generate a new authentication token for a user"""
     token = secrets.token_urlsafe(32)
+    now = _now_utc()
     valid_tokens[token] = {
         'username': username,
-        'created_at': datetime.now(),
-        'expires_at': datetime.now() + timedelta(days=7),
+        'created_at': now,
+        'expires_at': now + timedelta(days=7),
     }
     save_tokens(valid_tokens)  # Persist to file
     print(f"[TOKEN] Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
@@ -94,7 +111,8 @@ def verify_token(token):
             return None
 
     token_data = valid_tokens[token]
-    if datetime.now() > token_data['expires_at']:
+    expires_at = _as_utc_aware(token_data.get('expires_at'))
+    if expires_at and _now_utc() > expires_at:
         del valid_tokens[token]
         save_tokens(valid_tokens)  # Persist after deleting expired token
         return None

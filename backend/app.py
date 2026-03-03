@@ -8,7 +8,7 @@ import hmac
 import secrets
 import smtplib
 import difflib
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from decimal import Decimal
 from pathlib import Path
 from functools import wraps
@@ -99,9 +99,21 @@ CORS(
     resources={
         r"/*": {
             "origins": _CORS_ALLOWED_ORIGINS,
-            "allow_headers": ["Content-Type", "Authorization"],
+            "allow_headers": [
+                "Content-Type",
+                "Authorization",
+                "X-Client-Device-Id",
+                "X-Client-Session-Token",
+                "X-Device-Id",
+            ],
             "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
-            "expose_headers": ["Content-Type", "Authorization"],
+            "expose_headers": [
+                "Content-Type",
+                "Authorization",
+                "X-Client-Device-Id",
+                "X-Client-Session-Token",
+                "X-Device-Id",
+            ],
         }
     },
 )
@@ -119,7 +131,9 @@ def add_cors_headers(response):
                 response.headers["Vary"] = "Origin"
                 response.headers["Access-Control-Allow-Credentials"] = "true"
                 if "Access-Control-Allow-Headers" not in response.headers:
-                    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+                    response.headers["Access-Control-Allow-Headers"] = (
+                        "Content-Type, Authorization, X-Client-Device-Id, X-Client-Session-Token, X-Device-Id"
+                    )
                 if "Access-Control-Allow-Methods" not in response.headers:
                     response.headers["Access-Control-Allow-Methods"] = (
                         "GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE"
@@ -138,7 +152,10 @@ def handle_options_preflight(remaining=None):
     if origin:
         response.headers.add("Access-Control-Allow-Origin", origin)
         response.headers.add("Vary", "Origin")
-    response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
+    response.headers.add(
+        "Access-Control-Allow-Headers",
+        "Content-Type, Authorization, X-Client-Device-Id, X-Client-Session-Token, X-Device-Id",
+    )
     response.headers.add("Access-Control-Allow-Methods", "GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE")
     response.headers.add("Access-Control-Allow-Credentials", "true")
     return response
@@ -1749,6 +1766,18 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         raise
 
 # Utility functions
+def _now_utc():
+    return datetime.now(timezone.utc)
+
+
+def _as_utc_aware(value):
+    if value is None or not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 def get_db():
     """Get PostgreSQL connection"""
     return _pg_conn()
@@ -1763,8 +1792,8 @@ def generate_token(username):
     token = secrets.token_urlsafe(32)
     valid_tokens[token] = {
         'username': username,
-        'created_at': datetime.now(),
-        'expires_at': datetime.now() + timedelta(days=7)
+        'created_at': _now_utc(),
+        'expires_at': _now_utc() + timedelta(days=7)
     }
     save_tokens()  # Persist to file
     print(f"[TOKEN] Generated new token for user '{username}': {token[:20]}...{token[-10:]}")
@@ -1780,7 +1809,8 @@ def verify_token(token):
     if token not in valid_tokens:
         return None
     token_data = valid_tokens[token]
-    if datetime.now() > token_data['expires_at']:
+    expires_at = _as_utc_aware(token_data.get('expires_at'))
+    if expires_at and _now_utc() > expires_at:
         del valid_tokens[token]
         save_tokens()  # Persist after deleting expired token
         return None
@@ -4543,8 +4573,8 @@ def users_search():
                     """, (collab_token, proposal_id))
                     inv = cur.fetchone()
                     if inv:
-                        expires_at = inv.get('expires_at')
-                        if not expires_at or datetime.now() <= expires_at:
+                        expires_at = _as_utc_aware(inv.get('expires_at'))
+                        if not expires_at or _now_utc() <= expires_at:
                             collab_allowed = True
 
         # If no auth and no valid collab access, require auth
@@ -4735,7 +4765,8 @@ def get_collaboration_access():
                 return {'detail': 'Invalid collaboration token'}, 404
             
             # Check if expired
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'This invitation has expired'}, 403
             
             # Update accessed_at timestamp on first access
@@ -4859,7 +4890,8 @@ def add_guest_comment():
             if not invitation:
                 return {'detail': 'Invalid collaboration token'}, 404
             
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'This invitation has expired'}, 403
             
             if invitation['permission_level'] != 'comment':
@@ -4980,7 +5012,8 @@ def get_client_proposals():
                 return {'detail': 'Invalid access token'}, 404
             
             # Check if expired
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
             
             client_email = invitation['invited_email']
@@ -5073,7 +5106,8 @@ def get_client_proposal_details(proposal_id):
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
             
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
             
             prop_cols = _get_table_columns('proposals')
@@ -5306,7 +5340,8 @@ def add_client_comment(proposal_id):
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
 
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
 
             guest_email = invitation['invited_email']
@@ -5418,7 +5453,8 @@ def client_approve_proposal(proposal_id):
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
             
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
             
             # Fetch proposal, ensure client has access
@@ -5613,7 +5649,8 @@ def client_reject_proposal(proposal_id):
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
             
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
             
             # Update proposal status
@@ -6993,10 +7030,17 @@ def resend_invitation(username=None, invitation_id=None):
                 return jsonify({"error": "Invitation not found or already completed"}), 404
             
             # Check if expired
-            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.utcnow():
+            expires_at = invitation.get('expires_at')
+            if isinstance(expires_at, str):
+                try:
+                    expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                except Exception:
+                    expires_at = None
+            expires_at = _as_utc_aware(expires_at)
+            if expires_at and expires_at < _now_utc():
                 # Generate new token and extend expiry
                 new_token = secrets.token_urlsafe(32)
-                new_expires_at = datetime.utcnow() + timedelta(days=7)
+                new_expires_at = _now_utc() + timedelta(days=7)
                 
                 cursor.execute("""
                     UPDATE client_onboarding_invitations
@@ -7102,7 +7146,14 @@ def get_onboarding_form(token):
             if invitation['status'] != 'pending':
                 return jsonify({"error": "This invitation has already been used"}), 400
             
-            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.utcnow():
+            expires_at = invitation.get('expires_at')
+            if isinstance(expires_at, str):
+                try:
+                    expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                except Exception:
+                    expires_at = None
+            expires_at = _as_utc_aware(expires_at)
+            if expires_at and expires_at < _now_utc():
                 return jsonify({"error": "This invitation has expired"}), 400
             
             return jsonify({
@@ -7146,7 +7197,14 @@ def submit_onboarding(token):
             if invitation['status'] != 'pending':
                 return jsonify({"error": "This invitation has already been used"}), 400
             
-            if datetime.fromisoformat(str(invitation['expires_at'])) < datetime.utcnow():
+            expires_at = invitation.get('expires_at')
+            if isinstance(expires_at, str):
+                try:
+                    expires_at = datetime.fromisoformat(expires_at.replace('Z', '+00:00'))
+                except Exception:
+                    expires_at = None
+            expires_at = _as_utc_aware(expires_at)
+            if expires_at and expires_at < _now_utc():
                 return jsonify({"error": "This invitation has expired"}), 400
             
             # Insert client

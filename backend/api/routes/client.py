@@ -12,7 +12,7 @@ import base64
 from urllib.parse import unquote
 from psycopg2 import sql
 import psycopg2.extras
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
@@ -24,7 +24,15 @@ bp = Blueprint('client', __name__)
 
 
 def _now_utc():
-    return datetime.utcnow()
+    return datetime.now(timezone.utc)
+
+
+def _as_utc_aware(value: datetime | None) -> datetime | None:
+    if value is None or not isinstance(value, datetime):
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _client_session_pepper() -> bytes:
@@ -278,7 +286,8 @@ def _lookup_invitation_by_token(cursor, token: str):
     invitation = cursor.fetchone()
     if not invitation:
         return None, {'detail': 'Invalid access token'}, 404
-    if invitation.get('expires_at') and datetime.now() > invitation['expires_at']:
+    expires_at = _as_utc_aware(invitation.get('expires_at'))
+    if expires_at and _now_utc() > expires_at:
         return None, {'detail': 'Access token has expired'}, 403
     return invitation, None, None
 
@@ -351,13 +360,12 @@ def _is_unlocked(access_row: dict) -> bool:
         return False
     if access_row.get('locked_at') is not None:
         return False
-    if not access_row.get('verified_at'):
-        return False
-    token = (access_row.get('unlocked_token') or '').strip()
+    token = access_row.get('unlocked_token')
     if not token:
         return False
     exp = access_row.get('unlocked_expires_at')
-    if exp and isinstance(exp, datetime) and _now_utc() > exp:
+    exp = _as_utc_aware(exp) if isinstance(exp, datetime) else None
+    if exp and _now_utc() > exp:
         return False
     return True
 
@@ -1098,7 +1106,8 @@ def get_client_proposals():
                 return {'detail': 'Invalid access token'}, 404
             
             # Check if expired
-            if invitation.get('expires_at') and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
 
             proposal_id = int(invitation.get('proposal_id'))
@@ -1387,7 +1396,8 @@ def add_client_comment(proposal_id):
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
             
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
 
             configured, err_or_hash, status = _require_identity_configured(cursor, proposal_id)
@@ -1474,7 +1484,8 @@ def client_approve_proposal(proposal_id):
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
             
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
 
             configured, err_or_hash, status = _require_identity_configured(cursor, proposal_id)
@@ -1700,7 +1711,8 @@ def client_reject_proposal(proposal_id):
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
             
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
 
             configured, err_or_hash, status = _require_identity_configured(cursor, proposal_id)
@@ -1807,7 +1819,8 @@ def get_client_signing_url(proposal_id):
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
             
-            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
 
             configured, err_or_hash, status = _require_identity_configured(cursor, proposal_id)
@@ -2049,7 +2062,8 @@ def client_sign_proposal_token(proposal_id=None):
             if not invitation:
                 return {'detail': 'Invalid access token'}, 404
 
-            if invitation.get('expires_at') and datetime.now() > invitation['expires_at']:
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
 
             token_proposal_id = invitation.get('proposal_id')
@@ -2445,10 +2459,15 @@ def end_client_session():
                 return {'detail': 'Session not found'}, 404
             
             # Calculate time spent
-            session_end = datetime.now()
+            session_end = _now_utc()
             session_start = session['session_start']
             if session_start:
-                total_seconds = int((session_end - session_start).total_seconds())
+                start_aware = _as_utc_aware(session_start)
+                end_aware = _as_utc_aware(session_end)
+                if start_aware is not None and end_aware is not None:
+                    total_seconds = int((end_aware - start_aware).total_seconds())
+                else:
+                    total_seconds = int((session_end - session_start).total_seconds())
             else:
                 total_seconds = 0
             
