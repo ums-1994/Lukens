@@ -2089,16 +2089,36 @@ class _DashboardPageState extends State<DashboardPage>
     final subtitle = 'Last modified: ${_formatDate(proposal['updated_at'])}';
     final isSentToClient = status.toLowerCase() == 'sent to client';
     final clientName = proposal['client_name'] ?? proposal['client'] ?? '';
+    final proposalId = proposal['id']?.toString();
 
-    return Container(
+    // Read-only for statuses where editing is not allowed
+    final editableStatuses = {'draft', 'changes requested'};
+    final isEditable = editableStatuses.contains(status.toLowerCase());
+
+    void openProposal() {
+      if (proposalId == null) return;
+      Navigator.of(context).pushNamed(
+        '/blank-document',
+        arguments: {
+          'proposalId': proposalId,
+          'readOnly': !isEditable,
+        },
+      );
+    }
+
+    return GestureDetector(
+      onTap: openProposal,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: PremiumTheme.glassWhite,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: PremiumTheme.glassWhiteBorder,
-          width: 1,
+          color: isEditable
+              ? statusColor.withOpacity(0.4)
+              : PremiumTheme.glassWhiteBorder,
+          width: isEditable ? 1.5 : 1,
         ),
       ),
       child: Row(
@@ -2230,7 +2250,8 @@ class _DashboardPageState extends State<DashboardPage>
           ),
         ],
       ),
-    );
+    ), // Container
+    ); // GestureDetector
   }
 
   String _getClientInitials(String clientName) {

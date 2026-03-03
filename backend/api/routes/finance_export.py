@@ -62,6 +62,52 @@ def _rows_to_pdf_bytes(title: str, headers: List[str], rows: List[List[Any]]):
     buf.seek(0)
     return buf.getvalue()
 
+
+def _ensure_str(v):
+    if v is None:
+        return ''
+    return str(v)
+
+
+def _rows_to_pdf_bytes(title: str, headers: List[str], rows: List[List[Any]]):
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+    except Exception:
+        raise RuntimeError('PDF export not available (reportlab missing)')
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    width, height = letter
+
+    y = height - 40
+    c.setFont('Helvetica-Bold', 12)
+    c.drawString(40, y, title[:120])
+    y -= 18
+
+    c.setFont('Helvetica', 8)
+    c.drawString(40, y, 'Generated: ' + datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC'))
+    y -= 18
+
+    c.setFont('Helvetica-Bold', 8)
+    c.drawString(40, y, ' | '.join([h[:28] for h in headers])[:140])
+    y -= 14
+    c.setFont('Helvetica', 8)
+
+    for r in rows:
+        line = ' | '.join([_ensure_str(v) for v in r])
+        c.drawString(40, y, line[:140])
+        y -= 12
+        if y < 60:
+            c.showPage()
+            y = height - 40
+            c.setFont('Helvetica', 8)
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.getvalue()
+
 def _extract_amount_from_content(content_data):
     """Extract financial amount from proposal content using same logic as frontend"""
     if not content_data:
@@ -123,15 +169,24 @@ def _format_currency(amount):
     return f"R {amount:,.2f}"
 
 
+
 def _get_proposals_with_financials(user_id=None, status_filter=None, date_from=None, date_to=None):
     """Get proposals with financial calculations. Uses dynamic column names to support both owner_id/user_id and client/client_name."""
     proposals = []
 
     params = []
 
+
+    params = []
+
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
 
             cursor.execute(
                 """
@@ -220,20 +275,109 @@ def _get_proposals_with_financials(user_id=None, status_filter=None, date_from=N
             else:
                 select_cols.append("NULL AS created_by")
 
+                """
+            )
+            existing_columns = [row['column_name'] for row in cursor.fetchall()]
+
+            cursor.execute(
+                """
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_name = 'users'
+                ) AS users_table_exists
+                """
+            )
+            users_table_exists = bool((cursor.fetchone() or {}).get('users_table_exists'))
+
+            users_full_name_exists = False
+            if users_table_exists:
+                cursor.execute(
+                    """
+                    SELECT EXISTS(
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'users' AND column_name = 'full_name'
+                    ) AS full_name_exists
+                    """
+                )
+                users_full_name_exists = bool((cursor.fetchone() or {}).get('full_name_exists'))
+
+            owner_col = None
+            if 'created_by' in existing_columns:
+                owner_col = 'created_by'
+            elif 'owner_id' in existing_columns:
+                owner_col = 'owner_id'
+            elif 'user_id' in existing_columns:
+                owner_col = 'user_id'
+
+            client_col = None
+            if 'client_name' in existing_columns:
+                client_col = 'client_name'
+            elif 'client' in existing_columns:
+                client_col = 'client'
+
+            content_col = None
+            if 'content' in existing_columns:
+                content_col = 'content'
+            elif 'sections' in existing_columns:
+                content_col = 'sections'
+
+            select_cols = [
+                'p.id',
+                'p.title',
+                'p.status',
+            ]
+            if client_col:
+                select_cols.append(f"p.{client_col} AS client_name")
+            else:
+                select_cols.append("NULL AS client_name")
+
+            if 'created_at' in existing_columns:
+                select_cols.append('p.created_at')
+            else:
+                select_cols.append('NULL AS created_at')
+
+            if 'updated_at' in existing_columns:
+                select_cols.append('p.updated_at')
+            else:
+                select_cols.append('NULL AS updated_at')
+
+            if content_col:
+                select_cols.append(f"p.{content_col} AS content")
+            else:
+                select_cols.append("NULL AS content")
+
+            join_sql = ""
+            if owner_col and users_table_exists and users_full_name_exists:
+                join_sql = f"LEFT JOIN users u ON u.id::text = p.{owner_col}::text"
+                select_cols.append("u.full_name AS created_by")
+            elif owner_col:
+                select_cols.append(f"p.{owner_col}::text AS created_by")
+            else:
+                select_cols.append("NULL AS created_by")
+
             query = f"""
+                SELECT {', '.join(select_cols)}
                 SELECT {', '.join(select_cols)}
                 FROM proposals p
                 {join_sql}
+                {join_sql}
                 WHERE 1=1
             """
+
 
             if status_filter:
                 query += " AND LOWER(p.status) LIKE %s"
                 params.append(f"%{status_filter.lower()}%")
 
             if date_from and 'created_at' in existing_columns:
+
+            if date_from and 'created_at' in existing_columns:
                 query += " AND p.created_at >= %s"
                 params.append(date_from)
+
+            if date_to and 'created_at' in existing_columns:
 
             if date_to and 'created_at' in existing_columns:
                 query += " AND p.created_at <= %s"
@@ -244,7 +388,14 @@ def _get_proposals_with_financials(user_id=None, status_filter=None, date_from=N
             else:
                 query += " ORDER BY p.id DESC"
 
+
+            if 'created_at' in existing_columns:
+                query += " ORDER BY p.created_at DESC"
+            else:
+                query += " ORDER BY p.id DESC"
+
             cursor.execute(query, params)
+            rows = cursor.fetchall() or []
             rows = cursor.fetchall() or []
             
             for row in rows:
@@ -480,6 +631,16 @@ def export_proposal_summary(username=None, user_id=None, email=None):
         
         ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
 
+
+        if not proposals:
+            return jsonify({
+                'error': 'No proposals found to export',
+                'report': 'proposal_summary',
+                'format': format_type,
+            }), 404
+        
+        ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+
         if format_type == 'csv':
             csv_data = _generate_csv_summary(proposals)
             
@@ -489,6 +650,7 @@ def export_proposal_summary(username=None, user_id=None, email=None):
             output.write(csv_data.encode('utf-8'))
             output.seek(0)
             
+            filename = f"proposal_summary_{ts}.csv"
             filename = f"proposal_summary_{ts}.csv"
             
             return send_file(
@@ -524,12 +686,41 @@ def export_proposal_summary(username=None, user_id=None, email=None):
             output.seek(0)
             filename = f"proposal_summary_{ts}.pdf"
 
+        elif format_type == 'pdf':
+            headers = [
+                'Proposal ID', 'Title', 'Client', 'Status',
+                'Created Date', 'Updated Date', 'Amount (ZAR)',
+                'Days in Status', 'Created By'
+            ]
+
+            rows = []
+            for proposal in proposals:
+                rows.append([
+                    proposal.get('id'),
+                    (proposal.get('title') or '')[:60],
+                    (proposal.get('client_name') or '')[:40],
+                    (proposal.get('status') or '')[:30],
+                    proposal.get('created_at').strftime('%Y-%m-%d') if proposal.get('created_at') else '',
+                    proposal.get('updated_at').strftime('%Y-%m-%d') if proposal.get('updated_at') else '',
+                    f"{float(proposal.get('amount') or 0.0):.2f}",
+                    proposal.get('days_in_status'),
+                    (proposal.get('created_by') or '')[:40],
+                ])
+
+            pdf_bytes = _rows_to_pdf_bytes('Proposal Financial Summary', headers, rows)
+            output = io.BytesIO(pdf_bytes)
+            output.seek(0)
+            filename = f"proposal_summary_{ts}.pdf"
+
             return send_file(
+                output,
                 output,
                 as_attachment=True,
                 download_name=filename,
                 mimetype='application/pdf'
+                mimetype='application/pdf'
             )
+
 
         else:
             return jsonify({'error': 'Only CSV and PDF formats are currently supported'}), 400
@@ -563,9 +754,19 @@ def export_client_report(username=None, user_id=None, email=None):
                 'report': 'client_report',
                 'format': format_type,
             }), 404
+
+        if not proposals:
+            return jsonify({
+                'error': 'No proposals found to export',
+                'report': 'client_report',
+                'format': format_type,
+            }), 404
         
         # Aggregate by client
         client_data = _get_client_portfolio_data(proposals)
+        
+        ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+
         
         ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
 
@@ -578,6 +779,7 @@ def export_client_report(username=None, user_id=None, email=None):
             output.write(csv_data.encode('utf-8'))
             output.seek(0)
             
+            filename = f"client_report_{ts}.csv"
             filename = f"client_report_{ts}.csv"
             
             return send_file(
@@ -616,10 +818,13 @@ def export_client_report(username=None, user_id=None, email=None):
 
             return send_file(
                 output,
+                output,
                 as_attachment=True,
                 download_name=filename,
                 mimetype='application/pdf'
+                mimetype='application/pdf'
             )
+
 
         else:
             return jsonify({'error': 'Only CSV and PDF formats are currently supported'}), 400
@@ -661,6 +866,7 @@ def get_export_summary_stats(username=None, user_id=None, email=None):
             'total_proposals': total_proposals,
             'status_breakdown': status_breakdown,
             'date_range': date_range,
+            'supported_formats': ['csv', 'pdf'],
             'supported_formats': ['csv', 'pdf'],
             'report_types': ['proposal_summary', 'client_report']
         })

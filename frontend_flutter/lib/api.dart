@@ -9,22 +9,26 @@ import 'config/api_config.dart';
 
 // Get API URL from JavaScript config or use AuthService.baseUrl/Render default
 String get baseUrl {
-  // Prefer explicit config injected into the web page when available
   if (kIsWeb) {
     try {
-      // Try to get from window.APP_CONFIG.API_URL
+      // Honor USE_LOCAL_API so local dev hits local backend (index.html sets this)
+      final useLocal = js.context['USE_LOCAL_API'];
+      if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
+        return 'http://127.0.0.1:5000';
+      }
+      // Try to get from window.APP_CONFIG.API_URL (set by config.js)
       final config = js.context['APP_CONFIG'];
       if (config != null) {
         final configObj = config as js.JsObject;
         final apiUrl = configObj['API_URL'];
-        if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-          return apiUrl.toString().replaceAll('"', '');
+        if (apiUrl != null && apiUrl.toString().trim().isNotEmpty) {
+          return apiUrl.toString().replaceAll('"', '').trim();
         }
       }
       // Fallback: try window.REACT_APP_API_URL
       final envUrl = js.context['REACT_APP_API_URL'];
-      if (envUrl != null && envUrl.toString().isNotEmpty) {
-        return envUrl.toString().replaceAll('"', '');
+      if (envUrl != null && envUrl.toString().trim().isNotEmpty) {
+        return envUrl.toString().replaceAll('"', '').trim();
       }
     } catch (e) {
       print('⚠️ Could not read API URL from config: $e');
@@ -35,7 +39,6 @@ String get baseUrl {
   if (kDebugMode) {
     return 'https://lukens-wp8w.onrender.com';
   }
-  // Production default (Render backend URL)
   return 'https://lukens-wp8w.onrender.com';
 }
 
@@ -427,10 +430,11 @@ class AppState extends ChangeNotifier {
           );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
-        proposals = List<dynamic>.from(data);
+        proposals = data is List ? List<dynamic>.from(data) : [];
 
         // Calculate dashboard counts from real data
         _updateDashboardCounts();
+        notifyListeners();
       } else {
         print('Error fetching proposals: ${r.statusCode} - ${r.body}');
       }

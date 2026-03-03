@@ -2,6 +2,7 @@
 Database connection and schema utilities
 """
 import os
+from pathlib import Path
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
@@ -15,19 +16,33 @@ from dotenv import load_dotenv
 _pg_pool = None
 _db_initialized = False
 
-
-# Load environment variables from .env so DATABASE_URL works when this module
-# is imported directly (e.g., python -c ... from the backend folder).
-load_dotenv()
+# Load .env from backend directory so DB_HOST / DATABASE_URL_EXTERNAL are always found
+_backend_dir = Path(__file__).resolve().parent.parent.parent
+load_dotenv(dotenv_path=_backend_dir / ".env")
 
 
 def _build_db_config_from_env():
     database_url = os.getenv('DATABASE_URL')
     if database_url:
         parsed = urlparse(database_url)
-
+        host = (parsed.hostname or '').strip()
+        # Render internal host (dpg-xxx-a) only works on Render. Use external URL or DB_HOST for local dev.
+        if host.startswith('dpg-') and '.' not in host:
+            external_url = os.getenv('DATABASE_URL_EXTERNAL')
+            if external_url:
+                database_url = external_url
+                parsed = urlparse(database_url)
+                host = (parsed.hostname or '').strip()
+            elif os.getenv('DB_HOST') and '.' in (os.getenv('DB_HOST') or ''):
+                return {
+                    'host': os.getenv('DB_HOST').strip(),
+                    'database': os.getenv('DB_NAME') or (parsed.path or '').lstrip('/') or 'proposal_db',
+                    'user': os.getenv('DB_USER') or parsed.username,
+                    'password': os.getenv('DB_PASSWORD') or parsed.password,
+                    'port': int(os.getenv('DB_PORT') or str(parsed.port or 5432)),
+                    'sslmode': os.getenv('DB_SSLMODE') or 'require',
+                }
         # Accept common Postgres URL scheme variants.
-        # psycopg2 uses a standard Postgres DSN; SQLAlchemy URLs may include a driver.
         scheme = (parsed.scheme or '').lower()
         if scheme.startswith('postgresql+'):
             scheme = 'postgresql'
@@ -140,7 +155,6 @@ def release_pg_conn(conn):
                 # Check if connection is in a transaction and rollback if needed
                 import psycopg2.extensions
                 if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
-                    print(f"[DB] Connection in transaction, rolling back before returning to pool")
                     conn.rollback()
                 
                 # Reset autocommit to default state (False)
@@ -276,6 +290,46 @@ def init_pg_schema():
                ON proposal_compliance(status, evaluated_at DESC)'''
         )
 
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS finance_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER,
+            username VARCHAR(255),
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(64) NOT NULL,
+            field_name VARCHAR(255) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            action_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_entity
+               ON finance_audit_logs(entity_type, entity_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_user
+               ON finance_audit_logs(user_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_compliance (
+            proposal_id INTEGER PRIMARY KEY,
+            status VARCHAR(20) NOT NULL,
+            reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_compliance_status
+               ON proposal_compliance(status, evaluated_at DESC)'''
+        )
+
         try:
             cursor.execute("""
                 ALTER TABLE proposals
@@ -303,6 +357,8 @@ def init_pg_schema():
                         'Priced',
                         'Changes Requested',
                         'changes requested',
+                        'Resubmitted',
+                        'resubmitted',
                         'Sent to Client',
                         'Sent for Signature',
                         'In Review',

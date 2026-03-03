@@ -810,6 +810,93 @@ def send_for_approval(username=None, proposal_id=None, user_id=None, email=None)
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@bp.post("/proposals/<int:proposal_id>/finance-resubmit")
+@token_required
+def finance_resubmit(username=None, proposal_id=None, user_id=None, email=None):
+    """
+    Finance manager submits updated pricing back to admin after a 'Changes Requested' action.
+    Unlike send_for_approval, this does NOT require proposal ownership.
+    Requires: role = finance_manager (or admin/ceo).
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Resolve user identity
+            effective_user_id = user_id
+            if not effective_user_id and username:
+                cursor.execute("SELECT id, role FROM users WHERE username = %s", (username,))
+                row = cursor.fetchone()
+                if row:
+                    effective_user_id = row['id']
+                    user_role = (row.get('role') or '').lower()
+                else:
+                    return {'detail': 'User not found'}, 404
+            else:
+                cursor.execute("SELECT role FROM users WHERE id = %s", (effective_user_id,))
+                row = cursor.fetchone()
+                user_role = (row['role'] or '').lower() if row else ''
+
+            allowed_roles = {'finance_manager', 'finance', 'admin', 'ceo', 'approver'}
+            if user_role not in allowed_roles:
+                return {'detail': 'Finance Manager access required'}, 403
+
+            # Fetch proposal – no ownership check for finance
+            cursor.execute("SELECT id, title, status, user_id FROM proposals WHERE id = %s", (proposal_id,))
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+
+            current_status = (proposal.get('status') or '').strip()
+            if 'changes requested' not in current_status.lower():
+                return {
+                    'detail': f'Proposal is not in "Changes Requested" state (current: {current_status})'
+                }, 400
+
+            # Update status to Resubmitted
+            cursor.execute(
+                "UPDATE proposals SET status = 'Resubmitted', updated_at = NOW() WHERE id = %s",
+                (proposal_id,)
+            )
+
+            proposal_title = proposal.get('title') or f'Proposal {proposal_id}'
+
+            # Notify admins
+            from api.utils.helpers import create_notification
+            cursor.execute(
+                "SELECT id FROM users WHERE LOWER(role) IN ('admin', 'ceo', 'approver')"
+            )
+            admin_users = cursor.fetchall()
+            for admin_row in admin_users:
+                try:
+                    create_notification(
+                        user_id=admin_row['id'],
+                        notification_type='proposal_resubmitted',
+                        title='Finance Changes Submitted',
+                        message=(
+                            f"Finance Manager has submitted updated pricing for "
+                            f"'{proposal_title}'. Please review the changes."
+                        ),
+                        proposal_id=proposal_id,
+                        metadata={
+                            'previous_status': current_status,
+                            'new_status': 'Resubmitted',
+                            'resubmitted_by': effective_user_id,
+                            'resubmitted_by_role': user_role,
+                        },
+                    )
+                except Exception:
+                    pass
+
+            conn.commit()
+            return {'detail': 'Changes submitted to admin', 'status': 'Resubmitted'}, 200
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in finance_resubmit: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
 @bp.post("/proposals/<int:proposal_id>/send_to_client")
 @token_required
 def send_to_client(username=None, proposal_id=None):

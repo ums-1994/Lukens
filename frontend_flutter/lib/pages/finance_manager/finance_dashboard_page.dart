@@ -551,24 +551,24 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     final notificationType = notification['notification_type']?.toString();
 
     if (notificationType == 'changes_requested') {
-      // Handle change requests - navigate to proposal review
+      // Finance: open in edit mode to update pricing and submit back
       final proposalId = notification['proposal_id'];
       if (proposalId != null) {
         Navigator.of(context).pop();
         Navigator.pushNamed(
           context,
-          '/admin/proposal_review',
+          '/blank-document',
           arguments: {'proposalId': proposalId.toString()},
         );
       }
-    } else if (notificationType == 'proposal_approved') {
-      // Handle proposal approvals
+    } else if (notificationType == 'proposal_approved' ||
+        notificationType == 'proposal_resubmitted') {
       final proposalId = notification['proposal_id'];
       if (proposalId != null) {
         Navigator.of(context).pop();
         Navigator.pushNamed(
           context,
-          '/admin/proposal_review',
+          '/blank-document',
           arguments: {'proposalId': proposalId.toString()},
         );
       }

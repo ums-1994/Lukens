@@ -12,6 +12,12 @@ class ApiService {
   static String get baseUrl {
     if (kIsWeb) {
       try {
+        // Honor USE_LOCAL_API first (set in index.html for local dev)
+        final useLocal = js.context['USE_LOCAL_API'];
+        if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
+          print('🌐 ApiService: Using local API URL (USE_LOCAL_API): http://127.0.0.1:5000');
+          return 'http://127.0.0.1:5000';
+        }
         // If the user explicitly overrides the API URL for local dev, honor it.
         final explicitAppUrl = js.context['APP_API_URL'];
         if (explicitAppUrl != null &&
@@ -34,10 +40,8 @@ class ApiService {
         if (config != null) {
           final configObj = config as js.JsObject;
           final apiUrl = configObj['API_URL'];
-          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
+          if (apiUrl != null && apiUrl.toString().trim().isNotEmpty) {
             final url = apiUrl.toString().replaceAll('"', '').trim();
-            // Allow explicit APP_CONFIG override even when running on localhost,
-            // so we can point the web app at a local backend for testing.
             print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
             return url;
           }
@@ -49,21 +53,18 @@ class ApiService {
     // Check if we're in production (not localhost)
     if (kIsWeb) {
       final hostname = html.window.location.hostname;
-      if (hostname != null) {
-        final isProduction = hostname.contains('netlify.app') ||
-            hostname.contains('onrender.com') ||
-            !hostname.contains('localhost');
-
-        if (isProduction) {
-          print(
-              '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-          return 'https://lukens-wp8w.onrender.com';
-        }
+      if (hostname != null &&
+          (hostname.contains('netlify.app') || hostname.contains('onrender.com'))) {
+        print('🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
+        return 'https://lukens-wp8w.onrender.com';
+      }
+      // When on localhost with no override, use local backend so dev works
+      if (hostname == 'localhost' || hostname == '127.0.0.1') {
+        print('🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:5000');
+        return 'http://127.0.0.1:5000';
       }
     }
-    // Default to Render backend (production)
-    print(
-        '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
+    print('🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';
   }
 

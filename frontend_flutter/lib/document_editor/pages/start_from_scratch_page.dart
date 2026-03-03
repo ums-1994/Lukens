@@ -31,24 +31,27 @@ class _StartFromScratchPageState extends State<StartFromScratchPage> {
     if (!mounted || _navigated) return;
     _navigated = true;
 
-    final String? effectiveProposalId =
-        (widget.proposalId != null && widget.proposalId!.startsWith('temp-'))
-            ? null
-            : widget.proposalId;
+    final bool isTempId = widget.proposalId?.startsWith('temp-') ?? false;
+    final String? effectiveProposalId = isTempId ? null : widget.proposalId;
+    final bool isExistingProposal = effectiveProposalId != null;
 
-    final selected = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (context) => const ContentLibrarySelectionDialog(
-        parentFolderLabel: 'Cover',
-        requireParentFolderMatch: true,
-        imagesOnly: true,
-        thumbnailsOnly: true,
-        dialogTitle: 'Choose Cover (A4)',
-      ),
-    );
+    String? coverUrl;
 
-    final dynamic content = selected?['content'];
-    final String? coverUrl = content is String ? content : null;
+    // Only show cover dialog for brand new proposals (no real proposalId yet)
+    if (!isExistingProposal) {
+      final selected = await showDialog<Map<String, dynamic>>(
+        context: context,
+        builder: (context) => const ContentLibrarySelectionDialog(
+          parentFolderLabel: 'Cover',
+          requireParentFolderMatch: true,
+          imagesOnly: true,
+          thumbnailsOnly: true,
+          dialogTitle: 'Choose Cover (A4)',
+        ),
+      );
+      final dynamic content = selected?['content'];
+      coverUrl = content is String ? content : null;
+    }
 
     if (!mounted) return;
 
