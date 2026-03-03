@@ -2473,3 +2473,201 @@ def get_archived_proposals(username=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+
+# ============================================================================
+# COMPLETION RATES — readiness scoring for the manager dashboard widget
+# ============================================================================
+
+# Mandatory section keywords: a section "passes" if its title contains one
+# of the keywords AND its text content is at least MIN_SECTION_CHARS long.
+_MANDATORY_SECTIONS = {
+    'executive_summary': ['executive summary', 'executive', 'overview', 'introduction'],
+    'scope_deliverables': ['scope', 'deliverable', 'objective'],
+    'timeline':           ['timeline', 'schedule', 'milestone', 'delivery date'],
+    'team':               ['team', 'bio', 'personnel', 'resource', 'staff'],
+    'pricing':            ['pricing', 'budget', 'cost', 'financial', 'commercials'],
+}
+_MANDATORY_KEYS = list(_MANDATORY_SECTIONS.keys())
+_PASS_THRESHOLD = 80          # readiness score (%) needed to "pass"
+_MIN_SECTION_CHARS = 50       # minimum non-whitespace chars to count as filled
+
+
+def _score_proposal(content_raw) -> dict:
+    """Parse proposal content JSON and return a readiness dict."""
+    filled = {k: False for k in _MANDATORY_KEYS}
+
+    try:
+        if not content_raw:
+            return {'score': 0, 'filled': filled, 'complete': 0, 'total': len(_MANDATORY_KEYS)}
+
+        content = (
+            json.loads(content_raw)
+            if isinstance(content_raw, str)
+            else content_raw
+        )
+        if not isinstance(content, dict):
+            return {'score': 0, 'filled': filled, 'complete': 0, 'total': len(_MANDATORY_KEYS)}
+
+        sections = content.get('sections') or []
+        for sec in sections:
+            title = (sec.get('title') or '').lower().strip()
+            text  = (sec.get('content') or '').strip()
+            if len(text) < _MIN_SECTION_CHARS:
+                continue
+            for key, keywords in _MANDATORY_SECTIONS.items():
+                if not filled[key] and any(kw in title for kw in keywords):
+                    filled[key] = True
+    except Exception:
+        pass
+
+    total = len(_MANDATORY_KEYS)
+    complete = sum(filled.values())
+    score = round(complete / total * 100) if total else 0
+    return {'score': score, 'filled': filled, 'complete': complete, 'total': total}
+
+
+def _cr_resolve_user(cursor, username, email):
+    """Return user_id for the authenticated user."""
+    if email:
+        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+        row = cursor.fetchone()
+        if row:
+            return row[0] if not isinstance(row, dict) else row['id']
+    if username:
+        cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+        row = cursor.fetchone()
+        if row:
+            return row[0] if not isinstance(row, dict) else row['id']
+    return None
+
+
+@bp.get('/api/proposals/completion-rates')
+@token_required
+def get_completion_rates(username=None, user_id=None, email=None):
+    """
+    Completion Rates dashboard widget.
+    Returns readiness scores, pass rates, sign-off funnel, and a 30-day trend
+    for the authenticated manager's proposals.
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Resolve the calling user
+            resolved_id = user_id
+            if not resolved_id:
+                resolved_id = _cr_resolve_user(cursor, username, email)
+            if not resolved_id:
+                return {'detail': 'User not found'}, 404
+
+            # Detect schema (owner_id vs user_id)
+            cursor.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'proposals'"
+            )
+            cols = [r['column_name'] for r in cursor.fetchall()]
+            owner_col = 'owner_id' if 'owner_id' in cols else ('user_id' if 'user_id' in cols else None)
+            if not owner_col:
+                return {'detail': 'Proposals table missing owner column'}, 500
+
+            has_content  = 'content'     in cols
+            has_sections = 'sections'    in cols
+            client_col   = 'client_name' if 'client_name' in cols else ('client' if 'client' in cols else None)
+
+            select_fields = ['id', 'title', 'status', 'created_at', 'updated_at']
+            if has_content:  select_fields.append('content')
+            if has_sections: select_fields.append('sections')
+            if client_col:   select_fields.append(f'{client_col} AS client_name')
+
+            cursor.execute(
+                f"SELECT {', '.join(select_fields)} FROM proposals WHERE {owner_col} = %s ORDER BY created_at DESC",
+                (resolved_id,)
+            )
+            rows = cursor.fetchall()
+
+            # ── Per-proposal scoring ──
+            proposals_detail = []
+            status_counts: dict = {}
+            passing  = 0
+            sign_off = 0
+            total    = len(rows)
+
+            SIGNED_STATUSES = {'signed', 'approved', 'sent to client'}
+
+            for row in rows:
+                raw_content = row.get('content') or row.get('sections')
+                scored     = _score_proposal(raw_content)
+                status_raw = (row.get('status') or 'draft').strip()
+                status_key = status_raw.lower()
+
+                if scored['score'] >= _PASS_THRESHOLD:
+                    passing += 1
+                if status_key in SIGNED_STATUSES:
+                    sign_off += 1
+
+                bucket = status_raw or 'Draft'
+                status_counts[bucket] = status_counts.get(bucket, 0) + 1
+
+                missing = [k.replace('_', ' ').title() for k, v in scored['filled'].items() if not v]
+
+                proposals_detail.append({
+                    'id':                row['id'],
+                    'title':             row.get('title') or f'Proposal {row["id"]}',
+                    'status':            status_raw,
+                    'client_name':       row.get('client_name') or '',
+                    'readiness_score':   scored['score'],
+                    'sections_complete': scored['complete'],
+                    'sections_total':    scored['total'],
+                    'missing_sections':  missing,
+                    'updated_at':        row['updated_at'].isoformat() if row.get('updated_at') else None,
+                })
+
+            completion_rate = round(passing  / total * 100, 1) if total else 0.0
+            sign_off_rate   = round(sign_off / total * 100, 1) if total else 0.0
+            avg_score       = round(sum(p['readiness_score'] for p in proposals_detail) / total, 1) if total else 0.0
+
+            # ── 30-day daily trend ──
+            cursor.execute(
+                f"""
+                SELECT DATE(created_at) AS day, COUNT(*) AS created
+                FROM proposals
+                WHERE {owner_col} = %s
+                  AND created_at >= NOW() - INTERVAL '30 days'
+                GROUP BY day
+                ORDER BY day
+                """,
+                (resolved_id,)
+            )
+            trend_raw = cursor.fetchall()
+
+            by_date: dict = {}
+            for p in proposals_detail:
+                upd = p.get('updated_at') or ''
+                day = upd[:10] if upd else None
+                if day:
+                    by_date.setdefault(day, []).append(p['readiness_score'])
+
+            trend = []
+            for t in trend_raw:
+                day_str  = str(t['day'])
+                scores   = by_date.get(day_str, [])
+                day_rate = round(sum(1 for s in scores if s >= _PASS_THRESHOLD) / len(scores) * 100, 1) if scores else 0.0
+                trend.append({'date': day_str, 'created': t['created'], 'completion_rate': day_rate})
+
+            return {
+                'summary': {
+                    'total_proposals':    total,
+                    'passing_readiness':  passing,
+                    'completion_rate':    completion_rate,
+                    'sign_off_rate':      sign_off_rate,
+                    'avg_readiness_score': avg_score,
+                    'pass_threshold':     _PASS_THRESHOLD,
+                },
+                'status_breakdown': status_counts,
+                'proposals':        proposals_detail,
+                'trend':            trend,
+            }, 200
+
+    except Exception as e:
+        print(f'[ERROR] completion-rates: {e}')
+        traceback.print_exc()
+        return {'detail': str(e)}, 500

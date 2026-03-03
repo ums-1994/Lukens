@@ -15,6 +15,7 @@ import '../../theme/premium_theme.dart';
 import '../../theme/app_colors.dart';
 import '../shared/proposal_insights_modal.dart';
 import '../../widgets/app_side_nav.dart';
+import 'widgets/completion_rates_widget.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -2517,6 +2518,18 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
+  void _openProposalFromWidget(int proposalId, String status) {
+    final editableStatuses = {'draft', 'changes requested'};
+    final isEditable = editableStatuses.contains(status.toLowerCase());
+    Navigator.of(context).pushNamed(
+      '/blank-document',
+      arguments: {
+        'proposalId': proposalId,
+        'readOnly': !isEditable,
+      },
+    );
+  }
+
   Widget _buildFinancialManagerDashboard(
       Map<String, dynamic> counts, AppState app) {
     return Column(
@@ -2540,6 +2553,13 @@ class _DashboardPageState extends State<DashboardPage>
         _buildSection(
           'My Proposal Dashboard',
           _buildDashboardGrid(counts, context),
+        ),
+        const SizedBox(height: 20),
+
+        // Completion Rates Widget
+        _buildSection(
+          'Completion Rates & Readiness',
+          CompletionRatesWidget(onOpenProposal: _openProposalFromWidget),
         ),
         const SizedBox(height: 20),
 
