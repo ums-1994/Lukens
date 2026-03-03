@@ -792,7 +792,7 @@ class _ForgotPasswordFormState extends State<_ForgotPasswordForm> {
     setState(() => _loading = true);
     final email = _emailController.text.trim();
 
-    // Check with backend that this email exists in Firebase before sending reset
+    // Optionally check backend; only block on explicit 404. On 405/5xx/network error, proceed to send reset.
     try {
       final checkResponse = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/check-email-for-reset'),
@@ -801,22 +801,15 @@ class _ForgotPasswordFormState extends State<_ForgotPasswordForm> {
       );
       if (!mounted) return;
       if (checkResponse.statusCode == 404) {
-        setState(() => _loading = false);
         final body = json.decode(checkResponse.body) as Map<String, dynamic>?;
         final message = body?['detail'] as String? ?? 'No account found with this email.';
+        setState(() => _loading = false);
         widget.onError(message);
         return;
       }
-      if (checkResponse.statusCode != 200) {
-        setState(() => _loading = false);
-        widget.onError('Could not verify email. Please try again.');
-        return;
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _loading = false);
-      widget.onError('Could not verify email. Please try again.');
-      return;
+      // 200 = exists, proceed. 405/500/503 etc = backend issue, proceed anyway so reset still works.
+    } catch (_) {
+      // Network or other error: proceed to send reset so user isn't blocked.
     }
 
     final error = await FirebaseService.sendPasswordResetEmail(email);
