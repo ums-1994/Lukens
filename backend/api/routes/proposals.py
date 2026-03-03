@@ -981,6 +981,10 @@ def update_proposal_status(username=None, proposal_id=None, user_id=None, email=
             if target_key == 'pending ceo approval':
                 target_key = 'pending approval'
 
+            # Idempotency: allow setting the same status again (no-op)
+            if current_key == target_key:
+                return jsonify({'detail': 'Status unchanged', 'status': proposal_row[0]}), 200
+
             # Option B workflow expressed via central ROLE_WORKFLOW_TRANSITIONS,
             # so that individual environments can tweak the allowed graph of
             # state changes per role category.

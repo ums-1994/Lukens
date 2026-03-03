@@ -207,7 +207,6 @@ class ApiService {
     String? clientEmail,
     String? status,
     double? budget,
-    String? identityLast4,
   }) async {
     try {
       final response = await http.post(
@@ -220,8 +219,6 @@ class ApiService {
           'client_email': clientEmail,
           'status': status ?? 'draft',
           if (budget != null) 'budget': budget,
-          if (identityLast4 != null && identityLast4.trim().isNotEmpty)
-            'identity_last4': identityLast4.trim(),
         }),
       );
 
@@ -246,7 +243,6 @@ class ApiService {
     String? clientEmail,
     String? status,
     double? budget,
-    String? identityLast4,
   }) async {
     try {
       final response = await http.put(
@@ -259,8 +255,6 @@ class ApiService {
           'client_email': clientEmail,
           'status': status,
           if (budget != null) 'budget': budget,
-          if (identityLast4 != null && identityLast4.trim().isNotEmpty)
-            'identity_last4': identityLast4.trim(),
         }),
       );
 

@@ -59,7 +59,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   late TextEditingController _titleController;
   late TextEditingController _clientNameController;
   late TextEditingController _clientEmailController;
-  late TextEditingController _identityLast4Controller;
   List<Map<String, dynamic>> _clients = [];
   bool _isLoadingClients = false;
   int? _selectedClientId;
@@ -229,7 +228,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
     _clientNameController = TextEditingController();
     _clientEmailController = TextEditingController();
-    _identityLast4Controller = TextEditingController();
     _commentController = TextEditingController();
     _commentController.addListener(_handleCommentTextChanged);
     _commentFocusNode.addListener(_handleCommentFocusChange);
@@ -1320,7 +1318,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _titleController.dispose();
     _clientNameController.dispose();
     _clientEmailController.dispose();
-    _identityLast4Controller.dispose();
     _commentController.removeListener(_handleCommentTextChanged);
     _commentController.dispose();
     _commentFocusNode.removeListener(_handleCommentFocusChange);
@@ -2671,17 +2668,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 keyboardType: TextInputType.emailAddress,
               ),
               const SizedBox(height: 16),
-              TextField(
-                controller: _identityLast4Controller,
-                decoration: const InputDecoration(
-                  labelText: 'Identity Last 4 Digits (optional)',
-                  hintText: 'e.g., 1234',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock),
-                ),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 12),
               const Text(
                 '* When approved, the proposal will be sent to this email',
                 style: TextStyle(
@@ -3108,9 +3094,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           clientEmail: _clientEmailController.text.trim().isEmpty
               ? null
               : _clientEmailController.text.trim(),
-          identityLast4: _identityLast4Controller.text.trim().isEmpty
-              ? null
-              : _identityLast4Controller.text.trim(),
           status: _proposalStatus ?? 'draft',
         );
 
@@ -3150,9 +3133,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           clientEmail: _clientEmailController.text.trim().isEmpty
               ? null
               : _clientEmailController.text.trim(),
-          identityLast4: _identityLast4Controller.text.trim().isEmpty
-              ? null
-              : _identityLast4Controller.text.trim(),
           status: _proposalStatus ?? 'draft',
           budget: isFinanceRole ? computedBudget : null,
         );

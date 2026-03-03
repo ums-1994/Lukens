@@ -20,6 +20,9 @@ email-validator==2.1.0
 psycopg2-binary==2.9.9
 cloudinary==1.36.0
 
+# Testing
+pytest>=8.0.0
+
 # Document extraction
 PyPDF2==3.0.1
 python-docx==0.8.11
