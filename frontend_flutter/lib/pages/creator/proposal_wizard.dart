@@ -61,38 +61,282 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       {}; // AI-run governance check results
   Map<String, dynamic> _riskAssessment = {};
   bool _isInternalApproved = false;
-  bool _isClientSigned = false;
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
 
-  String _riskGateStatusUpper() {
-    return (_riskAssessment['status'] ?? '').toString().trim().toUpperCase();
+  int _countIssuesByPriority(
+      List<Map<String, dynamic>> issues, Set<String> priorities) {
+    return issues.where((i) {
+      final p = (i['priority']?.toString() ?? '').toLowerCase().trim();
+      return priorities.contains(p);
+    }).length;
   }
 
-  Map<String, dynamic> _parseAdditionalInfo(dynamic raw) {
-    if (raw == null) return {};
-    if (raw is Map<String, dynamic>) return raw;
-    if (raw is Map) return Map<String, dynamic>.from(raw);
-    if (raw is String) {
-      final s = raw.trim();
-      if (s.isEmpty) return {};
-      try {
-        final decoded = json.decode(s);
-        if (decoded is Map<String, dynamic>) return decoded;
-        if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      } catch (_) {}
-    }
-    return {};
+  // Getters for form data
+  String get proposalTitle => _formData['proposalTitle'] ?? '';
+  String get clientName => _formData['clientName'] ?? '';
+  String get opportunityName => _formData['opportunityName'] ?? '';
+  List<Map<String, dynamic>> get kbCitations => [];
+  bool get _isClientSigned => false;
+  void Function()? get _sendToClient => () {
+        // TODO: Implement send to client functionality
+      };
+  String get dateLabel => DateTime.now().toString().split(' ')[0];
+  Map<String, String> get moduleContents =>
+      Map<String, String>.from(_formData['moduleContents'] ?? {});
+
+  // Missing methods
+  bool _isRiskGateBlockedWithoutOverride() {
+    return _riskGateStatusUpper() == 'BLOCK';
   }
 
   bool _hasRiskGateOverride() {
-    if (_riskAssessment['overridden'] == true) return true;
-    final override = _riskAssessment['override'];
-    return override is Map<String, dynamic>;
+    return false; // TODO: Implement override logic
   }
 
-  bool _isRiskGateBlockedWithoutOverride() {
-    return _riskGateStatusUpper() == 'BLOCK' && !_hasRiskGateOverride();
+  Widget _buildClientSignature() {
+    return Container(); // TODO: Implement client signature
+  }
+
+  Map<String, dynamic> _parseAdditionalInfo(dynamic info) {
+    if (info == null) return {};
+
+    if (info is Map<String, dynamic>) {
+      return info;
+    }
+
+    if (info is String) {
+      try {
+        final decoded = json.decode(info);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+      } catch (e) {
+        // If parsing fails, return empty map
+      }
+    }
+
+    return {};
+  }
+
+  String _mergePlaceholders(String content) {
+    if (content.isEmpty) return content;
+
+    final Map<String, String> replacements = {
+      'project name': _formData['opportunityName']?.toString() ?? '',
+      'client name': _formData['clientName']?.toString() ?? '',
+      'client': _formData['clientName']?.toString() ?? '',
+      'client email': _formData['clientEmail']?.toString() ?? '',
+      'timeline': _formData['timeline']?.toString() ?? '',
+      'estimated value': _formData['estimatedValue']?.toString() ?? '',
+    };
+
+    return content.replaceAllMapped(
+      RegExp(r'\{\{\s*([^}]+?)\s*\}\}', caseSensitive: false),
+      (match) {
+        final key = match.group(1)!.toLowerCase().trim();
+        final normalized = key.replaceAll('_', ' ');
+        final value = replacements[normalized];
+        if (value == null || value.isEmpty) {
+          return match.group(0)!; // leave placeholder as-is
+        }
+        return value;
+      },
+    );
+  }
+
+  void _openIssuesReviewSheet(List<Map<String, dynamic>> issues) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.65,
+          minChildSize: 0.35,
+          maxChildSize: 0.9,
+          builder: (context, controller) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Flagged issues',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${issues.length}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: issues.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No flagged issues found',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: controller,
+                            itemCount: issues.length,
+                            itemBuilder: (context, index) {
+                              final issue = issues[index];
+                              final title =
+                                  issue['title']?.toString() ?? 'Issue';
+                              final description =
+                                  issue['description']?.toString() ?? '';
+                              final priority =
+                                  (issue['priority']?.toString() ?? 'info')
+                                      .toLowerCase()
+                                      .trim();
+                              final type = issue['type']?.toString();
+                              final sectionId =
+                                  _mapSectionTitleToModuleId(title);
+                              final bool canAutoAddModule =
+                                  (type == 'missing_section' ||
+                                          type == 'incomplete_content') &&
+                                      sectionId != null;
+
+                              Color priorityColor;
+                              if (priority == 'critical' ||
+                                  priority == 'high') {
+                                priorityColor = const Color(0xFFDC2626);
+                              } else if (priority == 'warning' ||
+                                  priority == 'medium') {
+                                priorityColor = const Color(0xFFF59E0B);
+                              } else {
+                                priorityColor = const Color(0xFF00BCD4);
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                        color: Colors.grey[200]!, width: 1),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              title,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF1A1A1A),
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            priority.toUpperCase(),
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                              color: priorityColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (description.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          description,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
+                                      if (canAutoAddModule) ...[
+                                        const SizedBox(height: 10),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
+                                          children: [
+                                            TextButton(
+                                              onPressed: () async {
+                                                Navigator.pop(context);
+                                                _ensureModuleSelected(
+                                                    sectionId);
+                                                await _openContentLibraryAndInsert(
+                                                    sectionId);
+                                              },
+                                              child: const Text('Add module'),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            ElevatedButton.icon(
+                                              style: ElevatedButton.styleFrom(
+                                                backgroundColor:
+                                                    PremiumTheme.teal,
+                                                foregroundColor: Colors.white,
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 12,
+                                                  vertical: 8,
+                                                ),
+                                              ),
+                                              onPressed: () {
+                                                Navigator.pop(context);
+                                                _addModuleWithAI(sectionId);
+                                              },
+                                              icon: const Icon(
+                                                  Icons.auto_awesome,
+                                                  size: 16),
+                                              label: const Text('Add with AI'),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   // Scroll controllers
@@ -410,6 +654,31 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
+    }
+  }
+
+  String _riskGateStatusUpper() {
+    if (_riskAssessment.isEmpty) return 'UNKNOWN';
+
+    final String riskLevel =
+        (_riskAssessment['risk_level'] as String?)?.toUpperCase() ?? 'UNKNOWN';
+    final int riskScore = (_riskAssessment['risk_score'] as int?) ?? 0;
+
+    // Map risk levels to status
+    switch (riskLevel) {
+      case 'LOW':
+        return 'PASS';
+      case 'MEDIUM':
+      case 'REVIEW':
+        return 'REVIEW';
+      case 'HIGH':
+      case 'CRITICAL':
+        return 'BLOCK';
+      default:
+        // Fallback to score-based determination
+        if (riskScore >= 70) return 'READY';
+        if (riskScore >= 40) return 'AT_RISK';
+        return 'UNKNOWN';
     }
   }
 
@@ -841,8 +1110,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
-                  Colors.black.withOpacity(0.65),
-                  Colors.black.withOpacity(0.35),
+                  Colors.black.withValues(alpha: 0.65),
+                  Colors.black.withValues(alpha: 0.35),
                 ],
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
@@ -1109,45 +1378,144 @@ class _ProposalWizardPageState extends State<ProposalWizard>
           child: CustomScrollbar(
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
-              child: GlassContainer(
-                borderRadius: 24,
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Proposal Summary',
-                      style: PremiumTheme.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.06),
+                              blurRadius: 18,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              height: 4,
+                              width: 60,
+                              decoration: BoxDecoration(
+                                color: PremiumTheme.teal,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              proposalTitle,
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Prepared for: $clientName',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                color: Color(0xFF4B5563),
+                              ),
+                            ),
+                            if (opportunityName != null) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                opportunityName,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xFF6B7280),
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: 4),
+                            Text(
+                              'Date: $dateLabel',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    _buildReviewRow('Template:', template.name),
-                    _buildReviewRow('Client:', _formData['clientName'] ?? ''),
-                    _buildReviewRow(
-                        'Project:', _formData['opportunityName'] ?? ''),
-                    _buildReviewRow(
-                        'Modules:', '${selectedModules.length} selected'),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Next Steps',
-                      style: PremiumTheme.bodyLarge.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildNextStepItem(
-                        '• Your proposal will be created in draft status',
-                        PremiumTheme.info),
-                    _buildNextStepItem(
-                        '• You can continue editing and adding content',
-                        PremiumTheme.info),
-                    _buildNextStepItem(
-                        '• Submit for approval when ready', PremiumTheme.info),
-                    _buildNextStepItem(
-                        '• Track progress through the approval workflow',
-                        PremiumTheme.info),
-                  ],
+                      const SizedBox(height: 24),
+                      // Content sections
+                      ...selectedModuleIds.map((moduleId) {
+                        final module = _contentModules.firstWhere(
+                          (m) => m['id'] == moduleId,
+                          orElse: () => {
+                            'id': moduleId,
+                            'name': moduleId.toString().replaceAll('_', ' '),
+                          },
+                        );
+
+                        final title =
+                            module['name']?.toString() ?? moduleId.toString();
+                        final content =
+                            _mergePlaceholders(moduleContents[moduleId] ?? '');
+
+                        if (content.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 24),
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.04),
+                                blurRadius: 14,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                height: 3,
+                                width: 40,
+                                decoration: BoxDecoration(
+                                  color:
+                                      PremiumTheme.teal.withValues(alpha: 0.9),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                title,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0F172A),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                content,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: Color(0xFF2C3E50),
+                                  height: 1.6,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1536,7 +1904,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                     ? PremiumTheme.success
                     : isActive
                         ? const Color(0xFFEAF2F8) // Light blue background
-                        : const Color(0xFFEAF2F8).withOpacity(0.5),
+                        : const Color(0xFFEAF2F8).withValues(alpha: 0.5),
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: isCompleted
@@ -1555,7 +1923,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           fontWeight: FontWeight.bold,
                           color: isActive
                               ? PremiumTheme.info // Blue text
-                              : PremiumTheme.info.withOpacity(0.6),
+                              : PremiumTheme.info.withValues(alpha: 0.6),
                         ),
                       ),
               ),
@@ -1660,7 +2028,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: PremiumTheme.error.withOpacity(0.12),
+                            color: PremiumTheme.error.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
@@ -1797,7 +2165,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         ),
         const SizedBox(height: 8),
         Text(
-          'Submit for internal review and approval',
+          'Send proposal to Finance for review',
           style: PremiumTheme.bodyMedium,
         ),
         const SizedBox(height: 24),
@@ -1941,7 +2309,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                   width: 60,
                                   height: 60,
                                   decoration: BoxDecoration(
-                                    color: color.withOpacity(0.2),
+                                    color: color.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: Icon(
@@ -2502,12 +2870,12 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: module['category'] == 'Company'
-                  ? PremiumTheme.info.withOpacity(0.2)
+                  ? PremiumTheme.info.withValues(alpha: 0.2)
                   : module['category'] == 'Project'
-                      ? PremiumTheme.success.withOpacity(0.2)
+                      ? PremiumTheme.success.withValues(alpha: 0.2)
                       : module['category'] == 'Legal'
-                          ? PremiumTheme.error.withOpacity(0.2)
-                          : PremiumTheme.purple.withOpacity(0.2),
+                          ? PremiumTheme.error.withValues(alpha: 0.2)
+                          : PremiumTheme.purple.withValues(alpha: 0.2),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -2868,7 +3236,13 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     final status = _governanceResults['status'] ?? 'PENDING';
     final score = _governanceResults['score'] ?? 0;
     final checks = _governanceResults['checks'] ?? [];
-    final issues = List.from(_governanceResults['issues'] ?? const []);
+    final rawIssues = List.from(_governanceResults['issues'] ?? const []);
+    // Governance step should NOT show the full AI recommendations list.
+    // Keep only actual issues here; recommendations are shown in Risk Assessment.
+    final issues = rawIssues.where((raw) {
+      if (raw is! Map<String, dynamic>) return true;
+      return (raw['type']?.toString() ?? '') != 'recommendation';
+    }).toList();
     final passed = status == 'Ready';
 
     Color statusColor = PremiumTheme.success;
@@ -3010,11 +3384,11 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             },
           ),
         ],
-        // Issues/Recommendations (Compact)
+        // Issues (Compact)
         if (issues.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
-            'Issues & AI Recommendations',
+            'Issues',
             style: PremiumTheme.bodyMedium.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -3125,8 +3499,11 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           children: [
                             TextButton(
                               onPressed: () async {
-                                _ensureModuleSelected(sectionId);
-                                await _openContentLibraryAndInsert(sectionId);
+                                if (!canAutoAddModule) return;
+                                final targetSectionId = sectionId;
+                                _ensureModuleSelected(targetSectionId);
+                                await _openContentLibraryAndInsert(
+                                    targetSectionId);
                               },
                               child: const Text('Add module'),
                             ),
@@ -3141,6 +3518,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                 ),
                               ),
                               onPressed: () {
+                                if (!canAutoAddModule) return;
                                 _addModuleWithAI(sectionId);
                               },
                               icon: const Icon(Icons.auto_awesome, size: 16),
@@ -3206,28 +3584,87 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       );
     }
 
-    // Extract data from Hugging Face analysis
-    final hfAnalysis = _riskAssessment['hf_analysis'] as Map<String, dynamic>? ?? {};
-    final analysis = hfAnalysis['analysis'] as Map<String, dynamic>? ?? {};
-    final compoundRisk = analysis['compound_risk'] as Map<String, dynamic>? ?? {};
-    final riskScore = _riskAssessment['risk_score'] ?? 0;
-    final status = _riskAssessment['status'] ?? 'At Risk';
-    final summary = _riskAssessment['summary'] ?? 'Risk analysis completed';
-    final issues = List<Map<String, dynamic>>.from(_riskAssessment['issues'] ?? const []);
-    
-    // Get detailed issues from Hugging Face response
-    final hfIssues = List<Map<String, dynamic>>.from(analysis['issues'] ?? []);
-    final recommendations = List<String>.from(hfAnalysis['recommendations'] ?? []);
-    final riskLevel = hfAnalysis['risk_level'] ?? 'medium';
-    final isBlocked = hfAnalysis['release_blocked'] ?? false;
+    final riskLevel =
+        _riskAssessment["risk_level"]?.toString().toUpperCase() ?? "UNKNOWN";
+    final riskScore = (_riskAssessment["risk_score"] as num?)?.toInt() ?? 0;
+    final issues = List<Map<String, dynamic>>.from(
+      _riskAssessment["issues"] ?? const [],
+    );
+    final recommendations = List<String>.from(
+      _riskAssessment["recommendations"] ?? const [],
+    );
+    final canRelease = _riskAssessment["can_release"] ?? false;
+    final totalIssues = _riskAssessment["total_issues"] ?? 0;
+    final priorityBreakdown = Map<String, int>.from(
+      _riskAssessment["priority_breakdown"] ?? const {},
+    );
+    final summary = (_riskAssessment["summary"] ?? '').toString();
+    final isBlocked = riskLevel == "BLOCK" || canRelease == false;
+    final status = riskLevel;
 
-    Color riskColor = PremiumTheme.success;
-    if (riskLevel == 'high' || status == 'Blocked') riskColor = PremiumTheme.error;
-    if (riskLevel == 'medium' || status == 'At Risk') riskColor = Colors.orange;
+    Color riskColor;
+    if (riskLevel == "BLOCK" ||
+        riskLevel == "CRITICAL" ||
+        riskLevel == "HIGH") {
+      riskColor = PremiumTheme.error;
+    } else if (riskLevel == "REVIEW" || riskLevel == "MEDIUM") {
+      riskColor = Colors.orange;
+    } else {
+      riskColor = PremiumTheme.success;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (issues.isNotEmpty)
+          GlassContainer(
+            borderRadius: 16,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: riskColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.flag_outlined, size: 14, color: riskColor),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Flagged · ${issues.length}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: riskColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Critical: ${priorityBreakdown['critical'] ?? 0} · '
+                    'High: ${priorityBreakdown['high'] ?? 0} · '
+                    'Medium: ${priorityBreakdown['medium'] ?? 0} · '
+                    'Low: ${priorityBreakdown['low'] ?? 0}',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                OutlinedButton(
+                  onPressed: () => _openIssuesReviewSheet(issues),
+                  child: const Text('Review'),
+                ),
+              ],
+            ),
+          ),
+        if (issues.isNotEmpty) const SizedBox(height: 16),
         // Risk Summary Card
         GlassContainer(
           borderRadius: 24,
@@ -3240,7 +3677,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: riskColor.withOpacity(0.2),
+                      color: riskColor.withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
@@ -3265,13 +3702,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                           'Risk Score: ${riskScore.toStringAsFixed(0)}%',
                           style: PremiumTheme.bodyMedium,
                         ),
-                        if (compoundRisk['score'] != null)
-                          Text(
-                            'Compound Risk: ${(compoundRisk['score'] as num).toStringAsFixed(1)}/10',
-                            style: PremiumTheme.bodySmall.copyWith(
-                              color: riskColor,
-                            ),
-                          ),
                       ],
                     ),
                   ),
@@ -3290,14 +3720,14 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                     children: [
                       Text(
                         'Risk Summary',
-                        style: PremiumTheme.bodySmall.copyWith(
+                        style: PremiumTheme.bodyMedium.copyWith(
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         summary,
-                        style: PremiumTheme.bodySmall,
+                        style: PremiumTheme.bodyMedium,
                       ),
                     ],
                   ),
@@ -3306,23 +3736,70 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             ],
           ),
         ),
-        
-        const SizedBox(height: 16),
-        
-        // Missing Sections
-        if (hfIssues.isNotEmpty) ...[
+
+        if (recommendations.isNotEmpty) ...[
           Text(
-            'Detected Issues (${hfIssues.length})',
+            'AI Recommendations',
             style: PremiumTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
-          ...hfIssues.map<Widget>((issue) {
-            final type = issue['type']?.toString() ?? 'unknown';
-            final severity = issue['severity']?.toString() ?? 'medium';
+          GlassContainer(
+            borderRadius: 16,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: recommendations
+                  .where((r) => r.trim().isNotEmpty)
+                  .map<Widget>(
+                    (r) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.lightbulb_outline,
+                            size: 18,
+                            color: riskColor,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              r,
+                              style: PremiumTheme.bodyMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (issues.isNotEmpty) ...[
+          Text(
+            'Detected Issues (${issues.length})',
+            style: PremiumTheme.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...issues.map<Widget>((issue) {
+            final title = issue["title"]?.toString() ??
+                issue["section"]?.toString() ??
+                "Issue";
+            final section = issue["section"]?.toString() ?? "";
             final description = issue['description']?.toString() ?? '';
-            final location = issue['location']?.toString() ?? '';
+            final action = issue["recommendation"]?.toString() ?? "";
+            final category = issue["category"]?.toString() ?? "";
+            final type = category;
+            final severity = issue['severity']?.toString().toLowerCase() ?? '';
+
+            // KB Citations are now part of the issue itself if available
+            final kbTitle = issue['kb_citation']?.toString() ?? '';
 
             Color iconColor = PremiumTheme.info;
             if (severity == 'critical' || severity == 'high') {
@@ -3367,20 +3844,27 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                location.isEmpty 
-                                    ? _formatSectionTitle(description)
-                                    : _formatSectionTitle(location),
-                                style: PremiumTheme.bodyMedium.copyWith(
+                                title,
+                                style: PremiumTheme.bodyLarge.copyWith(
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              const SizedBox(height: 4),
-                              Text(
-                                description,
-                                style: PremiumTheme.bodySmall.copyWith(
-                                  color: PremiumTheme.textSecondary,
+                              if (section.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  section,
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: PremiumTheme.textSecondary,
+                                  ),
                                 ),
-                              ),
+                              ],
+                              if (description.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  description,
+                                  style: PremiumTheme.bodyMedium,
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -3392,80 +3876,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             );
           }).toList(),
         ],
-        
-        // Recommendations
-        if (recommendations.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          Text(
-            'Recommendations',
-            style: PremiumTheme.bodyLarge.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
-          GlassContainer(
-            borderRadius: 16,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ...recommendations.map<Widget>((rec) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.check_circle_outline,
-                        size: 16,
-                        color: PremiumTheme.teal,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          rec,
-                          style: PremiumTheme.bodySmall,
-                        ),
-                      ),
-                    ],
-                  ),
-                )).toList(),
-              ],
-            ),
-          ),
-        ],
-        
-        const SizedBox(height: 16),
-        
-        // Action Buttons
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: _runRiskAssessment,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Re-run Analysis'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: PremiumTheme.teal,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-            if (isBlocked) ...[
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: () => _handleRiskGateOverride(),
-                  icon: const Icon(Icons.security),
-                  label: const Text('Override Risk'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
       ],
     );
   }
@@ -3501,12 +3911,12 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Submit for Internal Approval',
+                'Send to Finance',
                 style: PremiumTheme.titleMedium,
               ),
               const SizedBox(height: 16),
               Text(
-                'Before submitting, ensure:',
+                'Before sending to Finance, ensure:',
                 style: PremiumTheme.bodyMedium.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -3568,7 +3978,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.success.withOpacity(0.2),
+                    color: PremiumTheme.success.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: PremiumTheme.success),
                   ),
@@ -3578,7 +3988,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Approved internally',
+                          'Sent to Finance for review',
                           style: PremiumTheme.bodyMedium.copyWith(
                             color: PremiumTheme.success,
                             fontWeight: FontWeight.w600,
@@ -3590,9 +4000,9 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 )
               else
                 ElevatedButton.icon(
-                  onPressed: _submitForInternalApproval,
-                  icon: const Icon(Icons.send),
-                  label: const Text('Submit for Approval'),
+                  onPressed: _submitToFinance,
+                  icon: const Icon(Icons.account_balance),
+                  label: const Text('Send to Finance'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: PremiumTheme.teal,
                     foregroundColor: Colors.white,
@@ -3657,104 +4067,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     );
   }
 
-  // Client Signature Builder
-  Widget _buildClientSignature() {
-    return Column(
-      children: [
-        GlassContainer(
-          borderRadius: 24,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Send to Client',
-                style: PremiumTheme.titleMedium,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Client Information:',
-                style: PremiumTheme.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              _buildInfoRow(
-                  'Name:', _formData['clientName'] ?? 'Not specified'),
-              _buildInfoRow(
-                  'Email:', _formData['clientEmail'] ?? 'Not specified'),
-              const SizedBox(height: 24),
-              if (_isClientSigned)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.success.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: PremiumTheme.success),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.check_circle, color: PremiumTheme.success),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          'Proposal signed by client',
-                          style: PremiumTheme.bodyMedium.copyWith(
-                            color: PremiumTheme.success,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                ElevatedButton.icon(
-                  onPressed: _sendToClient,
-                  icon: const Icon(Icons.send),
-                  label: const Text('Send to Client'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: PremiumTheme.teal,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 100,
-            child: Text(
-              label,
-              style: PremiumTheme.bodyMedium.copyWith(
-                color: PremiumTheme.textSecondary,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: PremiumTheme.bodyMedium.copyWith(
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // Action Methods
   Future<void> _runRiskAssessment() async {
     setState(() => _isLoading = true);
@@ -3782,11 +4094,59 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         _proposalId = createdId;
       }
 
+      final proposalData = _buildProposalDataForAI();
       final analysis =
-          await AIAnalysisService.analyzeProposalRisks(_proposalId!.toString());
+          await AIAnalysisService.analyzeProposalRisks(proposalData);
+
+      // Extract data from analysis
+      String riskLevel =
+          analysis['risk_level']?.toString().toUpperCase() ?? 'UNKNOWN';
+      int riskScore = (analysis['risk_score'] as num?)?.toInt() ?? 0;
+      final issues =
+          List<Map<String, dynamic>>.from(analysis['issues'] ?? const []);
+      final recommendations =
+          List<String>.from(analysis['recommendations'] ?? const []);
+      final bool canRelease = analysis['can_release'] ?? false;
+      final int totalIssues = analysis['total_issues'] ?? 0;
+      final Map<String, int> priorityBreakdown =
+          Map<String, int>.from(analysis['priority_breakdown'] ?? const {});
+
+      // HF can return issues=[] and risk_score=0 while still flagging missing
+      // sections/clauses in recommendations. Derive a meaningful display.
+      if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+
+        final missingSections = missingSectionsMatch != null
+            ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
+            : 0;
+        final clauseIssues = clauseIssuesMatch != null
+            ? int.tryParse(clauseIssuesMatch.group(1) ?? '') ?? 0
+            : 0;
+
+        final derivedScore =
+            ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
+        riskScore = derivedScore;
+
+        if (riskLevel == 'LOW' || riskLevel == 'UNKNOWN') {
+          riskLevel = missingSections > 0 ? 'MEDIUM' : 'REVIEW';
+        }
+      }
 
       setState(() {
-        _riskAssessment = analysis;
+        _riskAssessment = {
+          'risk_level': riskLevel,
+          'risk_score': riskScore,
+          'issues': issues,
+          'recommendations': recommendations,
+          'can_release': canRelease,
+          'total_issues': totalIssues,
+          'priority_breakdown': priorityBreakdown,
+        };
         _isLoading = false;
       });
     } catch (e) {
@@ -3808,6 +4168,10 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       'title': _formData['proposalTitle']?.toString().isNotEmpty == true
           ? _formData['proposalTitle'].toString()
           : _formData['opportunityName']?.toString() ?? '',
+      'opportunityName': _formData['opportunityName'] ?? '',
+      'templateId': _formData['templateId'] ?? _formData['templateType'] ?? '',
+      'templateType':
+          _formData['templateType'] ?? _formData['templateId'] ?? '',
       'clientName': _formData['clientName'] ?? '',
       'clientEmail': _formData['clientEmail'] ?? '',
       'projectType': _formData['projectType'] ?? '',
@@ -3815,11 +4179,64 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       'timeline': _formData['timeline'] ?? '',
     };
 
-    for (final moduleId in selectedModules) {
-      data[moduleId] = moduleContents[moduleId] ?? '';
+    // IMPORTANT: proposals created from scratch can have content in moduleContents
+    // even if the user never explicitly selected modules.
+    final moduleIdsToSend = <String>{
+      ...selectedModules,
+      ...moduleContents.keys
+    };
+    for (final moduleId in moduleIdsToSend) {
+      final content = moduleContents[moduleId] ?? '';
+      if (content.trim().isEmpty) continue;
+      data[moduleId] = content;
     }
 
     return data;
+  }
+
+  String _serializeWizardContentForBackend({required String title}) {
+    final selectedModules =
+        List<String>.from(_formData['selectedModules'] ?? const []);
+    final moduleContents =
+        Map<String, String>.from(_formData['moduleContents'] ?? {});
+
+    final sections = <Map<String, dynamic>>[];
+
+    for (final moduleId in selectedModules) {
+      final rawContent = moduleContents[moduleId] ?? '';
+      final content = _mergePlaceholders(rawContent);
+      if (content.isEmpty) continue;
+
+      final module = _contentModules.firstWhere(
+        (m) => m['id'] == moduleId,
+        orElse: () => {
+          'id': moduleId,
+          'name': moduleId.replaceAll('_', ' '),
+        },
+      );
+
+      sections.add({
+        'title': module['name']?.toString() ?? moduleId.replaceAll('_', ' '),
+        'content': content,
+        'backgroundColor': const Color(0xFFFFFFFF).toARGB32(),
+        'backgroundImageUrl': null,
+        'sectionType': 'content',
+        'isCoverPage': false,
+        'inlineImages': <dynamic>[],
+        'tables': <dynamic>[],
+      });
+    }
+
+    final documentData = <String, dynamic>{
+      'title': title,
+      'sections': sections,
+      'metadata': {
+        'source': 'wizard_v2',
+        'last_modified': DateTime.now().toIso8601String(),
+      },
+    };
+
+    return json.encode(documentData);
   }
 
   // Run AI Governance Check
@@ -3837,38 +4254,99 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       final analysis =
           await AIAnalysisService.analyzeProposalContent(proposalData);
 
-      final int rawRiskScore = (analysis['riskScore'] ?? 0) as int;
-      // Convert raw risk points into a readiness percentage (higher is better)
-      final int readinessScore = (100 - rawRiskScore).clamp(0, 100).toInt();
+      final String riskLevel =
+          analysis['risk_level']?.toString().toUpperCase() ?? 'UNKNOWN';
+      int riskScore = (analysis['risk_score'] as num?)?.toInt() ?? 0;
+      final recommendations =
+          List<String>.from(analysis['recommendations'] ?? const []);
+      final bool canRelease = analysis['can_release'] ?? false;
 
       final issues = List<Map<String, dynamic>>.from(
         analysis['issues'] ?? const [],
       );
 
+      // HF can return issues=[] and risk_score=0 while still flagging missing
+      // sections/clauses in recommendations. Derive meaningful governance score.
+      int missingSections = 0;
+      int clauseIssues = 0;
+      if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+
+        missingSections = missingSectionsMatch != null
+            ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
+            : 0;
+        clauseIssues = clauseIssuesMatch != null
+            ? int.tryParse(clauseIssuesMatch.group(1) ?? '') ?? 0
+            : 0;
+
+        riskScore = ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
+      }
+
+      // Readiness score (higher is better) - MUST be based on the final riskScore
+      final int readinessScore = (100 - riskScore).clamp(0, 100).toInt();
+
+      // Treat recommendations as governance findings when issues list is empty
+      final derivedFindings = recommendations
+          .where((r) => r.trim().isNotEmpty)
+          .map<Map<String, dynamic>>((r) => {
+                'type': 'recommendation',
+                'title': r,
+                'label': r,
+                'description': r,
+                'priority': 'warning',
+              })
+          .toList();
+      final allFindings = [...issues, ...derivedFindings];
+
       // Derive simple checklist from AI issues
-      final checks = issues.map((issue) {
+      final checks = allFindings.map((issue) {
         final priority = issue['priority']?.toString() ?? 'info';
         final isRequired = priority == 'critical' ||
             priority == 'high' ||
             priority == 'warning';
-        final hasPassed =
-            (issue['type']?.toString() ?? '') != 'missing_section' &&
-                (issue['type']?.toString() ?? '') != 'incomplete_content';
+
+        // Recommendations and missing content should be treated as not passed
+        // until addressed.
+        final type = (issue['type']?.toString() ?? '').trim();
+        final hasPassed = type != 'missing_section' &&
+            type != 'incomplete_content' &&
+            type != 'recommendation';
+
+        final label = (issue['label']?.toString().trim().isNotEmpty ?? false)
+            ? issue['label']?.toString() ?? ''
+            : (issue['title']?.toString() ?? 'Issue');
 
         return {
           'id': issue['type']?.toString() ?? 'ai_issue',
-          'label': issue['title']?.toString() ?? 'Issue',
+          'label': label,
           'required': isRequired,
           'passed': hasPassed,
         };
       }).toList();
 
+      final bool hasActionableRecos =
+          recommendations.isNotEmpty || missingSections > 0 || clauseIssues > 0;
+      final String computedStatus = hasActionableRecos
+          ? 'At Risk'
+          : (canRelease
+              ? 'Ready'
+              : (riskLevel == 'HIGH' ||
+                      riskLevel == 'CRITICAL' ||
+                      riskLevel == 'BLOCK')
+                  ? 'Blocked'
+                  : 'At Risk');
+
       setState(() {
         _governanceResults = {
-          'status': analysis['status'] ?? 'PENDING',
+          'status': computedStatus,
           'score': readinessScore,
           'checks': checks,
-          'issues': issues,
+          'issues': allFindings,
         };
         _isRunningGovernance = false;
       });
@@ -3880,10 +4358,23 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     }
   }
 
-  Future<void> _submitForInternalApproval() async {
+  Future<void> _submitToFinance() async {
     setState(() => _isLoading = true);
 
     try {
+      // Check if Risk Gate has been run
+      if (_riskAssessment.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Risk Gate analysis must be completed before sending to Finance'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
       // Check if governance passed (AI Ready status)
       final governanceStatus =
           (_governanceResults['status'] as String?) ?? 'PENDING';
@@ -3892,7 +4383,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Governance check must be Ready before submitting for approval'),
+                'Governance check must be Ready before sending to Finance'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -3900,71 +4391,40 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         return;
       }
 
-      // Simulate API call - replace with actual
-      await Future.delayed(const Duration(seconds: 1));
+      // Check Risk Gate blocking status
+      if (_isRiskGateBlockedWithoutOverride()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Cannot send to Finance: AI Risk Gate returned BLOCK and no override exists. Please go back to the AI Risk Gate step and submit an override to proceed.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Update proposal status to "Pending Finance Review"
+      final app = context.read<AppState>();
+      if (_proposalId != null) {
+        await app.updateProposalStatus(_proposalId!, 'Pending Finance Review');
+      }
 
       setState(() {
-        _isInternalApproved = true;
+        _isInternalApproved = true; // Keep this flag for UI state
         _isLoading = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Proposal submitted for internal approval'),
+          content: Text('Proposal sent to Finance for review'),
           backgroundColor: Colors.green,
         ),
       );
     } catch (e) {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error submitting for approval: $e')),
-      );
-    }
-  }
-
-  Future<void> _sendToClient() async {
-    if (_isRiskGateBlockedWithoutOverride()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Cannot send: AI Risk Gate returned BLOCK and no override exists.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    if (!_isInternalApproved) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please complete internal approval first'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      // Simulate API call - replace with actual
-      await Future.delayed(const Duration(seconds: 1));
-
-      setState(() {
-        _isClientSigned = true;
-        _isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Proposal sent to client successfully'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      setState(() => _isLoading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error sending to client: $e')),
+        SnackBar(content: Text('Error sending to Finance: $e')),
       );
     }
   }

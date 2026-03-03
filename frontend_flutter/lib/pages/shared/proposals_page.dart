@@ -147,11 +147,6 @@ class _ProposalsPageState extends State<ProposalsPage>
       }
     } catch (e) {
       print('Γ¥î Error loading proposals: $e');
-      if (mounted) {
-        setState(() {
-          proposals = [];
-        });
-      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

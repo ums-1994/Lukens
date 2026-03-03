@@ -1,25 +1,35 @@
 import 'dart:convert';
+import 'dart:js' as js;
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web/web.dart' as web;
 
 class AuthService {
-  // Get API URL from JavaScript config or use default
+  // Get API URL: local backend when on localhost or USE_LOCAL_API, else Render
   static String get baseUrl {
-    // Check if we're in production (not localhost)
     if (kIsWeb) {
       final hostname = web.window.location.hostname;
+      final isLocalHost =
+          hostname == 'localhost' || hostname == '127.0.0.1' || hostname.isEmpty;
+      if (isLocalHost) {
+        try {
+          final useLocal = js.context['USE_LOCAL_API'];
+          if (useLocal == true || useLocal?.toString().toLowerCase() == 'true') {
+            print('🌐 AuthService: Using local API URL: http://127.0.0.1:5000');
+            return 'http://127.0.0.1:5000';
+          }
+        } catch (_) {}
+        print('🌐 AuthService: Using local API URL (localhost): http://127.0.0.1:5000');
+        return 'http://127.0.0.1:5000';
+      }
       final isProduction = hostname.contains('netlify.app') ||
-          hostname.contains('onrender.com') ||
-          !hostname.contains('localhost');
-
+          hostname.contains('onrender.com');
       if (isProduction) {
-        print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
+        print('🌐 AuthService: Using production API URL: https://lukens-wp8w.onrender.com');
         return 'https://lukens-wp8w.onrender.com';
       }
     }
-    // Default to Render backend (production)
-    print('🌐 Using Render API URL: https://lukens-wp8w.onrender.com');
+    print('🌐 AuthService: Using Render API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';
   }
   static String? _token;

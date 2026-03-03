@@ -17,6 +17,7 @@ import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
 import '../../widgets/header.dart';
 import 'governance_panel.dart';
+import '../../services/ai_analysis_service.dart';
 // Import models from document_editor
 import '../../document_editor/models/document_section.dart';
 import '../../document_editor/models/inline_image.dart';
@@ -206,6 +207,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String? _proposalStatus; // draft, Pending CEO Approval, Sent to Client, etc.
   Map<String, dynamic>?
       _proposalData; // Store full proposal data for GovernancePanel
+
+  // Governance and Risk Assessment state
+  Map<String, dynamic> _governanceResults = {};
+  Map<String, dynamic> _riskAssessment = {};
+  bool _isRunningGovernance = false;
+  bool _isRunningRiskAssessment = false;
+  bool _hasCompletedGovernanceCheck = false;
+  bool _hasCompletedRiskAssessment = false;
 
   @override
   void initState() {
@@ -2661,6 +2670,148 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  /// Manager: resubmit a proposal that is in "Changes Requested" state.
+  /// Calls the same send-for-approval endpoint which sets status → Resubmitted.
+  Future<void> _resubmitChanges() async {
+    if (_hasUnsavedChanges) await _saveToBackend();
+    if (_savedProposalId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please save before resubmitting'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Resubmit Proposal'),
+        content: const Text(
+          'You are about to resubmit this proposal after making the requested changes. '
+          'The admin will be notified.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2ECC71)),
+            child: const Text('Resubmit'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final token = await _getAuthToken();
+      if (token == null) throw Exception('Not authenticated');
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$_savedProposalId/send-for-approval'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() => _proposalStatus = data['status']);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Changes resubmitted to admin successfully!'),
+              backgroundColor: Color(0xFF2ECC71),
+              duration: Duration(seconds: 2),
+            ),
+          );
+          Navigator.of(context).pushNamedAndRemoveUntil('/proposals', (r) => false);
+        }
+      } else {
+        throw Exception('Failed to resubmit: ${response.body}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Finance: submit pricing changes back to admin after "Changes Requested".
+  Future<void> _financeSubmitChanges() async {
+    if (_hasUnsavedChanges) await _saveToBackend();
+    if (_savedProposalId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please save before submitting'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Submit Pricing Changes'),
+        content: const Text(
+          'You are about to submit your updated pricing back to the admin for review.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2ECC71)),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final token = await _getAuthToken();
+      if (token == null) throw Exception('Not authenticated');
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$_savedProposalId/finance-resubmit'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() => _proposalStatus = data['status']);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Pricing changes submitted to admin!'),
+              backgroundColor: Color(0xFF2ECC71),
+              duration: Duration(seconds: 2),
+            ),
+          );
+          Navigator.of(context).pop();
+        }
+      } else {
+        throw Exception('Failed to submit changes: ${response.body}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   Future<void> _sendForApproval() async {
     // First save the document
     if (_hasUnsavedChanges) {
@@ -2672,6 +2823,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         const SnackBar(
           content: Text('Please save the document before sending for approval'),
           backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Check if governance and risk assessment are completed
+    if (!_hasCompletedGovernanceCheck || !_hasCompletedRiskAssessment) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Please complete the Review & Complete process (governance check and risk assessment) before sending for approval.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
         ),
       );
       return;
@@ -3787,7 +3951,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // In collaborator mode, hide navigation sidebar but allow editing
     final isCollaboratorMode = widget.isCollaborator;
-    final hideLeftSidebar = context.watch<RoleService>().isFinance();
+    final _statusForSidebar = (_proposalStatus ?? '').toLowerCase().trim();
+    // Show the full sidebar to finance when the proposal is returned for changes
+    // so they can access Content Library and insert blocks like any other editor.
+    final hideLeftSidebar = context.watch<RoleService>().isFinance() &&
+        _statusForSidebar != 'changes requested';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -4657,6 +4825,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final statusKey = (_proposalStatus ?? '').toString().toLowerCase().trim();
     final isDraftStatus = statusKey.isEmpty || statusKey == 'draft';
     final isPricingStatus = statusKey == 'pricing in progress';
+    final isChangesRequested = statusKey == 'changes requested';
 
     return Container(
       color: Colors.white,
@@ -5018,6 +5187,39 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
             ),
           if (isFinanceRole && isPricingStatus) const SizedBox(width: 12),
+
+          // Manager: resubmit after "Changes Requested"
+          if (isManagerRole && isChangesRequested)
+            ElevatedButton.icon(
+              onPressed: _resubmitChanges,
+              icon: const Icon(Icons.replay, size: 16),
+              label: const Text('Resubmit Changes'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE67E22),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+          if (isManagerRole && isChangesRequested) const SizedBox(width: 12),
+
+          // Finance: submit pricing changes back to admin
+          if (isFinanceRole && isChangesRequested)
+            ElevatedButton.icon(
+              onPressed: _financeSubmitChanges,
+              icon: const Icon(Icons.check_circle_outline, size: 16),
+              label: const Text('Submit Changes'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2980B9),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+          if (isFinanceRole && isChangesRequested) const SizedBox(width: 12),
+
           // Action buttons
           OutlinedButton.icon(
             onPressed: _showPreview,
@@ -5542,7 +5744,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     final isFinanceRole = context.watch<RoleService>().isFinance();
     final isManagerRole = context.watch<RoleService>().isCreator();
-    final financeTextLocked = isFinanceRole;
+    // Finance can edit freely when a proposal is returned to them for changes
+    final _statusForLock = (_proposalStatus ?? '').toLowerCase().trim();
+    final financeTextLocked = isFinanceRole && _statusForLock != 'changes requested';
 
     return SectionWidget(
       section: section,
@@ -6669,6 +6873,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             Icons.cloud_upload_outlined, 'upload', 'Upload'),
                         _buildPanelTabIcon(
                             Icons.edit_note, 'signature', 'Signature'),
+                        _buildPanelTabIcon(
+                            Icons.verified, 'review', 'Review & Complete'),
                         _buildAIAnalysisIcon(),
                       ],
                     ),
@@ -6750,6 +6956,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         return _buildUploadPanel();
       case 'signature':
         return _buildSignaturePanel();
+      case 'review':
+        return _buildReviewPanel();
       default:
         return _buildTemplatesPanel();
     }
@@ -10795,5 +11003,858 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
       },
     );
+  }
+
+  // Run AI Governance Check
+  Future<void> _runGovernanceCheck() async {
+    setState(() => _isRunningGovernance = true);
+
+    try {
+      final app = context.read<AppState>();
+      if (app.authToken != null) {
+        AIAnalysisService.setAuthToken(app.authToken!);
+      }
+
+      final proposalData = _getProposalDataForAnalysis();
+
+      final analysis =
+          await AIAnalysisService.analyzeProposalContent(proposalData);
+
+      final String riskLevel =
+          analysis['risk_level']?.toString().toUpperCase() ?? 'UNKNOWN';
+      int riskScore = (analysis['risk_score'] as num?)?.toInt() ?? 0;
+      final recommendations =
+          List<String>.from(analysis['recommendations'] ?? const []);
+      final bool canRelease = analysis['can_release'] ?? false;
+
+      final issues = List<Map<String, dynamic>>.from(
+        analysis['issues'] ?? const [],
+      );
+
+      // HF can return issues=[] and risk_score=0 while still flagging missing
+      // sections/clauses in recommendations. Derive meaningful governance score.
+      int missingSections = 0;
+      int clauseIssues = 0;
+      if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+
+        missingSections = missingSectionsMatch != null
+            ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
+            : 0;
+        clauseIssues = clauseIssuesMatch != null
+            ? int.tryParse(clauseIssuesMatch.group(1) ?? '') ?? 0
+            : 0;
+
+        riskScore = ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
+      }
+
+      // Readiness score (higher is better) - MUST be based on the final riskScore
+      final int readinessScore = (100 - riskScore).clamp(0, 100).toInt();
+
+      // Treat recommendations as governance findings so the checklist reflects
+      // actionable guidance without duplicating the full list in the UI.
+      final derivedFindings = recommendations
+          .where((r) => r.trim().isNotEmpty)
+          .map<Map<String, dynamic>>((r) => {
+                'type': 'recommendation',
+                'title': r,
+                'label': r,
+                'description': r,
+                'priority': 'warning',
+              })
+          .toList();
+
+      final allFindings = [...issues, ...derivedFindings];
+
+      // Derive simple checklist from AI issues
+      final checks = allFindings.map((issue) {
+        final priority = issue['priority']?.toString() ?? 'info';
+        final isRequired = priority == 'critical' ||
+            priority == 'high' ||
+            priority == 'warning';
+
+        final type = (issue['type']?.toString() ?? '').trim();
+        final hasPassed = type != 'missing_section' &&
+            type != 'incomplete_content' &&
+            type != 'recommendation';
+
+        final label = (issue['label']?.toString().trim().isNotEmpty ?? false)
+            ? issue['label']?.toString() ?? ''
+            : (issue['title']?.toString() ?? 'Issue');
+
+        return {
+          'id': issue['type']?.toString() ?? 'ai_issue',
+          'label': label,
+          'required': isRequired,
+          'passed': hasPassed,
+        };
+      }).toList();
+
+      final bool hasActionableRecos =
+          recommendations.isNotEmpty || missingSections > 0 || clauseIssues > 0;
+      final String computedStatus = hasActionableRecos
+          ? 'At Risk'
+          : (canRelease
+              ? 'Ready'
+              : (riskLevel == 'HIGH' ||
+                      riskLevel == 'CRITICAL' ||
+                      riskLevel == 'BLOCK')
+                  ? 'Blocked'
+                  : 'At Risk');
+
+      setState(() {
+        _governanceResults = {
+          'status': computedStatus,
+          'score': readinessScore,
+          'checks': checks,
+          'issues': allFindings,
+        };
+        _isRunningGovernance = false;
+        _hasCompletedGovernanceCheck = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Governance check completed: ${analysis['status']}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      setState(() => _isRunningGovernance = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error running governance check: $e')),
+      );
+    }
+  }
+
+  // Run Risk Assessment
+  Future<void> _runRiskAssessment() async {
+    setState(() => _isRunningRiskAssessment = true);
+
+    try {
+      final app = context.read<AppState>();
+      if (app.authToken != null) {
+        AIAnalysisService.setAuthToken(app.authToken!);
+      }
+
+      final proposalData = _getProposalDataForAnalysis();
+
+      final analysis =
+          await AIAnalysisService.analyzeProposalRisks(proposalData);
+
+      String riskLevel =
+          analysis['risk_level']?.toString().toUpperCase() ?? 'UNKNOWN';
+      int riskScore = (analysis['risk_score'] as num?)?.toInt() ?? 0;
+      final issues =
+          List<Map<String, dynamic>>.from(analysis['issues'] ?? const []);
+      final recommendations =
+          List<String>.from(analysis['recommendations'] ?? const []);
+      final bool canRelease = analysis['can_release'] ?? false;
+      final int totalIssues = analysis['total_issues'] ?? 0;
+      final Map<String, int> priorityBreakdown =
+          Map<String, int>.from(analysis['priority_breakdown'] ?? const {});
+
+      // HF can return issues=[] and risk_score=0 while still flagging missing
+      // sections/clauses in recommendations. Derive a meaningful display.
+      if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+
+        final missingSections = missingSectionsMatch != null
+            ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
+            : 0;
+        final clauseIssues = clauseIssuesMatch != null
+            ? int.tryParse(clauseIssuesMatch.group(1) ?? '') ?? 0
+            : 0;
+
+        final derivedScore =
+            ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
+        riskScore = derivedScore;
+
+        if (riskLevel == 'LOW' || riskLevel == 'UNKNOWN') {
+          riskLevel = missingSections > 0 ? 'MEDIUM' : 'REVIEW';
+        }
+      }
+
+      // Convert risk points into a 0-100 score where higher is better
+      final double displayScore = (100 - riskScore).clamp(0, 100).toDouble();
+
+      final risks =
+          issues.map((issue) => issue['title']?.toString() ?? 'Issue').toList();
+
+      setState(() {
+        _riskAssessment = {
+          'risk_level': riskLevel,
+          'risk_score': riskScore,
+          'display_score': displayScore,
+          'risks': risks,
+          'recommendations': recommendations,
+          'issues': issues,
+          'can_release': canRelease,
+          'total_issues': totalIssues,
+          'priority_breakdown': priorityBreakdown,
+        };
+        _isRunningRiskAssessment = false;
+        _hasCompletedRiskAssessment = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Risk assessment completed: $riskLevel'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    } catch (e) {
+      setState(() => _isRunningRiskAssessment = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error running risk assessment: $e')),
+      );
+    }
+  }
+
+  Map<String, dynamic> _getProposalDataForAnalysis() {
+    final data = <String, dynamic>{
+      // Include ID only if proposal is saved (not 'draft')
+      if (_savedProposalId != null) 'id': _savedProposalId.toString(),
+      'title': _titleController.text.isEmpty
+          ? 'Untitled Document'
+          : _titleController.text,
+      'opportunityName': _titleController.text.isEmpty
+          ? 'Untitled Document'
+          : _titleController.text,
+      'templateType': 'general',
+      'clientName': _clientNameController.text,
+      'clientEmail': _clientEmailController.text,
+      'status': _proposalStatus ?? 'draft',
+      // Add other proposal fields from _proposalData if available
+      ...?_proposalData,
+    };
+
+    // HF expects sections as a map of section_name -> content.
+    // Convert the editor sections into flat keys so AIAnalysisService can build
+    // the request properly.
+    for (int i = 0; i < _sections.length; i++) {
+      final section = _sections[i];
+      final title = section.titleController.text.trim().isNotEmpty
+          ? section.titleController.text.trim()
+          : (section.title.trim().isNotEmpty
+              ? section.title.trim()
+              : 'Section ${i + 1}');
+      final content = section.controller.text.trim().isNotEmpty
+          ? section.controller.text.trim()
+          : section.content.trim();
+      if (content.trim().isEmpty) continue;
+
+      // Normalize to stable keys for HF sections map.
+      final normalizedKey = title
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_|_$'), '');
+      final key = normalizedKey.isEmpty ? 'section_${i + 1}' : normalizedKey;
+      data[key] = content;
+    }
+
+    return data;
+  }
+
+  // Review and Complete - runs both governance and risk assessment
+  Future<void> _reviewAndComplete() async {
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Running comprehensive analysis...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      // Run governance check first
+      await _runGovernanceCheck();
+
+      // Then run risk assessment
+      await _runRiskAssessment();
+
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      // Show flagged issues modal
+      _showFlaggedIssues();
+    } catch (e) {
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error during analysis: $e')),
+      );
+    }
+  }
+
+  void _showFlaggedIssues() {
+    final List<Map<String, dynamic>> allIssues = [];
+    if (_governanceResults['issues'] != null) {
+      allIssues.addAll(
+          List<Map<String, dynamic>>.from(_governanceResults['issues']));
+    }
+    if (_riskAssessment['issues'] != null) {
+      allIssues
+          .addAll(List<Map<String, dynamic>>.from(_riskAssessment['issues']));
+    }
+
+    _openIssuesReviewSheet(allIssues);
+  }
+
+  void _openIssuesReviewSheet(List<Map<String, dynamic>> issues) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.65,
+          minChildSize: 0.35,
+          maxChildSize: 0.9,
+          builder: (context, controller) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Flagged issues',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${issues.length}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: issues.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No flagged issues found',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: controller,
+                            itemCount: issues.length,
+                            itemBuilder: (context, index) {
+                              final issue = issues[index];
+                              final title =
+                                  issue['title']?.toString() ?? 'Issue';
+                              final description =
+                                  issue['description']?.toString() ?? '';
+                              final priority =
+                                  (issue['priority']?.toString() ?? 'info')
+                                      .toLowerCase()
+                                      .trim();
+
+                              Color priorityColor;
+                              if (priority == 'critical' ||
+                                  priority == 'high') {
+                                priorityColor = const Color(0xFFDC2626);
+                              } else if (priority == 'warning' ||
+                                  priority == 'medium') {
+                                priorityColor = const Color(0xFFF59E0B);
+                              } else {
+                                priorityColor = const Color(0xFF00BCD4);
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                        color: Colors.grey[200]!, width: 1),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              title,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF1A1A1A),
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            priority.toUpperCase(),
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                              color: priorityColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (description.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          description,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildReviewPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Review & Complete',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Description
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blue[200]!),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue[700], size: 16),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Comprehensive Analysis',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Run both governance check and risk assessment to ensure your proposal meets all requirements before completion.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // Governance Check Section
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.verified_user, color: Colors.blue[700], size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Governance Check',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                  if (_hasCompletedGovernanceCheck) ...[
+                    const Spacer(),
+                    Icon(
+                      _governanceResults['status'] == 'Ready'
+                          ? Icons.check_circle
+                          : Icons.warning,
+                      color: _governanceResults['status'] == 'Ready'
+                          ? Colors.green[700]
+                          : Colors.orange[700],
+                      size: 16,
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Validates proposal structure, required sections, and compliance standards.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+              if (_governanceResults.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _governanceResults['status'] == 'Ready'
+                        ? Colors.green[100]
+                        : Colors.orange[100],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _governanceResults['status'] == 'Ready'
+                            ? Icons.check_circle
+                            : Icons.warning,
+                        color: _governanceResults['status'] == 'Ready'
+                            ? Colors.green[700]
+                            : Colors.orange[700],
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Status: ${_governanceResults['status']}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Risk Assessment Section
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.analytics_outlined,
+                      color: Colors.orange[700], size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Risk Assessment',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                  if (_hasCompletedRiskAssessment) ...[
+                    const Spacer(),
+                    Icon(
+                      Icons.analytics,
+                      color: _getRiskAssessmentIconColor(),
+                      size: 16,
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Analyzes potential risks and provides mitigation recommendations.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+              if (_riskAssessment.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _getRiskAssessmentColor(),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.analytics,
+                        color: _getRiskAssessmentIconColor(),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Risk Level: ${_riskAssessment['risk_level']}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // Main Action Button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: (_isRunningGovernance || _isRunningRiskAssessment)
+                ? null
+                : _reviewAndComplete,
+            icon: (_isRunningGovernance || _isRunningRiskAssessment)
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.verified),
+            label: Text(_isRunningGovernance || _isRunningRiskAssessment
+                ? 'Analyzing...'
+                : 'Review & Complete'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF9C27B0),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Individual action buttons
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isRunningGovernance ? null : _runGovernanceCheck,
+                icon: _isRunningGovernance
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.blue),
+                        ),
+                      )
+                    : const Icon(Icons.verified_user, size: 16),
+                label: Text(
+                    _isRunningGovernance ? 'Running...' : 'Governance Only'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.blue[700],
+                  side: BorderSide(color: Colors.blue[300]!),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isRunningRiskAssessment ? null : _runRiskAssessment,
+                icon: _isRunningRiskAssessment
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.orange),
+                        ),
+                      )
+                    : const Icon(Icons.analytics_outlined, size: 16),
+                label:
+                    Text(_isRunningRiskAssessment ? 'Running...' : 'Risk Only'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.orange[700],
+                  side: BorderSide(color: Colors.orange[300]!),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        // Results summary (if available)
+        if (_governanceResults.isNotEmpty || _riskAssessment.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Last Analysis Summary',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (_governanceResults.isNotEmpty) ...[
+                  Text(
+                      '• Governance: ${_governanceResults['status']} (${_governanceResults['score']}%)'),
+                ],
+                if (_riskAssessment.isNotEmpty) ...[
+                  Text(
+                      '• Risk: ${_riskAssessment['risk_level']} (${_riskAssessment['display_score']?.toInt()}%)'),
+                ],
+                const SizedBox(height: 12),
+
+                // Review Issues button
+                Builder(
+                  builder: (context) {
+                    final List<Map<String, dynamic>> allIssues = [];
+                    if (_governanceResults['issues'] != null) {
+                      allIssues.addAll(List<Map<String, dynamic>>.from(
+                          _governanceResults['issues']));
+                    }
+                    if (_riskAssessment['issues'] != null) {
+                      allIssues.addAll(List<Map<String, dynamic>>.from(
+                          _riskAssessment['issues']));
+                    }
+
+                    if (allIssues.isNotEmpty) {
+                      return SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openIssuesReviewSheet(allIssues),
+                          icon: const Icon(Icons.list_alt, size: 16),
+                          label:
+                              Text('Review ${allIssues.length} Flagged Issues'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF9C27B0),
+                            side: const BorderSide(color: Color(0xFF9C27B0)),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                        ),
+                      );
+                    } else {
+                      return const SizedBox.shrink();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Color _getRiskAssessmentColor() {
+    final riskLevel = _riskAssessment['risk_level']?.toString() ?? 'Unknown';
+    switch (riskLevel.toLowerCase()) {
+      case 'low':
+        return Colors.green[100]!;
+      case 'medium':
+        return Colors.orange[100]!;
+      case 'high':
+        return Colors.red[100]!;
+      default:
+        return Colors.grey[100]!;
+    }
+  }
+
+  Color _getRiskAssessmentIconColor() {
+    final riskLevel = _riskAssessment['risk_level']?.toString() ?? 'Unknown';
+    switch (riskLevel.toLowerCase()) {
+      case 'low':
+        return Colors.green[700]!;
+      case 'medium':
+        return Colors.orange[700]!;
+      case 'high':
+        return Colors.red[700]!;
+      default:
+        return Colors.grey[700]!;
+    }
   }
 }

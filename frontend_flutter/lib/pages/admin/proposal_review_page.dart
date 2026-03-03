@@ -45,6 +45,25 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     setState(fn);
   }
 
+  /// Robust date parser — handles ISO 8601 AND HTTP date format
+  /// ("Tue, 03 Mar 2026 06:53:01 GMT") without throwing.
+  static DateTime? _tryParseDate(dynamic raw) {
+    if (raw == null) return null;
+    final s = raw.toString().trim();
+    if (s.isEmpty) return null;
+    // ISO 8601
+    final iso = DateTime.tryParse(s);
+    if (iso != null) return iso;
+    // HTTP date: "Tue, 03 Mar 2026 06:53:01 GMT"
+    try {
+      return DateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", 'en_US').parseUtc(s);
+    } catch (_) {}
+    try {
+      return DateFormat("dd MMM yyyy HH:mm:ss 'GMT'", 'en_US').parseUtc(s);
+    } catch (_) {}
+    return null;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1137,12 +1156,9 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                         const SizedBox(width: 12),
                                         _buildInfoChip(
                                           Icons.calendar_today,
-                                          _proposal!['updated_at'] != null
-                                              ? DateFormat('dd MMM yyyy')
-                                                  .format(
-                                                  DateTime.parse(
-                                                      _proposal!['updated_at']),
-                                                )
+                                          _tryParseDate(_proposal!['updated_at']) != null
+                                              ? DateFormat('dd MMM yyyy').format(
+                                                  _tryParseDate(_proposal!['updated_at'])!)
                                               : 'Unknown date',
                                         ),
                                       ],
@@ -1276,13 +1292,9 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                                       ),
                                                     ),
                                                     Text(
-                                                      version['created_at'] !=
-                                                              null
-                                                          ? DateFormat(
-                                                                  'dd MMM yyyy HH:mm')
-                                                              .format(DateTime
-                                                                  .parse(version[
-                                                                      'created_at']))
+                                                      _tryParseDate(version['created_at']) != null
+                                                          ? DateFormat('dd MMM yyyy HH:mm')
+                                                              .format(_tryParseDate(version['created_at'])!)
                                                           : '',
                                                       style: const TextStyle(
                                                         color: Colors.white70,
@@ -1399,15 +1411,10 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                                                         ),
                                                       ),
                                                       const Spacer(),
-                                                      if (comment[
-                                                              'created_at'] !=
-                                                          null)
+                                                        if (_tryParseDate(comment['created_at']) != null)
                                                         Text(
-                                                          DateFormat(
-                                                                  'dd MMM yyyy HH:mm')
-                                                              .format(DateTime
-                                                                  .parse(comment[
-                                                                      'created_at'])),
+                                                          DateFormat('dd MMM yyyy HH:mm')
+                                                              .format(_tryParseDate(comment['created_at'])!),
                                                           style:
                                                               const TextStyle(
                                                             color:

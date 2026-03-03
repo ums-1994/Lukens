@@ -42,8 +42,7 @@ class _ComposePageState extends State<ComposePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(k,
-                        style:
-                            const TextStyle(fontWeight: FontWeight.bold)),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     TextField(
                       controller: ctrls[k],
@@ -72,19 +71,19 @@ class _ComposePageState extends State<ComposePage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _isAnalyzing ? null : _analyzeProposal,
-        label: _isAnalyzing 
-          ? const Row(
-              children: [
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                SizedBox(width: 8),
-                Text("Analyzing..."),
-              ],
-            )
-          : const Text("Analyze Risk"),
+        label: _isAnalyzing
+            ? const Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 8),
+                  Text("Analyzing..."),
+                ],
+              )
+            : const Text("Analyze Risk"),
         icon: _isAnalyzing ? null : const Icon(Icons.analytics),
       ),
     );
@@ -96,14 +95,15 @@ class _ComposePageState extends State<ComposePage> {
     if (p == null) return;
 
     // Combine all sections into one text
-    final proposalText = (p["sections"] as Map<String, dynamic>?)
-        ?.entries
-        .map((e) => "${e.key}: ${e.value}")
-        .join("\n\n") ?? "";
+    final sectionsMap = p["sections"] as Map<String, dynamic>?;
+    final proposalText = sectionsMap == null
+        ? ""
+        : sectionsMap.entries.map((e) => "${e.key}: ${e.value}").join("\n\n");
 
     if (proposalText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please add some content before analyzing.")),
+        const SnackBar(
+            content: Text("Please add some content before analyzing.")),
       );
       return;
     }
@@ -111,11 +111,12 @@ class _ComposePageState extends State<ComposePage> {
     setState(() => _isAnalyzing = true);
 
     try {
-      debugPrint('🚀 Starting risk analysis with text length: ${proposalText.length}');
+      debugPrint(
+          '🚀 Starting risk analysis with text length: ${proposalText.length}');
       debugPrint('🔍 RiskApiService URL: ${_riskApiService.baseUrl}');
-      
+
       final result = await _riskApiService.analyzeProposal(proposalText);
-      
+
       debugPrint('✅ Risk analysis completed successfully');
       _showRiskAnalysisDialog(result);
     } catch (e) {
@@ -153,33 +154,43 @@ class _ComposePageState extends State<ComposePage> {
                         const SizedBox(height: 8),
                         Builder(
                           builder: (context) {
-                            final analysis = result['analysis'] as Map<String, dynamic>?;
-                            final compoundRisk = analysis?['compound_risk'] as Map<String, dynamic>?;
+                            final analysis =
+                                result['analysis'] as Map<String, dynamic>?;
+                            final compoundRisk = analysis?['compound_risk']
+                                as Map<String, dynamic>?;
                             final score = compoundRisk?['score'];
-                            
+
                             if (score != null) {
                               // Convert score to percentage (0-10 scale to 0-100%)
                               final percentage = (score as num) * 10;
                               return Text(
                                 "${percentage.toStringAsFixed(1)}%",
-                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  color: _getRiskColor(score),
-                                ),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineSmall
+                                    ?.copyWith(
+                                      color: _getRiskColor(score),
+                                    ),
                               );
                             } else {
                               return Text(
                                 "N/A",
-                                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                                  color: Colors.grey,
-                                ),
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .headlineSmall
+                                    ?.copyWith(
+                                      color: Colors.grey,
+                                    ),
                               );
                             }
                           },
                         ),
                         const SizedBox(height: 8),
-                        if (result['analysis']?['compound_risk']?['summary'] != null)
+                        if (result['analysis']?['compound_risk']?['summary'] !=
+                            null)
                           Text(
-                            result['analysis']['compound_risk']['summary'].toString(),
+                            result['analysis']['compound_risk']['summary']
+                                .toString(),
                             style: const TextStyle(fontSize: 14),
                           ),
                       ],
@@ -188,7 +199,8 @@ class _ComposePageState extends State<ComposePage> {
                 ),
               const SizedBox(height: 16),
               // Analysis Summary Display
-              if (result.containsKey('analysis') && result['analysis']?['compound_risk']?['summary'] != null)
+              if (result.containsKey('analysis') &&
+                  result['analysis']?['compound_risk']?['summary'] != null)
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -200,35 +212,39 @@ class _ComposePageState extends State<ComposePage> {
                           style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 8),
-                        Text(result['analysis']['compound_risk']['summary'].toString()),
+                        Text(result['analysis']['compound_risk']['summary']
+                            .toString()),
                       ],
                     ),
                   ),
                 ),
               // Missing Sections Display
-              if (result.containsKey('analysis') && 
-                  result['analysis']?['structural_analysis']?['missing_sections'] != null)
-                ...[
-                  const SizedBox(height: 16),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "Missing Sections",
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          ...(result['analysis']['structural_analysis']['missing_sections'] as List).map(
-                            (section) => Text("• ${section.toString()}"),
-                          ),
-                        ],
-                      ),
+              if (result.containsKey('analysis') &&
+                  result['analysis']?['structural_analysis']
+                          ?['missing_sections'] !=
+                      null) ...[
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Missing Sections",
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        ...(result['analysis']['structural_analysis']
+                                ['missing_sections'] as List)
+                            .map(
+                          (section) => Text("• ${section.toString()}"),
+                        ),
+                      ],
                     ),
                   ),
-                ],
+                ),
+              ],
             ],
           ),
         ),

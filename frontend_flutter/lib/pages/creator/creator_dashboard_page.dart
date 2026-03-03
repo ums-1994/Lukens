@@ -183,9 +183,44 @@ class _DashboardPageState extends State<DashboardPage>
         return null;
       }
 
+      // Fetch the full proposal data first
+      final proposals = await ApiService.getProposals(token);
+      final proposal = proposals.firstWhere(
+        (p) => p['id'] == proposalIdInt,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (proposal.isEmpty) {
+        print('Proposal not found: $proposalId');
+        return null;
+      }
+
+      // Build proposal data for AI analysis
+      final proposalData = <String, dynamic>{
+        'id': proposal['id'],
+        'title': proposal['title'] ?? proposal['proposal_title'] ?? 'Proposal',
+        'clientName': proposal['client_name'] ?? '',
+        'clientEmail': proposal['client_email'] ?? '',
+        'projectType': proposal['project_type'] ?? '',
+        'estimatedValue': proposal['estimated_value'] ?? '',
+        'timeline': proposal['timeline'] ?? '',
+      };
+
+      // Add content sections if available
+      if (proposal['content'] != null) {
+        final content = proposal['content'];
+        if (content is Map) {
+          content.forEach((key, value) {
+            if (value != null && value.toString().isNotEmpty) {
+              proposalData[key] = value.toString();
+            }
+          });
+        }
+      }
+
       final raw = await ApiService.analyzeRisks(
         token: token,
-        proposalId: proposalIdInt,
+        proposalData: proposalData,
       );
       if (raw == null) return null;
 
@@ -211,9 +246,12 @@ class _DashboardPageState extends State<DashboardPage>
       }
 
       return {
-        'risk_score': riskScore,
+        'overallRiskLevel': overallRiskLevel,
+        'riskScore': riskScore,
+        'status': status,
         'issues': issues,
-        'overall_risk_level': overallRiskLevel,
+        'canRelease': status == 'PASS',
+        'lastAnalyzed': DateTime.now().toIso8601String(),
       };
     } catch (e) {
       print('Error fetching proposal risks: $e');
@@ -2051,16 +2089,36 @@ class _DashboardPageState extends State<DashboardPage>
     final subtitle = 'Last modified: ${_formatDate(proposal['updated_at'])}';
     final isSentToClient = status.toLowerCase() == 'sent to client';
     final clientName = proposal['client_name'] ?? proposal['client'] ?? '';
+    final proposalId = proposal['id']?.toString();
 
-    return Container(
+    // Read-only for statuses where editing is not allowed
+    final editableStatuses = {'draft', 'changes requested'};
+    final isEditable = editableStatuses.contains(status.toLowerCase());
+
+    void openProposal() {
+      if (proposalId == null) return;
+      Navigator.of(context).pushNamed(
+        '/blank-document',
+        arguments: {
+          'proposalId': proposalId,
+          'readOnly': !isEditable,
+        },
+      );
+    }
+
+    return GestureDetector(
+      onTap: openProposal,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: PremiumTheme.glassWhite,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: PremiumTheme.glassWhiteBorder,
-          width: 1,
+          color: isEditable
+              ? statusColor.withOpacity(0.4)
+              : PremiumTheme.glassWhiteBorder,
+          width: isEditable ? 1.5 : 1,
         ),
       ),
       child: Row(
@@ -2192,7 +2250,8 @@ class _DashboardPageState extends State<DashboardPage>
           ),
         ],
       ),
-    );
+    ), // Container
+    ); // GestureDetector
   }
 
   String _getClientInitials(String clientName) {

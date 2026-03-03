@@ -36,6 +36,8 @@ def fix_status_constraint():
                     'archived',
                     'Archived',
                     'Pending CEO Approval',
+                    'Changes Requested',
+                    'changes requested',
                     'Sent to Client',
                     'Sent for Signature',
                     'In Review',
