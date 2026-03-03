@@ -16,7 +16,6 @@ import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/finance/finance_sidebar.dart';
-import '../../widgets/finance/finance_sidebar.dart';
 import '../../widgets/footer.dart';
 
 class FinanceAnalyticsPage extends StatefulWidget {
@@ -32,11 +31,6 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
   String _currentTab = 'analytics';
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
-
-  bool _canAccessAudit(AppState app) {
-    final role = (app.currentUser?['role'] ?? '').toString().toLowerCase();
-    return role == 'finance_manager' || role == 'admin' || role == 'ceo';
-  }
 
   bool _canAccessAudit(AppState app) {
     final role = (app.currentUser?['role'] ?? '').toString().toLowerCase();
@@ -288,16 +282,6 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
       const Duration(seconds: 60),
       onTimeout: () => throw Exception('Export request timed out'),
     );
-    final response = await http.get(
-      uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': format == 'pdf' ? 'application/pdf' : 'text/csv',
-      },
-    ).timeout(
-      const Duration(seconds: 60),
-      onTimeout: () => throw Exception('Export request timed out'),
-    );
 
     if (response.statusCode == 200) {
       // Create download link
@@ -306,9 +290,7 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
         throw Exception('Export returned empty data');
       }
       final ext = format == 'pdf' ? 'pdf' : 'csv';
-      final ext = format == 'pdf' ? 'pdf' : 'csv';
       final fileName =
-          '${reportType}_${DateTime.now().millisecondsSinceEpoch}.$ext';
           '${reportType}_${DateTime.now().millisecondsSinceEpoch}.$ext';
 
       // For web, create download link
@@ -316,19 +298,14 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
         final contentType =
             response.headers['content-type'] ?? 'application/octet-stream';
         final blob = html.Blob([bytes], contentType);
-        final contentType =
-            response.headers['content-type'] ?? 'application/octet-stream';
-        final blob = html.Blob([bytes], contentType);
         final url = html.Url.createObjectUrlFromBlob(blob);
         final anchor = html.AnchorElement(href: url)
-          ..download = fileName
           ..download = fileName
           ..style.display = 'none';
         html.document.body?.children.add(anchor);
         anchor.click();
         html.document.body?.children.remove(anchor);
         // Delay revoke so the browser has time to start the download
-        Future.delayed(const Duration(milliseconds: 1200), () {
         Future.delayed(const Duration(milliseconds: 1200), () {
           html.Url.revokeObjectUrl(url);
         });
@@ -338,9 +315,6 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
         print('Export saved: $fileName (${bytes.length} bytes)');
       }
     } else {
-      final body = response.body;
-      throw Exception(
-          'Export failed: ${response.statusCode}${body.isNotEmpty ? ' - $body' : ''}');
       final body = response.body;
       throw Exception(
           'Export failed: ${response.statusCode}${body.isNotEmpty ? ' - $body' : ''}');
@@ -544,12 +518,6 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
       subtitle: subtitle,
       icon: icon,
       gradient: PremiumTheme.tealGradient,
-    return PremiumStatCard(
-      title: label,
-      value: value,
-      subtitle: subtitle,
-      icon: icon,
-      gradient: PremiumTheme.tealGradient,
     );
   }
 
@@ -560,15 +528,11 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
     return GlassContainer(
       borderRadius: 20,
       padding: const EdgeInsets.all(20),
-    return GlassContainer(
-      borderRadius: 20,
-      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
-            style: PremiumTheme.titleMedium.copyWith(
             style: PremiumTheme.titleMedium.copyWith(
               color: Colors.white,
               fontWeight: FontWeight.w600,
@@ -577,7 +541,6 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
             style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
           ),
           const SizedBox(height: 14),
@@ -965,12 +928,7 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
 
   @override
   Widget build(BuildContext context) {
-  @override
-  Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    final proposals = _financeProposals(app);
-    final showAudit = _canAccessAudit(app);
-    final pendingBadge = proposals
     final proposals = _financeProposals(app);
     final showAudit = _canAccessAudit(app);
     final pendingBadge = proposals
@@ -1087,52 +1045,6 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
             Expanded(
               child: Row(
                 children: [
-                  FinanceSidebar(
-                    isCollapsed: _isSidebarCollapsed,
-                    currentPage: 'Analytics',
-                    showAudit: showAudit,
-                    pendingBadge: pendingBadge > 0 ? pendingBadge : null,
-                    onToggle: () {
-                      setState(() {
-                        _isSidebarCollapsed = !_isSidebarCollapsed;
-                      });
-                    },
-                    onSelect: (label) {
-                      if (label == 'Dashboard' || label == 'Proposals') {
-                        Navigator.pushNamed(context, '/finance_dashboard');
-                        return;
-                      }
-                      if (label == 'Client Management') {
-                        Navigator.pushNamed(
-                          context,
-                          '/finance_dashboard',
-                          arguments: const {'initialTab': 'clients'},
-                        );
-                        return;
-                      }
-                      if (label == 'Audit') {
-                        Navigator.pushNamed(
-                          context,
-                          '/finance_dashboard',
-                          arguments: const {'initialTab': 'audit'},
-                        );
-                        return;
-                      }
-                      if (label == 'Analytics') {
-                        return;
-                      }
-                      if (label == 'Settings') {
-                        Navigator.pushNamed(context, '/settings');
-                        return;
-                      }
-                      if (label == 'Sign Out') {
-                        app.logout();
-                        AuthService.logout();
-                        Navigator.pushNamed(context, '/login');
-                        return;
-                      }
-                    },
-                  ),
                   FinanceSidebar(
                     isCollapsed: _isSidebarCollapsed,
                     currentPage: 'Analytics',
