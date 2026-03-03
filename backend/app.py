@@ -94,7 +94,7 @@ else:
 app = Flask(__name__)
 CORS(
     app,
-    origins=_cors_origins,
+    origins=_CORS_ALLOWED_ORIGINS,
     supports_credentials=True,
     resources={
         r"/*": {
@@ -3801,9 +3801,9 @@ def create_comment(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/comments/document/<int:proposal_id>")
+@app.get("/api/comments/document/<int:proposal_id>", endpoint="get_document_comments_admin")
 @token_required
-def get_document_comments(username, proposal_id):
+def get_document_comments_admin(username, proposal_id):
     """
     Get all comments for a proposal document for the admin/manager review screens.
     """

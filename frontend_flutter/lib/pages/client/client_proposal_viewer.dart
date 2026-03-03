@@ -57,6 +57,12 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
   static const Duration _networkTimeout = Duration(seconds: 20);
 
+  static const String _clientDeviceIdKey = 'lukens_client_device_id';
+  static const String _clientSessionTokenKey = 'lukens_client_session_token';
+
+  String? _clientDeviceId;
+  String? _clientSessionToken;
+
   @override
   void initState() {
     super.initState();
@@ -64,9 +70,36 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     _pdfViewType = 'pdf-preview-${DateTime.now().microsecondsSinceEpoch}';
     _initPdfView();
     _checkIfReturnedFromSigning();
+    _loadCachedClientDeviceSession();
     _loadProposal();
     _startSession();
     _logEvent('open');
+  }
+
+  void _loadCachedClientDeviceSession() {
+    if (!kIsWeb) return;
+    try {
+      final deviceId = web.window.localStorage.getItem(_clientDeviceIdKey);
+      final sessionToken = web.window.localStorage.getItem(_clientSessionTokenKey);
+      _clientDeviceId = (deviceId != null && deviceId.trim().isNotEmpty) ? deviceId.trim() : null;
+      _clientSessionToken = (sessionToken != null && sessionToken.trim().isNotEmpty)
+          ? sessionToken.trim()
+          : null;
+    } catch (_) {
+      _clientDeviceId = null;
+      _clientSessionToken = null;
+    }
+  }
+
+  Map<String, String> _clientDeviceSessionHeaders() {
+    final headers = <String, String>{};
+    if (_clientDeviceId != null && _clientDeviceId!.isNotEmpty) {
+      headers['X-Client-Device-Id'] = _clientDeviceId!;
+    }
+    if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty) {
+      headers['X-Client-Session-Token'] = _clientSessionToken!;
+    }
+    return headers;
   }
 
   void _initPdfView() {
@@ -340,6 +373,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         ),
       );
 
+    req.headers.addAll(_clientDeviceSessionHeaders());
+
     try {
       final streamedResponse = await req.send();
       final response = await http.Response.fromStream(streamedResponse);
@@ -444,7 +479,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/api/client/session/start'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          ..._clientDeviceSessionHeaders(),
+        },
         body: jsonEncode({
           'token': widget.accessToken,
           'proposal_id': widget.proposalId,
@@ -467,7 +505,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         await http
             .post(
               Uri.parse('$baseUrl/api/client/session/end'),
-              headers: {'Content-Type': 'application/json'},
+              headers: {
+                'Content-Type': 'application/json',
+                ..._clientDeviceSessionHeaders(),
+              },
               body: jsonEncode({
                 'session_id': _currentSessionId,
               }),
@@ -485,7 +526,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       await http
           .post(
             Uri.parse('$baseUrl/api/client/activity'),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              'Content-Type': 'application/json',
+              ..._clientDeviceSessionHeaders(),
+            },
             body: jsonEncode({
               'token': widget.accessToken,
               'proposal_id': widget.proposalId,
@@ -510,6 +554,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           .get(
             Uri.parse(
                 '$baseUrl/api/client/proposals/${widget.proposalId}?token=${Uri.encodeComponent(widget.accessToken)}'),
+            headers: _clientDeviceSessionHeaders(),
           )
           .timeout(_networkTimeout);
 
@@ -605,6 +650,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/comment'),
         headers: {
           'Content-Type': 'application/json',
+          ..._clientDeviceSessionHeaders(),
         },
         body: jsonEncode({
           'token': widget.accessToken,
@@ -1137,6 +1183,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
               '$baseUrl/api/client/proposals/${widget.proposalId}/get_signing_url'),
           headers: {
             'Content-Type': 'application/json',
+            ..._clientDeviceSessionHeaders(),
           },
           body: jsonEncode({
             'token': widget.accessToken,
@@ -1826,6 +1873,25 @@ class _RejectDialogState extends State<RejectDialog> {
   final TextEditingController _reasonController = TextEditingController();
   bool _isSubmitting = false;
 
+  static const String _clientDeviceIdKey = 'lukens_client_device_id';
+  static const String _clientSessionTokenKey = 'lukens_client_session_token';
+
+  Map<String, String> _clientDeviceSessionHeaders() {
+    final headers = <String, String>{};
+    if (!kIsWeb) return headers;
+    try {
+      final deviceId = web.window.localStorage.getItem(_clientDeviceIdKey);
+      final sessionToken = web.window.localStorage.getItem(_clientSessionTokenKey);
+      if (deviceId != null && deviceId.trim().isNotEmpty) {
+        headers['X-Client-Device-Id'] = deviceId.trim();
+      }
+      if (sessionToken != null && sessionToken.trim().isNotEmpty) {
+        headers['X-Client-Session-Token'] = sessionToken.trim();
+      }
+    } catch (_) {}
+    return headers;
+  }
+
   Future<void> _submit() async {
     if (_reasonController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1846,6 +1912,7 @@ class _RejectDialogState extends State<RejectDialog> {
         Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/reject'),
         headers: {
           'Content-Type': 'application/json',
+          ..._clientDeviceSessionHeaders(),
         },
         body: jsonEncode({
           'token': widget.accessToken,
@@ -2007,6 +2074,25 @@ class _ApproveDialogState extends State<ApproveDialog> {
 
   static const Duration _networkTimeout = Duration(seconds: 20);
 
+  static const String _clientDeviceIdKey = 'lukens_client_device_id';
+  static const String _clientSessionTokenKey = 'lukens_client_session_token';
+
+  Map<String, String> _clientDeviceSessionHeaders() {
+    final headers = <String, String>{};
+    if (!kIsWeb) return headers;
+    try {
+      final deviceId = web.window.localStorage.getItem(_clientDeviceIdKey);
+      final sessionToken = web.window.localStorage.getItem(_clientSessionTokenKey);
+      if (deviceId != null && deviceId.trim().isNotEmpty) {
+        headers['X-Client-Device-Id'] = deviceId.trim();
+      }
+      if (sessionToken != null && sessionToken.trim().isNotEmpty) {
+        headers['X-Client-Session-Token'] = sessionToken.trim();
+      }
+    } catch (_) {}
+    return headers;
+  }
+
   Future<void> _submit() async {
     if (_signerNameController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -2029,6 +2115,7 @@ class _ApproveDialogState extends State<ApproveDialog> {
                 '$baseUrl/api/client/proposals/${widget.proposalId}/approve'),
             headers: {
               'Content-Type': 'application/json',
+              ..._clientDeviceSessionHeaders(),
             },
             body: jsonEncode({
               'token': widget.accessToken,

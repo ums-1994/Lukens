@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
@@ -22,6 +23,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String? _error;
   String? _accessToken;
   String? _clientEmail;
+  String? _deviceId;
+  String? _clientSessionToken;
   List<Map<String, dynamic>> _proposals = [];
   Map<String, dynamic>? _selectedDocument;
   int _selectedNavIndex = 0;
@@ -86,6 +89,44 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     return t.trim();
   }
 
+  String _getOrCreateDeviceId() {
+    if (!kIsWeb) {
+      return 'flutter-device';
+    }
+    try {
+      final existing = web.window.localStorage['lukens_client_device_id'];
+      final clean = existing?.trim();
+      if (clean != null && clean.isNotEmpty) return clean;
+      final id = 'dev_${DateTime.now().millisecondsSinceEpoch}_${(100000 + (DateTime.now().microsecondsSinceEpoch % 900000))}';
+      web.window.localStorage['lukens_client_device_id'] = id;
+      return id;
+    } catch (_) {
+      return 'dev_${DateTime.now().millisecondsSinceEpoch}';
+    }
+  }
+
+  void _loadCachedClientSession() {
+    if (!kIsWeb) return;
+    try {
+      final token = web.window.localStorage['lukens_client_session_token'];
+      final clean = token?.trim();
+      if (clean != null && clean.isNotEmpty) {
+        _clientSessionToken = clean;
+      }
+    } catch (_) {}
+  }
+
+  void _saveCachedClientSession(String? token) {
+    if (!kIsWeb) return;
+    try {
+      if (token == null || token.trim().isEmpty) {
+        web.window.localStorage.removeItem('lukens_client_session_token');
+      } else {
+        web.window.localStorage['lukens_client_session_token'] = token.trim();
+      }
+    } catch (_) {}
+  }
+
   Future<String?> _promptForLast4({int? attemptsRemaining}) async {
     final controller = TextEditingController();
     String? result;
@@ -145,13 +186,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final last4 = await _promptForLast4(attemptsRemaining: attemptsRemaining);
     if (last4 == null || last4.trim().isEmpty) return null;
 
+    _deviceId ??= _getOrCreateDeviceId();
+
     final token = _sanitizeToken(_accessToken!);
     final uri = Uri.parse('$baseUrl/api/client/verify-identity');
     final response = await http
         .post(
           uri,
           headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'token': token, 'last4': last4}),
+          body: jsonEncode({'token': token, 'last4': last4, 'device_id': _deviceId}),
         )
         .timeout(
           const Duration(seconds: 8),
@@ -162,8 +205,16 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     if (response.statusCode == 200) {
       final decoded = jsonDecode(response.body);
-      if (decoded is Map && decoded['unlocked_token'] != null) {
-        return decoded['unlocked_token'].toString();
+      if (decoded is Map) {
+        final map = Map<String, dynamic>.from(decoded);
+        final st = map['session_token']?.toString();
+        if (st != null && st.isNotEmpty) {
+          _clientSessionToken = st;
+          _saveCachedClientSession(st);
+        }
+        if (map['unlocked_token'] != null) {
+          return map['unlocked_token'].toString();
+        }
       }
     }
 
@@ -1160,6 +1211,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       _accessToken = token;
     });
 
+    _deviceId = _getOrCreateDeviceId();
+    _loadCachedClientSession();
+
     _loadClientProposals();
   }
 
@@ -1186,6 +1240,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       final response = await http
           .get(
             uri,
+            headers: {
+              if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
+              if (_clientSessionToken != null)
+                'X-Client-Session-Token': _clientSessionToken!,
+            },
           )
           .timeout(
             const Duration(seconds: 8),
@@ -1238,6 +1297,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           _isLoading = false;
         });
       } else if (response.statusCode == 428) {
+        _saveCachedClientSession(null);
+        _clientSessionToken = null;
         Map<String, dynamic>? decoded;
         try {
           final body = jsonDecode(response.body);
@@ -1246,6 +1307,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           }
         } catch (_) {}
 
+        final bool needsIdentity = decoded?['requires_identity_verification'] == true ||
+            decoded?['identity_required'] == true;
+        final bool needsDevice = decoded?['requires_device_session'] == true ||
+            decoded?['otp_required'] == true;
+
         final dynamic rawAttemptsRemaining = decoded == null
             ? null
             : decoded['attempts_remaining'];
@@ -1253,14 +1319,16 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             ? rawAttemptsRemaining
             : int.tryParse(rawAttemptsRemaining?.toString() ?? '');
 
-        final unlocked = await _verifyIdentityAndGetUnlockedToken(
-            attemptsRemaining: attemptsRemaining);
-        if (unlocked != null && unlocked.isNotEmpty) {
-          setState(() {
-            _accessToken = unlocked;
-          });
-          await _loadClientProposals();
-          return;
+        if (needsIdentity || needsDevice) {
+          final unlocked = await _verifyIdentityAndGetUnlockedToken(
+              attemptsRemaining: attemptsRemaining);
+          if (unlocked != null && unlocked.isNotEmpty) {
+            setState(() {
+              _accessToken = unlocked;
+            });
+            await _loadClientProposals();
+            return;
+          }
         }
 
         setState(() {

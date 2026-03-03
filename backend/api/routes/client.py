@@ -12,18 +12,176 @@ import base64
 from urllib.parse import unquote
 from psycopg2 import sql
 import psycopg2.extras
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.jwt_validator import validate_jwt_token, JWTValidationError
 from api.utils.helpers import log_status_change
+from api.utils.email import send_email
 
 bp = Blueprint('client', __name__)
 
 
 def _now_utc():
     return datetime.utcnow()
+
+
+def _client_session_pepper() -> bytes:
+    return (
+        os.getenv('CLIENT_SESSION_TOKEN_PEPPER')
+        or os.getenv('SESSION_TOKEN_PEPPER')
+        or os.getenv('JWT_SECRET')
+        or os.getenv('SECRET_KEY')
+        or 'dev-client-session-pepper'
+    ).encode('utf-8')
+
+
+def _hash_client_session_token(token: str) -> str:
+    digest = hmac.new(_client_session_pepper(), token.encode('utf-8'), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode('utf-8')
+
+
+def _hash_client_otp(code: str, challenge_salt: str) -> str:
+    msg = f"{challenge_salt}:{code}".encode('utf-8')
+    digest = hmac.new(_client_session_pepper(), msg, hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(digest).decode('utf-8')
+
+
+def _ensure_client_device_session_schema(cursor):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS client_trusted_devices (
+            invitation_token TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (invitation_token, device_id)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS client_device_otp_challenges (
+            id TEXT PRIMARY KEY,
+            invitation_token TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            challenge_salt TEXT NOT NULL,
+            otp_hash TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            verified_at TIMESTAMPTZ NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS client_device_sessions (
+            id TEXT PRIMARY KEY,
+            invitation_token TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            session_token_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            revoked_at TIMESTAMPTZ NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS client_device_sessions_invitation_device_idx
+        ON client_device_sessions(invitation_token, device_id)
+        """
+    )
+
+
+def _extract_client_device_session():
+    device_id = (request.headers.get('X-Client-Device-Id') or request.args.get('device_id') or '').strip()
+    session_token = (request.headers.get('X-Client-Session-Token') or request.args.get('session_token') or '').strip()
+    if not device_id:
+        device_id = (request.headers.get('X-Device-Id') or request.args.get('deviceId') or '').strip()
+    return device_id or None, session_token or None
+
+
+def _create_client_session(cursor, invitation_token: str, device_id: str):
+    session_token = secrets.token_urlsafe(32)
+    token_hash = _hash_client_session_token(session_token)
+    session_id = secrets.token_urlsafe(24)
+    now = _now_utc()
+    expires_at = now + timedelta(hours=1)
+    cursor.execute(
+        """
+        INSERT INTO client_device_sessions (id, invitation_token, device_id, session_token_hash, created_at, last_seen_at, expires_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """,
+        (session_id, invitation_token, device_id, token_hash, now, now, expires_at),
+    )
+    return {
+        'session_token': session_token,
+        'session_id': session_id,
+        'expires_at': expires_at,
+    }
+
+
+def _require_client_device_session(cursor, invitation_token: str, device_id: str | None, session_token: str | None):
+    if not device_id or not session_token:
+        return False, {
+            'detail': 'Device verification required',
+            'requires_device_session': True,
+            'otp_required': False,
+            'identity_required': True,
+            'requires_identity_verification': True,
+        }, 428
+    token_hash = _hash_client_session_token(session_token)
+    now = _now_utc()
+    cursor.execute(
+        """
+        SELECT id, expires_at, revoked_at
+        FROM client_device_sessions
+        WHERE invitation_token = %s AND device_id = %s AND session_token_hash = %s
+        ORDER BY created_at DESC
+        LIMIT 1
+        """,
+        (invitation_token, device_id, token_hash),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return False, {
+            'detail': 'Device verification required',
+            'requires_device_session': True,
+            'otp_required': False,
+            'identity_required': True,
+            'requires_identity_verification': True,
+        }, 428
+    expires_at = row.get('expires_at') if isinstance(row, dict) else None
+    revoked_at = row.get('revoked_at') if isinstance(row, dict) else None
+    if revoked_at is not None:
+        return False, {
+            'detail': 'Session revoked',
+            'requires_device_session': True,
+            'otp_required': False,
+            'identity_required': True,
+            'requires_identity_verification': True,
+        }, 428
+    if expires_at is not None and now > expires_at:
+        return False, {
+            'detail': 'Session expired',
+            'requires_device_session': True,
+            'otp_required': False,
+            'identity_required': True,
+            'requires_identity_verification': True,
+        }, 428
+    cursor.execute(
+        """
+        UPDATE client_device_sessions
+        SET last_seen_at = NOW()
+        WHERE id = %s
+        """,
+        (row.get('id') if isinstance(row, dict) else row[0],),
+    )
+    return True, None, 200
 
 
 def _pbkdf2_hash(value: str, salt: bytes, iterations: int = 200_000) -> bytes:
@@ -309,6 +467,200 @@ def _notify_hard_lock(cursor, proposal_id: int, invited_email: str | None, invit
     )
 
 
+@bp.post('/client/device-session/start')
+def start_client_device_session():
+    try:
+        payload = request.get_json(silent=True) or {}
+        token = payload.get('token') or request.args.get('token')
+        device_id = (payload.get('device_id') or payload.get('deviceId') or '').strip()
+        if not token:
+            return {'detail': 'Access token required'}, 400
+        if not device_id:
+            return {'detail': 'device_id is required'}, 400
+
+        token = _normalize_access_token(token)
+        if not token:
+            return {'detail': 'Access token required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            _ensure_identity_schema(cursor)
+            _ensure_client_device_session_schema(cursor)
+
+            invitation_token = _resolve_invitation_token(cursor, token)
+            invitation, err, code = _lookup_invitation_by_token(cursor, invitation_token)
+            if err:
+                return err, code
+
+            proposal_id = int(invitation.get('proposal_id'))
+            allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, proposal_id)
+            if not allowed:
+                return err_payload, status
+
+            cursor.execute(
+                """
+                SELECT 1
+                FROM client_trusted_devices
+                WHERE invitation_token = %s AND device_id = %s
+                """,
+                (invitation_token, device_id),
+            )
+            trusted = cursor.fetchone() is not None
+            if trusted:
+                cursor.execute(
+                    """
+                    UPDATE client_trusted_devices
+                    SET last_seen_at = NOW()
+                    WHERE invitation_token = %s AND device_id = %s
+                    """,
+                    (invitation_token, device_id),
+                )
+                session = _create_client_session(cursor, invitation_token, device_id)
+                conn.commit()
+                return {
+                    'otp_required': False,
+                    'session_token': session['session_token'],
+                    'session_id': session['session_id'],
+                    'expires_at': session['expires_at'].isoformat(),
+                }, 200
+
+            otp_code = f"{secrets.randbelow(1_000_000):06d}"
+            challenge_id = secrets.token_urlsafe(24)
+            challenge_salt = secrets.token_urlsafe(16)
+            otp_hash = _hash_client_otp(otp_code, challenge_salt)
+            now = _now_utc()
+            expires_at = now + timedelta(minutes=10)
+            cursor.execute(
+                """
+                INSERT INTO client_device_otp_challenges (id, invitation_token, device_id, challenge_salt, otp_hash, attempts, created_at, expires_at)
+                VALUES (%s, %s, %s, %s, %s, 0, %s, %s)
+                """,
+                (challenge_id, invitation_token, device_id, challenge_salt, otp_hash, now, expires_at),
+            )
+            conn.commit()
+
+        invited_email = invitation.get('invited_email')
+        subject = 'Your client portal verification code'
+        html_content = f"""
+        <h2>Verification Code</h2>
+        <p>Use the code below to verify this new device for your client portal:</p>
+        <div style=\"text-align:center;margin:20px 0;\">
+          <div style=\"display:inline-block;background:#111;border:1px solid #333;border-radius:12px;padding:16px 24px;font-size:28px;letter-spacing:6px;color:#fff;font-weight:700;\">
+            {otp_code}
+          </div>
+        </div>
+        <p>This code expires in 10 minutes.</p>
+        """
+        try:
+            if invited_email:
+                send_email(invited_email, subject, html_content)
+        except Exception:
+            pass
+
+        return {
+            'otp_required': True,
+            'challenge_id': challenge_id,
+            'expires_at': expires_at.isoformat(),
+        }, 200
+    except Exception as e:
+        print(f"[ERROR] start_client_device_session error: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post('/api/client/device-session/start')
+def start_client_device_session_api():
+    return start_client_device_session()
+
+
+@bp.post('/api/client/device-session/verify-otp')
+def verify_client_device_otp_api():
+    return verify_client_device_otp()
+
+
+@bp.post('/client/device-session/verify-otp')
+def verify_client_device_otp():
+    try:
+        data = request.get_json(silent=True) or {}
+        challenge_id = (data.get('challenge_id') or data.get('challengeId') or '').strip()
+        otp = (data.get('otp') or data.get('code') or '').strip()
+        if not challenge_id:
+            return {'detail': 'challenge_id is required'}, 400
+        if not otp:
+            return {'detail': 'otp is required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            _ensure_client_device_session_schema(cursor)
+            cursor.execute(
+                """
+                SELECT id, invitation_token, device_id, challenge_salt, otp_hash, attempts, expires_at, verified_at
+                FROM client_device_otp_challenges
+                WHERE id = %s
+                """,
+                (challenge_id,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return {'detail': 'Invalid challenge_id'}, 404
+            if row.get('verified_at') is not None:
+                return {'detail': 'Challenge already used'}, 400
+            expires_at = row.get('expires_at')
+            if expires_at is not None and _now_utc() > expires_at:
+                return {'detail': 'OTP expired'}, 400
+            attempts = int(row.get('attempts') or 0)
+            if attempts >= 5:
+                return {'detail': 'Too many attempts'}, 429
+            expected = row.get('otp_hash')
+            actual = _hash_client_otp(otp, row.get('challenge_salt'))
+            if not hmac.compare_digest(str(expected or ''), str(actual or '')):
+                cursor.execute(
+                    """
+                    UPDATE client_device_otp_challenges
+                    SET attempts = attempts + 1
+                    WHERE id = %s
+                    """,
+                    (challenge_id,),
+                )
+                conn.commit()
+                return {
+                    'detail': 'Invalid code',
+                    'remaining_attempts': max(0, 5 - (attempts + 1)),
+                }, 401
+
+            invitation_token = row.get('invitation_token')
+            device_id = row.get('device_id')
+            cursor.execute(
+                """
+                UPDATE client_device_otp_challenges
+                SET verified_at = NOW()
+                WHERE id = %s
+                """,
+                (challenge_id,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO client_trusted_devices (invitation_token, device_id, first_seen_at, last_seen_at)
+                VALUES (%s, %s, NOW(), NOW())
+                ON CONFLICT (invitation_token, device_id)
+                DO UPDATE SET last_seen_at = NOW()
+                """,
+                (invitation_token, device_id),
+            )
+            session = _create_client_session(cursor, invitation_token, device_id)
+            conn.commit()
+
+            return {
+                'session_token': session['session_token'],
+                'session_id': session['session_id'],
+                'expires_at': session['expires_at'].isoformat(),
+            }, 200
+    except Exception as e:
+        print(f"[ERROR] verify_client_device_otp error: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
 @bp.post('/client/verify-identity')
 def verify_client_identity():
     try:
@@ -325,10 +677,17 @@ def verify_client_identity():
             return {'detail': 'Last 4 digits required'}, 400
         last4 = last4[-4:]
 
+        device_id, session_token = _extract_client_device_session()
+        if not device_id:
+            device_id = (payload.get('device_id') or payload.get('deviceId') or '').strip() or None
+        if not device_id:
+            return {'detail': 'device_id is required'}, 400
+
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
             _ensure_identity_schema(cursor)
+            _ensure_client_device_session_schema(cursor)
 
             invitation_token = _resolve_invitation_token(cursor, token)
 
@@ -399,6 +758,18 @@ def verify_client_identity():
                     'attempts_remaining': max(0, 3 - attempts),
                 }, 401
 
+            cursor.execute(
+                """
+                INSERT INTO client_trusted_devices (invitation_token, device_id, first_seen_at, last_seen_at)
+                VALUES (%s, %s, NOW(), NOW())
+                ON CONFLICT (invitation_token, device_id)
+                DO UPDATE SET last_seen_at = NOW()
+                """,
+                (invitation_token, device_id),
+            )
+
+            session = _create_client_session(cursor, invitation_token, device_id)
+
             unlocked_token = secrets.token_urlsafe(32)
             expires_at = _now_utc()  # now
             try:
@@ -427,6 +798,8 @@ def verify_client_identity():
             return {
                 'unlocked_token': unlocked_token,
                 'unlocked_expires_at': expires_at.isoformat() if hasattr(expires_at, 'isoformat') else None,
+                'session_token': session['session_token'],
+                'session_expires_at': session['expires_at'].isoformat() if hasattr(session['expires_at'], 'isoformat') else None,
             }, 200
 
     except Exception as e:
@@ -677,11 +1050,14 @@ def get_client_proposals():
         token = _normalize_access_token(token)
         if not token:
             return {'detail': 'Access token required'}, 400
+
+        device_id, session_token = _extract_client_device_session()
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
             _ensure_identity_schema(cursor)
+            _ensure_client_device_session_schema(cursor)
 
             invitation_token = _resolve_invitation_token(cursor, token)
 
@@ -733,6 +1109,11 @@ def get_client_proposals():
             allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, proposal_id)
             if not allowed:
                 return err_payload, status
+
+            ok, session_err, session_code = _require_client_device_session(cursor, invitation_token, device_id, session_token)
+            if not ok:
+                conn.commit()
+                return session_err, session_code
 
             client_email = invitation['invited_email']
             token_proposal_id = invitation.get('proposal_id')
@@ -822,11 +1203,14 @@ def get_client_proposal_details(proposal_id):
         token = unquote(str(token)).strip().strip('"').strip("'")
         if not token:
             return {'detail': 'Access token required'}, 400
+
+        device_id, session_token = _extract_client_device_session()
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
             _ensure_identity_schema(cursor)
+            _ensure_client_device_session_schema(cursor)
 
             invitation_token = _resolve_invitation_token(cursor, token)
             invitation, err, code = _lookup_invitation_by_token(cursor, invitation_token)
@@ -842,6 +1226,11 @@ def get_client_proposal_details(proposal_id):
             allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, token_proposal_id)
             if not allowed:
                 return err_payload, status
+
+            ok, session_err, session_code = _require_client_device_session(cursor, invitation_token, device_id, session_token)
+            if not ok:
+                conn.commit()
+                return session_err, session_code
             
             column_info = _get_proposal_column_info(cursor)
             client_name_expr = column_info['client_name_expr']
@@ -973,11 +1362,14 @@ def add_client_comment(proposal_id):
         
         if not token or not comment_text:
             return {'detail': 'Token and comment text required'}, 400
+
+        device_id, session_token = _extract_client_device_session()
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
             _ensure_identity_schema(cursor)
+            _ensure_client_device_session_schema(cursor)
 
             invitation_token = _resolve_invitation_token(cursor, token)
 
@@ -1005,6 +1397,13 @@ def add_client_comment(proposal_id):
             allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, proposal_id)
             if not allowed:
                 return err_payload, status
+
+            ok, session_err, session_code = _require_client_device_session(
+                cursor, invitation_token, device_id, session_token
+            )
+            if not ok:
+                conn.commit()
+                return session_err, session_code
             
             # Create or get guest user
             guest_email = invitation['invited_email']
@@ -1053,11 +1452,14 @@ def client_approve_proposal(proposal_id):
         
         if not token or not signer_name:
             return {'detail': 'Token and signer name required'}, 400
+
+        device_id, session_token = _extract_client_device_session()
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
             _ensure_identity_schema(cursor)
+            _ensure_client_device_session_schema(cursor)
 
             invitation_token = _resolve_invitation_token(cursor, token)
             
@@ -1082,6 +1484,13 @@ def client_approve_proposal(proposal_id):
             allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, proposal_id)
             if not allowed:
                 return err_payload, status
+
+            ok, session_err, session_code = _require_client_device_session(
+                cursor, invitation_token, device_id, session_token
+            )
+            if not ok:
+                conn.commit()
+                return session_err, session_code
             
             client_email = invitation['invited_email']
             
@@ -1269,11 +1678,14 @@ def client_reject_proposal(proposal_id):
         
         if not token or not reason:
             return {'detail': 'Token and reason required'}, 400
+
+        device_id, session_token = _extract_client_device_session()
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
             _ensure_identity_schema(cursor)
+            _ensure_client_device_session_schema(cursor)
 
             invitation_token = _resolve_invitation_token(cursor, token)
             
@@ -1298,6 +1710,13 @@ def client_reject_proposal(proposal_id):
             allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, proposal_id)
             if not allowed:
                 return err_payload, status
+
+            ok, session_err, session_code = _require_client_device_session(
+                cursor, invitation_token, device_id, session_token
+            )
+            if not ok:
+                conn.commit()
+                return session_err, session_code
 
             cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
             srow = cursor.fetchone()
@@ -1354,20 +1773,26 @@ def client_reject_proposal(proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@bp.post("/client/proposals/<int:proposal_id>/get_signing_url")
 def get_client_signing_url(proposal_id):
     """Get or create DocuSign signing URL for client"""
     try:
         data = request.get_json() or {}
         token = data.get('token') or request.args.get('token')
         token = _normalize_access_token(token)
-        if not token:
-            return {'detail': 'Access token required'}, 400
+        device_id, session_token = _extract_client_device_session()
+        if not device_id:
+            device_id = (data.get('device_id') or data.get('deviceId') or '').strip() or None
+        if not session_token:
+            session_token = (data.get('session_token') or data.get('sessionToken') or '').strip() or None
+        
+        if not token or not device_id or not session_token:
+            return {'detail': 'Access token, device ID, and session token required'}, 400
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
             _ensure_identity_schema(cursor)
+            _ensure_client_device_session_schema(cursor)
 
             invitation_token = _resolve_invitation_token(cursor, token)
             
@@ -1392,6 +1817,13 @@ def get_client_signing_url(proposal_id):
             allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, proposal_id)
             if not allowed:
                 return err_payload, status
+
+            ok, session_err, session_code = _require_client_device_session(
+                cursor, invitation_token, device_id, session_token
+            )
+            if not ok:
+                conn.commit()
+                return session_err, session_code
             
             client_email = invitation['invited_email']
             
