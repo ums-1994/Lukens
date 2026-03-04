@@ -2,7 +2,7 @@
 Authentication routes - Registration, login, password reset, user profile
 Supports both Firebase authentication and legacy JWT tokens
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, make_response
 import os
 import json
 import traceback
@@ -372,7 +372,14 @@ def test_auth_blueprint():
 
 @bp.route("/firebase", methods=['OPTIONS'])
 def options_firebase():
-    return {}, 200
+    resp = make_response('', 200)
+    origin = request.headers.get('Origin')
+    if origin:
+        resp.headers['Access-Control-Allow-Origin'] = origin
+    resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
+    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+    resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    return resp
 
 @bp.post("/firebase")
 def firebase_auth():

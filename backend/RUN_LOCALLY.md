@@ -79,6 +79,30 @@ This will help us see exactly what's happening with the database commits.
 - Check that the database credentials are correct
 - Verify SSL mode is set to `require` for Render database
 
+### "SSL connection has been closed unexpectedly" (Render Postgres)
+This often happens when connecting from your machine to Render's free PostgreSQL (firewall, TLS, or network). Options:
+
+1. **Use the External Database URL**  
+   In Render Dashboard → your Postgres service → **Connect** → copy **External Database URL**.  
+   In `.env` set:
+   ```env
+   DATABASE_URL=postgresql://user:pass@hostname/dbname?sslmode=require
+   ```
+   (or use `DATABASE_URL_EXTERNAL` if your app supports it and you also set `DATABASE_URL` to the internal URL.)
+
+2. **Use a local PostgreSQL for development**  
+   Install Postgres locally and in `.env` set:
+   ```env
+   DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/your_db_name
+   ```
+   No `DB_SSLMODE` needed for localhost. Create the DB first: `createdb your_db_name`.
+
+3. **Timeouts / keepalives**  
+   The backend now adds `connect_timeout` and TCP keepalives for remote hosts. If it still fails, try increasing timeout in `.env`:
+   ```env
+   DB_CONNECT_TIMEOUT=30
+   ```
+
 ### Import Errors
 - Make sure you activated the virtual environment
 - Run `pip install -r requirements.txt` again

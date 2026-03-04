@@ -80,6 +80,15 @@ def _build_db_config_from_env():
         if missing:
             raise ValueError(f"DATABASE_URL missing required parts: {', '.join(missing)}")
 
+        # Timeout and keepalives for remote DBs (e.g. Render) to avoid hangs and idle drops
+        host = (db_config.get('host') or '').lower()
+        if host and host not in ('localhost', '127.0.0.1'):
+            db_config['connect_timeout'] = int(os.getenv('DB_CONNECT_TIMEOUT', '15'))
+            db_config['keepalives'] = 1
+            db_config['keepalives_idle'] = int(os.getenv('DB_KEEPALIVES_IDLE', '30'))
+            db_config['keepalives_interval'] = int(os.getenv('DB_KEEPALIVES_INTERVAL', '10'))
+            db_config['keepalives_count'] = int(os.getenv('DB_KEEPALIVES_COUNT', '5'))
+
         return db_config
 
     return {

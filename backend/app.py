@@ -76,19 +76,20 @@ load_dotenv(dotenv_path=Path(__file__).resolve().with_name('.env'), override=Tru
 
 app = Flask(__name__)
 
-# Flask-Cors origin matching is strict unless you provide regex objects.
-# Use compiled regexes so localhost dev ports (Flutter web) are allowed.
+# Flask-Cors: allow localhost/127.0.0.1 with any port for Flutter web dev.
+# Flask-CORS matches origins exactly; allow all localhost ports via after_request.
 _cors_origins = [
     "https://proposals2025.netlify.app",
-    # Allow Flutter web dev server ports (e.g. http://localhost:56886)
-    re.compile(r"^http://localhost(:\d+)?$"),
-    re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
-    # Common local dev ports
     "http://localhost:5173",
     "http://localhost:5000",
     "http://localhost:8081",
-    "http://localhost:50478",  # Add your specific port
+    "http://localhost:50478",
+    "http://localhost:50707",
+    "http://127.0.0.1:5000",
+    "http://127.0.0.1:5173",
 ]
+# Regex for origins we allow (localhost / 127.0.0.1 with any port)
+_cors_origin_re = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$", re.I)
 
 # Also allow a configured frontend origin (Render/Netlify/custom domain).
 # FRONTEND_URL may contain a path; CORS needs just the origin.
@@ -166,6 +167,30 @@ def handle_options_preflight(remaining=None):
     resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
     return resp
+
+
+def _is_allowed_cors_origin(origin):
+    """True if origin is allowed for CORS (exact match or localhost/127.0.0.1 with any port)."""
+    if not origin or not isinstance(origin, str):
+        return False
+    if origin in _cors_origins:
+        return True
+    return bool(_cors_origin_re.match(origin.strip()))
+
+
+@app.after_request
+def _add_cors_headers_to_all_responses(response):
+    """Ensure CORS headers are on every response (including 500) so the browser doesn't block."""
+    origin = request.headers.get('Origin')
+    if not origin:
+        return response
+    if _is_allowed_cors_origin(origin):
+        response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+    return response
+
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
