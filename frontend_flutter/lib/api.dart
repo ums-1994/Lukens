@@ -450,6 +450,8 @@ class AppState extends ChangeNotifier {
 
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
+    if (lowerStatus.contains('pricing')) return 'Draft';
+    if (lowerStatus.contains('in progress')) return 'Draft';
     if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
       return 'Pending Approval';
     if (lowerStatus.contains('pending') && lowerStatus.contains('approval'))
