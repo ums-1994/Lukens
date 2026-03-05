@@ -26,7 +26,8 @@ def _build_db_config_from_env():
     if database_url:
         parsed = urlparse(database_url)
         host = (parsed.hostname or '').strip()
-        # Render internal host (dpg-xxx-a) only works on Render. Use external URL or DB_HOST for local dev.
+        # Render internal host (dpg-xxx-a) only works from other Render services on private network.
+        # Web services must use External URL or we build it from internal host + region.
         if host.startswith('dpg-') and '.' not in host:
             external_url = os.getenv('DATABASE_URL_EXTERNAL')
             if external_url:
@@ -42,6 +43,20 @@ def _build_db_config_from_env():
                     'port': int(os.getenv('DB_PORT') or str(parsed.port or 5432)),
                     'sslmode': os.getenv('DB_SSLMODE') or 'require',
                 }
+            else:
+                # Fallback: build Render external host (e.g. dpg-xxx-a.oregon-postgres.render.com)
+                region = os.getenv('RENDER_DB_REGION', 'oregon')
+                external_host = f"{host}.{region}-postgres.render.com"
+                print(f"[*] Using Render external host (fallback): {external_host}")
+                db_config = {
+                    'host': external_host,
+                    'database': (parsed.path or '').lstrip('/') or 'proposal_db',
+                    'user': parsed.username,
+                    'password': parsed.password,
+                    'port': parsed.port or 5432,
+                    'sslmode': os.getenv('DB_SSLMODE') or 'require',
+                }
+                return db_config
         # Accept common Postgres URL scheme variants.
         scheme = (parsed.scheme or '').lower()
         if scheme.startswith('postgresql+'):
