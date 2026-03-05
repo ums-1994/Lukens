@@ -1015,7 +1015,7 @@ def request_changes(username=None, proposal_id=None):
             notifications_created = []
             try:
                 if target == 'manager':
-                    # Get manager/creator user ID
+                    # Notify the proposal creator (manager who made the proposal)
                     if creator_id:
                         create_notification(
                             user_id=creator_id,
@@ -1034,18 +1034,20 @@ def request_changes(username=None, proposal_id=None):
                         )
                         notifications_created.append('creator')
                 
-                    # Also notify finance if they exist as separate role
+                    # Notify all finance users (exclude creator so they don't get a duplicate)
                     cursor.execute(
                         """
                         SELECT id FROM users 
-                        WHERE role ILIKE '%finance%' OR role ILIKE '%manager%'
-                        LIMIT 1
-                        """
+                        WHERE role ILIKE '%finance%'
+                        AND id != COALESCE(%s, -1)
+                        """,
+                        (creator_id,)
                     )
-                    finance_user = cursor.fetchone()
-                    if finance_user:
+                    finance_users = cursor.fetchall()
+                    for finance_row in finance_users:
+                        fid = finance_row['id']
                         create_notification(
-                            user_id=finance_user['id'],
+                            user_id=fid,
                             notification_type='changes_requested',
                             title='Changes Requested - Finance Coordination',
                             message=f"Admin requested changes for '{proposal_title}'. Please coordinate with the proposal creator.",

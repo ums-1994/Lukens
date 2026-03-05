@@ -175,11 +175,12 @@ def get_notifications(username=None, user_id=None, email=None):
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             print(f"DEBUG: get_notifications called for user_id={user_id}, email={email}, username={username}")
             
+            # Keep decorator user_id as fallback (we overwrite user_id with found_user_id later)
+            decorator_user_id = user_id
             # Use the same simple lookup pattern as the user profile endpoint (which works)
-            # Try email first (most reliable since it's unique and comes from Firebase)
             found_user_id = None
             
-            # If user_id was provided from decorator, trust it if it was just created
+            # If user_id was provided from decorator, trust it (Firebase/auth already verified)
             # The decorator verifies the user exists in the same connection after commit
             if user_id:
                 print(f"🔍 Using user_id from decorator: {user_id} (trusting decorator verification)")
@@ -228,6 +229,14 @@ def get_notifications(username=None, user_id=None, email=None):
                 if user:
                     found_user_id = user['id']
                     print(f"✅ Found user_id {found_user_id} by username: {username}")
+            
+            # Fallback: use decorator user_id so manager/finance always see their notifications
+            if not found_user_id and decorator_user_id:
+                try:
+                    found_user_id = int(decorator_user_id)
+                    print(f"✅ Using user_id from decorator as fallback: {found_user_id}")
+                except (TypeError, ValueError):
+                    pass
             
             # Use the found user_id
             user_id = found_user_id
@@ -289,36 +298,38 @@ def mark_notification_read(username=None, user_id=None, email=None, notification
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Use the same simple lookup pattern as the user profile endpoint (which works)
-            # Try email first (most reliable since it's unique and comes from Firebase)
+            # Resolve current user (decorator may pass user_id from Firebase)
             found_user_id = None
-            if email:
+            if user_id:
+                try:
+                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        found_user_id = row[0]
+                    else:
+                        found_user_id = int(user_id)
+                except (TypeError, ValueError):
+                    pass
+            if not found_user_id and email:
                 cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
                 user = cursor.fetchone()
                 if user:
                     found_user_id = user[0]
-            
-            # If email lookup failed, try username (same as user profile endpoint)
             if not found_user_id and username:
                 cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
                 user = cursor.fetchone()
                 if user:
                     found_user_id = user[0]
             
-            # Use the found user_id
-            user_id = found_user_id
-            
-            if not user_id:
+            if not found_user_id:
                 return {'detail': 'User not found'}, 404
-            
-            user_id = user[0]
             
             # Update notification
             cursor.execute("""
                 UPDATE notifications
                 SET is_read = TRUE, read_at = NOW()
                 WHERE id = %s AND user_id = %s
-            """, (notification_id, user_id))
+            """, (notification_id, found_user_id))
             
             conn.commit()
             
@@ -340,26 +351,29 @@ def mark_all_notifications_read(username=None, user_id=None, email=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            # Use the same simple lookup pattern as the user profile endpoint (which works)
-            # Try email first (most reliable since it's unique and comes from Firebase)
             found_user_id = None
-            if email:
+            if user_id:
+                try:
+                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        found_user_id = row[0]
+                    else:
+                        found_user_id = int(user_id)
+                except (TypeError, ValueError):
+                    pass
+            if not found_user_id and email:
                 cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
                 user = cursor.fetchone()
                 if user:
                     found_user_id = user[0]
-            
-            # If email lookup failed, try username (same as user profile endpoint)
             if not found_user_id and username:
                 cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
                 user = cursor.fetchone()
                 if user:
                     found_user_id = user[0]
             
-            # Use the found user_id
-            user_id = found_user_id
-            
-            if not user_id:
+            if not found_user_id:
                 return {'detail': 'User not found'}, 404
             
             # Update all notifications
@@ -367,7 +381,7 @@ def mark_all_notifications_read(username=None, user_id=None, email=None):
                 UPDATE notifications
                 SET is_read = TRUE, read_at = NOW()
                 WHERE user_id = %s AND is_read = FALSE
-            """, (user_id,))
+            """, (found_user_id,))
             
             conn.commit()
             

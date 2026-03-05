@@ -2385,11 +2385,22 @@ def update_proposal_status(username, proposal_id):
         conn = _pg_conn()
         cursor = conn.cursor()
         cursor.execute(
-            '''UPDATE proposals SET status = %s WHERE id = %s''',
+            '''UPDATE proposals SET status = %s WHERE id = %s RETURNING title''',
             (status, proposal_id)
         )
+        result = cursor.fetchone()
+        proposal_title = result[0] if result else 'Proposal'
         conn.commit()
         release_pg_conn(conn)
+        
+        # Send notifications to proposal owner and collaborators
+        notify_proposal_collaborators(
+            proposal_id,
+            'status_updated',
+            f'Proposal Status Updated',
+            f'Proposal "{proposal_title}" status changed to {status}'
+        )
+        
         return {'detail': 'Status updated'}, 200
     except Exception as e:
         return {'detail': str(e)}, 500
