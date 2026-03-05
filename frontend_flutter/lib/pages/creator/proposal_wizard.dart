@@ -1425,16 +1425,16 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                 color: Color(0xFF4B5563),
                               ),
                             ),
-                            if (opportunityName != null) ...[
-                              const SizedBox(height: 4),
-                              Text(
-                                opportunityName,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  color: Color(0xFF6B7280),
-                                ),
+                            ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              opportunityName,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                color: Color(0xFF6B7280),
                               ),
-                            ],
+                            ),
+                          ],
                             const SizedBox(height: 4),
                             Text(
                               'Date: $dateLabel',

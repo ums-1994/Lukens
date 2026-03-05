@@ -1,44 +1,14 @@
 // ignore_for_file: deprecated_member_use
 
 import 'dart:convert';
-import 'dart:js' as js;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
 import 'config/api_config.dart';
 
-// Get API URL from JavaScript config or use AuthService.baseUrl/Render default
+// Get API URL: always use Render production backend
 String get baseUrl {
-  if (kIsWeb) {
-    try {
-      // Honor USE_LOCAL_API so local dev hits local backend (index.html sets this)
-      final useLocal = js.context['USE_LOCAL_API'];
-      if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
-        return 'http://127.0.0.1:5000';
-      }
-      // Try to get from window.APP_CONFIG.API_URL (set by config.js)
-      final config = js.context['APP_CONFIG'];
-      if (config != null) {
-        final configObj = config as js.JsObject;
-        final apiUrl = configObj['API_URL'];
-        if (apiUrl != null && apiUrl.toString().trim().isNotEmpty) {
-          return apiUrl.toString().replaceAll('"', '').trim();
-        }
-      }
-      // Fallback: try window.REACT_APP_API_URL
-      final envUrl = js.context['REACT_APP_API_URL'];
-      if (envUrl != null && envUrl.toString().trim().isNotEmpty) {
-        return envUrl.toString().replaceAll('"', '').trim();
-      }
-    } catch (e) {
-      print('⚠️ Could not read API URL from config: $e');
-    }
-  }
-
-  // Default URLs based on environment
-  if (kDebugMode) {
-    return 'https://lukens-wp8w.onrender.com';
-  }
+  print('🌐 API: Using production API URL: https://lukens-wp8w.onrender.com');
   return 'https://lukens-wp8w.onrender.com';
 }
 
