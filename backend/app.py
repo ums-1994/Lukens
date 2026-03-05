@@ -801,13 +801,16 @@ def init_db():
         _db_initialized = True
         print("[OK] Database schema initialized successfully")
         return
+    # Skip DB init for root and health so the app link always loads (avoids 500 when DB is down/slow)
+    path = (request.path or "").rstrip("/") or "/"
+    if path in ("/", "/health"):
+        return
     # Skip initialization for CORS preflight requests to avoid non-2xx responses
-    # which will cause browsers to block the request due to failed preflight.
     if request.method == 'OPTIONS':
-        return {}, 200
+        return
     if _db_initialized:
         return
-    
+
     try:
         print("[*] Initializing PostgreSQL schema...")
         init_pg_schema()
@@ -816,6 +819,14 @@ def init_db():
     except Exception as e:
         print(f"[ERROR] Database initialization error: {e}")
         raise
+
+# Initialize DB at worker startup when run via gunicorn/uvicorn so first login is fast
+try:
+    init_pg_schema()
+    _db_initialized = True
+    print("[OK] Database schema initialized at startup (first login will be fast)")
+except Exception as e:
+    print(f"[INFO] Database will initialize on first API request: {e}")
 
 # Auth token storage (in production, use Redis or session manager)
 # File-based persistence to survive restarts

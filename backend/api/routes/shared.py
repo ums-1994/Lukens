@@ -247,36 +247,41 @@ def get_notifications(username=None, user_id=None, email=None):
             
             print(f"DEBUG: Final resolved user_id for query: {user_id}")
             
-            # Get notifications
-            # Handle case where user_id might be VARCHAR in some databases
-            # Check if table exists and log it
-            cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name IN ('notifications', 'notificationss')")
-            table_result = cursor.fetchall()
-            print(f"DEBUG: Found tables: {table_result}")
-
-            cursor.execute("""
-                SELECT id, proposal_id, notification_type, title, message, 
-                       metadata, is_read, created_at, read_at
-                FROM notifications
-                WHERE user_id::text = %s::text
-                ORDER BY created_at DESC
-                LIMIT 50
-            """, (str(user_id),))
-
-            notifications = cursor.fetchall()
-            print(f"DEBUG: Query result count: {len(notifications)}")
-            if len(notifications) > 0:
-                print(f"DEBUG: First notification: {notifications[0]}")
+            # Get notifications (resilient to schema so login never 500s)
+            notifications = []
+            try:
+                cursor.execute("""
+                    SELECT id, proposal_id, notification_type, title, message,
+                           metadata, is_read, created_at, read_at
+                    FROM notifications
+                    WHERE user_id::text = %s::text
+                    ORDER BY created_at DESC
+                    LIMIT 50
+                """, (str(user_id),))
+                notifications = cursor.fetchall()
+            except Exception as notif_err:
+                try:
+                    # Some DBs have "type" instead of "notification_type"
+                    cursor.execute("""
+                        SELECT id, proposal_id, type AS notification_type, title, message,
+                               metadata, is_read, created_at, read_at
+                        FROM notifications
+                        WHERE user_id::text = %s::text
+                        ORDER BY created_at DESC
+                        LIMIT 50
+                    """, (str(user_id),))
+                    notifications = cursor.fetchall()
+                except Exception as notif_err2:
+                    print(f"⚠️ Notifications query failed (returning empty): {notif_err2}")
+                    notifications = []
 
             # Calculate unread count for the client badge / UX
             unread_count = 0
             for n in notifications:
                 try:
-                    # RealDictRow behaves like a dict
                     if not n.get('is_read'):
                         unread_count += 1
                 except Exception:
-                    # In case of unexpected row shape, fall back safely
                     pass
 
             return {

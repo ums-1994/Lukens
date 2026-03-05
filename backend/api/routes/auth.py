@@ -411,19 +411,26 @@ def firebase_auth():
         cursor = conn.cursor()
         
         try:
-            # Try to find user by email or create firebase_uid column if needed
-            cursor.execute(
-                '''SELECT id, username, email, full_name, role, department, is_active
-                   FROM users WHERE email = %s''',
-                (email,)
-            )
+            # Try to find user by email (support tables with or without department column)
+            try:
+                cursor.execute(
+                    '''SELECT id, username, email, full_name, role, department, is_active
+                       FROM users WHERE email = %s''',
+                    (email,)
+                )
+            except psycopg2.ProgrammingError:
+                cursor.execute(
+                    '''SELECT id, username, email, full_name, role, is_active
+                       FROM users WHERE email = %s''',
+                    (email,)
+                )
             user = cursor.fetchone()
             
             if user:
-                # User exists, update Firebase UID if needed
+                # User exists, update Firebase UID if needed (user may be 6- or 7-tuple)
                 user_id = user[0]
                 username = user[1]
-                user_role = user[4]  # Get role from database
+                user_role = user[4] if len(user) > 4 else 'manager'
                 
                 # Normalize role: map variations to standardized roles
                 # Supported normalized roles: 'admin', 'manager', 'finance_manager'
@@ -466,7 +473,7 @@ def firebase_auth():
                         'email': user[2],
                         'full_name': user[3],
                         'role': normalized_role,  # Return normalized role
-                        'department': user[5],
+                        'department': user[5] if len(user) > 6 else None,
                         'firebase_uid': uid
                     }
                 }, 200
@@ -505,12 +512,20 @@ def firebase_auth():
                 # Just store a deterministic non-null string to satisfy NOT NULL constraint.
                 dummy_password_hash = f"firebase:{uid}:{email}"
 
-                cursor.execute(
-                    '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s)
-                       RETURNING id, username, email, full_name, role, department, is_active''',
-                    (username, email, dummy_password_hash, name, role_to_use, True, firebase_user.get('email_verified', False))
-                )
+                try:
+                    cursor.execute(
+                        '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s)
+                           RETURNING id, username, email, full_name, role, department, is_active''',
+                        (username, email, dummy_password_hash, name, role_to_use, True, firebase_user.get('email_verified', False))
+                    )
+                except psycopg2.ProgrammingError:
+                    cursor.execute(
+                        '''INSERT INTO users (username, email, password_hash, full_name, role, is_active)
+                           VALUES (%s, %s, %s, %s, %s, %s)
+                           RETURNING id, username, email, full_name, role, is_active''',
+                        (username, email, dummy_password_hash, name, role_to_use, True)
+                    )
                 user = cursor.fetchone()
                 user_id = user[0]
                 
@@ -539,7 +554,7 @@ def firebase_auth():
                         'email': user[2],
                         'full_name': user[3],
                         'role': user[4],
-                        'department': user[5],
+                        'department': user[5] if len(user) > 6 else None,
                         'firebase_uid': uid
                     }
                 }, 201  # Created
