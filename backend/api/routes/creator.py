@@ -2482,53 +2482,13 @@ def get_archived_proposals(username=None):
 # ============================================================================
 # COMPLETION RATES — readiness scoring for the manager dashboard widget
 # ============================================================================
+from api.utils.readiness import (
+    score_proposal as _score_proposal,
+    missing_section_names as _missing_section_names,
+    PASS_THRESHOLD as _PASS_THRESHOLD,
+)
 
-# Mandatory section keywords: a section "passes" if its title contains one
-# of the keywords AND its text content is at least MIN_SECTION_CHARS long.
-_MANDATORY_SECTIONS = {
-    'executive_summary': ['executive summary', 'executive', 'overview', 'introduction'],
-    'scope_deliverables': ['scope', 'deliverable', 'objective'],
-    'timeline':           ['timeline', 'schedule', 'milestone', 'delivery date'],
-    'team':               ['team', 'bio', 'personnel', 'resource', 'staff'],
-    'pricing':            ['pricing', 'budget', 'cost', 'financial', 'commercials'],
-}
-_MANDATORY_KEYS = list(_MANDATORY_SECTIONS.keys())
-_PASS_THRESHOLD = 80          # readiness score (%) needed to "pass"
-_MIN_SECTION_CHARS = 50       # minimum non-whitespace chars to count as filled
-
-
-def _score_proposal(content_raw) -> dict:
-    """Parse proposal content JSON and return a readiness dict."""
-    filled = {k: False for k in _MANDATORY_KEYS}
-
-    try:
-        if not content_raw:
-            return {'score': 0, 'filled': filled, 'complete': 0, 'total': len(_MANDATORY_KEYS)}
-
-        content = (
-            json.loads(content_raw)
-            if isinstance(content_raw, str)
-            else content_raw
-        )
-        if not isinstance(content, dict):
-            return {'score': 0, 'filled': filled, 'complete': 0, 'total': len(_MANDATORY_KEYS)}
-
-        sections = content.get('sections') or []
-        for sec in sections:
-            title = (sec.get('title') or '').lower().strip()
-            text  = (sec.get('content') or '').strip()
-            if len(text) < _MIN_SECTION_CHARS:
-                continue
-            for key, keywords in _MANDATORY_SECTIONS.items():
-                if not filled[key] and any(kw in title for kw in keywords):
-                    filled[key] = True
-    except Exception:
-        pass
-
-    total = len(_MANDATORY_KEYS)
-    complete = sum(filled.values())
-    score = round(complete / total * 100) if total else 0
-    return {'score': score, 'filled': filled, 'complete': complete, 'total': total}
+_ALLOWED_ROLES = {'manager', 'creator', 'admin', 'ceo'}
 
 
 def _cr_resolve_user(cursor, username, email):
@@ -2546,7 +2506,7 @@ def _cr_resolve_user(cursor, username, email):
     return None
 
 
-@bp.get('/api/proposals/completion-rates')
+@bp.get('/proposals/completion-rates')
 @token_required
 def get_completion_rates(username=None, user_id=None, email=None):
     """
@@ -2564,6 +2524,13 @@ def get_completion_rates(username=None, user_id=None, email=None):
                 resolved_id = _cr_resolve_user(cursor, username, email)
             if not resolved_id:
                 return {'detail': 'User not found'}, 404
+
+            # Role guard — only manager/creator/admin/ceo may access this widget
+            cursor.execute('SELECT role FROM users WHERE id = %s', (resolved_id,))
+            role_row = cursor.fetchone()
+            caller_role = (role_row['role'] if role_row else '').strip().lower()
+            if caller_role not in _ALLOWED_ROLES:
+                return {'detail': 'Manager or creator access required'}, 403
 
             # Detect schema (owner_id vs user_id)
             cursor.execute(
@@ -2584,8 +2551,8 @@ def get_completion_rates(username=None, user_id=None, email=None):
             if client_col:   select_fields.append(f'{client_col} AS client_name')
 
             cursor.execute(
-                f"SELECT {', '.join(select_fields)} FROM proposals WHERE {owner_col} = %s ORDER BY created_at DESC",
-                (resolved_id,)
+                f"SELECT {', '.join(select_fields)} FROM proposals WHERE {owner_col}::text = %s::text ORDER BY created_at DESC",
+                (str(resolved_id),)
             )
             rows = cursor.fetchall()
 
@@ -2612,7 +2579,7 @@ def get_completion_rates(username=None, user_id=None, email=None):
                 bucket = status_raw or 'Draft'
                 status_counts[bucket] = status_counts.get(bucket, 0) + 1
 
-                missing = [k.replace('_', ' ').title() for k, v in scored['filled'].items() if not v]
+                missing = _missing_section_names(scored)
 
                 proposals_detail.append({
                     'id':                row['id'],
@@ -2635,7 +2602,7 @@ def get_completion_rates(username=None, user_id=None, email=None):
                 f"""
                 SELECT DATE(created_at) AS day, COUNT(*) AS created
                 FROM proposals
-                WHERE {owner_col} = %s
+                WHERE {owner_col}::text = %s::text
                   AND created_at >= NOW() - INTERVAL '30 days'
                 GROUP BY day
                 ORDER BY day

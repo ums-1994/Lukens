@@ -684,7 +684,9 @@ class _DashboardPageState extends State<DashboardPage>
                     .toString()
                     .toLowerCase()
                     .trim();
-                final isAdmin = role == 'admin' || role == 'ceo';
+                final isAdmin = role == 'admin' || role == 'ceo' ||
+                    role == 'manager' || role == 'creator' ||
+                    role == 'financial manager';
                 return AppSideNav(
                   isCollapsed: _isSidebarCollapsed,
                   currentLabel: _currentNavLabel,
@@ -2564,13 +2566,6 @@ class _DashboardPageState extends State<DashboardPage>
         _buildSection(
           'My Proposal Dashboard',
           _buildDashboardGrid(counts, context),
-        ),
-        const SizedBox(height: 20),
-
-        // Completion Rates Widget
-        _buildSection(
-          'Completion Rates & Readiness',
-          CompletionRatesWidget(onOpenProposal: _openProposalFromWidget),
         ),
         const SizedBox(height: 20),
 

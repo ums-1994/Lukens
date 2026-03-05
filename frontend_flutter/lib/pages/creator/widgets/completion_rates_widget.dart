@@ -1,4 +1,5 @@
 // ignore_for_file: unused_field
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -14,7 +15,7 @@ import '../../../theme/premium_theme.dart';
 /// and a drill-down list of low-scoring proposals for the manager dashboard.
 class CompletionRatesWidget extends StatefulWidget {
   /// Called when the user taps a proposal row to open it in the editor.
-  final void Function(int proposalId, String status)? onOpenProposal;
+  final void Function(int proposalId, String status, String title)? onOpenProposal;
 
   const CompletionRatesWidget({super.key, this.onOpenProposal});
 
@@ -33,10 +34,14 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
 
   late final AnimationController _animCtrl;
   late final Animation<double> _fadeAnim;
+  Timer? _autoRefreshTimer;
 
   // Drill-down: show only low-scoring proposals
   bool _showDrillDown = false;
   static const int _lowScoreThreshold = 60;
+
+  // Auto-refresh every 60 s so scores stay current as proposals are edited
+  static const Duration _refreshInterval = Duration(seconds: 60);
 
   @override
   void initState() {
@@ -45,12 +50,41 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
         vsync: this, duration: const Duration(milliseconds: 600));
     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
     _fetch();
+    _autoRefreshTimer =
+        Timer.periodic(_refreshInterval, (_) => _fetchSilently());
   }
 
   @override
   void dispose() {
+    _autoRefreshTimer?.cancel();
     _animCtrl.dispose();
     super.dispose();
+  }
+
+  /// Silent background refresh — does not show a spinner, preserves current data.
+  Future<void> _fetchSilently() async {
+    try {
+      final token = AuthService.token;
+      final resp = await http.get(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/completion-rates'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      );
+      if (resp.statusCode == 200 && mounted) {
+        final data = jsonDecode(resp.body);
+        setState(() {
+          _summary = Map<String, dynamic>.from(data['summary'] ?? {});
+          _proposals = List<dynamic>.from(data['proposals'] ?? []);
+          _trend = List<dynamic>.from(data['trend'] ?? []);
+          _statusBreakdown =
+              Map<String, dynamic>.from(data['status_breakdown'] ?? {});
+        });
+      }
+    } catch (_) {
+      // Silent — don't disturb the UI on background refresh failures
+    }
   }
 
   Future<void> _fetch() async {
@@ -531,18 +565,24 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
             ? const Color(0xFFFFA726)
             : const Color(0xFFEF5350);
 
+    final title = p['title'] as String? ?? 'Untitled';
+
     return GestureDetector(
-      onTap: () => widget.onOpenProposal?.call(p['id'] as int, status),
+      onTap: () =>
+          widget.onOpenProposal?.call(p['id'] as int, status, title),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.04),
+          color: isLow
+              ? scoreColor.withOpacity(0.07)
+              : const Color(0xFF1A2035),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: isLow
-                ? scoreColor.withOpacity(0.35)
-                : Colors.white.withOpacity(0.07),
+                ? scoreColor.withOpacity(0.55)
+                : Colors.white.withOpacity(0.18),
+            width: isLow ? 1.2 : 1,
           ),
         ),
         child: Column(
@@ -568,7 +608,7 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
                           child: Text(
                             p['client_name'] as String,
                             style: const TextStyle(
-                                color: Colors.white38, fontSize: 11),
+                                color: Colors.white60, fontSize: 11),
                           ),
                         ),
                     ],
@@ -605,25 +645,36 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
               borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
                 value: total > 0 ? complete / total : 0,
-                backgroundColor: Colors.white12,
+                backgroundColor: Colors.white24,
                 valueColor: AlwaysStoppedAnimation<Color>(scoreColor),
-                minHeight: 5,
+                minHeight: 6,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Row(
               children: [
                 Text(
                   '$complete / $total sections complete',
-                  style:
-                      const TextStyle(color: Colors.white38, fontSize: 10),
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 11),
                 ),
                 const Spacer(),
                 if (missing.isNotEmpty)
-                  Text(
-                    'Missing: ${missing.join(', ')}',
-                    style: TextStyle(color: scoreColor, fontSize: 10),
-                    overflow: TextOverflow.ellipsis,
+                  Flexible(
+                    child: Text(
+                      'Missing: ${missing.join(', ')}',
+                      style: TextStyle(
+                          color: scoreColor,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          shadows: [
+                            Shadow(
+                              color: Colors.black.withOpacity(0.6),
+                              blurRadius: 4,
+                            )
+                          ]),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
               ],
             ),
@@ -645,9 +696,9 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
+        color: const Color(0xFF141B2D),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -666,7 +717,7 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
                     const SizedBox(height: 2),
                     Text(subtitle,
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 11)),
+                            color: Colors.white60, fontSize: 11)),
                   ],
                 ),
               ),
