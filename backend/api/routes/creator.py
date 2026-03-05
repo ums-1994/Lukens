@@ -1450,10 +1450,15 @@ def ai_status(username=None):
 @token_required
 def ai_check_compliance(username=None):
     try:
-        data = request.get_json() or {}
-        proposal_id = data.get("proposal_id")
-        if not proposal_id:
+        data = request.get_json(force=True, silent=True) or {}
+        proposal_id = data.get("proposal_id") or data.get("proposalId") or data.get("id")
+        if proposal_id is None or str(proposal_id).strip() == "":
             return {"detail": "proposal_id is required"}, 400
+
+        try:
+            proposal_id = int(str(proposal_id).strip())
+        except Exception:
+            return {"detail": "proposal_id must be an integer"}, 400
 
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

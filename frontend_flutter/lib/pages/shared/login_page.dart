@@ -271,6 +271,43 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     }
   }
 
+  void _showForgotPasswordDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(
+          'Reset password',
+          style: TextStyle(fontFamily: 'Poppins'),
+        ),
+        content: SingleChildScrollView(
+          child: _ForgotPasswordForm(
+            initialEmail: _emailController.text.trim(),
+            onSuccess: () {
+              Navigator.pop(ctx);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Check your email for a link to reset your password.',
+                    ),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            onError: (String message) {
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(content: Text(message), backgroundColor: Colors.red),
+                );
+              }
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -614,14 +651,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   ),
                 ),
                 TextButton(
-                  onPressed: () {
-                    // TODO: Forgot password
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Forgot password feature coming soon'),
-                      ),
-                    );
-                  },
+                  onPressed: _showForgotPasswordDialog,
                   child: const Text(
                     'FORGOT PASSWORD',
                     style: TextStyle(
@@ -720,6 +750,105 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         onPressed: () {
           // TODO: Social login
         },
+      ),
+    );
+  }
+}
+
+class _ForgotPasswordForm extends StatefulWidget {
+  final String initialEmail;
+  final VoidCallback onSuccess;
+  final void Function(String message) onError;
+
+  const _ForgotPasswordForm({
+    required this.initialEmail,
+    required this.onSuccess,
+    required this.onError,
+  });
+
+  @override
+  State<_ForgotPasswordForm> createState() => _ForgotPasswordFormState();
+}
+
+class _ForgotPasswordFormState extends State<_ForgotPasswordForm> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _emailController;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController = TextEditingController(text: widget.initialEmail);
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendResetLink() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _loading = true);
+    final error = await FirebaseService.sendPasswordResetEmail(
+      _emailController.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() => _loading = false);
+    if (error == null) {
+      widget.onSuccess();
+    } else {
+      widget.onError(error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Enter your email and we\'ll send you a link to reset your password.',
+            style: TextStyle(fontFamily: 'Poppins', fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'Email',
+              border: OutlineInputBorder(),
+            ),
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return 'Enter your email';
+              return null;
+            },
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: _loading ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _loading ? null : _sendResetLink,
+                child: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Send reset link'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

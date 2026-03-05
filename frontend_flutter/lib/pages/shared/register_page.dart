@@ -140,6 +140,127 @@ class _RegisterPageState extends State<RegisterPage>
     return const Color(0xFF1A1A1A); // Dark - No password
   }
 
+  /// Maps UI role to backend role string.
+  String _getBackendRole() {
+    if (_selectedRole == 'Finance Manager') return 'finance_manager';
+    if (_selectedRole == 'Admin') return 'admin';
+    return 'manager';
+  }
+
+  Future<void> _registerWithGoogle() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final UserCredential? firebaseCredential =
+          await FirebaseService.signInWithGoogle();
+
+      if (firebaseCredential == null || firebaseCredential.user == null) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Google sign-in was cancelled or failed.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final firebaseIdToken = await firebaseCredential.user!.getIdToken();
+      if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to get Firebase ID token.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final role = _getBackendRole();
+      final requestBody = {
+        'id_token': firebaseIdToken,
+        'role': role,
+      };
+
+      final response = await http.post(
+        Uri.parse('${AuthService.baseUrl}/api/firebase'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(requestBody),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        final body = json.decode(response.body);
+        final detail = body is Map
+            ? (body['detail'] ?? 'Backend registration failed')
+            : 'Backend registration failed';
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  detail is String ? detail : 'Backend registration failed'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final result = json.decode(response.body) as Map<String, dynamic>;
+      final userProfile = result['user'] as Map<String, dynamic>?;
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (userProfile != null) {
+        final appState = context.read<AppState>();
+        appState.authToken = firebaseIdToken;
+        appState.currentUser = userProfile;
+        AuthService.setUserData(userProfile, firebaseIdToken);
+
+        final roleService = context.read<RoleService>();
+        await roleService.initializeRoleFromUser(userProfile);
+        await appState.init();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Signed in with Google successfully.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Sign-in successful, but failed to get user profile. Please try again.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Google sign-in failed: ${e is Exception ? e.toString() : e}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -152,14 +273,7 @@ class _RegisterPageState extends State<RegisterPage>
       final lastName = _lastNameController.text.trim();
       // Map role selection to backend role format
       String role;
-      if (_selectedRole == 'Finance Manager') {
-        // Use canonical backend role
-        role = 'finance_manager';
-      } else if (_selectedRole == 'Admin') {
-        role = 'admin';
-      } else {
-        role = 'manager'; // Default to manager
-      }
+      role = _getBackendRole();
       print('🔍 Selected role from UI: "$_selectedRole"');
       print('🔍 Mapped role for backend: "$role"');
 
@@ -744,7 +858,10 @@ class _RegisterPageState extends State<RegisterPage>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildSocialButton('assets/images/Google_Icon.png'),
+                _buildSocialButton(
+                  'assets/images/Google_Icon.png',
+                  onPressed: _isLoading ? null : _registerWithGoogle,
+                ),
                 const SizedBox(width: 16),
                 _buildSocialButton('assets/images/mslogo.png'),
                 const SizedBox(width: 16),
@@ -794,9 +911,7 @@ class _RegisterPageState extends State<RegisterPage>
                   ),
                 ),
                 TextButton(
-                  onPressed: () {
-                    // TODO: Forgot password
-                  },
+                  onPressed: () => Navigator.pushNamed(context, '/login'),
                   child: const Text(
                     'FORGOT PASSWORD',
                     style: TextStyle(
@@ -913,7 +1028,7 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  Widget _buildSocialButton(String imagePath) {
+  Widget _buildSocialButton(String imagePath, {VoidCallback? onPressed}) {
     return Container(
       width: 48,
       height: 48,
@@ -935,9 +1050,7 @@ class _RegisterPageState extends State<RegisterPage>
             );
           },
         ),
-        onPressed: () {
-          // TODO: Social login
-        },
+        onPressed: onPressed,
       ),
     );
   }

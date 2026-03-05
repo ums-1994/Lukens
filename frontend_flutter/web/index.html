@@ -7,8 +7,11 @@
   <title>Proposal & SOW Builder v2</title>
   <!-- Force Flutter web to use local backend when running locally -->
   <script>
-    // Force Flutter web to use your local backend
-    window.USE_LOCAL_API = true;
+    // Force Flutter web to use your local backend ONLY when running locally
+    (function () {
+      var h = (window.location && window.location.hostname) ? window.location.hostname : '';
+      window.USE_LOCAL_API = (h === 'localhost' || h === '127.0.0.1');
+    })();
   </script>
   <!-- App Configuration - Load before Flutter app -->
   <script src="config.js"></script>

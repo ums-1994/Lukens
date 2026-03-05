@@ -125,6 +125,7 @@ from api.routes.pipeline import bp as pipeline_bp
 from api.routes.risk_gate import bp as risk_gate_bp
 from api.routes.finance_export import bp as finance_export_bp
 from api.routes.finance_audit import bp as finance_audit_bp
+from api.routes.finance_audit import bp as finance_audit_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -139,6 +140,19 @@ app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp)
 app.register_blueprint(finance_export_bp, url_prefix='/api')
 app.register_blueprint(finance_audit_bp, url_prefix='/api')
+
+
+@app.route("/", methods=["GET", "HEAD"])
+def root():
+    return {
+        "status": "ok",
+        "service": "lukens-backend",
+    }, 200
+
+
+@app.route("/health", methods=["GET", "HEAD"])
+def health():
+    return {"status": "ok"}, 200
 
 # Catch-all OPTIONS after blueprints so specific routes (e.g. finance export) handle their path first
 @app.route("/", methods=["OPTIONS"])
@@ -408,6 +422,46 @@ def init_pg_schema():
         client_can_edit BOOLEAN DEFAULT false,
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS finance_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER,
+            username VARCHAR(255),
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(64) NOT NULL,
+            field_name VARCHAR(255) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            action_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_entity
+               ON finance_audit_logs(entity_type, entity_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_user
+               ON finance_audit_logs(user_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_compliance (
+            proposal_id INTEGER PRIMARY KEY,
+            status VARCHAR(20) NOT NULL,
+            reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_compliance_status
+               ON proposal_compliance(status, evaluated_at DESC)'''
+        )
 
         cursor.execute(
             '''CREATE TABLE IF NOT EXISTS finance_audit_logs (

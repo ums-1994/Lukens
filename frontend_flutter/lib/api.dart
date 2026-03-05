@@ -113,15 +113,15 @@ class AppState extends ChangeNotifier {
 
       final r = await http
           .get(
-            Uri.parse("$baseUrl/api/content"),
-            headers: _headers,
-          )
+        Uri.parse("$baseUrl/api/content"),
+        headers: _headers,
+      )
           .timeout(
-            const Duration(seconds: 12),
-            onTimeout: () {
-              throw Exception('fetchContent timed out');
-            },
-          );
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw Exception('fetchContent timed out');
+        },
+      );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
         // Handle both array response and object with 'content' key
@@ -344,15 +344,15 @@ class AppState extends ChangeNotifier {
     try {
       final response = await http
           .get(
-            Uri.parse("$baseUrl/api/notifications"),
-            headers: _headers,
-          )
+        Uri.parse("$baseUrl/api/notifications"),
+        headers: _headers,
+      )
           .timeout(
-            const Duration(seconds: 12),
-            onTimeout: () {
-              throw Exception('fetchNotifications timed out');
-            },
-          );
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw Exception('fetchNotifications timed out');
+        },
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -419,15 +419,15 @@ class AppState extends ChangeNotifier {
     try {
       final r = await http
           .get(
-            Uri.parse("$baseUrl/api/proposals"),
-            headers: _headers,
-          )
+        Uri.parse("$baseUrl/api/proposals"),
+        headers: _headers,
+      )
           .timeout(
-            const Duration(seconds: 12),
-            onTimeout: () {
-              throw Exception('fetchProposals timed out');
-            },
-          );
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw Exception('fetchProposals timed out');
+        },
+      );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
         proposals = data is List ? List<dynamic>.from(data) : [];
@@ -450,10 +450,14 @@ class AppState extends ChangeNotifier {
 
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
+    if (lowerStatus.contains('pricing')) return 'Draft';
+    if (lowerStatus.contains('in progress')) return 'Draft';
     if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
       return 'Pending Approval';
     if (lowerStatus.contains('pending') && lowerStatus.contains('approval'))
       return 'Pending Approval';
+    if (lowerStatus == 'submitted') return 'Pending Approval';
+    if (lowerStatus == 'in review') return 'Pending Approval';
     if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
       return 'Sent to Client';
     if (lowerStatus.contains('released')) return 'Sent to Client';
@@ -477,6 +481,12 @@ class AppState extends ChangeNotifier {
       final rawStatus = proposal['status']?.toString() ?? 'Draft';
       final status = _normalizeStatus(rawStatus);
       counts[status] = (counts[status] ?? 0) + 1;
+    }
+
+    // Backwards-compat key: creator dashboard expects this exact label.
+    if (counts.containsKey('Pending Approval') &&
+        !counts.containsKey('Pending CEO Approval')) {
+      counts['Pending CEO Approval'] = counts['Pending Approval'] ?? 0;
     }
     dashboardCounts = counts;
   }

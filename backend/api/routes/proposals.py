@@ -8,10 +8,18 @@ import psycopg2
 import psycopg2.extras
 import json
 import traceback
+import os
+import psycopg2
+import psycopg2.extras
+import json
+import traceback
 from typing import Optional
+
 
 from api.utils.decorators import token_required, admin_required
 from api.utils.database import get_db_connection
+from api.utils.helpers import create_notification, resolve_user_id
+from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
 from api.utils.helpers import create_notification, resolve_user_id
 from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
 from api.utils.email import send_email
@@ -337,6 +345,11 @@ def get_proposals(username=None, user_id=None, email=None):
                 if not user_id:
                     print(f"⚠️ Could not resolve numeric ID for {username or email}, returning empty list")
                     return jsonify([]), 200
+                resolved_user_id = resolve_user_id(cursor, username or email)
+                user_id = resolved_user_id
+                if not user_id:
+                    print(f"⚠️ Could not resolve numeric ID for {username or email}, returning empty list")
+                    return jsonify([]), 200
             
             # Check what columns exist in proposals table
             cursor.execute("""
@@ -637,6 +650,53 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 if any(k in data for k in ['content', 'budget']):
                     return jsonify({'detail': 'Pricing changes are not allowed after proposal is sent to client'}), 403
 
+            # Some environments do not have a dedicated `sections` column on proposals.
+            # If the client sends `sections` but the DB does not support it, store it in `content`.
+            if 'sections' in data and 'sections' not in existing_columns:
+                if 'content' not in data:
+                    data['content'] = data.get('sections')
+                data.pop('sections', None)
+
+            select_cols = ['status', 'content']
+            if 'sections' in existing_columns:
+                select_cols.append('sections')
+            if 'budget' in existing_columns:
+                select_cols.append('budget')
+
+            cursor.execute(
+                f"""
+                SELECT {', '.join(select_cols)}
+                FROM proposals
+                WHERE id = %s
+                """,
+                (proposal_id,),
+            )
+            before_row = cursor.fetchone()
+            if not before_row:
+                return jsonify({'detail': 'Proposal not found'}), 404
+
+            before_status = (before_row[0] or '').strip().lower()
+            before_content = before_row[1] if len(before_row) > 1 else None
+
+            before_sections = None
+            if 'sections' in existing_columns:
+                try:
+                    before_sections = before_row[select_cols.index('sections')]
+                except Exception:
+                    before_sections = None
+
+            before_budget = None
+            if 'budget' in existing_columns:
+                try:
+                    before_budget = before_row[select_cols.index('budget')]
+                except Exception:
+                    before_budget = None
+
+            sent_locked = ('sent to client' in before_status) or ('released' in before_status)
+            if sent_locked and is_finance:
+                if any(k in data for k in ['content', 'budget']):
+                    return jsonify({'detail': 'Pricing changes are not allowed after proposal is sent to client'}), 403
+
             # Finance users can only update pricing-related fields.
             # We enforce this server-side so Finance cannot modify scope/content/client metadata.
             if is_finance:
@@ -771,6 +831,7 @@ def update_proposal_status(username=None, proposal_id=None, user_id=None, email=
             if not proposal_row:
                 return jsonify({'detail': 'Proposal not found'}), 404
             old_status = proposal_row[0]
+            old_status = proposal_row[0]
 
             current_key = _normalize_status_key(proposal_row[0])
             target_key = _normalize_status_key(str(requested_status))
@@ -846,6 +907,19 @@ def update_proposal_status(username=None, proposal_id=None, user_id=None, email=
             except Exception as comp_err:
                 print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id}: {comp_err}")
 
+            log_finance_audit_async(
+                user_id=resolved_user_id,
+                username=username,
+                entity_type='proposal',
+                entity_id=str(proposal_id),
+                action_type='STATUS_CHANGE',
+                changes=[{'field': 'status', 'old': old_status, 'new': status_to_store}],
+            )
+            try:
+                evaluate_proposal_compliance(proposal_id=proposal_id)
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id}: {comp_err}")
+
             return jsonify({'detail': 'Status updated', 'status': status_to_store}), 200
     except Exception as e:
         print(f"❌ Error updating proposal status: {e}")
@@ -894,6 +968,7 @@ def delete_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 requester_role = None
             requester_role = (requester_role or '').strip().lower()
             is_admin = requester_role in ['admin', 'ceo']
+            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
             is_finance = requester_role.startswith('finance') or requester_role in ['finance']
 
             # Verify proposal exists and ownership (unless admin)
@@ -1033,11 +1108,11 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
             params = [proposal_id]
 
             # Non-admins can only read their own proposals, OR any proposal in
-            # "Changes Requested" state (so finance/manager can open it to edit).
+            # "Changes Requested" / "Resubmitted" state (so manager/creator can open it to edit).
             if not is_admin and not is_finance and owner_col:
                 where_clause += (
                     f" AND ({owner_col}::text = %s::text"
-                    f" OR status IN ('Changes Requested', 'changes requested', 'Resubmitted', 'resubmitted'))"
+                    " OR status IN ('Changes Requested', 'changes requested', 'Resubmitted', 'resubmitted'))"
                 )
                 params.append(str(resolved_user_id))
 

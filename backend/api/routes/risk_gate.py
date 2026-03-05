@@ -150,10 +150,19 @@ def _build_kb_citations(conn, issues: list) -> list:
 def analyze(username=None):
     """Risk Gate analyze endpoint (persists a run for override/audit support)."""
     try:
-        data = request.get_json()
-        proposal_id = data.get("proposal_id")
-        if not proposal_id:
+        data = request.get_json(force=True, silent=True) or {}
+        proposal_id = (
+            data.get("proposal_id")
+            or data.get("proposalId")
+            or data.get("id")
+        )
+        if proposal_id is None or str(proposal_id).strip() == "":
             return {"detail": "proposal_id is required"}, 400
+
+        try:
+            proposal_id = int(str(proposal_id).strip())
+        except Exception:
+            return {"detail": "proposal_id must be an integer"}, 400
 
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
