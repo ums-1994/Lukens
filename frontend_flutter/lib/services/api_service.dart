@@ -1,70 +1,13 @@
 // ignore_for_file: deprecated_member_use
 
 import 'dart:convert';
-import 'dart:js' as js;
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-// ignore: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
 
 class ApiService {
-  // Get API URL from JavaScript config or use default
+  // Get API URL: always use Render production backend
   static String get baseUrl {
-    if (kIsWeb) {
-      try {
-        // Honor USE_LOCAL_API first (set in index.html for local dev)
-        final useLocal = js.context['USE_LOCAL_API'];
-        if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
-          print('🌐 ApiService: Using local API URL (USE_LOCAL_API): http://127.0.0.1:5000');
-          return 'http://127.0.0.1:5000';
-        }
-        // If the user explicitly overrides the API URL for local dev, honor it.
-        final explicitAppUrl = js.context['APP_API_URL'];
-        if (explicitAppUrl != null &&
-            explicitAppUrl.toString().trim().isNotEmpty) {
-          final url = explicitAppUrl.toString().replaceAll('"', '').trim();
-          print('🌐 ApiService: Using API URL from APP_API_URL: $url');
-          return url;
-        }
-
-        final explicitEnvUrl = js.context['REACT_APP_API_URL'];
-        if (explicitEnvUrl != null &&
-            explicitEnvUrl.toString().trim().isNotEmpty) {
-          final url = explicitEnvUrl.toString().replaceAll('"', '').trim();
-          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
-          return url;
-        }
-
-        // Try to get from window.APP_CONFIG.API_URL
-        final config = js.context['APP_CONFIG'];
-        if (config != null) {
-          final configObj = config as js.JsObject;
-          final apiUrl = configObj['API_URL'];
-          if (apiUrl != null && apiUrl.toString().trim().isNotEmpty) {
-            final url = apiUrl.toString().replaceAll('"', '').trim();
-            print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
-            return url;
-          }
-        }
-      } catch (e) {
-        print('⚠️ ApiService: Could not read API URL from config: $e');
-      }
-    }
-    // Check if we're in production (not localhost)
-    if (kIsWeb) {
-      final hostname = html.window.location.hostname;
-      if (hostname != null &&
-          (hostname.contains('netlify.app') || hostname.contains('onrender.com'))) {
-        print('🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-        return 'https://lukens-wp8w.onrender.com';
-      }
-      // When on localhost with no override, use local backend so dev works
-      if (hostname == 'localhost' || hostname == '127.0.0.1') {
-        print('🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:5000');
-        return 'http://127.0.0.1:5000';
-      }
-    }
-    print('🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
+    print(
+        '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';
   }
 
@@ -767,8 +710,15 @@ class ApiService {
         if (str.isEmpty) return;
         if (key == 'id' || key == 'title') return;
 
-        if (['clientName', 'clientEmail', 'projectType', 'estimatedValue', 'timeline', 'selectedModules', 'moduleContents']
-            .contains(key)) {
+        if ([
+          'clientName',
+          'clientEmail',
+          'projectType',
+          'estimatedValue',
+          'timeline',
+          'selectedModules',
+          'moduleContents'
+        ].contains(key)) {
           return;
         }
         sections[key] = str;
