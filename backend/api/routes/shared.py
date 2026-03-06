@@ -200,7 +200,7 @@ def get_notifications(username=None, user_id=None, email=None):
                     print(f"⚠️ Error verifying user_id: {e}, but trusting decorator verification")
                     found_user_id = user_id
             
-            # If not found, try email lookup (with retry for transaction visibility)
+            # If not found, try email lookup (exact then ILIKE for case-insensitive)
             if not found_user_id and email:
                 print(f"🔍 Looking up user by email: {email}")
                 for attempt in range(3):
@@ -210,6 +210,12 @@ def get_notifications(username=None, user_id=None, email=None):
                         if user:
                             found_user_id = user['id']
                             print(f"✅ Found user_id {found_user_id} by email: {email}")
+                            break
+                        cursor.execute('SELECT id FROM users WHERE email ILIKE %s', (email,))
+                        user = cursor.fetchone()
+                        if user:
+                            found_user_id = user['id']
+                            print(f"✅ Found user_id {found_user_id} by email ILIKE: {email}")
                             break
                         if attempt < 2:
                             import time
@@ -221,7 +227,7 @@ def get_notifications(username=None, user_id=None, email=None):
                             import time
                             time.sleep(0.05)
             
-            # If email lookup failed, try username (same as user profile endpoint)
+            # If email lookup failed, try username (exact then ILIKE so manager/finance always resolve)
             if not found_user_id and username:
                 print(f"🔍 Looking up user by username: {username}")
                 cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
@@ -229,6 +235,12 @@ def get_notifications(username=None, user_id=None, email=None):
                 if user:
                     found_user_id = user['id']
                     print(f"✅ Found user_id {found_user_id} by username: {username}")
+                if not found_user_id:
+                    cursor.execute('SELECT id FROM users WHERE username ILIKE %s', (username,))
+                    user = cursor.fetchone()
+                    if user:
+                        found_user_id = user['id']
+                        print(f"✅ Found user_id {found_user_id} by username ILIKE: {username}")
             
             # Fallback: use decorator user_id so manager/finance always see their notifications
             if not found_user_id and decorator_user_id:

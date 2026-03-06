@@ -224,6 +224,8 @@ def create_notification(
                 add_column('proposal_id', proposal_id)
             if 'metadata' in column_names:
                 add_column('metadata', metadata_json)
+            if 'is_read' in column_names:
+                add_column('is_read', False)
 
             placeholders = ', '.join(['%s'] * len(columns))
             columns_sql = ', '.join(columns)
@@ -273,6 +275,7 @@ def create_notification(
 
     except Exception as e:
         print(f"⚠️ Failed to create notification: {e}")
+        traceback.print_exc()
 
 
 def notify_proposal_collaborators(

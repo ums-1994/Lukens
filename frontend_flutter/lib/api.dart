@@ -304,7 +304,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> fetchNotifications() async {
-    if (authToken == null) {
+    // Use effective token (synced authToken or AuthService.token) so Firebase users always fetch
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) {
       notifications = [];
       unreadNotifications = 0;
       notifyListeners();
@@ -334,12 +336,20 @@ class AppState extends ChangeNotifier {
         unreadNotifications = data is Map && data['unread_count'] is int
             ? data['unread_count'] as int
             : 0;
+        // Debug: confirm API response for notification bell
+        final uid = (currentUser is Map<String, dynamic>) ? (currentUser as Map<String, dynamic>)['id'] : null;
+        print(
+            'Dashboard - Notifications API: ${response.statusCode}, count: ${rawNotifications.length}, unread: $unreadNotifications (user_id: $uid)');
       } else {
         print(
             'Error fetching notifications: ${response.statusCode} - ${response.body}');
+        notifications = [];
+        unreadNotifications = 0;
       }
     } catch (e) {
       print('Error fetching notifications: $e');
+      notifications = [];
+      unreadNotifications = 0;
     }
 
     notifyListeners();
