@@ -275,17 +275,34 @@ def get_notifications(username=None, user_id=None, email=None):
                     print(f"⚠️ Notifications query failed (returning empty): {notif_err2}")
                     notifications = []
 
-            # Calculate unread count for the client badge / UX
+            # Calculate unread count and build JSON-safe notification list
             unread_count = 0
+            notifications_list = []
             for n in notifications:
                 try:
                     if not n.get('is_read'):
                         unread_count += 1
                 except Exception:
                     pass
+                row = dict(n)
+                # Ensure JSON-serializable values (e.g. datetime, Decimal)
+                safe = {}
+                for k, v in row.items():
+                    if v is None:
+                        safe[k] = None
+                    elif hasattr(v, 'isoformat'):
+                        safe[k] = v.isoformat()
+                    elif hasattr(v, '__float__') and not isinstance(v, (bool, int)):
+                        try:
+                            safe[k] = float(v)
+                        except (TypeError, ValueError):
+                            safe[k] = str(v)
+                    else:
+                        safe[k] = v
+                notifications_list.append(safe)
 
             return {
-                'notifications': [dict(n) for n in notifications],
+                'notifications': notifications_list,
                 'unread_count': int(unread_count),
             }, 200
             

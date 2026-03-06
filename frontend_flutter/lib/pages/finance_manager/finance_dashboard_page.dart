@@ -551,8 +551,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     final notificationType = notification['notification_type']?.toString();
 
     if (notificationType == 'changes_requested' ||
-        notificationType == 'proposal_pending_finance_review') {
-      // Finance: open proposal (update pricing and submit, or submit to admin after manager resubmitted)
+        notificationType == 'proposal_pending_finance_review' ||
+        notificationType == 'proposal_sent_to_finance') {
+      // Finance: open proposal (new for pricing, changes requested, or submit to admin)
       final proposalId = notification['proposal_id'];
       if (proposalId != null) {
         Navigator.of(context).pop();
@@ -1064,9 +1065,12 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             ),
           );
 
+          final statusDropdownValue = const ['all', 'pending', 'approved', 'other'].contains(_statusFilter)
+              ? _statusFilter
+              : 'all';
           final statusDropdown = Expanded(
             child: DropdownButtonFormField<String>(
-              initialValue: _statusFilter,
+              value: statusDropdownValue,
               dropdownColor: PremiumTheme.darkBg1,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
@@ -1886,16 +1890,21 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             ),
           );
 
+          final statusFilterValue = const ['all', 'pending', 'approved', 'other'].contains(_statusFilter)
+              ? _statusFilter
+              : _statusFilter == 'Rejected' || _statusFilter == 'rejected'
+                  ? 'other'
+                  : 'all';
           final status = DropdownButtonFormField<String>(
-            initialValue: _statusFilter,
+            value: statusFilterValue,
             dropdownColor: PremiumTheme.darkBg1,
             items: const [
-              DropdownMenuItem(value: 'All', child: Text('All statuses')),
-              DropdownMenuItem(value: 'Pending', child: Text('Pending')),
-              DropdownMenuItem(value: 'Approved', child: Text('Approved')),
-              DropdownMenuItem(value: 'Rejected', child: Text('Rejected')),
+              DropdownMenuItem(value: 'all', child: Text('All statuses')),
+              DropdownMenuItem(value: 'pending', child: Text('Pending')),
+              DropdownMenuItem(value: 'approved', child: Text('Approved')),
+              DropdownMenuItem(value: 'other', child: Text('Other')),
             ],
-            onChanged: (v) => setState(() => _statusFilter = v ?? 'All'),
+            onChanged: (v) => setState(() => _statusFilter = v ?? 'all'),
             decoration: InputDecoration(
               filled: true,
               fillColor: Colors.white.withValues(alpha: 0.04),
@@ -1948,7 +1957,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
             onPressed: () {
               setState(() {
                 _searchController.text = '';
-                _statusFilter = 'All';
+                _statusFilter = 'all';
                 _dateRange = null;
               });
             },

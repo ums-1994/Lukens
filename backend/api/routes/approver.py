@@ -1021,33 +1021,36 @@ def request_changes(username=None, proposal_id=None):
                 # 1) Notify the proposal creator (manager)
                 if creator_id is not None:
                     try:
-                        uid = int(creator_id)
-                        create_notification(
-                            user_id=uid,
-                            notification_type='changes_requested',
-                            title='Changes Requested - Coordination Required' if target == 'manager' else 'Financial Changes Requested',
-                            message=(
-                                f"Admin requested changes for '{proposal_title}'. Please coordinate with Finance Manager to update content and pricing."
-                                if target == 'manager'
-                                else f"Admin requested financial changes for '{proposal_title}'. Finance Manager will update pricing."
-                            ),
-                            proposal_id=proposal_id,
-                            metadata={
-                                'requested_by': approver_name,
-                                'target': target,
-                                'comments': comments,
-                                'manager_id': creator_id,
-                                'manager_name': manager_name,
-                                'manager_email': manager_email,
-                            }
-                        )
-                        notifications_created.append('creator')
-                        notified_user_ids.add(uid)
+                        resolved_creator_id = resolve_user_id(cursor, creator_id)
+                        uid = resolved_creator_id if resolved_creator_id is not None else (int(creator_id) if isinstance(creator_id, (int, float)) or (isinstance(creator_id, str) and creator_id.isdigit()) else None)
+                        if uid is not None:
+                            create_notification(
+                                user_id=uid,
+                                notification_type='changes_requested',
+                                title='Changes Requested - Coordination Required' if target == 'manager' else 'Financial Changes Requested',
+                                message=(
+                                    f"Admin requested changes for '{proposal_title}'. Please coordinate with Finance Manager to update content and pricing."
+                                    if target == 'manager'
+                                    else f"Admin requested financial changes for '{proposal_title}'. Finance Manager will update pricing."
+                                ),
+                                proposal_id=proposal_id,
+                                metadata={
+                                    'requested_by': approver_name,
+                                    'target': target,
+                                    'comments': comments,
+                                    'manager_id': creator_id,
+                                    'manager_name': manager_name,
+                                    'manager_email': manager_email,
+                                }
+                            )
+                            notifications_created.append('creator')
+                            notified_user_ids.add(int(uid))
                     except (TypeError, ValueError) as e:
                         print(f"⚠️ [request_changes] Skipping creator notification: invalid creator_id {creator_id}: {e}")
 
-                # 2) Notify the finance manager who sent this proposal to admin (if different from creator)
+                # 2) Notify the finance manager who sent this proposal to admin, or all finance users if not tracked
                 sent_to_admin_by = proposal.get('sent_to_admin_by')
+                finance_notified = False
                 if sent_to_admin_by is not None:
                     try:
                         uid = int(sent_to_admin_by)
@@ -1072,8 +1075,46 @@ def request_changes(username=None, proposal_id=None):
                                 }
                             )
                             notifications_created.append('finance')
+                            finance_notified = True
+                            notified_user_ids.add(uid)
                     except (TypeError, ValueError) as e:
                         print(f"⚠️ [request_changes] Skipping sent_to_admin_by notification: {e}")
+                # Fallback: if no finance user was notified (e.g. sent_to_admin_by not set), notify all finance users
+                if not finance_notified:
+                    cursor.execute(
+                        """
+                        SELECT id FROM users WHERE role ILIKE '%finance%'
+                        """
+                    )
+                    finance_rows = cursor.fetchall()
+                    for row in finance_rows:
+                        try:
+                            fid = row.get('id') if isinstance(row, dict) else row[0]
+                            uid = int(fid)
+                            if uid in notified_user_ids:
+                                continue
+                            create_notification(
+                                user_id=uid,
+                                notification_type='changes_requested',
+                                title='Changes Requested - Finance Coordination' if target == 'manager' else 'Financial Changes Requested',
+                                message=(
+                                    f"Admin requested changes for '{proposal_title}'. Please coordinate with the proposal creator."
+                                    if target == 'manager'
+                                    else f"Admin requested financial changes for '{proposal_title}'. Please update pricing and resubmit."
+                                ),
+                                proposal_id=proposal_id,
+                                metadata={
+                                    'requested_by': approver_name,
+                                    'target': 'finance_coordination' if target == 'manager' else 'finance_only',
+                                    'comments': comments,
+                                    'manager_id': creator_id,
+                                    'manager_name': manager_name,
+                                    'manager_email': manager_email,
+                                }
+                            )
+                            notifications_created.append('finance')
+                        except (TypeError, ValueError, KeyError) as e:
+                            print(f"⚠️ [request_changes] Skipping finance fallback notification: {e}")
             
                 # Add comment to proposal for audit trail
                 if approver_id is not None:

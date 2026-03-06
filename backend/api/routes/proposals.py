@@ -894,6 +894,27 @@ def update_proposal_status(username=None, proposal_id=None, user_id=None, email=
             )
             conn.commit()
 
+            # When manager sends proposal to finance (Draft -> Pricing In Progress), notify all finance users
+            if current_key == 'draft' and target_key == 'pricing in progress':
+                try:
+                    cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
+                    title_row = cursor.fetchone()
+                    proposal_title = (title_row[0] if title_row and title_row[0] else f'Proposal {proposal_id}')
+                    cursor.execute("SELECT id FROM users WHERE role ILIKE '%finance%'")
+                    finance_users = cursor.fetchall()
+                    for row in finance_users:
+                        fid = row[0]
+                        create_notification(
+                            user_id=fid,
+                            notification_type='proposal_sent_to_finance',
+                            title='New proposal for pricing',
+                            message=f"Manager sent proposal '{proposal_title}' to Finance for pricing. Please add pricing and review.",
+                            proposal_id=proposal_id,
+                            metadata={'new_status': status_to_store, 'proposal_title': proposal_title},
+                        )
+                except Exception as notify_err:
+                    print(f"⚠️ [proposals] Failed to notify finance for new proposal: {notify_err}")
+
             log_finance_audit_async(
                 user_id=resolved_user_id,
                 username=username,

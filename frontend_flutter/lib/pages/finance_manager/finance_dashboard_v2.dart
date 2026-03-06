@@ -979,8 +979,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     final notificationType = notification['notification_type']?.toString();
 
     if (notificationType == 'changes_requested' ||
-        notificationType == 'proposal_pending_finance_review') {
-      // Finance: open proposal (update pricing and submit, or submit to admin after manager resubmitted)
+        notificationType == 'proposal_pending_finance_review' ||
+        notificationType == 'proposal_sent_to_finance') {
+      // Finance: open proposal (new for pricing, changes requested, or submit to admin)
       final proposalId = notification['proposal_id'];
       if (proposalId != null) {
         Navigator.of(context).pop();
@@ -2156,9 +2157,15 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
             ),
           );
 
+          const statusDropdownItems = ['all', 'pending_review', 'in_pricing', 'released', 'signed'];
+          final statusDropdownValue = statusDropdownItems.contains(_statusFilter)
+              ? _statusFilter
+              : _statusFilter == 'pending'
+                  ? 'pending_review'
+                  : 'all';
           final statusDropdown = Expanded(
             child: DropdownButtonFormField<String>(
-              initialValue: _statusFilter,
+              value: statusDropdownValue,
               dropdownColor: PremiumTheme.darkBg1,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
