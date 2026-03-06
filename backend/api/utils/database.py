@@ -22,6 +22,20 @@ load_dotenv(dotenv_path=_backend_dir / ".env")
 
 
 def _build_db_config_from_env():
+    prefer_local = os.getenv('DB_PREFER_LOCAL', 'false').lower() == 'true'
+    if prefer_local:
+        local_config = {
+            'host': os.getenv('LOCAL_DB_HOST', 'localhost'),
+            'database': os.getenv('LOCAL_DB_NAME', os.getenv('DB_NAME', 'proposal_db')),
+            'user': os.getenv('LOCAL_DB_USER', os.getenv('DB_USER', 'postgres')),
+            'password': os.getenv('LOCAL_DB_PASSWORD', os.getenv('DB_PASSWORD', '')),
+            'port': int(os.getenv('LOCAL_DB_PORT', os.getenv('DB_PORT', '5432'))),
+        }
+        local_sslmode = os.getenv('LOCAL_DB_SSLMODE')
+        if local_sslmode:
+            local_config['sslmode'] = local_sslmode
+        return local_config
+
     database_url = os.getenv('DATABASE_URL')
     if database_url:
         parsed = urlparse(database_url)
