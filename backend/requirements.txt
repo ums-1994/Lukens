@@ -5,10 +5,10 @@ python-dotenv==1.0.0
 asgiref==3.8.1
 
 # FastAPI stack
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-pydantic==2.8.2
-pydantic-core==2.20.1
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.3
+pydantic-core==2.14.6
 reportlab==4.0.9
 requests==2.31.0
 openai==0.28.0
