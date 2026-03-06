@@ -247,6 +247,7 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add is_email_verified column (may already exist): {e}")
+            conn.rollback()
 
         # Proposals table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
@@ -389,6 +390,7 @@ def init_pg_schema():
             """)
         except Exception as e:
             print(f"[WARN] Could not update proposals_status_check constraint: {e}")
+            conn.rollback()
 
         # Ensure client_email column exists for storing client contact email
         try:
@@ -398,46 +400,52 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add client_email column to proposals (may already exist or be incompatible): {e}")
+            conn.rollback()
 
         try:
             cursor.execute('''
-                ALTER TABLE proposals 
+                ALTER TABLE proposals
                 ADD COLUMN IF NOT EXISTS opportunity_id VARCHAR(50)
             ''')
         except Exception as e:
             print(f"[WARN] Could not add opportunity_id column to proposals (may already exist or be incompatible): {e}")
+            conn.rollback()
 
         try:
             cursor.execute('''
-                ALTER TABLE proposals 
+                ALTER TABLE proposals
                 ADD COLUMN IF NOT EXISTS engagement_stage VARCHAR(50)
             ''')
         except Exception as e:
             print(f"[WARN] Could not add engagement_stage column to proposals (may already exist or be incompatible): {e}")
+            conn.rollback()
 
         try:
             cursor.execute('''
-                ALTER TABLE proposals 
+                ALTER TABLE proposals
                 ADD COLUMN IF NOT EXISTS engagement_opened_at TIMESTAMP
             ''')
         except Exception as e:
             print(f"[WARN] Could not add engagement_opened_at column to proposals (may already exist or be incompatible): {e}")
+            conn.rollback()
 
         try:
             cursor.execute('''
-                ALTER TABLE proposals 
+                ALTER TABLE proposals
                 ADD COLUMN IF NOT EXISTS engagement_target_close_at TIMESTAMP
             ''')
         except Exception as e:
             print(f"[WARN] Could not add engagement_target_close_at column to proposals (may already exist or be incompatible): {e}")
+            conn.rollback()
 
         try:
             cursor.execute('''
-                ALTER TABLE proposals 
+                ALTER TABLE proposals
                 ADD COLUMN IF NOT EXISTS client_id INTEGER
             ''')
         except Exception as e:
             print(f"[WARN] Could not add client_id column to proposals (may already exist or be incompatible): {e}")
+            conn.rollback()
 
         try:
             cursor.execute('''
@@ -446,6 +454,7 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not create idx_proposals_client_id index (may already exist or be incompatible): {e}")
+            conn.rollback()
 
         try:
             cursor.execute('''
@@ -454,6 +463,7 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add sent_to_admin_by column to proposals: {e}")
+            conn.rollback()
 
         # Content library table
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (
@@ -503,16 +513,25 @@ def init_pg_schema():
         FOREIGN KEY (created_by) REFERENCES users(id)
         )''')
 
-        # Ensure proposals.client_id has a foreign key to clients.id
+        # Ensure proposals.client_id has a foreign key to clients.id (only if not already present)
         try:
             cursor.execute('''
-                ALTER TABLE proposals
-                ADD CONSTRAINT proposals_client_id_fkey
-                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+                DO $$
+                BEGIN
+                  IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'proposals_client_id_fkey'
+                  ) THEN
+                    ALTER TABLE proposals
+                    ADD CONSTRAINT proposals_client_id_fkey
+                    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL;
+                  END IF;
+                END $$;
             ''')
         except Exception as e:
             print(f"[WARN] Could not add proposals.client_id foreign key constraint (may already exist or be incompatible): {e}")
-        
+            conn.rollback()
+
         # Add company_name column if it doesn't exist (migration for existing databases)
         try:
             cursor.execute('''
@@ -533,9 +552,10 @@ def init_pg_schema():
                 ''')
             except Exception:
                 # If there are still NULLs, just leave it nullable
-                pass
+                conn.rollback()
         except Exception as e:
             print(f"[WARN] Could not add company_name column (may already exist): {e}")
+            conn.rollback()
 
         # Add contact_person column if it doesn't exist (migration for existing databases)
         try:
@@ -545,6 +565,7 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add contact_person column (may already exist): {e}")
+            conn.rollback()
 
         try:
             cursor.execute('''
@@ -553,6 +574,7 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add region column (may already exist): {e}")
+            conn.rollback()
 
         # Proposal versions table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_versions (
@@ -725,6 +747,7 @@ def init_pg_schema():
                 print("[OK] Migration complete: user_id is now INTEGER")
         except Exception as e:
             print(f"[WARN] Could not migrate user_id column type: {e}")
+            conn.rollback()
             # Continue anyway - the text comparison in queries will handle it
 
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_notifications_user 
