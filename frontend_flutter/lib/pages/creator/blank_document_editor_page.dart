@@ -2671,7 +2671,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   /// Manager: resubmit a proposal that is in "Changes Requested" state.
-  /// Calls the same send-for-approval endpoint which sets status → Resubmitted.
+  /// Sends to Finance first; Finance will then submit to Admin.
   Future<void> _resubmitChanges() async {
     if (_hasUnsavedChanges) await _saveToBackend();
     if (_savedProposalId == null) {
@@ -2691,7 +2691,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         title: const Text('Resubmit Proposal'),
         content: const Text(
           'You are about to resubmit this proposal after making the requested changes. '
-          'The admin will be notified.',
+          'It will be sent to Finance for review; Finance will then submit it to Admin.',
         ),
         actions: [
           TextButton(
@@ -2723,7 +2723,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('✅ Changes resubmitted to admin successfully!'),
+              content: Text('✅ Sent to Finance for review. They will submit to Admin.'),
               backgroundColor: Color(0xFF2ECC71),
               duration: Duration(seconds: 2),
             ),
@@ -2742,7 +2742,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
-  /// Finance: submit pricing changes back to admin after "Changes Requested".
+  /// Finance: submit to admin (from "Changes Requested" or "Pending Finance Review" after manager resubmitted).
   Future<void> _financeSubmitChanges() async {
     if (_hasUnsavedChanges) await _saveToBackend();
     if (_savedProposalId == null) {
@@ -2756,12 +2756,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
       return;
     }
+    final isPendingFinance = (_proposalStatus ?? '').toString().toLowerCase().trim() == 'pending finance review';
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Submit Pricing Changes'),
-        content: const Text(
-          'You are about to submit your updated pricing back to the admin for review.',
+        title: Text(isPendingFinance ? 'Submit to Admin' : 'Submit Pricing Changes'),
+        content: Text(
+          isPendingFinance
+              ? 'Submit this proposal to Admin for approval.'
+              : 'You are about to submit your updated pricing back to the admin for review.',
         ),
         actions: [
           TextButton(
@@ -2792,10 +2795,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         setState(() => _proposalStatus = data['status']);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Pricing changes submitted to admin!'),
-              backgroundColor: Color(0xFF2ECC71),
-              duration: Duration(seconds: 2),
+            SnackBar(
+              content: Text(isPendingFinance ? '✅ Submitted to Admin!' : '✅ Pricing changes submitted to admin!'),
+              backgroundColor: const Color(0xFF2ECC71),
+              duration: const Duration(seconds: 2),
             ),
           );
           Navigator.of(context).pop();
@@ -3952,10 +3955,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // In collaborator mode, hide navigation sidebar but allow editing
     final isCollaboratorMode = widget.isCollaborator;
     final _statusForSidebar = (_proposalStatus ?? '').toLowerCase().trim();
-    // Show the full sidebar to finance when the proposal is returned for changes
+    // Show the full sidebar to finance when the proposal is with them (changes requested or pending finance review)
     // so they can access Content Library and insert blocks like any other editor.
     final hideLeftSidebar = context.watch<RoleService>().isFinance() &&
-        _statusForSidebar != 'changes requested';
+        _statusForSidebar != 'changes requested' &&
+        _statusForSidebar != 'pending finance review';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -4826,6 +4830,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final isDraftStatus = statusKey.isEmpty || statusKey == 'draft';
     final isPricingStatus = statusKey == 'pricing in progress';
     final isChangesRequested = statusKey == 'changes requested';
+    final isPendingFinanceReview = statusKey == 'pending finance review';
 
     return Container(
       color: Colors.white,
@@ -5204,12 +5209,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           if (isManagerRole && isChangesRequested) const SizedBox(width: 12),
 
-          // Finance: submit pricing changes back to admin
-          if (isFinanceRole && isChangesRequested)
+          // Finance: submit to admin (from "Changes Requested" or "Pending Finance Review" after manager resubmitted)
+          if (isFinanceRole && (isChangesRequested || isPendingFinanceReview))
             ElevatedButton.icon(
               onPressed: _financeSubmitChanges,
               icon: const Icon(Icons.check_circle_outline, size: 16),
-              label: const Text('Submit Changes'),
+              label: Text(isPendingFinanceReview ? 'Submit to Admin' : 'Submit Changes'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2980B9),
                 foregroundColor: Colors.white,
@@ -5218,7 +5223,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
               ),
             ),
-          if (isFinanceRole && isChangesRequested) const SizedBox(width: 12),
+          if (isFinanceRole && (isChangesRequested || isPendingFinanceReview)) const SizedBox(width: 12),
 
           // Action buttons
           OutlinedButton.icon(

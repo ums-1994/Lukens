@@ -762,38 +762,54 @@ def send_for_approval(username=None, proposal_id=None, user_id=None, email=None)
             current_status = proposal[1] if len(proposal) > 1 else None
             is_resubmission = current_status and 'changes requested' in str(current_status).lower()
             
-            # Determine new status: "Resubmitted" if previously "Changes Requested", otherwise "Pending CEO Approval"
-            new_status = 'Resubmitted' if is_resubmission else 'Pending CEO Approval'
+            # Manager resubmission: go to Finance first, then Finance submits to Admin.
+            # First-time send: go directly to Admin (Pending CEO Approval).
+            if is_resubmission:
+                new_status = 'Pending Finance Review'
+                # Do not set sent_to_admin_by — manager sends to finance, not to admin
+            else:
+                new_status = 'Pending CEO Approval'
             
-            # Update status
-            cursor.execute(
-                f'''UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
-                (new_status, proposal_id)
-            )
+            # Update status; set sent_to_admin_by only when going to admin (first-time send)
+            try:
+                if is_resubmission:
+                    cursor.execute(
+                        f"""UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = %s""",
+                        (new_status, proposal_id)
+                    )
+                else:
+                    cursor.execute(
+                        f"""UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP,
+                            sent_to_admin_by = %s
+                            WHERE id = %s""",
+                        (new_status, user_id, proposal_id)
+                    )
+            except Exception:
+                cursor.execute(
+                    f'''UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
+                    (new_status, proposal_id)
+                )
             
-            # If resubmission, notify admin users
+            # If resubmission: notify finance (manager sent to finance; finance will submit to admin)
             if is_resubmission:
                 from api.utils.helpers import create_notification
                 
-                # Get proposal title for notification
                 cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
                 proposal_title_row = cursor.fetchone()
                 proposal_title = proposal_title_row[0] if proposal_title_row else f'Proposal {proposal_id}'
                 
-                # Get all admin users
                 cursor.execute(
-                    "SELECT id FROM users WHERE role ILIKE '%admin%' OR role ILIKE '%ceo%'"
+                    "SELECT id FROM users WHERE role ILIKE '%finance%'"
                 )
-                admin_users = cursor.fetchall()
-                
-                # Notify each admin
-                for admin_row in admin_users:
-                    admin_id = admin_row[0]
+                finance_users = cursor.fetchall()
+                for row in finance_users:
+                    fid = row[0]
                     create_notification(
-                        user_id=admin_id,
-                        notification_type='proposal_resubmitted',
-                        title='Proposal Resubmitted',
-                        message=f"Proposal '{proposal_title}' has been resubmitted after changes were requested.",
+                        user_id=fid,
+                        notification_type='proposal_pending_finance_review',
+                        title='Proposal ready for Finance review',
+                        message=f"Manager resubmitted proposal '{proposal_title}'. Please review and submit to Admin.",
                         proposal_id=proposal_id,
                         metadata={
                             'previous_status': current_status,
@@ -848,16 +864,24 @@ def finance_resubmit(username=None, proposal_id=None, user_id=None, email=None):
                 return {'detail': 'Proposal not found'}, 404
 
             current_status = (proposal.get('status') or '').strip()
-            if 'changes requested' not in current_status.lower():
+            status_lower = current_status.lower()
+            # Finance can submit to admin from: (1) Changes Requested (pricing updates), (2) Pending Finance Review (manager resubmitted → finance submits to admin)
+            if 'changes requested' not in status_lower and 'pending finance review' not in status_lower:
                 return {
-                    'detail': f'Proposal is not in "Changes Requested" state (current: {current_status})'
+                    'detail': f'Proposal must be in "Changes Requested" or "Pending Finance Review" (current: {current_status})'
                 }, 400
 
-            # Update status to Resubmitted
-            cursor.execute(
-                "UPDATE proposals SET status = 'Resubmitted', updated_at = NOW() WHERE id = %s",
-                (proposal_id,)
-            )
+            # Update status to Resubmitted and record who sent this proposal to admin (finance manager)
+            try:
+                cursor.execute(
+                    "UPDATE proposals SET status = 'Resubmitted', updated_at = NOW(), sent_to_admin_by = %s WHERE id = %s",
+                    (effective_user_id, proposal_id)
+                )
+            except Exception:
+                cursor.execute(
+                    "UPDATE proposals SET status = 'Resubmitted', updated_at = NOW() WHERE id = %s",
+                    (proposal_id,)
+                )
 
             proposal_title = proposal.get('title') or f'Proposal {proposal_id}'
 

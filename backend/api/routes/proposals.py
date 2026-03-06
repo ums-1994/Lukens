@@ -1108,11 +1108,11 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
             params = [proposal_id]
 
             # Non-admins can only read their own proposals, OR any proposal in
-            # "Changes Requested" / "Resubmitted" state (so manager/creator can open it to edit).
+            # "Changes Requested" / "Pending Finance Review" / "Resubmitted" (manager/creator can open to edit).
             if not is_admin and not is_finance and owner_col:
                 where_clause += (
                     f" AND ({owner_col}::text = %s::text"
-                    " OR status IN ('Changes Requested', 'changes requested', 'Resubmitted', 'resubmitted'))"
+                    " OR status IN ('Changes Requested', 'changes requested', 'Pending Finance Review', 'pending finance review', 'Resubmitted', 'resubmitted'))"
                 )
                 params.append(str(resolved_user_id))
 

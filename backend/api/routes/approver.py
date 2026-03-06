@@ -925,10 +925,13 @@ def request_changes(username=None, proposal_id=None):
                     'detail': 'Proposals table is missing owner column; cannot determine creator for change request.'
                 }, 500
 
-            # Get proposal details using resolved owner column
+            # Get proposal details (creator + who sent to admin, if tracked)
+            select_cols = f"id, title, status, {owner_col} AS creator_id"
+            if 'sent_to_admin_by' in existing_columns:
+                select_cols += ", sent_to_admin_by"
             cursor.execute(
                 f"""
-                SELECT id, title, status, {owner_col} AS creator_id
+                SELECT {select_cols}
                 FROM proposals 
                 WHERE id = %s
                 """,
@@ -1011,21 +1014,27 @@ def request_changes(username=None, proposal_id=None):
             
             proposal_title = proposal.get('title', f'Proposal {proposal_id}')
             
-            # Notify based on target (wrap so missing tables/columns don't cause 500)
+            # Notify: (1) manager who created the proposal, (2) finance manager who sent this proposal to admin
             notifications_created = []
+            notified_user_ids = set()
             try:
-                if target == 'manager':
-                    # Notify the proposal creator (manager who made the proposal)
-                    if creator_id:
+                # 1) Notify the proposal creator (manager)
+                if creator_id is not None:
+                    try:
+                        uid = int(creator_id)
                         create_notification(
-                            user_id=creator_id,
+                            user_id=uid,
                             notification_type='changes_requested',
-                            title='Changes Requested - Coordination Required',
-                            message=f"Admin requested changes for '{proposal_title}'. Please coordinate with Finance Manager to update content and pricing.",
+                            title='Changes Requested - Coordination Required' if target == 'manager' else 'Financial Changes Requested',
+                            message=(
+                                f"Admin requested changes for '{proposal_title}'. Please coordinate with Finance Manager to update content and pricing."
+                                if target == 'manager'
+                                else f"Admin requested financial changes for '{proposal_title}'. Finance Manager will update pricing."
+                            ),
                             proposal_id=proposal_id,
                             metadata={
                                 'requested_by': approver_name,
-                                'target': 'manager',
+                                'target': target,
                                 'comments': comments,
                                 'manager_id': creator_id,
                                 'manager_name': manager_name,
@@ -1033,81 +1042,38 @@ def request_changes(username=None, proposal_id=None):
                             }
                         )
                         notifications_created.append('creator')
-                
-                    # Notify all finance users (exclude creator so they don't get a duplicate)
-                    cursor.execute(
-                        """
-                        SELECT id FROM users 
-                        WHERE role ILIKE '%finance%'
-                        AND id != COALESCE(%s, -1)
-                        """,
-                        (creator_id,)
-                    )
-                    finance_users = cursor.fetchall()
-                    for finance_row in finance_users:
-                        fid = finance_row['id']
-                        create_notification(
-                            user_id=fid,
-                            notification_type='changes_requested',
-                            title='Changes Requested - Finance Coordination',
-                            message=f"Admin requested changes for '{proposal_title}'. Please coordinate with the proposal creator.",
-                            proposal_id=proposal_id,
-                            metadata={
-                                'requested_by': approver_name,
-                                'target': 'finance_coordination',
-                                'comments': comments,
-                                'manager_id': creator_id,
-                                'manager_name': manager_name,
-                                'manager_email': manager_email,
-                            }
-                        )
-                        notifications_created.append('finance')
-                    
-                elif target == 'finance':
-                    # Notify finance users
-                    cursor.execute(
-                        """
-                        SELECT id FROM users 
-                        WHERE role ILIKE '%finance%'
-                        """
-                    )
-                    finance_users = cursor.fetchall()
-                
-                    for finance_user in finance_users:
-                        create_notification(
-                            user_id=finance_user['id'],
-                            notification_type='changes_requested',
-                            title='Financial Changes Requested',
-                            message=f"Admin requested financial changes for '{proposal_title}'. Please update pricing and resubmit.",
-                            proposal_id=proposal_id,
-                            metadata={
-                                'requested_by': approver_name,
-                                'target': 'finance_only',
-                                'comments': comments,
-                                'manager_id': creator_id,
-                                'manager_name': manager_name,
-                                'manager_email': manager_email,
-                            }
-                        )
-                
-                    # Also notify creator so they know finance is working on it
-                    if creator_id:
-                        create_notification(
-                            user_id=creator_id,
-                            notification_type='changes_requested',
-                            title='Financial Changes Requested',
-                            message=f"Admin requested financial changes for '{proposal_title}'. Finance Manager will update pricing.",
-                            proposal_id=proposal_id,
-                            metadata={
-                                'requested_by': approver_name,
-                                'target': 'finance_only',
-                                'comments': comments,
-                                'manager_id': creator_id,
-                                'manager_name': manager_name,
-                                'manager_email': manager_email,
-                            }
-                        )
-                        notifications_created.extend(['finance', 'creator'])
+                        notified_user_ids.add(uid)
+                    except (TypeError, ValueError) as e:
+                        print(f"⚠️ [request_changes] Skipping creator notification: invalid creator_id {creator_id}: {e}")
+
+                # 2) Notify the finance manager who sent this proposal to admin (if different from creator)
+                sent_to_admin_by = proposal.get('sent_to_admin_by')
+                if sent_to_admin_by is not None:
+                    try:
+                        uid = int(sent_to_admin_by)
+                        if uid not in notified_user_ids:
+                            create_notification(
+                                user_id=uid,
+                                notification_type='changes_requested',
+                                title='Changes Requested - Finance Coordination' if target == 'manager' else 'Financial Changes Requested',
+                                message=(
+                                    f"Admin requested changes for '{proposal_title}'. Please coordinate with the proposal creator."
+                                    if target == 'manager'
+                                    else f"Admin requested financial changes for '{proposal_title}'. Please update pricing and resubmit."
+                                ),
+                                proposal_id=proposal_id,
+                                metadata={
+                                    'requested_by': approver_name,
+                                    'target': 'finance_coordination' if target == 'manager' else 'finance_only',
+                                    'comments': comments,
+                                    'manager_id': creator_id,
+                                    'manager_name': manager_name,
+                                    'manager_email': manager_email,
+                                }
+                            )
+                            notifications_created.append('finance')
+                    except (TypeError, ValueError) as e:
+                        print(f"⚠️ [request_changes] Skipping sent_to_admin_by notification: {e}")
             
                 # Add comment to proposal for audit trail
                 if approver_id is not None:

@@ -545,6 +545,8 @@ def init_pg_schema():
                         'Priced',
                         'Changes Requested',
                         'changes requested',
+                        'Pending Finance Review',
+                        'pending finance review',
                         'Resubmitted',
                         'resubmitted',
                         'Sent to Client',

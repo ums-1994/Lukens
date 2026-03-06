@@ -372,6 +372,8 @@ def init_pg_schema():
                         'Priced',
                         'Changes Requested',
                         'changes requested',
+                        'Pending Finance Review',
+                        'pending finance review',
                         'Resubmitted',
                         'resubmitted',
                         'Sent to Client',
@@ -444,6 +446,14 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not create idx_proposals_client_id index (may already exist or be incompatible): {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE proposals
+                ADD COLUMN IF NOT EXISTS sent_to_admin_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add sent_to_admin_by column to proposals: {e}")
 
         # Content library table
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (

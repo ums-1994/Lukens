@@ -978,8 +978,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     // Handle notification tap based on type
     final notificationType = notification['notification_type']?.toString();
 
-    if (notificationType == 'changes_requested') {
-      // Finance: open the proposal in edit mode so they can update pricing and submit back
+    if (notificationType == 'changes_requested' ||
+        notificationType == 'proposal_pending_finance_review') {
+      // Finance: open proposal (update pricing and submit, or submit to admin after manager resubmitted)
       final proposalId = notification['proposal_id'];
       if (proposalId != null) {
         Navigator.of(context).pop();
