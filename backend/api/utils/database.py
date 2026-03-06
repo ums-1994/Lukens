@@ -640,15 +640,69 @@ def init_pg_schema():
         created_by INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         section_index INTEGER,
+        section_name TEXT,
         highlighted_text TEXT,
+        start_offset INTEGER,
+        end_offset INTEGER,
+        parent_id INTEGER,
+        block_type VARCHAR(50),
+        block_id TEXT,
         status VARCHAR(50) DEFAULT 'open',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         resolved_by INTEGER,
         resolved_at TIMESTAMP,
         FOREIGN KEY (proposal_id) REFERENCES proposals(id),
         FOREIGN KEY (created_by) REFERENCES users(id),
-        FOREIGN KEY (resolved_by) REFERENCES users(id)
+        FOREIGN KEY (resolved_by) REFERENCES users(id),
+        FOREIGN KEY (parent_id) REFERENCES document_comments(id) ON DELETE CASCADE
         )''')
+
+        # Migrations for existing databases
+        try:
+            cursor.execute('''
+                ALTER TABLE document_comments
+                ADD COLUMN IF NOT EXISTS section_name TEXT
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add section_name to document_comments: {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE document_comments
+                ADD COLUMN IF NOT EXISTS start_offset INTEGER
+            ''')
+            cursor.execute('''
+                ALTER TABLE document_comments
+                ADD COLUMN IF NOT EXISTS end_offset INTEGER
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add offset columns to document_comments: {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE document_comments
+                ADD COLUMN IF NOT EXISTS parent_id INTEGER
+            ''')
+            cursor.execute('''
+                ALTER TABLE document_comments
+                ADD COLUMN IF NOT EXISTS block_type VARCHAR(50)
+            ''')
+            cursor.execute('''
+                ALTER TABLE document_comments
+                ADD COLUMN IF NOT EXISTS block_id TEXT
+            ''')
+        except Exception as e:
+            print(f"[WARN] Could not add threading/block columns to document_comments: {e}")
+
+        try:
+            cursor.execute('''
+                ALTER TABLE document_comments
+                ADD CONSTRAINT document_comments_parent_id_fkey
+                FOREIGN KEY (parent_id) REFERENCES document_comments(id) ON DELETE CASCADE
+            ''')
+        except Exception as e:
+            # Constraint may already exist.
+            print(f"[INFO] document_comments parent_id FK not added (may already exist): {e}")
 
         # Collaboration invitations table
         cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (

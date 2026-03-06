@@ -25,6 +25,7 @@ import '../../document_editor/models/document_table.dart';
 import '../../document_editor/models/positioned_pricing_table.dart';
 // Block-based section widget
 import '../../document_editor/widgets/section_widget.dart';
+import '../../document_editor/controllers/highlighting_text_controller.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
@@ -143,6 +144,48 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  void _applyInlineHighlights() {
+    try {
+      final Map<String, List<HighlightRange>> rangesByBlock = {};
+
+      for (final c in _comments) {
+        final status = (c['status'] ?? 'open').toString().toLowerCase();
+        if (status != 'open' && status != 'resolved') continue;
+
+        // Root comments + replies both can have offsets; apply to all.
+        final blockId = c['block_id']?.toString();
+        if (blockId == null || blockId.isEmpty) continue;
+
+        final startRaw = c['start_offset'];
+        final endRaw = c['end_offset'];
+        final start = int.tryParse(startRaw?.toString() ?? '');
+        final end = int.tryParse(endRaw?.toString() ?? '');
+        if (start == null || end == null) continue;
+        if (end <= start) continue;
+
+        final color = status == 'open'
+            ? Colors.yellow.withOpacity(0.3)
+            : Colors.yellow.withOpacity(0.12);
+
+        rangesByBlock.putIfAbsent(blockId, () => <HighlightRange>[]).add(
+              HighlightRange(
+                start: start,
+                end: end,
+                color: color,
+                commentId: int.tryParse(c['id']?.toString() ?? ''),
+              ),
+            );
+      }
+
+      for (final section in _sections) {
+        final ranges = rangesByBlock[section.id] ?? const <HighlightRange>[];
+        section.controller.setHighlights(ranges);
+      }
+    } catch (e) {
+      print('⚠️ Error applying inline highlights: $e');
+    }
+  }
+
   List<String> _uploadedImages = [];
   List<Map<String, dynamic>> _libraryImages = [];
   bool _isLoadingLibraryImages = false;
@@ -187,8 +230,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _commentFilterStatus = 'all';
   String _highlightedText = '';
   int? _selectedSectionForComment;
+  TextSelection? _currentSelection;
+  int? _selectionSectionIndex;
+  Timer? _selectionSnackDebounce;
+  int? _lastSelectionHash;
+  final Map<String, int?> _lastSelectionHashBySectionId = {};
+  final Set<String> _selectionListenerAttachedSectionIds = {};
   List<Map<String, dynamic>> _collaborators = [];
   bool _isCollaborating = false;
+
+  void _showSnack(SnackBar snackBar) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.clearSnackBars();
+    messenger.showSnackBar(snackBar);
+  }
 
   // Auto-save and versioning
   Timer? _autoSaveTimer;
@@ -265,6 +321,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       });
 
       _selectedSectionIndex = 0; // Select first section
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _ensureSectionSelectionListeners();
+      });
     } else if (widget.proposalId == null) {
       // Only create initial section for new documents without AI content
       final initialSection = DocumentSection(
@@ -279,6 +339,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Add focus listeners for UI updates
       initialSection.contentFocus.addListener(() => setState(() {}));
       initialSection.titleFocus.addListener(() => setState(() {}));
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _ensureSectionSelectionListeners();
+      });
     }
 
     // Setup auto-save listeners
@@ -369,6 +434,71 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ),
       );
     }
+  }
+
+  void _onContentSelectionChanged(
+      int sectionIndex, TextSelection selection, SelectionChangedCause? cause) {
+    if (selection.isCollapsed) {
+      _selectionSnackDebounce?.cancel();
+      _lastSelectionHash = null;
+      ScaffoldMessenger.maybeOf(context)?.clearSnackBars();
+      setState(() {
+        _currentSelection = null;
+        _selectionSectionIndex = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _currentSelection = selection;
+      _selectionSectionIndex = sectionIndex;
+    });
+
+    final base = selection.baseOffset;
+    final extent = selection.extentOffset;
+    final start = base < extent ? base : extent;
+    final end = base < extent ? extent : base;
+    if (start < 0 || end <= start) return;
+
+    final selectionHash = Object.hash(sectionIndex, start, end);
+    if (_lastSelectionHash == selectionHash) return;
+    _lastSelectionHash = selectionHash;
+
+    _selectionSnackDebounce?.cancel();
+    _selectionSnackDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      if (_currentSelection == null || _currentSelection!.isCollapsed) return;
+      if (_selectionSectionIndex != sectionIndex) return;
+
+      final sectionText = _sections[sectionIndex].controller.text;
+      final clampedStart = start.clamp(0, sectionText.length);
+      final clampedEnd = end.clamp(0, sectionText.length);
+      final selectedText = clampedEnd > clampedStart
+          ? sectionText.substring(clampedStart, clampedEnd)
+          : '';
+
+      _showSnack(
+        SnackBar(
+          content: const Text('Text selected'),
+          duration: const Duration(seconds: 4),
+          action: SnackBarAction(
+            label: 'Add comment',
+            onPressed: () {
+              if (!mounted) return;
+              setState(() {
+                _selectedSectionForComment = sectionIndex;
+                _highlightedText = selectedText;
+              });
+              _showCommentDialog();
+            },
+          ),
+        ),
+      );
+    });
+  }
+
+  void _onContentTapUp(TapUpDetails details) {
+    // Intentionally no-op for now; we rely on highlight click to focus cards.
   }
 
   Future<void> _startPricingFinance() async {
@@ -901,7 +1031,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     sectionTypeRaw.trim().toLowerCase();
                 final bool isCover = _isTruthy(sectionData['isCoverPage']) ||
                     sectionTypeNormalized == 'cover';
+                final String? sectionId =
+                    sectionData is Map ? (sectionData['id']?.toString()) : null;
                 final newSection = DocumentSection(
+                  id: sectionId,
                   title: (sectionData['title'] ??
                           (isCover ? '' : 'Untitled Section'))
                       .toString(),
@@ -1002,6 +1135,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             }
           });
 
+          _ensureSectionSelectionListeners();
+
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
@@ -1042,6 +1177,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
+
+          _ensureSectionSelectionListeners();
         }
       }
     } catch (e) {
@@ -1152,6 +1289,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             'block_type': comment['block_type'],
             'block_id': comment['block_id'],
             'highlighted_text': comment['highlighted_text'],
+            'start_offset': comment['start_offset'],
+            'end_offset': comment['end_offset'],
             'timestamp': comment['created_at'],
             'status': comment['status'] ?? 'open',
             'resolved_by': comment['resolved_by'],
@@ -1163,6 +1302,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       });
       print('✅ Loaded ${flatComments.length} comments (including replies)');
 
+      _applyInlineHighlights();
+
       if (mounted) {
         try {
           await context.read<AppState>().fetchNotifications();
@@ -1171,6 +1312,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
       }
     } catch (e) {
+      if (e.toString().contains('unauthorized')) {
+        AuthService.logout();
+        if (mounted) {
+          _showSnack(
+            const SnackBar(
+              content: Text('Session expired. Please log in again.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
       print('⚠️ Error loading comments: $e');
     }
   }
@@ -1382,13 +1536,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     setState(() {
       _sections.insert(index + 1, newSection);
       _selectedSectionIndex = index + 1;
-
-      newSection.controller.addListener(_onContentChanged);
-      newSection.titleController.addListener(_onContentChanged);
-
-      newSection.contentFocus.addListener(() => setState(() {}));
-      newSection.titleFocus.addListener(() => setState(() {}));
     });
+
+    _ensureSectionSelectionListeners();
   }
 
   void _deleteSection(int index) {
@@ -2094,6 +2244,23 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             : 'Untitled Section')
         : null;
 
+    final selectedIndex = _selectedSectionForComment;
+    final selection = _currentSelection;
+    final hasSelection =
+        selectedIndex != null && selection != null && !selection.isCollapsed;
+
+    String? blockId;
+    int? startOffset;
+    int? endOffset;
+    if (hasSelection) {
+      final section = _sections[selectedIndex];
+      blockId = section.id;
+      final base = selection.baseOffset;
+      final extent = selection.extentOffset;
+      startOffset = base < extent ? base : extent;
+      endOffset = base < extent ? extent : base;
+    }
+
     // Clear form
     _commentController.clear();
     _clearMentionState();
@@ -2120,8 +2287,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         sectionName: sectionName,
         highlightedText: _highlightedText.isNotEmpty ? _highlightedText : null,
         parentId: parentId,
-        blockType: null, // TODO: Add block type support
-        blockId: null, // TODO: Add block ID support
+        blockType: 'text',
+        blockId: blockId,
+        startOffset: startOffset,
+        endOffset: endOffset,
       );
 
       if (savedComment != null) {
@@ -2155,6 +2324,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         throw Exception('Failed to save comment');
       }
     } catch (e) {
+      if (e.toString().contains('unauthorized')) {
+        AuthService.logout();
+        if (mounted) {
+          _showSnack(
+            const SnackBar(
+              content: Text('Session expired. Please log in again.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
       print('⚠️ Error saving comment to database: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2730,7 +2912,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2ECC71)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71)),
             child: const Text('Resubmit'),
           ),
         ],
@@ -2741,7 +2924,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final token = await _getAuthToken();
       if (token == null) throw Exception('Not authenticated');
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$_savedProposalId/send-for-approval'),
+        Uri.parse(
+            '${ApiService.baseUrl}/api/proposals/$_savedProposalId/send-for-approval'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -2758,7 +2942,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               duration: Duration(seconds: 2),
             ),
           );
-          Navigator.of(context).pushNamedAndRemoveUntil('/proposals', (r) => false);
+          Navigator.of(context)
+              .pushNamedAndRemoveUntil('/proposals', (r) => false);
         }
       } else {
         throw Exception('Failed to resubmit: ${response.body}');
@@ -2800,7 +2985,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2ECC71)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71)),
             child: const Text('Submit'),
           ),
         ],
@@ -2811,7 +2997,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final token = await _getAuthToken();
       if (token == null) throw Exception('Not authenticated');
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$_savedProposalId/finance-resubmit'),
+        Uri.parse(
+            '${ApiService.baseUrl}/api/proposals/$_savedProposalId/finance-resubmit'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -3003,10 +3190,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  void _ensureSectionSelectionListeners() {
+    for (final section in _sections) {
+      void onControllerChanged() {
+        final selection = section.controller.selection;
+        if (!selection.isValid) return;
+
+        final sectionIndex = _sections.indexOf(section);
+        if (sectionIndex < 0) return;
+
+        final base = selection.baseOffset;
+        final extent = selection.extentOffset;
+        final start = base < extent ? base : extent;
+        final end = base < extent ? extent : base;
+        final selectionHash = Object.hash(start, end, selection.isCollapsed);
+
+        final lastHash = _lastSelectionHashBySectionId[section.id];
+        if (lastHash == selectionHash) return;
+        _lastSelectionHashBySectionId[section.id] = selectionHash;
+
+        _onContentSelectionChanged(sectionIndex, selection, null);
+      }
+
+      if (_selectionListenerAttachedSectionIds.contains(section.id)) {
+        continue;
+      }
+
+      _selectionListenerAttachedSectionIds.add(section.id);
+      _lastSelectionHashBySectionId.putIfAbsent(section.id, () => null);
+      section.controller.addListener(onControllerChanged);
+    }
+  }
+
   void _onContentChanged() {
     setState(() {
       _hasUnsavedChanges = true;
     });
+
+    _ensureSectionSelectionListeners();
 
     // Cancel existing timer
     _autoSaveTimer?.cancel();
@@ -3025,6 +3246,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       'title': _titleController.text,
       'sections': _sections
           .map((section) => {
+                'id': section.id,
                 'title': section.titleController.text,
                 'content': section.controller.text,
                 'backgroundColor': section.backgroundColor.value,
@@ -5227,9 +5449,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE67E22),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
               ),
             ),
           if (isManagerRole && isChangesRequested) const SizedBox(width: 12),
@@ -5243,9 +5467,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2980B9),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
               ),
             ),
           if (isFinanceRole && isChangesRequested) const SizedBox(width: 12),
@@ -5776,7 +6002,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final isManagerRole = context.watch<RoleService>().isCreator();
     // Finance can edit freely when a proposal is returned to them for changes
     final _statusForLock = (_proposalStatus ?? '').toLowerCase().trim();
-    final financeTextLocked = isFinanceRole && _statusForLock != 'changes requested';
+    final financeTextLocked =
+        isFinanceRole && _statusForLock != 'changes requested';
 
     return SectionWidget(
       section: section,
@@ -5784,6 +6011,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       isSelected: isSelected,
       readOnly: widget.readOnly || financeTextLocked,
       canDelete: !isFinanceRole && (_sections.length > 1),
+      onContentTap: () {
+        // Keep track of which section selection belongs to.
+        setState(() {
+          _selectedSectionIndex = index;
+        });
+      },
+      onContentSelectionChanged: (selection, cause) {
+        _onContentSelectionChanged(index, selection, cause);
+      },
+      onContentTapUp: (details) {
+        _onContentTapUp(details);
+      },
       onHoverChanged: (hovered) {
         setState(() {
           _hoveredSectionIndex = hovered ? index : -1;

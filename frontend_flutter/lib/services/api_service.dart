@@ -16,8 +16,8 @@ class ApiService {
         final useLocal = js.context['USE_LOCAL_API'];
         if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
           print(
-              '🌐 ApiService: Using local API URL (USE_LOCAL_API): http://127.0.0.1:8000');
-          return 'http://127.0.0.1:8000';
+              '🌐 ApiService: Using local API URL (USE_LOCAL_API): http://127.0.0.1:5000');
+          return 'http://127.0.0.1:5000';
         }
         // If the user explicitly overrides the API URL for local dev, honor it.
         final explicitAppUrl = js.context['APP_API_URL'];
@@ -64,8 +64,8 @@ class ApiService {
       // When on localhost with no override, use local backend so dev works
       if (hostname == 'localhost' || hostname == '127.0.0.1') {
         print(
-            '🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:8000');
-        return 'http://127.0.0.1:8000';
+            '🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:5000');
+        return 'http://127.0.0.1:5000';
       }
     }
     print(
