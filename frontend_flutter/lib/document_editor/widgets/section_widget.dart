@@ -11,6 +11,11 @@ class SectionWidget extends StatelessWidget {
   final bool readOnly;
   final bool canDelete;
 
+  final VoidCallback? onContentTap;
+  final ValueChanged<TapUpDetails>? onContentTapUp;
+  final void Function(TextSelection selection, SelectionChangedCause? cause)?
+      onContentSelectionChanged;
+
   final ValueChanged<bool> onHoverChanged;
   final VoidCallback onTap;
   final VoidCallback onInsertBelow;
@@ -34,6 +39,9 @@ class SectionWidget extends StatelessWidget {
     required this.isSelected,
     required this.readOnly,
     required this.canDelete,
+    this.onContentTap,
+    this.onContentTapUp,
+    this.onContentSelectionChanged,
     required this.onHoverChanged,
     required this.onTap,
     required this.onInsertBelow,
@@ -175,26 +183,43 @@ class SectionWidget extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               // Clean content area - text field for writing
-              TextField(
-                focusNode: section.contentFocus,
-                controller: section.controller,
-                maxLines: null,
-                minLines: 15,
-                enabled: !readOnly, // Disable editing in read-only mode
-                style: getContentTextStyle(),
-                textAlign: getTextAlignment(),
-                textAlignVertical: TextAlignVertical.top,
-                decoration: InputDecoration(
-                  hintText: readOnly
-                      ? '' // No hint in read-only mode
-                      : 'Start writing your content here...',
-                  hintStyle: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFFBDC3C7),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Listener(
+                  onPointerUp: (event) {
+                    if (onContentTapUp == null) return;
+                    onContentTapUp!(
+                      TapUpDetails(
+                        globalPosition: event.position,
+                        kind: event.kind,
+                      ),
+                    );
+                  },
+                  behavior: HitTestBehavior.deferToChild,
+                  child: TextField(
+                    focusNode: section.contentFocus,
+                    controller: section.controller,
+                    maxLines: null,
+                    minLines: 15,
+                    enabled: !readOnly,
+                    style: getContentTextStyle(),
+                    textAlign: getTextAlignment(),
+                    textAlignVertical: TextAlignVertical.top,
+                    decoration: InputDecoration(
+                      hintText:
+                          readOnly ? '' : 'Start writing your content here...',
+                      hintStyle: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFFBDC3C7),
+                      ),
+                      border: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                    onTap: () {
+                      onContentTap?.call();
+                    },
                   ),
-                  border: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.all(8),
                 ),
               ),
               // Display tables below text (with drag and drop)
