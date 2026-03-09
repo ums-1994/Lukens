@@ -209,6 +209,24 @@ def init_pg_schema():
         conn = _pg_conn()
         cursor = conn.cursor()
 
+        savepoint_counter = 0
+
+        def _exec_with_savepoint(sql, params=None):
+            nonlocal savepoint_counter
+            savepoint_counter += 1
+            sp_name = f"sp_init_schema_{savepoint_counter}"
+            cursor.execute(f"SAVEPOINT {sp_name}")
+            try:
+                if params is None:
+                    cursor.execute(sql)
+                else:
+                    cursor.execute(sql, params)
+                cursor.execute(f"RELEASE SAVEPOINT {sp_name}")
+            except Exception:
+                cursor.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+                cursor.execute(f"RELEASE SAVEPOINT {sp_name}")
+                raise
+
         # Users table
         cursor.execute('''CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -480,7 +498,7 @@ def init_pg_schema():
 
         # Ensure proposals.client_id has a foreign key to clients.id
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE proposals
                 ADD CONSTRAINT proposals_client_id_fkey
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
@@ -490,19 +508,19 @@ def init_pg_schema():
         
         # Add company_name column if it doesn't exist (migration for existing databases)
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE clients 
                 ADD COLUMN IF NOT EXISTS company_name VARCHAR(255)
             ''')
             # If column was just added and is NULL, set a default value
-            cursor.execute('''
+            _exec_with_savepoint('''
                 UPDATE clients 
                 SET company_name = COALESCE(email, 'Unknown Company')
                 WHERE company_name IS NULL
             ''')
             # Then make it NOT NULL if it's safe
             try:
-                cursor.execute('''
+                _exec_with_savepoint('''
                     ALTER TABLE clients 
                     ALTER COLUMN company_name SET NOT NULL
                 ''')
@@ -514,7 +532,7 @@ def init_pg_schema():
 
         # Add contact_person column if it doesn't exist (migration for existing databases)
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE clients 
                 ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255)
             ''')
@@ -522,7 +540,7 @@ def init_pg_schema():
             print(f"[WARN] Could not add contact_person column (may already exist): {e}")
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE clients
                 ADD COLUMN IF NOT EXISTS region VARCHAR(80)
             ''')
