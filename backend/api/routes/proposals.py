@@ -110,6 +110,72 @@ def create_proposal(username=None, user_id=None, email=None):
                     return jsonify({'detail': f"User not found after {max_retries} retries"}), 400
 
             user_id = found_user_id
+
+            # Safety: ensure the user actually exists in this database connection so that
+            # the proposals.owner_id → users.id foreign key will succeed. In some
+            # environments we've seen cases where the Firebase decorator created the user
+            # on a different connection/database, causing FK violations here.
+            try:
+                if user_id is not None:
+                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                    exists_row = cursor.fetchone()
+                else:
+                    exists_row = None
+
+                if not exists_row:
+                    # Try to recover using email (should be present for Firebase users)
+                    recovered_id = None
+                    if email:
+                        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                        by_email = cursor.fetchone()
+                        if by_email:
+                            recovered_id = by_email[0]
+
+                    if recovered_id:
+                        print(f"🔄 Recovered user_id {recovered_id} from users table for email {email}")
+                        user_id = recovered_id
+                    elif email:
+                        # As a last resort, auto-create a minimal user record here so the FK can succeed.
+                        # This mirrors the Firebase decorator's behaviour but is scoped to this DB.
+                        base_username = (email.split('@')[0] or 'user').strip() or 'user'
+                        username_candidate = base_username
+                        counter = 1
+                        while True:
+                            cursor.execute('SELECT id FROM users WHERE username = %s', (username_candidate,))
+                            if cursor.fetchone() is None:
+                                break
+                            username_candidate = f"{base_username}{counter}"
+                            counter += 1
+
+                        dummy_password_hash = f"firebase-proposal:{email}"
+                        role = 'manager'
+                        cursor.execute(
+                            '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
+                               VALUES (%s, %s, %s, %s, %s, %s, %s)
+                               RETURNING id''',
+                            (
+                                username_candidate,
+                                email,
+                                dummy_password_hash,
+                                username_candidate,
+                                role,
+                                True,
+                                True,
+                            ),
+                        )
+                        created_row = cursor.fetchone()
+                        user_id = created_row[0]
+                        print(f"🔧 Auto-created fallback user {username_candidate} (id={user_id}) for email {email}")
+
+                        # Commit immediately so that later INSERT into proposals can see this row
+                        conn.commit()
+                    else:
+                        print(f"❌ User id {user_id} not found in users table and no email available to recover")
+                        return jsonify({'detail': 'User not found in users table'}), 400
+            except Exception as verify_err:
+                print(f"⚠️ Error verifying/repairing user record before proposal insert: {verify_err}")
+                # If we cannot confidently ensure the user exists, fail fast with 400 to avoid FK 500s.
+                return jsonify({'detail': 'Could not verify user in database'}), 400
                 
             # Extract fields
             title = data.get('title', 'Untitled Proposal')
