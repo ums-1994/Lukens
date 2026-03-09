@@ -662,14 +662,14 @@ def create_client(username=None, user_id=None, email=None):
         data = request.json or {}
         company_name = (data.get('company_name') or '').strip()
         contact_person = (data.get('contact_person') or '').strip()
-        email = (data.get('email') or '').strip()
+        client_email = (data.get('email') or '').strip()
         phone = (data.get('phone') or '').strip()
         holding_information = (data.get('holding_information') or '').strip()
         address = (data.get('address') or '').strip()
         client_contact_email = (data.get('client_contact_email') or '').strip()
         client_contact_mobile = (data.get('client_contact_mobile') or '').strip()
 
-        if not company_name or not email:
+        if not company_name or not client_email:
             return jsonify({"error": "Company name and email are required"}), 400
 
         with get_db_connection() as conn:
@@ -714,7 +714,7 @@ def create_client(username=None, user_id=None, email=None):
                 additional_info = json.dumps(additional_info_obj) if additional_info_obj else None
 
             insert_fields = ['email']
-            insert_values = [email]
+            insert_values = [client_email]
             update_set_parts = []
 
             if 'company_name' in clients_columns:
