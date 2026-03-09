@@ -188,9 +188,12 @@ def token_required(f):
                                     except Exception as sync_error:
                                         if "was not persisted" in str(sync_error):
                                             raise
-
-                                    if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
-                                        conn.rollback()
+                                    
+                                    # NOTE: Do NOT rollback here. User has already been committed successfully.
+                                    # If connection status shows as in-transaction, it's psycopg2 state tracking, not
+                                    # an active transaction. Rollback here would undo the user creation, causing FK errors
+                                    # when proposals try to reference the user. This was the root cause of "Key (owner_id)=()
+                                    # is not present in table 'users'" errors.
                                 except psycopg2.IntegrityError:
                                     conn.rollback()
                                     import time
