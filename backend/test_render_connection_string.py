@@ -9,7 +9,7 @@ from urllib.parse import urlparse, parse_qs
 
 # Connection string from user
 # Note: Using the exact string provided by user
-CONNECTION_STRING = "postgresql://proposal_sow_builder_user:LTpIcMC2QUY3bd4DezTU4lmWroOxr8ez@dpg-d4iq5fa4d50c73d9m3n0-a.oregon-postgres.render.com/proposal_sow_builder"
+CONNECTION_STRING = "postgresql://sowbuilder_b88j_user:F0aStJeARRclMbzSod8GNrbt3KHgboX9@dpg-d6n7nqjh46gs73c4bd9g-a.oregon-postgres.render.com/sowbuilder_b88j"
 
 print("=" * 70)
 print("🔍 Testing Render PostgreSQL Connection (Connection String)")
