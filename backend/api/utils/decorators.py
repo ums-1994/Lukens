@@ -74,6 +74,28 @@ def token_required(f):
                     cached = USER_CACHE_BY_EMAIL.get(email)
                     if cached:
                         cached_user_id, cached_username = cached
+                        # Safety: cache can become stale (e.g., switching DATABASE_URL / fresh DB).
+                        # If the cached id no longer exists in the current DB, invalidate and fall through.
+                        try:
+                            with get_db_connection() as cache_conn:
+                                cache_cursor = cache_conn.cursor()
+                                cache_cursor.execute(
+                                    'SELECT id FROM users WHERE id = %s AND email = %s',
+                                    (cached_user_id, email),
+                                )
+                                if cache_cursor.fetchone() is None:
+                                    print(
+                                        f"[FIREBASE] ⚠️ Cached user_id {cached_user_id} for {email} not found in DB; invalidating cache"
+                                    )
+                                    USER_CACHE_BY_EMAIL.pop(email, None)
+                                    cached = None
+                        except Exception as cache_verify_err:
+                            print(f"[FIREBASE] ⚠️ Error verifying cached user: {cache_verify_err}; invalidating cache")
+                            USER_CACHE_BY_EMAIL.pop(email, None)
+                            cached = None
+
+                    if cached:
+                        cached_user_id, cached_username = cached
                         import inspect
                         sig = inspect.signature(f)
                         clean_kwargs = {
@@ -179,15 +201,23 @@ def token_required(f):
                                     print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
 
                                     try:
-                                        cursor.execute('SELECT pg_backend_pid()')
-                                        cursor.fetchone()
                                         import time
-                                        time.sleep(0.3)
-                                        cursor.execute('SELECT 1')
-                                        cursor.fetchone()
-                                    except Exception as sync_error:
-                                        if "was not persisted" in str(sync_error):
-                                            raise
+                                        # Verify user is readable (read-after-write verification)
+                                        # This prevents the user being invisible to subsequent connections
+                                        for verify_attempt in range(5):
+                                            cursor.execute('SELECT id, email FROM users WHERE id = %s', (user_id,))
+                                            verified = cursor.fetchone()
+                                            if verified:
+                                                print(f"[FIREBASE] ✅ User {user_id} verified readable after commit (attempt {verify_attempt + 1})")
+                                                break
+                                            if verify_attempt < 4:
+                                                print(f"[FIREBASE] ⚠️ User {user_id} not readable yet, waiting... (attempt {verify_attempt + 1}/5)")
+                                                time.sleep(0.1)
+                                        
+                                        if not verified:
+                                            print(f"[FIREBASE] ⚠️ WARNING: User {user_id} not readable after 5 verification attempts, but proceeding")
+                                    except Exception as verify_error:
+                                        print(f"[FIREBASE] ⚠️ Error verifying user readability: {verify_error}, but proceeding")
                                     
                                     # NOTE: Do NOT rollback here. User has already been committed successfully.
                                     # If connection status shows as in-transaction, it's psycopg2 state tracking, not
