@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:web/web.dart' as web;
 import 'dart:async';
+import 'package:intl/intl.dart';
 import '../../api.dart';
 
 class GuestCollaborationPage extends StatefulWidget {
@@ -955,19 +956,35 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
 
   String _formatTimestamp(String timestamp) {
     try {
-      final dt = DateTime.parse(timestamp);
+      final dt = DateTime.parse(timestamp).toLocal();
       final now = DateTime.now();
-      final difference = now.difference(dt);
 
-      if (difference.inDays > 0) {
-        return '${difference.inDays} day${difference.inDays > 1 ? 's' : ''} ago';
-      } else if (difference.inHours > 0) {
-        return '${difference.inHours} hour${difference.inHours > 1 ? 's' : ''} ago';
-      } else if (difference.inMinutes > 0) {
-        return '${difference.inMinutes} minute${difference.inMinutes > 1 ? 's' : ''} ago';
-      } else {
-        return 'Just now';
+      final timePart = DateFormat('HH:mm').format(dt);
+      final isSameDate =
+          dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      if (isSameDate) {
+        return '$timePart Today';
       }
+
+      final yesterday = now.subtract(const Duration(days: 1));
+      final isYesterday = dt.year == yesterday.year &&
+          dt.month == yesterday.month &&
+          dt.day == yesterday.day;
+      if (isYesterday) {
+        return '$timePart Yesterday';
+      }
+
+      final startOfToday = DateTime(now.year, now.month, now.day);
+      final startOfThatDay = DateTime(dt.year, dt.month, dt.day);
+      final daysAgo = startOfToday.difference(startOfThatDay).inDays;
+
+      if (daysAgo >= 2 && daysAgo < 7) {
+        final weekday = DateFormat('EEEE').format(dt);
+        return '$timePart $weekday';
+      }
+
+      final datePart = DateFormat('d MMM yyyy').format(dt);
+      return '$timePart $datePart';
     } catch (e) {
       return timestamp;
     }

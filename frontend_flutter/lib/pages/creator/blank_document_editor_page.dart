@@ -1,11 +1,13 @@
 // ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:convert';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
+import 'package:intl/intl.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
@@ -198,7 +200,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final contentText = section.controller.text;
     final contentStyle = _getContentTextStyle();
     final painter = TextPainter(
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr,
       text: TextSpan(text: contentText, style: contentStyle),
       maxLines: null,
     );
@@ -230,6 +232,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final name = c['commenter_name']?.toString() ?? 'User';
       final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
       final commentText = c['comment_text']?.toString() ?? '';
+      final timestampLabel = _formatTimestamp(c['timestamp']);
       final isResolved =
           (c['status']?.toString().toLowerCase() ?? 'open') == 'resolved';
 
@@ -297,6 +300,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             color: Color(0xFF1A1A1A),
                           ),
                         ),
+                        if (timestampLabel.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            timestampLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 4),
                         Text(
                           commentText,
@@ -3170,26 +3185,124 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return _comments.where((c) => c['status'] == _commentFilterStatus).toList();
   }
 
-  String _formatTimestamp(dynamic timestamp) {
-    if (timestamp == null) return '';
-    try {
-      final DateTime dt = DateTime.parse(timestamp.toString());
-      final now = DateTime.now();
-      final difference = now.difference(dt);
+  DateTime? _tryParseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return null;
 
-      if (difference.inMinutes < 1) {
-        return 'Just now';
-      } else if (difference.inHours < 1) {
-        return '${difference.inMinutes}m ago';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h ago';
-      } else if (difference.inDays < 7) {
-        return '${difference.inDays}d ago';
-      } else {
-        return '${dt.day}/${dt.month}/${dt.year}';
+    if (timestamp is DateTime) return timestamp;
+
+    if (timestamp is int) {
+      // Accept both seconds and milliseconds epoch.
+      final isMillis = timestamp.abs() > 100000000000;
+      return DateTime.fromMillisecondsSinceEpoch(
+        isMillis ? timestamp : timestamp * 1000,
+        isUtc: true,
+      );
+    }
+
+    final raw = timestamp.toString().trim();
+    if (raw.isEmpty) return null;
+
+    // Numeric string epoch.
+    final asInt = int.tryParse(raw);
+    if (asInt != null) {
+      final isMillis = asInt.abs() > 100000000000;
+      return DateTime.fromMillisecondsSinceEpoch(
+        isMillis ? asInt : asInt * 1000,
+        isUtc: true,
+      );
+    }
+
+    // Common Postgres format: 'YYYY-MM-DD HH:MM:SS[.ffffff][+TZ]'
+    // Convert the first space between date/time into 'T' so DateTime can parse.
+    String normalized = raw;
+    if (normalized.contains(' ') && !normalized.contains('T')) {
+      final firstSpace = normalized.indexOf(' ');
+      if (firstSpace > 0) {
+        normalized =
+            '${normalized.substring(0, firstSpace)}T${normalized.substring(firstSpace + 1)}';
       }
+    }
+
+    final dt = DateTime.tryParse(normalized);
+    if (dt != null) {
+      // If the timestamp has no explicit timezone, many backends (and DBs)
+      // return it in UTC but without a "Z" or "+02:00". Dart will treat that
+      // as local time. Detect this and treat it as UTC for correct display.
+      final looksLikeNaiveDbTimestamp = RegExp(
+        r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?$',
+      ).hasMatch(raw);
+      if (looksLikeNaiveDbTimestamp && !dt.isUtc) {
+        return DateTime.utc(
+          dt.year,
+          dt.month,
+          dt.day,
+          dt.hour,
+          dt.minute,
+          dt.second,
+          dt.millisecond,
+          dt.microsecond,
+        );
+      }
+      return dt;
+    }
+
+    // RFC1123 / HTTP-date (often used by some JSON serializers)
+    // Example: "Mon, 09 Mar 2026 15:10:00 GMT"
+    try {
+      final parsed =
+          DateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", 'en_US').parseUtc(raw);
+      return parsed;
+    } catch (_) {
+      // ignore
+    }
+
+    // Variant without explicit GMT token
+    try {
+      final parsed =
+          DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').parseUtc(raw);
+      return parsed;
+    } catch (_) {
+      // ignore
+    }
+
+    return null;
+  }
+
+  String _formatTimestamp(dynamic timestamp) {
+    final parsed = _tryParseTimestamp(timestamp);
+    if (parsed == null) return '';
+    try {
+      final DateTime dt = parsed.toLocal();
+      final now = DateTime.now();
+
+      final timePart = DateFormat('HH:mm').format(dt);
+      final isSameDate =
+          dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      if (isSameDate) {
+        return '$timePart Today';
+      }
+
+      final yesterday = now.subtract(const Duration(days: 1));
+      final isYesterday = dt.year == yesterday.year &&
+          dt.month == yesterday.month &&
+          dt.day == yesterday.day;
+      if (isYesterday) {
+        return '$timePart Yesterday';
+      }
+
+      final startOfToday = DateTime(now.year, now.month, now.day);
+      final startOfThatDay = DateTime(dt.year, dt.month, dt.day);
+      final daysAgo = startOfToday.difference(startOfThatDay).inDays;
+
+      if (daysAgo >= 2 && daysAgo < 7) {
+        final weekday = DateFormat('EEEE').format(dt);
+        return '$timePart $weekday';
+      }
+
+      final datePart = DateFormat('d MMM yyyy').format(dt);
+      return '$timePart $datePart';
     } catch (e) {
-      return 'Invalid date';
+      return '';
     }
   }
 
@@ -6919,7 +7032,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           // Table content
           Directionality(
-            textDirection: TextDirection.ltr,
+            textDirection: ui.TextDirection.ltr,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
@@ -6932,7 +7045,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       child: Text(
                         table.cells[0][colIndex],
                         style: const TextStyle(fontWeight: FontWeight.bold),
-                        textDirection: TextDirection.ltr,
+                        textDirection: ui.TextDirection.ltr,
                       ),
                     ),
                   ),
@@ -6952,7 +7065,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               padding: const EdgeInsets.all(8),
                               child: Text(
                                 table.cells[rowIndex + 1][colIndex],
-                                textDirection: TextDirection.ltr,
+                                textDirection: ui.TextDirection.ltr,
                                 style: const TextStyle(
                                   fontSize: 13,
                                   textBaseline: TextBaseline.alphabetic,
@@ -6964,12 +7077,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
                         return DataCell(
                           Directionality(
-                            textDirection: TextDirection.ltr,
+                            textDirection: ui.TextDirection.ltr,
                             child: TextFormField(
                               key: ValueKey(
                                 '${table.hashCode}-$rowIndex-$colIndex',
                               ),
-                              textDirection: TextDirection.ltr,
+                              textDirection: ui.TextDirection.ltr,
                               textAlign: TextAlign.left,
                               initialValue: table.cells[rowIndex + 1][colIndex],
                               onChanged: (value) {
