@@ -246,9 +246,14 @@ def token_required(f):
                                 raise
 
                             import time
-                            time.sleep(0.25)
+                            # Longer delay for Render's read replica replication lag
+                            time.sleep(2.0)
 
+                            # Also cache by user_id for immediate lookup
                             USER_CACHE_BY_EMAIL[email] = (user_id, username)
+                            # Create a reverse lookup cache by user_id for routes that look up by ID
+                            globals()['_USER_CACHE_BY_ID'] = globals().get('_USER_CACHE_BY_ID', {})
+                            globals()['_USER_CACHE_BY_ID'][user_id] = (username, email)
 
                             import inspect
                             sig = inspect.signature(f)
