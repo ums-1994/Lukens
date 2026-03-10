@@ -242,6 +242,16 @@ def init_pg_schema():
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
         
+        # Ensure UNIQUE constraint on email (prevents duplicate user creation)
+        try:
+            cursor.execute('''
+                ALTER TABLE users 
+                ADD CONSTRAINT users_email_unique UNIQUE (email)
+            ''')
+            print("[OK] Added UNIQUE constraint on users.email")
+        except Exception as e:
+            print(f"[INFO] UNIQUE constraint on email may already exist: {e}")
+        
         # Add is_email_verified column if it doesn't exist (migration for existing databases)
         try:
             cursor.execute('''
