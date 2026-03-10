@@ -88,6 +88,7 @@ def _build_db_config_from_env():
         'user': os.getenv('DB_USER', 'postgres'),
         'password': os.getenv('DB_PASSWORD', ''),
         'port': int(os.getenv('DB_PORT', '5432')),
+        **({'sslmode': os.getenv('DB_SSLMODE')} if os.getenv('DB_SSLMODE') else {}),
     }
 
 
@@ -232,6 +233,10 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add is_email_verified column (may already exist): {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         # Proposals table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
@@ -372,6 +377,10 @@ def init_pg_schema():
             """)
         except Exception as e:
             print(f"[WARN] Could not update proposals_status_check constraint: {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         # Ensure client_email column exists for storing client contact email
         try:
@@ -381,6 +390,10 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add client_email column to proposals (may already exist or be incompatible): {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         try:
             cursor.execute('''
@@ -397,6 +410,10 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add engagement_stage column to proposals (may already exist or be incompatible): {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         try:
             cursor.execute('''
@@ -405,6 +422,10 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add engagement_opened_at column to proposals (may already exist or be incompatible): {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         try:
             cursor.execute('''
@@ -413,6 +434,10 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add engagement_target_close_at column to proposals (may already exist or be incompatible): {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         try:
             cursor.execute('''
@@ -421,6 +446,10 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add client_id column to proposals (may already exist or be incompatible): {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         try:
             cursor.execute('''
@@ -429,6 +458,10 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not create idx_proposals_client_id index (may already exist or be incompatible): {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         # Content library table
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (
@@ -487,7 +520,11 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add proposals.client_id foreign key constraint (may already exist or be incompatible): {e}")
-        
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
         # Add company_name column if it doesn't exist (migration for existing databases)
         try:
             cursor.execute('''
@@ -511,6 +548,10 @@ def init_pg_schema():
                 pass
         except Exception as e:
             print(f"[WARN] Could not add company_name column (may already exist): {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         # Add contact_person column if it doesn't exist (migration for existing databases)
         try:
@@ -520,6 +561,10 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add contact_person column (may already exist): {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         try:
             cursor.execute('''
@@ -528,6 +573,10 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add region column (may already exist): {e}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         # Proposal versions table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_versions (
@@ -700,7 +749,10 @@ def init_pg_schema():
                 print("[OK] Migration complete: user_id is now INTEGER")
         except Exception as e:
             print(f"[WARN] Could not migrate user_id column type: {e}")
-            # Continue anyway - the text comparison in queries will handle it
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_notifications_user 
                          ON notifications(user_id, is_read, created_at DESC)''')

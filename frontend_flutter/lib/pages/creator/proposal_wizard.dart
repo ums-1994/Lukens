@@ -78,12 +78,59 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   String get opportunityName => _formData['opportunityName'] ?? '';
   List<Map<String, dynamic>> get kbCitations => [];
   bool get _isClientSigned => false;
-  void Function()? get _sendToClient => () {
-        // TODO: Implement send to client functionality
-      };
   String get dateLabel => DateTime.now().toString().split(' ')[0];
   Map<String, String> get moduleContents =>
       Map<String, String>.from(_formData['moduleContents'] ?? {});
+
+  Future<void> _sendToClient() async {
+    // TODO: Implement send to client functionality
+    if (_proposalId == null || _proposalId!.toString().trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No proposal found to send.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final app = context.read<AppState>();
+      final error = await app.sendToClient(
+        _proposalId!.toString(),
+      );
+      if (!mounted) return;
+      if (error == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Sent to client successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error sending to client: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   // Missing methods
   bool _isRiskGateBlockedWithoutOverride() {

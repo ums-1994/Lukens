@@ -391,21 +391,64 @@ def firebase_auth():
         
         # Get role from request (for new registrations)
         requested_role = data.get('role', 'user')
-        
+
         # Verify Firebase token
         decoded_token = verify_firebase_token(id_token)
         if not decoded_token:
             return {'detail': 'Invalid or expired Firebase token'}, 401
-        
+
         # Extract user info from Firebase token
         firebase_user = get_user_from_token(decoded_token)
         if not firebase_user:
             return {'detail': 'Could not extract user information from token'}, 401
-        
+
         uid = firebase_user['uid']
         email = firebase_user['email']
         name = firebase_user.get('name') or email.split('@')[0]  # Use email prefix if no name
-        
+
+        # ------------------------------------------------------------------
+        # DEV SHORT-CIRCUIT: allow Firebase auth without Postgres
+        # ------------------------------------------------------------------
+        # When DEV_BYPASS_DB_FOR_FIREBASE=true, we skip all database access
+        # and return a synthetic user object. This is handy for local UI
+        # work when the cloud Postgres instance is unreachable.
+        if os.getenv("DEV_BYPASS_DB_FOR_FIREBASE", "false").lower() == "true":
+            username = email.split("@")[0]
+            backend_token = generate_token(username)
+            save_tokens(get_valid_tokens())
+
+            # Map requested role to the normalized roles used on the frontend.
+            role_lower = (requested_role or "user").lower().strip()
+            if role_lower in ["admin", "ceo"]:
+                normalized_role = "admin"
+            elif role_lower in [
+                "financial manager",
+                "finance manager",
+                "finance_manager",
+                "financial_manager",
+            ]:
+                normalized_role = "finance_manager"
+            else:
+                normalized_role = "manager"
+
+            return {
+                "token": id_token,
+                "backend_token": backend_token,
+                "user": {
+                    "id": 0,
+                    "username": username,
+                    "email": email,
+                    "full_name": name,
+                    "role": normalized_role,
+                    "department": None,
+                    "firebase_uid": uid,
+                },
+            }, 200
+
+        # ------------------------------------------------------------------
+        # Normal path: use PostgreSQL for user lookup / creation
+        # ------------------------------------------------------------------
+
         # Check if user exists in database
         conn = _pg_conn()
         cursor = conn.cursor()

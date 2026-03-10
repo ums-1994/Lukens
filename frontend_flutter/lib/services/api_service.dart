@@ -15,8 +15,9 @@ class ApiService {
         // Honor USE_LOCAL_API first (set in index.html for local dev)
         final useLocal = js.context['USE_LOCAL_API'];
         if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
-          print('🌐 ApiService: Using local API URL (USE_LOCAL_API): http://127.0.0.1:5000');
-          return 'http://127.0.0.1:5000';
+          print(
+              '🌐 ApiService: Using local API URL (USE_LOCAL_API): http://127.0.0.1:8000');
+          return 'http://127.0.0.1:8000';
         }
         // If the user explicitly overrides the API URL for local dev, honor it.
         final explicitAppUrl = js.context['APP_API_URL'];
@@ -54,17 +55,21 @@ class ApiService {
     if (kIsWeb) {
       final hostname = html.window.location.hostname;
       if (hostname != null &&
-          (hostname.contains('netlify.app') || hostname.contains('onrender.com'))) {
-        print('🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
+          (hostname.contains('netlify.app') ||
+              hostname.contains('onrender.com'))) {
+        print(
+            '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
         return 'https://lukens-wp8w.onrender.com';
       }
       // When on localhost with no override, use local backend so dev works
       if (hostname == 'localhost' || hostname == '127.0.0.1') {
-        print('🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:5000');
-        return 'http://127.0.0.1:5000';
+        print(
+            '🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:8000');
+        return 'http://127.0.0.1:8000';
       }
     }
-    print('🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
+    print(
+        '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';
   }
 
@@ -512,6 +517,8 @@ class ApiService {
     int? parentId, // For threaded replies
     String? blockType, // 'text', 'table', 'image'
     String? blockId, // Identifier for the block
+    int? startOffset,
+    int? endOffset,
     List<String>? taggedUsers,
   }) async {
     try {
@@ -523,6 +530,8 @@ class ApiService {
           'section_index': sectionIndex,
           'section_name': sectionName,
           'highlighted_text': highlightedText,
+          'start_offset': startOffset,
+          'end_offset': endOffset,
           'parent_id': parentId,
           'block_type': blockType,
           'block_id': blockId,
@@ -534,12 +543,15 @@ class ApiService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       }
+      if (response.statusCode == 401) {
+        throw Exception('unauthorized');
+      }
       print(
           'Error creating comment: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
       print('Error creating comment: $e');
-      return null;
+      rethrow;
     }
   }
 
@@ -570,10 +582,13 @@ class ApiService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
+      if (response.statusCode == 401) {
+        throw Exception('unauthorized');
+      }
       return {'comments': [], 'total': 0, 'open_count': 0, 'resolved_count': 0};
     } catch (e) {
       print('Error fetching comments: $e');
-      return {'comments': [], 'total': 0, 'open_count': 0, 'resolved_count': 0};
+      rethrow;
     }
   }
 
@@ -767,8 +782,15 @@ class ApiService {
         if (str.isEmpty) return;
         if (key == 'id' || key == 'title') return;
 
-        if (['clientName', 'clientEmail', 'projectType', 'estimatedValue', 'timeline', 'selectedModules', 'moduleContents']
-            .contains(key)) {
+        if ([
+          'clientName',
+          'clientEmail',
+          'projectType',
+          'estimatedValue',
+          'timeline',
+          'selectedModules',
+          'moduleContents'
+        ].contains(key)) {
           return;
         }
         sections[key] = str;

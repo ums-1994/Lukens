@@ -12,6 +12,13 @@ if script_dir not in sys.path:
 # Change to backend directory for proper imports
 os.chdir(script_dir)
 
+# Initialize DB at startup so first request doesn't trigger sync init (avoids ASGI deadlock)
+try:
+    from api.utils.database import init_database
+    init_database()
+except Exception as e:
+    print(f"[WARN] Startup DB init failed (will retry on first request): {e}")
+
 # Import Flask app
 from app import app as flask_app
 from asgiref.wsgi import WsgiToAsgi

@@ -22,6 +22,8 @@ from api.utils.helpers import (
 )
 from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
 
+from api.routes.client import _encode_identity_hash
+
 bp = Blueprint('approver', __name__)
 
 # ============================================================================
@@ -259,6 +261,13 @@ def approve_proposal(username=None, proposal_id=None):
         print(f"🟦 [APPROVE] approve_proposal called for proposal_id={proposal_id} by username={username}")
         data = request.get_json(force=True, silent=True) or {}
         comments = data.get('comments', '')
+        id_last4 = (data.get('id_last4') or data.get('last4') or '').strip()
+        if id_last4:
+            if len(id_last4) != 4 or not id_last4.isdigit():
+                return {
+                    'detail': 'id_last4 must be exactly 4 digits',
+                    'error': 'invalid_id_last4',
+                }, 400
         # Allow client_email override to be passed explicitly from the frontend
         # (e.g., for older proposals that were created before client_email
         # was consistently stored on the proposal record).
@@ -465,6 +474,30 @@ def approve_proposal(username=None, proposal_id=None):
             ) if approver_user else (username or 'Approver')
 
             old_status = proposal.get('status')
+
+            if id_last4:
+                try:
+                    proposal_cols = set(_get_table_columns('proposals'))
+                    if 'identity_last4_hash' not in proposal_cols:
+                        cursor.execute("ALTER TABLE proposals ADD COLUMN identity_last4_hash TEXT")
+                        conn.commit()
+                except Exception as schema_err:
+                    print(f"⚠️ Failed to ensure identity_last4_hash column exists: {schema_err}")
+
+                try:
+                    identity_hash = _encode_identity_hash(id_last4)
+                    cursor.execute(
+                        """UPDATE proposals SET identity_last4_hash = %s WHERE id = %s""",
+                        (identity_hash, proposal_id),
+                    )
+                    conn.commit()
+                except Exception as id_hash_err:
+                    print(f"❌ Failed to store identity_last4_hash for proposal {proposal_id}: {id_hash_err}")
+                    traceback.print_exc()
+                    return {
+                        'detail': 'Failed to configure identity verification for this proposal',
+                        'error': 'identity_config_failed',
+                    }, 500
             
             # Update status to Sent to Client
             cursor.execute(
@@ -656,8 +689,8 @@ def approve_proposal(username=None, proposal_id=None):
                                 client_email=client_email,
                             )
 
-                            # Return URL back to client view using the collaboration router
-                            return_url = f"{frontend_url}/#/collaborate?token={access_token}&signed=true"
+                            # Return URL back to client portal
+                            return_url = f"{frontend_url}/#/client/proposals?token={access_token}&signed=true"
 
                             envelope_result = create_docusign_envelope(
                                 proposal_id=proposal_id,
@@ -807,7 +840,7 @@ def approve_proposal(username=None, proposal_id=None):
                             print(f"\n⚠️  Continuing with approval despite DocuSign error")
                             print(f"   Client will receive email with proposal link, but DocuSign signing may not be available")
 
-                        client_link = f"{frontend_url}/#/collaborate?token={access_token}"
+                        client_link = f"{frontend_url}/#/client/proposals?token={access_token}"
 
                         sendgrid_configured = bool(
                             (os.getenv('SENDGRID_API_KEY') or '').strip()
@@ -831,6 +864,7 @@ def approve_proposal(username=None, proposal_id=None):
                         <h2>Your Proposal is Ready</h2>
                         <p>Dear {client_name or 'Client'},</p>
                         <p>We're pleased to share your proposal: <strong>{display_title}</strong></p>
+                        <p><strong>Security notice:</strong> You will be asked to enter the last 4 digits of your ID to unlock access.</p>
                         <p>Click the link below to view and review your proposal:</p>
                         <p style="text-align: center; margin: 30px 0;">
                             <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>

@@ -386,14 +386,14 @@ class _ProposalsPageState extends State<ProposalsPage>
                   return AppSideNav(
                     isCollapsed: _isSidebarCollapsed,
                     currentLabel: _currentNavLabel,
-                    isAdmin: isAdmin,
-                    onToggle: () => setState(
-                      () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                    ),
                     onSelect: (label) {
                       setState(() => _currentNavLabel = label);
                       _navigateToPage(context, label);
                     },
+                    onToggle: () => setState(
+                      () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                    ),
+                    isAdmin: isAdmin,
                   );
                 },
               ),
