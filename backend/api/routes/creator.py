@@ -30,6 +30,8 @@ from api.utils.decorators import token_required
 from api.utils.ai_safety import AISafetyError
 from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
 
+from api.routes.client import _encode_identity_hash
+
 bp = Blueprint('creator', __name__, url_prefix='')
 
 
@@ -902,6 +904,15 @@ def finance_resubmit(username=None, proposal_id=None, user_id=None, email=None):
 def send_to_client(username=None, proposal_id=None):
     """Send proposal to client"""
     try:
+        data = request.get_json(force=True, silent=True) or {}
+        id_last4 = (data.get('id_last4') or data.get('last4') or '').strip()
+        if id_last4:
+            if len(id_last4) != 4 or not id_last4.isdigit():
+                return {
+                    'detail': 'id_last4 must be exactly 4 digits',
+                    'error': 'invalid_id_last4',
+                }, 400
+
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -986,6 +997,29 @@ def send_to_client(username=None, proposal_id=None):
             # Update status
             old_status = proposal.get('status')
             new_status = 'Sent to Client'
+
+            if id_last4:
+                try:
+                    if 'identity_last4_hash' not in proposal_cols:
+                        cursor.execute("ALTER TABLE proposals ADD COLUMN identity_last4_hash TEXT")
+                        proposal_cols.add('identity_last4_hash')
+                except Exception as schema_err:
+                    print(f"⚠️ Failed to ensure identity_last4_hash column exists: {schema_err}")
+
+                try:
+                    identity_hash = _encode_identity_hash(id_last4)
+                    cursor.execute(
+                        """UPDATE proposals SET identity_last4_hash = %s WHERE id = %s""",
+                        (identity_hash, proposal_id),
+                    )
+                except Exception as id_hash_err:
+                    print(f"❌ Failed to store identity_last4_hash for proposal {proposal_id}: {id_hash_err}")
+                    traceback.print_exc()
+                    return {
+                        'detail': 'Failed to configure identity verification for this proposal',
+                        'error': 'identity_config_failed',
+                    }, 500
+
             cursor.execute(
                 """UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
                 (new_status, proposal_id)
@@ -1079,7 +1113,7 @@ def send_to_client(username=None, proposal_id=None):
                         print(f"⚠️ Failed to insert collaboration invitation: {inv_err}")
                         traceback.print_exc()
 
-                    client_link = f"{frontend_url}/#/collaborate?token={access_token}"
+                    client_link = f"{frontend_url}/#/client/proposals?token={access_token}"
                     
                     sender_name = sender.get('full_name') or sender.get('username') or 'Your Team'
                     
@@ -1089,6 +1123,7 @@ def send_to_client(username=None, proposal_id=None):
                     <h2>Your Proposal is Ready</h2>
                     <p>Dear {client_name},</p>
                     <p>We're pleased to share your proposal: <strong>{proposal_title}</strong></p>
+                    <p><strong>Security notice:</strong> You will be asked to enter the last 4 digits of your ID to unlock access.</p>
                     <p>Click the link below to view and review your proposal:</p>
                     <p style="text-align: center; margin: 30px 0;">
                         <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>

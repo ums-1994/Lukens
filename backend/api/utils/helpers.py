@@ -5,6 +5,7 @@ import os
 import json
 import html
 import traceback
+import sys
 from datetime import datetime, timedelta
 import psycopg2.extras
 
@@ -33,8 +34,12 @@ try:
     from reportlab.lib.utils import ImageReader
     from io import BytesIO
     PDF_AVAILABLE = True
-except ImportError:
-    pass
+except ImportError as e:
+    PDF_AVAILABLE = False
+    print(
+        "⚠️ ReportLab import failed (api.utils.helpers). "
+        f"Error: {e} | Python: {sys.executable}"
+    )
 
 try:
     from docusign_esign import (
@@ -98,14 +103,46 @@ def resolve_user_id(cursor, identifier):
     return None
 
 
-def get_frontend_url():
-    """
-    Get the frontend URL from environment variables with proper fallback.
-    Returns production URL by default, not localhost.
+def get_frontend_url(origin: str | None = None):
+    """Get the frontend base URL.
+
+    - Prefers an explicit browser origin when provided (e.g. http://localhost:57680)
+      so locally-triggered actions generate locally-usable links.
+    - Falls back to FRONTEND_URL env var.
     """
     import os
-    frontend_url = os.getenv('FRONTEND_URL') or os.getenv('REACT_APP_API_URL') or 'https://sowbuilders.netlify.app'
-    # Remove trailing slash and ensure it's the base URL (not API URL)
+
+    try:
+        from flask import has_request_context, request
+    except Exception:
+        has_request_context = None
+        request = None
+
+    if has_request_context and request is not None and has_request_context():
+        hdr_origin = (request.headers.get('Origin') or '').strip()
+        hdr_referer = (request.headers.get('Referer') or '').strip()
+
+        if not origin:
+            origin = hdr_origin
+
+        if not origin and hdr_referer:
+            try:
+                ref_uri = __import__('urllib.parse').parse.urlparse(hdr_referer)
+                if ref_uri.scheme and ref_uri.netloc:
+                    origin = f"{ref_uri.scheme}://{ref_uri.netloc}"
+            except Exception:
+                pass
+
+    if origin and isinstance(origin, str):
+        o = origin.strip().rstrip('/')
+        if o.startswith('http://localhost') or o.startswith('http://127.0.0.1'):
+            return o
+
+    frontend_url = (
+        os.getenv('FRONTEND_URL')
+        or os.getenv('REACT_APP_API_URL')
+        or 'https://sowbuilders.netlify.app'
+    )
     frontend_url = frontend_url.rstrip('/').replace('/api', '').replace('/backend', '')
     return frontend_url
 
@@ -133,21 +170,14 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
         print(f"⚠️ Failed to log activity: {e}")
 
 
-def log_status_change(proposal_id, user_id, old_status, new_status):
-    try:
-        description = f"Status changed from {old_status} to {new_status}"
-        log_activity(
-            proposal_id,
-            user_id,
-            'status_change',
-            description,
-            metadata={
-                'old_status': old_status,
-                'new_status': new_status,
-            },
-        )
-    except Exception as e:
-        print(f"⚠️ Failed to log status change: {e}")
+def log_status_change(proposal_id, user_id, from_status, to_status):
+    log_activity(
+        proposal_id,
+        user_id,
+        "status_changed",
+        f"Status changed: {from_status} → {to_status}",
+        {"from": from_status, "to": to_status},
+    )
 
 
 def create_notification(
@@ -224,6 +254,8 @@ def create_notification(
                 add_column('proposal_id', proposal_id)
             if 'metadata' in column_names:
                 add_column('metadata', metadata_json)
+            if 'is_read' in column_names:
+                add_column('is_read', False)
 
             placeholders = ', '.join(['%s'] * len(columns))
             columns_sql = ', '.join(columns)
@@ -273,6 +305,7 @@ def create_notification(
 
     except Exception as e:
         print(f"⚠️ Failed to create notification: {e}")
+        traceback.print_exc()
 
 
 def notify_proposal_collaborators(

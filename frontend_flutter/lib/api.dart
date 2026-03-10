@@ -1,45 +1,17 @@
 // ignore_for_file: deprecated_member_use
 
 import 'dart:convert';
-import 'dart:js' as js;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
+import 'services/api_service.dart';
 import 'config/api_config.dart';
 
-// Get API URL from JavaScript config or use AuthService.baseUrl/Render default
+// Get API URL: always use Render production backend
 String get baseUrl {
-  if (kIsWeb) {
-    try {
-      // Honor USE_LOCAL_API so local dev hits local backend (index.html sets this)
-      final useLocal = js.context['USE_LOCAL_API'];
-      if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
-        return 'http://127.0.0.1:5000';
-      }
-      // Try to get from window.APP_CONFIG.API_URL (set by config.js)
-      final config = js.context['APP_CONFIG'];
-      if (config != null) {
-        final configObj = config as js.JsObject;
-        final apiUrl = configObj['API_URL'];
-        if (apiUrl != null && apiUrl.toString().trim().isNotEmpty) {
-          return apiUrl.toString().replaceAll('"', '').trim();
-        }
-      }
-      // Fallback: try window.REACT_APP_API_URL
-      final envUrl = js.context['REACT_APP_API_URL'];
-      if (envUrl != null && envUrl.toString().trim().isNotEmpty) {
-        return envUrl.toString().replaceAll('"', '').trim();
-      }
-    } catch (e) {
-      print('⚠️ Could not read API URL from config: $e');
-    }
-  }
-
-  // Default URLs based on environment
-  if (kDebugMode) {
-    return 'https://lukens-wp8w.onrender.com';
-  }
-  return 'https://lukens-wp8w.onrender.com';
+  final url = ApiService.baseUrl;
+  print('🌐 API: Using API URL: $url');
+  return url;
 }
 
 class AppState extends ChangeNotifier {
@@ -50,6 +22,34 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> dashboardCounts = {};
   List<dynamic> notifications = [];
   int unreadNotifications = 0;
+
+  // Theme mode state
+  bool _isLightMode = false;
+  bool get isLightMode => _isLightMode;
+  void toggleThemeMode() {
+    _isLightMode = !_isLightMode;
+    notifyListeners();
+  }
+
+  // Admin navigation/sidebar state
+  bool _isAdminSidebarCollapsed = false;
+  bool get isAdminSidebarCollapsed => _isAdminSidebarCollapsed;
+  void setAdminSidebarCollapsed(bool value) {
+    _isAdminSidebarCollapsed = value;
+    notifyListeners();
+  }
+
+  void toggleAdminSidebar() {
+    _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed;
+    notifyListeners();
+  }
+
+  String _adminNavLabel = 'Dashboard';
+  String get adminNavLabel => _adminNavLabel;
+  void setAdminNavLabel(String label) {
+    _adminNavLabel = label;
+    notifyListeners();
+  }
 
   String get _apiBaseUrl => '$baseUrl/api';
 
@@ -334,7 +334,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> fetchNotifications() async {
-    if (authToken == null) {
+    // Use effective token (synced authToken or AuthService.token) so Firebase users always fetch
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) {
       notifications = [];
       unreadNotifications = 0;
       notifyListeners();
@@ -364,12 +366,20 @@ class AppState extends ChangeNotifier {
         unreadNotifications = data is Map && data['unread_count'] is int
             ? data['unread_count'] as int
             : 0;
+        // Debug: confirm API response for notification bell
+        final uid = (currentUser is Map<String, dynamic>) ? (currentUser as Map<String, dynamic>)['id'] : null;
+        print(
+            'Dashboard - Notifications API: ${response.statusCode}, count: ${rawNotifications.length}, unread: $unreadNotifications (user_id: $uid)');
       } else {
         print(
             'Error fetching notifications: ${response.statusCode} - ${response.body}');
+        notifications = [];
+        unreadNotifications = 0;
       }
     } catch (e) {
       print('Error fetching notifications: $e');
+      notifications = [];
+      unreadNotifications = 0;
     }
 
     notifyListeners();
@@ -681,7 +691,9 @@ class AppState extends ChangeNotifier {
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
-          if (stage != null && stage.isNotEmpty) 'stage': stage,
+          if (resolvedStage != null) 'stage': resolvedStage,
+          if (stageFilter != null && stageFilter.isNotEmpty)
+            'stage_filter': stageFilter,
         },
       );
 
@@ -850,11 +862,13 @@ class AppState extends ChangeNotifier {
       final legacyUri = Uri.parse("$baseUrl/api/risk-gate/summary")
           .replace(queryParameters: queryParameters);
 
-      final r1 = await http.get(analyticsUri, headers: _headers);
-      if (r1.statusCode == 200) return jsonDecode(r1.body);
+      // The backend exposes this as /api/risk-gate/summary.
+      // /api/analytics/risk-gate-summary may not exist (and can return 405).
+      final rLegacy = await http.get(legacyUri, headers: _headers);
+      if (rLegacy.statusCode == 200) return jsonDecode(rLegacy.body);
 
-      final r2 = await http.get(legacyUri, headers: _headers);
-      if (r2.statusCode == 200) return jsonDecode(r2.body);
+      final rAnalytics = await http.get(analyticsUri, headers: _headers);
+      if (rAnalytics.statusCode == 200) return jsonDecode(rAnalytics.body);
     } catch (e) {
       print('Error fetching risk gate summary: $e');
     }
@@ -922,12 +936,21 @@ class AppState extends ChangeNotifier {
   }
 
   // RBAC Methods
-  Future<String?> approveProposal(String proposalId,
-      {String comments = ""}) async {
+  Future<String?> approveProposal(
+    String proposalId, {
+    String comments = "",
+    String? idLast4,
+  }) async {
     try {
+      if (idLast4 == null || idLast4.trim().isEmpty) {
+        return "ID last 4 digits are required";
+      }
       final r = await http.post(
         Uri.parse("$baseUrl/proposals/$proposalId/approve?comments=$comments"),
         headers: _headers,
+        body: jsonEncode({
+          'id_last4': idLast4.trim(),
+        }),
       );
       if (r.statusCode >= 400) {
         final data = jsonDecode(r.body);
@@ -962,11 +985,18 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String?> sendToClient(String proposalId) async {
+  Future<String?> sendToClient(
+    String proposalId, {
+    String? idLast4,
+  }) async {
     try {
+      final cleanLast4 = idLast4?.trim();
       final r = await http.post(
         Uri.parse("$baseUrl/proposals/$proposalId/send_to_client"),
         headers: _headers,
+        body: jsonEncode({
+          if (cleanLast4 != null && cleanLast4.isNotEmpty) 'id_last4': cleanLast4,
+        }),
       );
       if (r.statusCode >= 400) {
         final data = jsonDecode(r.body);
@@ -1539,10 +1569,6 @@ class AppState extends ChangeNotifier {
     proposals = [];
     currentProposal = null;
     dashboardCounts = {};
-    _isSidebarCollapsed = false;
-    _currentNavLabel = 'Dashboard';
-    _isAdminSidebarCollapsed = true;
-    _adminNavLabel = 'Dashboard';
 
     // IMPORTANT: Sync logout with AuthService
     AuthService.logout();
@@ -1553,13 +1579,9 @@ class AppState extends ChangeNotifier {
   // Navigation and sidebar state management
   bool _isSidebarCollapsed = false;
   String _currentNavLabel = 'Dashboard';
-  bool _isAdminSidebarCollapsed = true;
-  String _adminNavLabel = 'Dashboard';
 
   bool get isSidebarCollapsed => _isSidebarCollapsed;
   String get currentNavLabel => _currentNavLabel;
-  bool get isAdminSidebarCollapsed => _isAdminSidebarCollapsed;
-  String get adminNavLabel => _adminNavLabel;
 
   void toggleSidebar() {
     _isSidebarCollapsed = !_isSidebarCollapsed;
@@ -1568,23 +1590,6 @@ class AppState extends ChangeNotifier {
 
   void setCurrentNavLabel(String label) {
     _currentNavLabel = label;
-    notifyListeners();
-  }
-
-  void toggleAdminSidebar() {
-    _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed;
-    notifyListeners();
-  }
-
-  void setAdminSidebarCollapsed(bool collapsed) {
-    if (_isAdminSidebarCollapsed == collapsed) return;
-    _isAdminSidebarCollapsed = collapsed;
-    notifyListeners();
-  }
-
-  void setAdminNavLabel(String label) {
-    if (_adminNavLabel == label) return;
-    _adminNavLabel = label;
     notifyListeners();
   }
 }
