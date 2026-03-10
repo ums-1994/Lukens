@@ -53,6 +53,7 @@ def create_proposal(username=None, user_id=None, email=None, auto_created=False)
     """Create a new proposal"""
     try:
         data = request.get_json()
+        print(f"📝 DEBUG: create_proposal called with auto_created={auto_created}, user_id={user_id}")
         print(f"📝 Creating proposal for user {username} (user_id: {user_id}, email: {email})")
         
         with get_db_connection() as conn:
