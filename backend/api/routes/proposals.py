@@ -82,6 +82,19 @@ def create_proposal(username=None, user_id=None, email=None):
                 retry_delay = 0.2
 
                 for attempt in range(max_retries):
+                    # Check cache first for newly created users (avoids DB replication lag)
+                    from api.utils.decorators import USER_CACHE_BY_EMAIL
+                    _user_cache_by_id = globals().get('_USER_CACHE_BY_ID', {})
+                    if email and email in USER_CACHE_BY_EMAIL:
+                        cached_user_id, cached_username = USER_CACHE_BY_EMAIL[email]
+                        found_user_id = cached_user_id
+                        print(f"✅ Found user_id {found_user_id} from cache (email: {email})")
+                        break
+                    if user_id and user_id in _user_cache_by_id:
+                        found_user_id = user_id
+                        print(f"✅ Found user_id {found_user_id} from cache (by ID)")
+                        break
+
                     for strategy_type, strategy_value in lookup_strategies:
                         try:
                             if strategy_type == 'email':
