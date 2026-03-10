@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
+import '../../services/firebase_service.dart';
 import '../../services/client_service.dart';
 import '../../services/asset_service.dart';
 import '../../services/role_service.dart';
@@ -2126,6 +2127,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Future<String?> _getAuthToken() async {
+    // Prefer a fresh Firebase token to avoid 401 on long-lived sessions.
+    try {
+      final firebaseUser = FirebaseService.currentUser;
+      if (firebaseUser != null) {
+        final refreshed = await firebaseUser.getIdToken(true);
+        if (refreshed != null && refreshed.isNotEmpty) {
+          _authToken = refreshed;
+          AuthService.updateToken(refreshed);
+          return _authToken;
+        }
+      }
+    } catch (e) {
+      print('⚠️ Could not refresh Firebase token: $e');
+    }
+
     // Try to get cached token first
     if (_authToken != null && _authToken!.isNotEmpty) {
       print('Using cached auth token');

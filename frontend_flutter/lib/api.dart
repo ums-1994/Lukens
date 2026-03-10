@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
+import 'services/firebase_service.dart';
 import 'config/api_config.dart';
 
 // Get API URL: always use Render production backend
@@ -53,6 +54,37 @@ class AppState extends ChangeNotifier {
       headers["Authorization"] = "Bearer $token";
     }
     return headers;
+  }
+
+  Map<String, String> _headersForToken(String? token) {
+    final headers = {"Content-Type": "application/json"};
+    if (token != null && token.isNotEmpty) {
+      headers["Authorization"] = "Bearer $token";
+    }
+    return headers;
+  }
+
+  Future<String?> _ensureAuthToken({bool forceRefresh = false}) async {
+    try {
+      final firebaseUser = FirebaseService.currentUser;
+      if (firebaseUser != null) {
+        final refreshed = await firebaseUser.getIdToken(forceRefresh);
+        if (refreshed != null && refreshed.isNotEmpty) {
+          authToken = refreshed;
+          AuthService.updateToken(refreshed);
+          return refreshed;
+        }
+      }
+    } catch (e) {
+      print('⚠️ Token refresh failed: $e');
+    }
+
+    final fallback = authToken ?? AuthService.token;
+    if (fallback != null && fallback.isNotEmpty) {
+      authToken = fallback;
+      return fallback;
+    }
+    return null;
   }
 
   // Headers for multipart/form-data requests (file uploads)
@@ -304,8 +336,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> fetchNotifications() async {
-    // Use effective token (synced authToken or AuthService.token) so Firebase users always fetch
-    final effectiveToken = authToken ?? AuthService.token;
+    final effectiveToken = await _ensureAuthToken();
     if (effectiveToken == null) {
       notifications = [];
       unreadNotifications = 0;
@@ -317,7 +348,7 @@ class AppState extends ChangeNotifier {
       final response = await http
           .get(
         Uri.parse("$baseUrl/api/notifications"),
-        headers: _headers,
+        headers: _headersForToken(effectiveToken),
       )
           .timeout(
         const Duration(seconds: 12),
@@ -326,8 +357,26 @@ class AppState extends ChangeNotifier {
         },
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+      http.Response finalResponse = response;
+      if (response.statusCode == 401) {
+        final refreshedToken = await _ensureAuthToken(forceRefresh: true);
+        if (refreshedToken != null) {
+          finalResponse = await http
+              .get(
+            Uri.parse("$baseUrl/api/notifications"),
+            headers: _headersForToken(refreshedToken),
+          )
+              .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {
+              throw Exception('fetchNotifications timed out');
+            },
+          );
+        }
+      }
+
+      if (finalResponse.statusCode == 200) {
+        final data = jsonDecode(finalResponse.body);
         final rawNotifications = data is Map && data['notifications'] is List
             ? List<dynamic>.from(data['notifications'])
             : <dynamic>[];
@@ -339,10 +388,10 @@ class AppState extends ChangeNotifier {
         // Debug: confirm API response for notification bell
         final uid = (currentUser is Map<String, dynamic>) ? (currentUser as Map<String, dynamic>)['id'] : null;
         print(
-            'Dashboard - Notifications API: ${response.statusCode}, count: ${rawNotifications.length}, unread: $unreadNotifications (user_id: $uid)');
+            'Dashboard - Notifications API: ${finalResponse.statusCode}, count: ${rawNotifications.length}, unread: $unreadNotifications (user_id: $uid)');
       } else {
         print(
-            'Error fetching notifications: ${response.statusCode} - ${response.body}');
+            'Error fetching notifications: ${finalResponse.statusCode} - ${finalResponse.body}');
         notifications = [];
         unreadNotifications = 0;
       }
@@ -397,10 +446,18 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchProposals() async {
     try {
+      final token = await _ensureAuthToken();
+      if (token == null) {
+        proposals = [];
+        dashboardCounts = {};
+        notifyListeners();
+        return;
+      }
+
       final r = await http
           .get(
         Uri.parse("$baseUrl/api/proposals"),
-        headers: _headers,
+        headers: _headersForToken(token),
       )
           .timeout(
         const Duration(seconds: 12),
@@ -408,15 +465,35 @@ class AppState extends ChangeNotifier {
           throw Exception('fetchProposals timed out');
         },
       );
-      if (r.statusCode == 200) {
-        final data = jsonDecode(r.body);
+
+      http.Response finalResponse = r;
+      if (r.statusCode == 401) {
+        final refreshedToken = await _ensureAuthToken(forceRefresh: true);
+        if (refreshedToken != null) {
+          finalResponse = await http
+              .get(
+            Uri.parse("$baseUrl/api/proposals"),
+            headers: _headersForToken(refreshedToken),
+          )
+              .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {
+              throw Exception('fetchProposals timed out');
+            },
+          );
+        }
+      }
+
+      if (finalResponse.statusCode == 200) {
+        final data = jsonDecode(finalResponse.body);
         proposals = data is List ? List<dynamic>.from(data) : [];
 
         // Calculate dashboard counts from real data
         _updateDashboardCounts();
         notifyListeners();
       } else {
-        print('Error fetching proposals: ${r.statusCode} - ${r.body}');
+        print(
+            'Error fetching proposals: ${finalResponse.statusCode} - ${finalResponse.body}');
       }
     } catch (e) {
       print('Error fetching proposals: $e');
@@ -482,9 +559,15 @@ class AppState extends ChangeNotifier {
   Future<Map<String, dynamic>?> createProposal(String title, String client,
       {String? templateKey, dynamic clientId}) async {
     try {
+      final token = await _ensureAuthToken();
+      if (token == null) {
+        print('Error creating proposal: missing auth token');
+        return null;
+      }
+
       final r = await http.post(
         Uri.parse("$baseUrl/api/proposals"),
-        headers: _headers,
+        headers: _headersForToken(token),
         body: jsonEncode({
           "title": title,
           "client": client,
@@ -492,7 +575,30 @@ class AppState extends ChangeNotifier {
           if (clientId != null) "client_id": clientId,
         }),
       );
-      final p = jsonDecode(r.body);
+
+      http.Response finalResponse = r;
+      if (r.statusCode == 401) {
+        final refreshedToken = await _ensureAuthToken(forceRefresh: true);
+        if (refreshedToken != null) {
+          finalResponse = await http.post(
+            Uri.parse("$baseUrl/api/proposals"),
+            headers: _headersForToken(refreshedToken),
+            body: jsonEncode({
+              "title": title,
+              "client": client,
+              "template_key": templateKey,
+              if (clientId != null) "client_id": clientId,
+            }),
+          );
+        }
+      }
+
+      if (finalResponse.statusCode != 200 && finalResponse.statusCode != 201) {
+        print(
+            'Error creating proposal: ${finalResponse.statusCode} - ${finalResponse.body}');
+        return null;
+      }
+      final p = jsonDecode(finalResponse.body);
       currentProposal = p;
       await fetchProposals();
       await fetchDashboard();

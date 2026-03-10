@@ -1,72 +1,13 @@
 // ignore_for_file: deprecated_member_use
 
 import 'dart:convert';
-import 'dart:html' as html;
-import 'dart:js' as js;
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
+import 'auth_service.dart';
+import 'firebase_service.dart';
 
 class ApiService {
-  // Get API URL: always use Render production backend
+  // API URL: force Render backend (no localhost fallback)
   static String get baseUrl {
-    if (kIsWeb) {
-      try {
-        // Honor USE_LOCAL_API first (set in index.html for local dev)
-        final useLocal = js.context['USE_LOCAL_API'];
-        if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
-          print(
-              '🌐 ApiService: Using local API URL (USE_LOCAL_API): http://127.0.0.1:5000');
-          return 'http://127.0.0.1:5000';
-        }
-        // If the user explicitly overrides the API URL for local dev, honor it.
-        final explicitAppUrl = js.context['APP_API_URL'];
-        if (explicitAppUrl != null &&
-            explicitAppUrl.toString().trim().isNotEmpty) {
-          final url = explicitAppUrl.toString().replaceAll('"', '').trim();
-          print('🌐 ApiService: Using API URL from APP_API_URL: $url');
-          return url;
-        }
-
-        final explicitEnvUrl = js.context['REACT_APP_API_URL'];
-        if (explicitEnvUrl != null &&
-            explicitEnvUrl.toString().trim().isNotEmpty) {
-          final url = explicitEnvUrl.toString().replaceAll('"', '').trim();
-          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
-          return url;
-        }
-
-        // Try to get from window.APP_CONFIG.API_URL
-        final config = js.context['APP_CONFIG'];
-        if (config != null) {
-          final configObj = config as js.JsObject;
-          final apiUrl = configObj['API_URL'];
-          if (apiUrl != null && apiUrl.toString().trim().isNotEmpty) {
-            final url = apiUrl.toString().replaceAll('"', '').trim();
-            print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
-            return url;
-          }
-        }
-      } catch (e) {
-        print('⚠️ ApiService: Could not read API URL from config: $e');
-      }
-    }
-    // Check if we're in production (not localhost)
-    if (kIsWeb) {
-      final hostname = html.window.location.hostname;
-      if (hostname != null &&
-          (hostname.contains('netlify.app') ||
-              hostname.contains('onrender.com'))) {
-        print(
-            '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-        return 'https://lukens-wp8w.onrender.com';
-      }
-      // When on localhost with no override, use local backend so dev works
-      if (hostname == 'localhost' || hostname == '127.0.0.1') {
-        print(
-            '🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:5000');
-        return 'http://127.0.0.1:5000';
-      }
-    }
     print(
         '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';
@@ -78,6 +19,26 @@ class ApiService {
       'Content-Type': 'application/json',
       if (token != null) 'Authorization': 'Bearer $token',
     };
+  }
+
+  static Future<String?> _refreshTokenIfPossible({bool force = false}) async {
+    try {
+      final user = FirebaseService.currentUser;
+      if (user != null) {
+        final refreshed = await user.getIdToken(force);
+        if (refreshed != null && refreshed.isNotEmpty) {
+          AuthService.updateToken(refreshed);
+          return refreshed;
+        }
+      }
+    } catch (e) {
+      print('Token refresh failed: $e');
+    }
+    final fallback = AuthService.token;
+    if (fallback != null && fallback.isNotEmpty) {
+      return fallback;
+    }
+    return null;
   }
 
   // User Profile
@@ -165,14 +126,26 @@ class ApiService {
   // Proposals
   static Future<List<dynamic>> getProposals(String token) async {
     try {
-      final response = await http.get(
+      http.Response response = await http.get(
         Uri.parse('$baseUrl/api/proposals'),
         headers: _getHeaders(token),
       );
 
+      if (response.statusCode == 401) {
+        final refreshedToken = await _refreshTokenIfPossible(force: true);
+        if (refreshedToken != null) {
+          response = await http.get(
+            Uri.parse('$baseUrl/api/proposals'),
+            headers: _getHeaders(refreshedToken),
+          );
+        }
+      }
+
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
+      print(
+          'Error fetching proposals: ${response.statusCode} - ${response.body}');
       return [];
     } catch (e) {
       print('Error fetching proposals: $e');
@@ -189,7 +162,7 @@ class ApiService {
     String? status,
   }) async {
     try {
-      final response = await http.post(
+      http.Response response = await http.post(
         Uri.parse('$baseUrl/api/proposals'),
         headers: _getHeaders(token),
         body: json.encode({
@@ -200,6 +173,23 @@ class ApiService {
           'status': status ?? 'draft',
         }),
       );
+
+      if (response.statusCode == 401) {
+        final refreshedToken = await _refreshTokenIfPossible(force: true);
+        if (refreshedToken != null) {
+          response = await http.post(
+            Uri.parse('$baseUrl/api/proposals'),
+            headers: _getHeaders(refreshedToken),
+            body: json.encode({
+              'title': title,
+              'content': content,
+              'client_name': clientName,
+              'client_email': clientEmail,
+              'status': status ?? 'draft',
+            }),
+          );
+        }
+      }
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);

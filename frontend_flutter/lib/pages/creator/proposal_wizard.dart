@@ -1010,9 +1010,12 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         clientId: _formData['clientId'],
       );
 
-      final proposalId = (created != null && created['id'] != null)
-          ? created['id'].toString()
-          : 'draft-${DateTime.now().millisecondsSinceEpoch}';
+      if (created == null || created['id'] == null) {
+        throw Exception(
+            'Unable to create proposal record. Please check your session and try again.');
+      }
+
+      final proposalId = created['id'].toString();
 
       _proposalId = proposalId;
 
@@ -1021,19 +1024,19 @@ class _ProposalWizardPageState extends State<ProposalWizard>
           Map<String, String>.from(_formData['moduleContents'] ?? {});
 
       final String? opportunityId =
-          created != null && created['opportunity_id'] != null
+          created['opportunity_id'] != null
               ? created['opportunity_id'].toString()
               : null;
       final String? engagementStage =
-          created != null && created['engagement_stage'] != null
+          created['engagement_stage'] != null
               ? created['engagement_stage'].toString()
               : null;
       final String? engagementOpenedAt =
-          created != null && created['engagement_opened_at'] != null
+          created['engagement_opened_at'] != null
               ? created['engagement_opened_at'].toString()
               : null;
 
-      final String? createdAt = created != null && created['created_at'] != null
+      final String? createdAt = created['created_at'] != null
           ? created['created_at'].toString()
           : null;
 

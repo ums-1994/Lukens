@@ -312,6 +312,13 @@ class AuthService {
     print('💾 Session data set and persisted');
   }
 
+  // Update token while keeping current user/session data
+  static void updateToken(String token) {
+    if (token.isEmpty) return;
+    _token = token;
+    _persistSession();
+  }
+
   // Logout
   static void logout() {
     _token = null;
