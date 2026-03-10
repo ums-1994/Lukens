@@ -84,45 +84,49 @@ def create_proposal(username=None, user_id=None, email=None):
                 if username:
                     lookup_strategies.append(('username', username))
 
-                max_retries = 30
-                retry_delay = 0.2
+                # Check if user was auto-created in this request (avoids DB replication lag)
+                try:
+                    from flask import g
+                    auto_created = getattr(g, '_auto_created_user', None)
+                    if auto_created and auto_created.get('email') == email:
+                        found_user_id = auto_created['user_id']
+                        print(f"✅ Using auto-created user from request context: {found_user_id}")
+                        # Skip the retry loop entirely
+                        user_id = found_user_id
+                    else:
+                        found_user_id = None
+                except Exception as e:
+                    print(f"⚠️ Could not check g object: {e}")
+                    found_user_id = None
 
-                for attempt in range(max_retries):
-                    # Check cache first for newly created users (avoids DB replication lag)
-                    from api.utils.decorators import USER_CACHE_BY_EMAIL
-                    _user_cache_by_id = globals().get('_USER_CACHE_BY_ID', {})
-                    if email and email in USER_CACHE_BY_EMAIL:
-                        cached_user_id, cached_username = USER_CACHE_BY_EMAIL[email]
-                        found_user_id = cached_user_id
-                        print(f"✅ Found user_id {found_user_id} from cache (email: {email})")
-                        break
-                    if user_id and user_id in _user_cache_by_id:
-                        found_user_id = user_id
-                        print(f"✅ Found user_id {found_user_id} from cache (by ID)")
-                        break
+                # Only run retry loop if we didn't get user from g object
+                if not found_user_id:
+                    max_retries = 30
+                    retry_delay = 0.2
 
-                    for strategy_type, strategy_value in lookup_strategies:
-                        try:
-                            if strategy_type == 'email':
-                                cursor.execute('SELECT id FROM users WHERE email = %s', (strategy_value,))
-                            elif strategy_type == 'username':
-                                cursor.execute('SELECT id FROM users WHERE username = %s', (strategy_value,))
+                    for attempt in range(max_retries):
+                        for strategy_type, strategy_value in lookup_strategies:
+                            try:
+                                if strategy_type == 'email':
+                                    cursor.execute('SELECT id FROM users WHERE email = %s', (strategy_value,))
+                                elif strategy_type == 'username':
+                                    cursor.execute('SELECT id FROM users WHERE username = %s', (strategy_value,))
 
-                            user_row = cursor.fetchone()
-                            if user_row:
-                                found_user_id = user_row[0]
-                                print(f"✅ Found user_id {found_user_id} using {strategy_type}: {strategy_value} (attempt {attempt + 1})")
-                                break
-                        except Exception as e:
-                            print(f"⚠️ Error looking up by {strategy_type}: {e}")
+                                user_row = cursor.fetchone()
+                                if user_row:
+                                    found_user_id = user_row[0]
+                                    print(f"✅ Found user_id {found_user_id} using {strategy_type}: {strategy_value} (attempt {attempt + 1})")
+                                    break
+                            except Exception as e:
+                                print(f"⚠️ Error looking up by {strategy_type}: {e}")
 
-                    if found_user_id:
-                        break
+                        if found_user_id:
+                            break
 
-                    if attempt < max_retries - 1:
-                        print(f"⚠️ User not found yet, waiting {retry_delay}s before retry {attempt + 2}/{max_retries}...")
-                        time.sleep(retry_delay)
-                        retry_delay = min(retry_delay * 1.3, 1.0)
+                        if attempt < max_retries - 1:
+                            print(f"⚠️ User not found yet, waiting {retry_delay}s before retry {attempt + 2}/{max_retries}...")
+                            time.sleep(retry_delay)
+                            retry_delay = min(retry_delay * 1.3, 1.0)
 
                 if not found_user_id:
                     print(f"❌ User lookup failed after {max_retries} attempts for username: {username}, email: {email}, user_id: {user_id}")

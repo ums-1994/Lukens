@@ -249,11 +249,21 @@ def token_required(f):
                             # Longer delay for Render's read replica replication lag
                             time.sleep(2.0)
 
+                            # Store auto-created user info in Flask g object for this request
+                            # This avoids DB lookup race conditions since g persists for the request
+                            try:
+                                from flask import g
+                                g._auto_created_user = {
+                                    'user_id': user_id,
+                                    'username': username,
+                                    'email': email
+                                }
+                                print(f"[FIREBASE] Stored auto-created user {user_id} in request context")
+                            except Exception as e:
+                                print(f"[FIREBASE] Warning: Could not store in g object: {e}")
+
                             # Also cache by user_id for immediate lookup
                             USER_CACHE_BY_EMAIL[email] = (user_id, username)
-                            # Create a reverse lookup cache by user_id for routes that look up by ID
-                            globals()['_USER_CACHE_BY_ID'] = globals().get('_USER_CACHE_BY_ID', {})
-                            globals()['_USER_CACHE_BY_ID'][user_id] = (username, email)
 
                             import inspect
                             sig = inspect.signature(f)
