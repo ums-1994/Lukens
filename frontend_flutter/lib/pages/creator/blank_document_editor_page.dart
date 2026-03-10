@@ -233,6 +233,23 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
       final commentText = c['comment_text']?.toString() ?? '';
       final timestampLabel = _formatTimestamp(c['timestamp']);
+
+      final replies = _comments
+          .where((r) => r['parent_id']?.toString() == c['id']?.toString())
+          .toList()
+        ..sort((a, b) {
+          final aTime = _tryParseTimestamp(a['timestamp']);
+          final bTime = _tryParseTimestamp(b['timestamp']);
+          if (aTime == null && bTime == null) return 0;
+          if (aTime == null) return -1;
+          if (bTime == null) return 1;
+          return aTime.compareTo(bTime);
+        });
+
+      final latestReply = replies.isNotEmpty ? replies.last : null;
+      final latestReplyText = latestReply?['comment_text']?.toString() ?? '';
+      final latestReplyAuthor =
+          latestReply?['commenter_name']?.toString().trim() ?? '';
       final isResolved =
           (c['status']?.toString().toLowerCase() ?? 'open') == 'resolved';
 
@@ -323,6 +340,32 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             color: Colors.grey.shade800,
                           ),
                         ),
+                        if (replies.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Reply (${replies.length})',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                          if (latestReplyText.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              latestReplyAuthor.isNotEmpty
+                                  ? '$latestReplyAuthor: $latestReplyText'
+                                  : latestReplyText,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.25,
+                                color: Colors.grey.shade800,
+                              ),
+                            ),
+                          ],
+                        ],
                       ],
                     ),
                   ),
@@ -607,7 +650,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           await _addComment(parentId: rootCommentId);
                           _threadReplyController.clear();
                           if (!mounted) return;
-                          _loadCommentsFromDatabase(_savedProposalId!);
+                          await _loadCommentsFromDatabase(_savedProposalId!);
+                          _threadOverlay?.markNeedsBuild();
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF00BCD4),
@@ -1724,15 +1768,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _comments.add({
             'id': comment['id'],
             'parent_id': comment['parent_id'],
+            'block_type': comment['block_type'],
+            'block_id': comment['block_id'],
             'commenter_name': comment['author_name'] ??
                 comment['author_username'] ??
                 comment['author_email'] ??
                 'User #${comment['created_by']}',
+            'created_by': comment['created_by'],
             'comment_text': comment['comment_text'],
             'section_index': comment['section_index'],
             'section_name': comment['section_name'],
-            'block_type': comment['block_type'],
-            'block_id': comment['block_id'],
             'highlighted_text': comment['highlighted_text'],
             'start_offset': comment['start_offset'],
             'end_offset': comment['end_offset'],
@@ -1745,6 +1790,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           });
         }
       });
+
+      // If a thread overlay is open, force it to rebuild so new replies appear.
+      _threadOverlay?.markNeedsBuild();
       print('✅ Loaded ${flatComments.length} comments (including replies)');
 
       _applyInlineHighlights();
