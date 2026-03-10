@@ -165,7 +165,7 @@ def options_comments_document(proposal_id=None):
 @bp.post("/api/comments/document/<int:proposal_id>")
 @bp.post("/comments/document/<int:proposal_id>")
 @token_required
-def create_comment(username=None, proposal_id=None):
+def create_comment(username=None, user_id=None, proposal_id=None):
     """Create a new comment on a document with support for threading and block-level comments"""
     try:
         data = request.get_json()
@@ -185,13 +185,26 @@ def create_comment(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get user ID
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
-            user = cursor.fetchone()
-            
+            # Resolve user
+            # Prefer user_id injected by token_required (Firebase flow).
+            user = None
+            if user_id is not None:
+                cursor.execute(
+                    'SELECT id, email, full_name FROM users WHERE id = %s',
+                    (user_id,),
+                )
+                user = cursor.fetchone()
+
+            if not user:
+                cursor.execute(
+                    'SELECT id, email, full_name FROM users WHERE username = %s',
+                    (username,),
+                )
+                user = cursor.fetchone()
+
             if not user:
                 return {'detail': 'User not found'}, 404
-            
+
             user_id = user['id']
             
             cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))

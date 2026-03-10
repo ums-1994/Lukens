@@ -6635,17 +6635,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     final isFinanceRole = context.watch<RoleService>().isFinance();
     final isManagerRole = context.watch<RoleService>().isCreator();
-    // Finance can edit freely when a proposal is returned to them for changes
-    final _statusForLock = (_proposalStatus ?? '').toLowerCase().trim();
-    final financeTextLocked =
-        isFinanceRole && _statusForLock != 'changes requested';
 
     return SectionWidget(
       section: section,
       isHovered: isHovered,
       isSelected: isSelected,
-      readOnly: widget.readOnly || financeTextLocked,
-      canDelete: !isFinanceRole && (_sections.length > 1),
+      readOnly: widget.readOnly,
+      canDelete: (_sections.length > 1),
       onContentTap: () {
         // Keep track of which section selection belongs to.
         setState(() {
@@ -6666,23 +6662,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       onTap: () {
         setState(() => _selectedSectionIndex = index);
       },
-      onInsertBelow: isFinanceRole ? () {} : () => _insertSection(index),
+      onInsertBelow: () => _insertSection(index),
       onInsertFromLibrary: () {
         setState(() {
           _selectedSectionIndex = index;
         });
         _addFromLibrary();
       },
-      onShowAIAssistant: isFinanceRole
-          ? () {}
-          : () {
-              setState(() {
-                _selectedSectionIndex = index;
-              });
-              _showAIAssistantDialog();
-            },
-      onDuplicate: isFinanceRole ? () {} : () => _duplicateSection(index),
-      onDelete: isFinanceRole ? () {} : () => _deleteSection(index),
+      onShowAIAssistant: () {
+        setState(() {
+          _selectedSectionIndex = index;
+        });
+        _showAIAssistantDialog();
+      },
+      onDuplicate: () => _duplicateSection(index),
+      onDelete: () => _deleteSection(index),
       getContentTextStyle: _getContentTextStyle,
       getTextAlignment: _getTextAlignment,
       onReorderTables: (int oldIndex, int newIndex) {
@@ -6718,7 +6712,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
       },
       onRemoveInlineImage: (imageIndex) {
-        if (isFinanceRole) return;
         setState(() {
           _sections[index].inlineImages.removeAt(imageIndex);
         });
