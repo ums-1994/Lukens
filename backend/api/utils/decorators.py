@@ -270,12 +270,14 @@ def token_required(f):
                             clean_kwargs = {
                                 k: v
                                 for k, v in kwargs.items()
-                                if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']
+                                if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email', 'auto_created']
                             }
                             if 'user_id' in sig.parameters:
                                 clean_kwargs['user_id'] = user_id
                             if 'email' in sig.parameters:
                                 clean_kwargs['email'] = email
+                            # Pass flag to indicate user was just auto-created (avoids DB lookup race condition)
+                            clean_kwargs['auto_created'] = True
                             return f(username=username, *args, **clean_kwargs)
             else:
                 # Firebase verification failed — fall back to legacy DB token
