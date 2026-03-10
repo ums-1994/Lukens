@@ -14,6 +14,117 @@ from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
 
 bp = Blueprint('collaborator', __name__)
+ALLOWED_REACTION_TYPES = {
+    'helpful',
+    'needs_work',
+    'unclear',
+    'approved',
+    'insight',
+}
+
+
+def _resolve_request_user(cursor, username=None, user_id=None, email=None):
+    """Resolve current requester into a DB user row."""
+    if user_id:
+        cursor.execute(
+            'SELECT id, username, email, role FROM users WHERE id = %s',
+            (user_id,),
+        )
+        user = cursor.fetchone()
+        if user:
+            return user
+
+    if username:
+        cursor.execute(
+            'SELECT id, username, email, role FROM users WHERE username = %s',
+            (username,),
+        )
+        user = cursor.fetchone()
+        if user:
+            return user
+
+    if email:
+        cursor.execute(
+            'SELECT id, username, email, role FROM users WHERE email = %s',
+            (email,),
+        )
+        user = cursor.fetchone()
+        if user:
+            return user
+
+    return None
+
+
+def _has_proposal_access(cursor, proposal_id, current_user):
+    """Return True if user can access the proposal."""
+    if not current_user:
+        return False
+
+    role_key = (current_user.get('role') or '').strip().lower()
+    if role_key in {'admin', 'ceo', 'approver'} or role_key.startswith('finance'):
+        return True
+
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = 'proposals'
+        """
+    )
+    proposal_columns = {row['column_name'] for row in cursor.fetchall()}
+    owner_col = 'owner_id' if 'owner_id' in proposal_columns else (
+        'user_id' if 'user_id' in proposal_columns else None
+    )
+    if owner_col:
+        cursor.execute(
+            f"SELECT 1 FROM proposals WHERE id = %s AND {owner_col}::text = %s::text",
+            (proposal_id, str(current_user['id'])),
+        )
+        if cursor.fetchone():
+            return True
+
+    user_email = (current_user.get('email') or '').strip().lower()
+    if not user_email:
+        return False
+
+    cursor.execute(
+        """
+        SELECT 1
+        FROM collaboration_invitations
+        WHERE proposal_id = %s
+          AND LOWER(invited_email) = %s
+          AND status IN ('accepted', 'active', 'pending')
+        LIMIT 1
+        """,
+        (proposal_id, user_email),
+    )
+    if cursor.fetchone():
+        return True
+
+    # Compatibility for environments using collaborators table directly.
+    cursor.execute(
+        """
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = 'collaborators'
+        """
+    )
+    if cursor.fetchone():
+        cursor.execute(
+            """
+            SELECT 1
+            FROM collaborators
+            WHERE proposal_id = %s
+              AND LOWER(email) = %s
+              AND status IN ('active', 'accepted')
+            LIMIT 1
+            """,
+            (proposal_id, user_email),
+        )
+        if cursor.fetchone():
+            return True
+
+    return False
 
 @bp.get("/api/collaborate")
 def get_collaboration_access():
@@ -547,5 +658,161 @@ def search_users(username=None):
             
     except Exception as e:
         print(f"❌ Error searching users: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.get("/api/proposals/<int:proposal_id>/reactions")
+@bp.get("/proposals/<int:proposal_id>/reactions")
+@token_required
+def get_proposal_reactions(username=None, proposal_id=None, user_id=None, email=None):
+    """Get aggregated reactions for a proposal feedback target."""
+    try:
+        section_key = (request.args.get('section_key') or '__proposal__').strip()
+        if not section_key:
+            section_key = '__proposal__'
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            current_user = _resolve_request_user(
+                cursor, username=username, user_id=user_id, email=email
+            )
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+
+            if not _has_proposal_access(cursor, proposal_id, current_user):
+                return {'detail': 'Proposal not found or access denied'}, 404
+
+            cursor.execute(
+                """
+                SELECT reaction_type, COUNT(*)::int AS count
+                FROM proposal_reactions
+                WHERE proposal_id = %s AND section_key = %s
+                GROUP BY reaction_type
+                """,
+                (proposal_id, section_key),
+            )
+            counts_rows = cursor.fetchall()
+            reaction_counts = {
+                row['reaction_type']: int(row['count']) for row in counts_rows
+            }
+
+            cursor.execute(
+                """
+                SELECT reaction_type
+                FROM proposal_reactions
+                WHERE proposal_id = %s
+                  AND section_key = %s
+                  AND user_id = %s
+                ORDER BY reaction_type
+                """,
+                (proposal_id, section_key, current_user['id']),
+            )
+            user_reactions = [row['reaction_type'] for row in cursor.fetchall()]
+
+            return {
+                'proposal_id': proposal_id,
+                'section_key': section_key,
+                'reaction_counts': reaction_counts,
+                'my_reactions': user_reactions,
+            }, 200
+    except Exception as e:
+        print(f"❌ Error fetching proposal reactions: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post("/api/proposals/<int:proposal_id>/reactions")
+@bp.post("/proposals/<int:proposal_id>/reactions")
+@token_required
+def toggle_proposal_reaction(username=None, proposal_id=None, user_id=None, email=None):
+    """Toggle a reaction for the current user on a proposal feedback target."""
+    try:
+        data = request.get_json() or {}
+        section_key = (data.get('section_key') or '__proposal__').strip()
+        reaction_type = (data.get('reaction_type') or '').strip().lower()
+
+        if not section_key:
+            section_key = '__proposal__'
+        if not reaction_type:
+            return {'detail': 'reaction_type is required'}, 400
+        if reaction_type not in ALLOWED_REACTION_TYPES:
+            return {
+                'detail': f"Invalid reaction_type '{reaction_type}'"
+            }, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            current_user = _resolve_request_user(
+                cursor, username=username, user_id=user_id, email=email
+            )
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+
+            if not _has_proposal_access(cursor, proposal_id, current_user):
+                return {'detail': 'Proposal not found or access denied'}, 404
+
+            cursor.execute(
+                """
+                INSERT INTO proposal_reactions (proposal_id, user_id, section_key, reaction_type)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (proposal_id, user_id, section_key, reaction_type) DO NOTHING
+                RETURNING id
+                """,
+                (proposal_id, current_user['id'], section_key, reaction_type),
+            )
+            inserted = cursor.fetchone() is not None
+
+            if not inserted:
+                cursor.execute(
+                    """
+                    DELETE FROM proposal_reactions
+                    WHERE proposal_id = %s
+                      AND user_id = %s
+                      AND section_key = %s
+                      AND reaction_type = %s
+                    """,
+                    (proposal_id, current_user['id'], section_key, reaction_type),
+                )
+
+            conn.commit()
+
+            cursor.execute(
+                """
+                SELECT reaction_type, COUNT(*)::int AS count
+                FROM proposal_reactions
+                WHERE proposal_id = %s AND section_key = %s
+                GROUP BY reaction_type
+                """,
+                (proposal_id, section_key),
+            )
+            counts_rows = cursor.fetchall()
+            reaction_counts = {
+                row['reaction_type']: int(row['count']) for row in counts_rows
+            }
+
+            cursor.execute(
+                """
+                SELECT reaction_type
+                FROM proposal_reactions
+                WHERE proposal_id = %s
+                  AND section_key = %s
+                  AND user_id = %s
+                ORDER BY reaction_type
+                """,
+                (proposal_id, section_key, current_user['id']),
+            )
+            user_reactions = [row['reaction_type'] for row in cursor.fetchall()]
+
+            return {
+                'proposal_id': proposal_id,
+                'section_key': section_key,
+                'reaction_counts': reaction_counts,
+                'my_reactions': user_reactions,
+                'toggled_on': inserted,
+                'reaction_type': reaction_type,
+            }, 200
+    except Exception as e:
+        print(f"❌ Error toggling proposal reaction: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500

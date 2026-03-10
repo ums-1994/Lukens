@@ -42,8 +42,9 @@ class _StartFromScratchPageState extends State<StartFromScratchPage> {
       final selected = await showDialog<Map<String, dynamic>>(
         context: context,
         builder: (context) => const ContentLibrarySelectionDialog(
+          category: 'Images',
           parentFolderLabel: 'Cover',
-          requireParentFolderMatch: true,
+          requireParentFolderMatch: false,
           imagesOnly: true,
           thumbnailsOnly: true,
           dialogTitle: 'Choose Cover (A4)',

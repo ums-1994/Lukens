@@ -803,6 +803,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String? _proposalStatus; // draft, Pending CEO Approval, Sent to Client, etc.
   Map<String, dynamic>?
       _proposalData; // Store full proposal data for GovernancePanel
+  final Map<String, int> _proposalReactionCounts = {};
+  final Set<String> _myProposalReactions = <String>{};
+  bool _isLoadingProposalReactions = false;
+  static const Map<String, String> _proposalReactionLabels = {
+    'helpful': 'Helpful',
+    'needs_work': 'Needs Work',
+    'unclear': 'Unclear',
+    'approved': 'Approved',
+    'insight': 'Insightful',
+  };
 
   // Governance and Risk Assessment state
   Map<String, dynamic> _governanceResults = {};
@@ -1102,6 +1112,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           await _loadProposalFromDatabase(proposalId);
           await _loadVersionsFromDatabase(proposalId);
           await _loadCommentsFromDatabase(proposalId);
+          await _loadProposalReactions();
         }
       }
 
@@ -1820,6 +1831,189 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
       print('⚠️ Error loading comments: $e');
     }
+  }
+
+  Future<void> _loadProposalReactions() async {
+    if (_savedProposalId == null) return;
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      setState(() => _isLoadingProposalReactions = true);
+      final response = await ApiService.getProposalReactions(
+        token: token,
+        proposalId: _savedProposalId!,
+      );
+      if (!mounted || response == null) return;
+
+      final countsRaw = response['reaction_counts'];
+      final myRaw = response['my_reactions'];
+      final nextCounts = <String, int>{};
+      final nextMine = <String>{};
+
+      if (countsRaw is Map) {
+        countsRaw.forEach((key, value) {
+          final reaction = key.toString();
+          final count = int.tryParse(value.toString()) ?? 0;
+          if (count > 0) {
+            nextCounts[reaction] = count;
+          }
+        });
+      }
+      if (myRaw is List) {
+        for (final item in myRaw) {
+          final reaction = item.toString();
+          if (reaction.isNotEmpty) {
+            nextMine.add(reaction);
+          }
+        }
+      }
+
+      setState(() {
+        _proposalReactionCounts
+          ..clear()
+          ..addAll(nextCounts);
+        _myProposalReactions
+          ..clear()
+          ..addAll(nextMine);
+      });
+    } catch (e) {
+      print('⚠️ Error loading proposal reactions: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingProposalReactions = false);
+      }
+    }
+  }
+
+  Future<void> _toggleProposalReaction(String reactionType) async {
+    if (_savedProposalId == null) {
+      _showSnack(
+        const SnackBar(
+          content: Text('Save the proposal first to add reactions'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      final response = await ApiService.toggleProposalReaction(
+        token: token,
+        proposalId: _savedProposalId!,
+        reactionType: reactionType,
+      );
+
+      if (!mounted || response == null) return;
+
+      final countsRaw = response['reaction_counts'];
+      final myRaw = response['my_reactions'];
+      final nextCounts = <String, int>{};
+      final nextMine = <String>{};
+
+      if (countsRaw is Map) {
+        countsRaw.forEach((key, value) {
+          final reaction = key.toString();
+          final count = int.tryParse(value.toString()) ?? 0;
+          if (count > 0) {
+            nextCounts[reaction] = count;
+          }
+        });
+      }
+      if (myRaw is List) {
+        for (final item in myRaw) {
+          final reaction = item.toString();
+          if (reaction.isNotEmpty) {
+            nextMine.add(reaction);
+          }
+        }
+      }
+
+      setState(() {
+        _proposalReactionCounts
+          ..clear()
+          ..addAll(nextCounts);
+        _myProposalReactions
+          ..clear()
+          ..addAll(nextMine);
+      });
+    } catch (e) {
+      print('⚠️ Error toggling proposal reaction: $e');
+      if (!mounted) return;
+      _showSnack(
+        SnackBar(
+          content: Text('Unable to update reaction: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _showProposalReactionsSheet() {
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final reactionEntries = _proposalReactionLabels.entries.toList();
+            final totalReactions = _proposalReactionCounts.values.fold<int>(
+              0,
+              (sum, value) => sum + value,
+            );
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Proposal Feedback',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '$totalReactions total reaction${totalReactions == 1 ? '' : 's'}',
+                      style: TextStyle(
+                        color: Colors.grey[700],
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: reactionEntries.map((entry) {
+                        final key = entry.key;
+                        final selected = _myProposalReactions.contains(key);
+                        final count = _proposalReactionCounts[key] ?? 0;
+                        return FilterChip(
+                          selected: selected,
+                          label: Text('${entry.value} ($count)'),
+                          onSelected: (_) async {
+                            await _toggleProposalReaction(key);
+                            setModalState(() {});
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _loadCollaborators() async {
@@ -4068,6 +4262,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // Reload full proposal data to ensure we have everything
           if (newProposalId != null) {
             await _loadProposalFromDatabase(newProposalId);
+            await _loadProposalReactions();
           }
         } else {
           print('⚠️ Proposal creation returned null or no ID');
@@ -4101,6 +4296,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           // Reload proposal data to ensure we have the latest
           await _loadProposalFromDatabase(_savedProposalId!);
         }
+        await _loadProposalReactions();
       }
     } catch (e) {
       print('❌ Error saving to backend: $e');
@@ -5713,6 +5909,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final isPricingStatus = statusKey == 'pricing in progress';
     final isChangesRequested = statusKey == 'changes requested';
     final isPendingFinanceReview = statusKey == 'pending finance review';
+    final totalProposalReactions =
+        _proposalReactionCounts.values.fold<int>(0, (sum, count) => sum + count);
 
     return Container(
       color: Colors.white,
@@ -5962,6 +6160,33 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          OutlinedButton.icon(
+            onPressed: _savedProposalId == null
+                ? null
+                : () async {
+                    await _loadProposalReactions();
+                    if (mounted) {
+                      _showProposalReactionsSheet();
+                    }
+                  },
+            icon: _isLoadingProposalReactions
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.thumb_up_alt_outlined, size: 16),
+            label: Text('Feedback ($totalProposalReactions)'),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFF00BCD4)),
+              foregroundColor: const Color(0xFF00BCD4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(4),
               ),

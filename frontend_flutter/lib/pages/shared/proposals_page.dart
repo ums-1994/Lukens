@@ -355,6 +355,21 @@ class _ProposalsPageState extends State<ProposalsPage>
     final app = context.watch<AppState>();
     final userRole = app.currentUser?['role'] ?? 'Financial Manager';
 
+    String normalizeStatus(String value) {
+      final v = value.toLowerCase().trim();
+      if (v == 'pending ceo approval' || v == 'pending approval') {
+        return 'pending';
+      }
+      if (v == 'sent to client') {
+        return 'sent';
+      }
+      if (v == 'rejected') {
+        return 'declined';
+      }
+      return v;
+    }
+
+    final filterStatusKey = normalizeStatus(_filterStatus);
     final filtered = proposals.where((p) {
       final title = (p['title'] ?? '').toString().toLowerCase();
       final client =
@@ -362,8 +377,9 @@ class _ProposalsPageState extends State<ProposalsPage>
       final matchesSearch =
           title.contains(_searchController.text.toLowerCase()) ||
               client.contains(_searchController.text.toLowerCase());
-      final matchesStatus = _filterStatus == 'All Statuses' ||
-          (p['status'] ?? '') == _filterStatus;
+      final proposalStatus = normalizeStatus((p['status'] ?? '').toString());
+      final matchesStatus =
+          _filterStatus == 'All Statuses' || proposalStatus == filterStatusKey;
       return matchesSearch && matchesStatus;
     }).toList();
 

@@ -360,13 +360,16 @@ def get_proposals(username=None, user_id=None, email=None):
             existing_columns = [row[0] for row in cursor.fetchall()]
             print(f"📋 Available columns in proposals table: {existing_columns}")
             
-            # Finance users can see all proposals
+            # Finance users can see all non-draft proposals, plus their own drafts.
             if is_finance:
                 select_cols = ['id', 'title', 'content', 'status']
+                owner_col = None
                 if 'owner_id' in existing_columns:
                     select_cols.append('owner_id')
+                    owner_col = 'owner_id'
                 elif 'user_id' in existing_columns:
                     select_cols.append('user_id')
+                    owner_col = 'user_id'
                 if 'client' in existing_columns:
                     select_cols.append('client')
                 elif 'client_name' in existing_columns:
@@ -388,11 +391,19 @@ def get_proposals(username=None, user_id=None, email=None):
                 if 'pdf_url' in existing_columns:
                     select_cols.append('pdf_url')
 
-                query = f'''SELECT {', '.join(select_cols)}
-                     FROM proposals
-                     WHERE LOWER(COALESCE(status, '')) <> 'draft'
-                     ORDER BY created_at DESC'''
-                cursor.execute(query)
+                if owner_col and user_id is not None:
+                    query = f'''SELECT {', '.join(select_cols)}
+                         FROM proposals
+                         WHERE LOWER(COALESCE(status, '')) <> 'draft'
+                            OR {owner_col}::text = %s::text
+                         ORDER BY created_at DESC'''
+                    cursor.execute(query, (str(user_id),))
+                else:
+                    query = f'''SELECT {', '.join(select_cols)}
+                         FROM proposals
+                         WHERE LOWER(COALESCE(status, '')) <> 'draft'
+                         ORDER BY created_at DESC'''
+                    cursor.execute(query)
 
             # Build query dynamically based on available columns for non-finance users
             elif 'owner_id' in existing_columns:

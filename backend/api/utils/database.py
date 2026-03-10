@@ -627,6 +627,22 @@ def init_pg_schema():
         FOREIGN KEY (parent_id) REFERENCES document_comments(id) ON DELETE CASCADE
         )''')
 
+        # Lightweight proposal feedback reactions (proposal-level or section-level)
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_reactions (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        section_key VARCHAR(255) NOT NULL DEFAULT '__proposal__',
+        reaction_type VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE (proposal_id, user_id, section_key, reaction_type)
+        )''')
+
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_reactions_lookup
+                         ON proposal_reactions(proposal_id, section_key, reaction_type)''')
+
         # Migrations for existing databases
         try:
             cursor.execute('''

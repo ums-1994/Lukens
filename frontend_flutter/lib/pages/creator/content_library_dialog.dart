@@ -144,28 +144,12 @@ class _ContentLibrarySelectionDialogState
       }
     }
 
-    // Filter: exclude folders (only show actual content blocks for insertion)
-    // and apply search filter
-    final filtered = _modules.where((m) {
+    // Base filter: exclude folders (only show actual content blocks for insertion)
+    // and apply type/search filters first.
+    final baseFiltered = _modules.where((m) {
       // Skip folders - only show content blocks that can be inserted
       if (_isFolder(m['is_folder'])) {
         return false;
-      }
-
-      if (widget.parentFolderLabel != null &&
-          widget.parentFolderLabel!.trim().isNotEmpty) {
-        if (widget.requireParentFolderMatch && parentFolderId == null) {
-          return false;
-        }
-        // Only apply the parent-folder filter if we successfully resolved the folder id.
-        // If the folder can't be found (e.g. is_folder comes back as a non-bool), we fall
-        // back to showing all items rather than hiding everything.
-        if (parentFolderId != null) {
-          final parsedPid = _asInt(m['parent_id']);
-          if (parsedPid != parentFolderId) {
-            return false;
-          }
-        }
       }
 
       if (widget.imagesOnly) {
@@ -194,6 +178,26 @@ class _ContentLibrarySelectionDialogState
       }
       return true;
     }).toList();
+
+    // Optional folder filter pass:
+    // - If folder exists and has matches, use those matches.
+    // - If it yields zero matches (common when "Cover" folder is empty/missing),
+    //   gracefully fall back to base results so selection dialog is never blank.
+    List<Map<String, dynamic>> filtered = baseFiltered;
+    if (widget.parentFolderLabel != null &&
+        widget.parentFolderLabel!.trim().isNotEmpty) {
+      if (widget.requireParentFolderMatch && parentFolderId == null) {
+        filtered = const [];
+      } else if (parentFolderId != null) {
+        final folderMatches = baseFiltered.where((m) {
+          final parsedPid = _asInt(m['parent_id']);
+          return parsedPid == parentFolderId;
+        }).toList();
+        if (folderMatches.isNotEmpty || widget.requireParentFolderMatch) {
+          filtered = folderMatches;
+        }
+      }
+    }
 
     return Dialog(
       backgroundColor: Colors.transparent,

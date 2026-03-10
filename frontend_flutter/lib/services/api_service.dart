@@ -625,6 +625,63 @@ class ApiService {
     }
   }
 
+  // Proposal reactions (quick feedback)
+  static Future<Map<String, dynamic>?> getProposalReactions({
+    required String token,
+    required int proposalId,
+    String sectionKey = '__proposal__',
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/api/proposals/$proposalId/reactions')
+          .replace(queryParameters: {'section_key': sectionKey});
+      final response = await http.get(uri, headers: _getHeaders(token));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      if (response.statusCode == 401) {
+        throw Exception('unauthorized');
+      }
+      print(
+          'Error fetching proposal reactions: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error fetching proposal reactions: $e');
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> toggleProposalReaction({
+    required String token,
+    required int proposalId,
+    required String reactionType,
+    String sectionKey = '__proposal__',
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/proposals/$proposalId/reactions'),
+        headers: _getHeaders(token),
+        body: json.encode({
+          'reaction_type': reactionType,
+          'section_key': sectionKey,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      if (response.statusCode == 401) {
+        throw Exception('unauthorized');
+      }
+      print(
+          'Error toggling proposal reaction: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error toggling proposal reaction: $e');
+      rethrow;
+    }
+  }
+
   // User search for @mentions autocomplete
   static Future<List<dynamic>> searchUsersForMentions({
     required String token,

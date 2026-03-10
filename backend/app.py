@@ -677,6 +677,22 @@ def init_pg_schema():
         FOREIGN KEY (created_by) REFERENCES users(id),
         FOREIGN KEY (resolved_by) REFERENCES users(id)
         )''')
+
+        # Proposal reactions for lightweight feedback
+        cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_reactions (
+        id SERIAL PRIMARY KEY,
+        proposal_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        section_key VARCHAR(255) NOT NULL DEFAULT '__proposal__',
+        reaction_type VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE (proposal_id, user_id, section_key, reaction_type)
+        )''')
+
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_proposal_reactions_lookup
+                         ON proposal_reactions(proposal_id, section_key, reaction_type)''')
         
         # Collaboration invitations table
         cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
