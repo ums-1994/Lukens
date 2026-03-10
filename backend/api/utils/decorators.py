@@ -278,6 +278,7 @@ def token_required(f):
                                 clean_kwargs['email'] = email
                             # Pass flag to indicate user was just auto-created (avoids DB lookup race condition)
                             clean_kwargs['auto_created'] = True
+                            print(f"[FIREBASE] Passing auto_created=True to route, user_id={user_id}")
                             return f(username=username, *args, **clean_kwargs)
             else:
                 # Firebase verification failed — fall back to legacy DB token
