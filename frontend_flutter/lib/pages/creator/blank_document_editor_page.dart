@@ -3273,24 +3273,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     final dt = DateTime.tryParse(normalized);
     if (dt != null) {
-      // If the timestamp has no explicit timezone, many backends (and DBs)
-      // return it in UTC but without a "Z" or "+02:00". Dart will treat that
-      // as local time. Detect this and treat it as UTC for correct display.
-      final looksLikeNaiveDbTimestamp = RegExp(
-        r'^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?$',
-      ).hasMatch(raw);
-      if (looksLikeNaiveDbTimestamp && !dt.isUtc) {
-        return DateTime.utc(
-          dt.year,
-          dt.month,
-          dt.day,
-          dt.hour,
-          dt.minute,
-          dt.second,
-          dt.millisecond,
-          dt.microsecond,
-        );
-      }
+      // Naive timestamps are already in local time (UTC+2) - do not convert to UTC
       return dt;
     }
 
@@ -3320,7 +3303,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final parsed = _tryParseTimestamp(timestamp);
     if (parsed == null) return '';
     try {
-      final DateTime dt = parsed.toLocal();
+      final DateTime dt = parsed;  // Already in local time, no conversion needed
       final now = DateTime.now();
 
       final timePart = DateFormat('HH:mm').format(dt);
