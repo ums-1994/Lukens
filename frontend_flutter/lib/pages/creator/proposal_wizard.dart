@@ -378,9 +378,16 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     },
     {
       'id': 'scope_deliverables',
-      'name': 'Scope & Deliverables',
+      'name': 'Scope of Work',
       'category': 'Project',
-      'description': 'Detailed project scope and deliverable specifications',
+      'description': 'Detailed project scope and boundaries',
+      'required': true,
+    },
+    {
+      'id': 'deliverables',
+      'name': 'Deliverables',
+      'category': 'Project',
+      'description': 'List of tangible outputs and milestones',
       'required': true,
     },
     {
@@ -416,6 +423,20 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       'name': 'Terms & Conditions',
       'category': 'Legal',
       'description': 'Standard legal terms and contract conditions',
+      'required': true,
+    },
+    {
+      'id': 'payment_terms',
+      'name': 'Payment Terms clause',
+      'category': 'Legal',
+      'description': 'Payment schedule, billing, and invoicing terms',
+      'required': true,
+    },
+    {
+      'id': 'termination_clause',
+      'name': 'Termination Clause',
+      'category': 'Legal',
+      'description': 'Conditions under which the agreement can be terminated',
       'required': true,
     },
   ];
@@ -1267,6 +1288,15 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       case 'Scope & Deliverables':
       case 'Scope of Work':
         return 'scope_deliverables';
+      case 'Deliverables':
+        return 'deliverables';
+      case 'Payment Terms':
+      case 'Payment Terms clause':
+        return 'payment_terms';
+      case 'Termination Clause':
+        return 'termination_clause';
+      case 'Deliverables':
+        return 'deliverables';
       case 'Company Profile':
       case 'Appendix – Company Profile':
         return 'company_profile';
@@ -3657,6 +3687,15 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                     ),
                   ),
                 ),
+                TextButton.icon(
+                  onPressed: _runRiskAssessment,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Re-run Risk Gate'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: PremiumTheme.teal,
+                  ),
+                ),
+                const SizedBox(width: 8),
                 OutlinedButton(
                   onPressed: () => _openIssuesReviewSheet(issues),
                   child: const Text('Review'),
@@ -3705,6 +3744,15 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       ],
                     ),
                   ),
+                  if (_riskAssessment.isNotEmpty)
+                    TextButton.icon(
+                      onPressed: _isLoading ? null : _runRiskAssessment,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Re-run Risk Gate'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: PremiumTheme.teal,
+                      ),
+                    ),
                 ],
               ),
               if (summary.isNotEmpty) ...[
@@ -4087,27 +4135,56 @@ class _ProposalWizardPageState extends State<ProposalWizard>
               ? _formData['templateId'].toString()
               : null,
         );
-        final createdId = created?['id']?.toString();
-        if (createdId == null || createdId.isEmpty) {
+        final rawId = created?['id'];
+        final createdId = rawId is int
+            ? rawId.toString()
+            : (rawId is num ? rawId.toInt().toString() : rawId?.toString());
+        final createdPid = createdId != null && createdId.isNotEmpty
+            ? int.tryParse(createdId.trim())
+            : null;
+        if (createdPid == null || createdPid <= 0) {
           throw Exception('Failed to create proposal');
         }
-        _proposalId = createdId;
+        _proposalId = createdPid.toString();
       }
 
       final proposalData = _buildProposalDataForAI();
+      final payloadPid = int.tryParse(proposalData['proposal_id']?.toString() ?? '');
+      if (payloadPid == null || payloadPid <= 0) {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Proposal ID is missing or invalid. Save the proposal and try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      proposalData['proposal_id'] = payloadPid;
+      if (proposalData['id'] != null && int.tryParse(proposalData['id'].toString()) == null) {
+        proposalData.remove('id');
+      }
       final analysis =
           await AIAnalysisService.analyzeProposalRisks(proposalData);
 
-      // Extract data from analysis
+      // Backend may return status (PASS/REVIEW/BLOCK) or risk_level; support both
       String riskLevel =
-          analysis['risk_level']?.toString().toUpperCase() ?? 'UNKNOWN';
+          analysis['risk_level']?.toString().toUpperCase().trim() ??
+          (analysis['status']?.toString().toUpperCase().trim() == 'PASS'
+              ? 'PASS'
+              : analysis['status']?.toString().toUpperCase().trim() == 'BLOCK'
+                  ? 'BLOCK'
+                  : 'REVIEW');
+      if (riskLevel.isEmpty) riskLevel = 'REVIEW';
       int riskScore = (analysis['risk_score'] as num?)?.toInt() ?? 0;
       final issues =
           List<Map<String, dynamic>>.from(analysis['issues'] ?? const []);
       final recommendations =
           List<String>.from(analysis['recommendations'] ?? const []);
-      final bool canRelease = analysis['can_release'] ?? false;
-      final int totalIssues = analysis['total_issues'] ?? 0;
+      final bool canRelease = analysis['can_release'] ?? (riskLevel == 'PASS');
+      final int totalIssues = analysis['total_issues'] ?? issues.length;
       final Map<String, int> priorityBreakdown =
           Map<String, int>.from(analysis['priority_breakdown'] ?? const {});
 
@@ -4137,16 +4214,27 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         }
       }
 
+      final inferenceFailed = analysis['inference_status'] == 'failed';
+
       setState(() {
-        _riskAssessment = {
-          'risk_level': riskLevel,
-          'risk_score': riskScore,
-          'issues': issues,
-          'recommendations': recommendations,
-          'can_release': canRelease,
-          'total_issues': totalIssues,
-          'priority_breakdown': priorityBreakdown,
-        };
+        // SAFEGUARD: Do not overwrite a previous successful assessment when
+        // inference fails. Only replace stored results if this run is not a
+        // failure, or if we don't have any stored result yet.
+        if (!inferenceFailed || _riskAssessment.isEmpty) {
+          _riskAssessment = {
+            'risk_level': riskLevel,
+            'risk_score': riskScore,
+            'issues': issues,
+            'recommendations': recommendations,
+            'can_release': canRelease,
+            'total_issues': totalIssues,
+            'priority_breakdown': priorityBreakdown,
+            if (analysis['run_id'] != null) 'run_id': analysis['run_id'],
+            if (analysis['summary'] != null) 'summary': analysis['summary'],
+            if (analysis['inference_status'] != null)
+              'inference_status': analysis['inference_status'],
+          };
+        }
         _isLoading = false;
       });
     } catch (e) {
@@ -4163,8 +4251,10 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     final moduleContents =
         Map<String, String>.from(_formData['moduleContents'] ?? {});
 
+    final proposalIdInt = int.tryParse(_proposalId?.toString() ?? '');
     final data = <String, dynamic>{
       'id': _proposalId ?? 'draft',
+      if (proposalIdInt != null && proposalIdInt > 0) 'proposal_id': proposalIdInt,
       'title': _formData['proposalTitle']?.toString().isNotEmpty == true
           ? _formData['proposalTitle'].toString()
           : _formData['opportunityName']?.toString() ?? '',
@@ -4190,6 +4280,24 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       if (content.trim().isEmpty) continue;
       data[moduleId] = content;
     }
+
+    // Canonical keys for HF mapping on the backend. We only alias content,
+    // we don't attempt to split or transform it.
+    void setIfPresent(String moduleId, String key) {
+      final val = data[moduleId];
+      if (val is String && val.trim().isNotEmpty) {
+        data[key] = val;
+      }
+    }
+
+    setIfPresent('executive_summary', 'executive_summary');
+    // Legacy combined module id for Scope & Deliverables / Scope of Work.
+    // The backend will duplicate this content into both scope_of_work and
+    // deliverables when no dedicated Deliverables section exists.
+    setIfPresent('scope_deliverables', 'scope_deliverables');
+    setIfPresent('deliverables', 'deliverables');
+    setIfPresent('payment_terms', 'payment_terms');
+    setIfPresent('termination_clause', 'termination_clause');
 
     return data;
   }
@@ -4249,7 +4357,63 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         AIAnalysisService.setAuthToken(app.authToken!);
       }
 
+      // Backend risk-gate requires proposal_id to be an integer (saved proposal).
+      // Create proposal if we don't have a valid id yet.
+      int? pid = int.tryParse(_proposalId?.toString().trim() ?? '');
+      if (pid == null || pid <= 0) {
+        final created = await app.createProposal(
+          (_formData['opportunityName']?.toString().isNotEmpty ?? false)
+              ? _formData['opportunityName'].toString()
+              : (_formData['proposalTitle']?.toString() ?? 'Untitled Proposal'),
+          (_formData['clientName']?.toString() ?? ''),
+          templateKey: _formData['templateId']?.toString().isNotEmpty == true
+              ? _formData['templateId'].toString()
+              : null,
+        );
+        final rawId = created?['id'];
+        final createdId = rawId is int
+            ? rawId.toString()
+            : (rawId is num
+                ? rawId.toInt().toString()
+                : rawId?.toString());
+        final createdPid = createdId != null && createdId.isNotEmpty
+            ? int.tryParse(createdId.trim())
+            : null;
+        if (createdPid == null || createdPid <= 0) {
+          setState(() => _isRunningGovernance = false);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Could not create proposal. Please try again.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+        setState(() => _proposalId = createdPid.toString());
+        pid = createdPid;
+      }
+
       final proposalData = _buildProposalDataForAI();
+      // Risk-gate backend requires proposal_id as integer; do not send non-integer id.
+      final payloadPid = int.tryParse(proposalData['proposal_id']?.toString() ?? '');
+      if (payloadPid == null || payloadPid <= 0) {
+        setState(() => _isRunningGovernance = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Proposal ID is missing or invalid. Save the proposal and try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      proposalData['proposal_id'] = payloadPid;
+      if (proposalData['id'] != null && int.tryParse(proposalData['id'].toString()) == null) {
+        proposalData.remove('id');
+      }
 
       final analysis =
           await AIAnalysisService.analyzeProposalContent(proposalData);

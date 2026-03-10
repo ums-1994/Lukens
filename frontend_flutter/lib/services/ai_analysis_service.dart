@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
+import 'auth_service.dart';
 
 class AIAnalysisService {
   static String get _baseUrl => ApiService.baseUrl;
@@ -10,6 +11,8 @@ class AIAnalysisService {
   static String? get _effectiveToken {
     final token = _authToken;
     if (token != null && token.trim().isNotEmpty) return token.trim();
+    final authToken = AuthService.token;
+    if (authToken != null && authToken.trim().isNotEmpty) return authToken.trim();
     return null;
   }
 
@@ -405,7 +408,13 @@ class AIAnalysisService {
       case 'executive_summary':
         return 'Executive Summary';
       case 'scope_deliverables':
-        return 'Scope & Deliverables';
+        return 'Scope of Work';
+      case 'deliverables':
+        return 'Deliverables';
+      case 'payment_terms':
+        return 'Payment Terms clause';
+      case 'termination_clause':
+        return 'Termination Clause';
       case 'company_profile':
         return 'Company Profile';
       case 'terms_conditions':

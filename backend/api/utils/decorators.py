@@ -70,7 +70,7 @@ def token_required(f):
                     uid = firebase_user['uid']
                     name = firebase_user.get('name') or email.split('@')[0]
 
-                    # Fast path: reuse cached user to avoid a DB round-trip
+                    # Fast path: reuse cached user only if they still exist in DB
                     cached = USER_CACHE_BY_EMAIL.get(email)
                     if cached:
                         cached_user_id, cached_username = cached

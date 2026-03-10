@@ -831,23 +831,53 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             (proposal['title'] ?? 'Untitled Document').toString();
       });
 
-      // Parse the content JSON
-      if (proposal['content'] != null) {
+      // Parse the content JSON (editor stores full doc in content; backend may also expose sections)
+      Map<String, dynamic>? contentData;
+      final dynamic rawContent = proposal['content'];
+      if (rawContent != null &&
+          (!(rawContent is String) || (rawContent as String).trim().isNotEmpty)) {
         try {
-          final dynamic rawContent = proposal['content'];
-          final dynamic contentData = rawContent is String
-              ? json.decode(rawContent)
-              : (rawContent is Map
-                  ? Map<String, dynamic>.from(rawContent)
-                  : null);
-
-          if (contentData == null) {
-            throw Exception('Unsupported content format');
+          contentData = rawContent is String
+              ? Map<String, dynamic>.from(json.decode(rawContent) as Map)
+              : Map<String, dynamic>.from(rawContent is Map ? rawContent as Map : <String, dynamic>{});
+        } catch (e) {
+          print('⚠️ Error parsing proposal content: $e');
+        }
+      }
+      // Fallback: build from proposal.sections when content is missing (e.g. legacy or alternate save path)
+      if (contentData == null || (contentData['sections'] as List?)?.isEmpty == true) {
+        final dynamic rawSections = proposal['sections'];
+        if (rawSections != null) {
+          List<dynamic> sectionList;
+          if (rawSections is List && rawSections.isNotEmpty) {
+            sectionList = rawSections;
+          } else if (rawSections is Map && (rawSections as Map).isNotEmpty) {
+            sectionList = (rawSections as Map).entries.map<Map<String, dynamic>>((e) {
+              final v = e.value;
+              return {
+                'title': e.key.toString(),
+                'content': v is String ? v : (v != null ? v.toString() : ''),
+                'sectionType': 'content',
+                'isCoverPage': false,
+              };
+            }).toList();
+          } else {
+            sectionList = [];
           }
-
+          if (sectionList.isNotEmpty) {
+            contentData = <String, dynamic>{
+              'title': proposal['title'] ?? 'Untitled Document',
+              'sections': sectionList,
+            };
+          }
+        }
+      }
+      if (contentData != null && contentData.isNotEmpty) {
+        try {
+          final Map<String, dynamic> data = contentData!;
           setState(() {
             // Set title
-            _titleController.text = (contentData['title'] ??
+            _titleController.text = (data['title'] ??
                     proposal['title'] ??
                     'Untitled Document')
                 .toString();
@@ -862,7 +892,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             _sections.clear();
 
             // Load sections from content
-            final List<dynamic> savedSections = contentData['sections'] ?? [];
+            final List<dynamic> savedSections = data['sections'] ?? [];
             if (savedSections.isNotEmpty) {
               for (var sectionData in savedSections) {
                 final String sectionTypeRaw =
@@ -954,8 +984,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             }
 
             // Load metadata if available
-            if (contentData['metadata'] != null) {
-              final metadata = contentData['metadata'];
+            if (data['metadata'] != null) {
+              final metadata = data['metadata'];
               _selectedCurrency = metadata['currency'] ?? _selectedCurrency;
               _headerLogoUrl = metadata['headerLogoUrl'] as String?;
               _footerLogoUrl = metadata['footerLogoUrl'] as String?;
@@ -11784,8 +11814,35 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       '• Governance: ${_governanceResults['status']} (${_governanceResults['score']}%)'),
                 ],
                 if (_riskAssessment.isNotEmpty) ...[
-                  Text(
-                      '• Risk: ${_riskAssessment['risk_level']} (${_riskAssessment['display_score']?.toInt()}%)'),
+                  Row(
+                    children: [
+                      Text(
+                          '• Risk: ${_riskAssessment['risk_level']} (${_riskAssessment['display_score']?.toInt()}%)'),
+                      const SizedBox(width: 12),
+                      TextButton.icon(
+                        onPressed: _isRunningRiskAssessment
+                            ? null
+                            : _runRiskAssessment,
+                        icon: _isRunningRiskAssessment
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.orange),
+                                ),
+                              )
+                            : const Icon(Icons.refresh, size: 16),
+                        label: Text(_isRunningRiskAssessment
+                            ? 'Re-running…'
+                            : 'Re-run Risk Gate'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.orange[700],
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
                 const SizedBox(height: 12),
 

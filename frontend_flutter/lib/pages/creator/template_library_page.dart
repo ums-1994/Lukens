@@ -225,7 +225,8 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
           sections: [
             TemplateSection(title: 'Executive Summary', required: true),
             TemplateSection(title: 'Company Profile', required: true),
-            TemplateSection(title: 'Scope & Deliverables', required: true),
+            TemplateSection(title: 'Scope of Work', required: true),
+            TemplateSection(title: 'Deliverables', required: true),
           ],
           dynamicFields: [
             DynamicField(fieldKey: 'client_name', fieldName: 'Client Name'),

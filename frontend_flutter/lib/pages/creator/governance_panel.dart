@@ -245,7 +245,13 @@ class _GovernancePanelState extends State<GovernancePanel>
       case 'executive_summary':
         return 'Executive Summary';
       case 'scope_deliverables':
-        return 'Scope & Deliverables';
+        return 'Scope of Work';
+      case 'deliverables':
+        return 'Deliverables';
+      case 'payment_terms':
+        return 'Payment Terms clause';
+      case 'termination_clause':
+        return 'Termination Clause';
       case 'company_profile':
         return 'Company Profile';
       case 'terms_conditions':

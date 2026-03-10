@@ -723,7 +723,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         sections = [
           'Executive Summary',
           'Company Profile',
-          'Scope & Deliverables',
+          'Scope of Work',
+          'Deliverables',
           'Timeline',
           'Investment',
           'Terms & Conditions'

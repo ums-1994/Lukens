@@ -66,9 +66,15 @@ def create_proposal(username=None, user_id=None, email=None):
             import time
 
             if user_id:
-                found_user_id = user_id
-                print(f"🔍 Using user_id from decorator: {found_user_id} (trusting decorator verification)")
-            else:
+                # Ensure user still exists (e.g. after DB switch) to avoid FK violation
+                cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                if cursor.fetchone():
+                    found_user_id = user_id
+                    print(f"🔍 Using user_id from decorator: {found_user_id} (trusting decorator verification)")
+                else:
+                    found_user_id = None
+                    print(f"⚠️ user_id {user_id} from decorator not found in DB, will try lookup by email/username")
+            if found_user_id is None:
                 # Robust user lookup with retries (ported from creator.py)
                 # This handles cases where legacy/dev flows call this route
                 # without a trusted user_id from the decorator.
