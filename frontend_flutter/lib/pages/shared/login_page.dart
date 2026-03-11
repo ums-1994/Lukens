@@ -93,6 +93,27 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     _frameController.forward();
   }
 
+  String? _normalizeRoleHint(String? rawRole) {
+    final roleKey = (rawRole ?? '')
+        .toLowerCase()
+        .trim()
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ');
+    if (roleKey.isEmpty) return null;
+    if (roleKey == 'admin' || roleKey == 'ceo' || roleKey.contains('approver')) {
+      return 'admin';
+    }
+    if (roleKey.contains('finance') || roleKey.contains('financial')) {
+      return 'finance_manager';
+    }
+    if (roleKey.contains('manager') ||
+        roleKey.contains('creator') ||
+        roleKey == 'user') {
+      return 'manager';
+    }
+    return null;
+  }
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -158,20 +179,18 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       print('📡 Sending Firebase token to backend...');
 
       String? persistedRole;
+      String? emailRoleHint;
       try {
         final prefs = await SharedPreferences.getInstance();
         persistedRole = prefs.getString('user_role');
+        emailRoleHint = prefs.getString('role_hint_${email.toLowerCase()}');
       } catch (_) {
         persistedRole = null;
+        emailRoleHint = null;
       }
 
-      String? roleForBackend;
-      final roleKey = (persistedRole ?? '').toLowerCase().trim();
-      if (roleKey.contains('finance')) {
-        roleForBackend = 'finance_manager';
-      } else if (roleKey.contains('approver') || roleKey.contains('admin')) {
-        roleForBackend = 'admin';
-      }
+      final roleForBackend =
+          _normalizeRoleHint(emailRoleHint) ?? _normalizeRoleHint(persistedRole);
 
       final requestBody = {
         'id_token': firebaseIdToken,
@@ -267,6 +286,19 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
           print(
               '🔀 Redirecting user with normalized role "$userRole" to $dashboardRoute');
+
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final normalizedBackendRole = _normalizeRoleHint(rawRole);
+            if (normalizedBackendRole != null) {
+              await prefs.setString(
+                'role_hint_${email.toLowerCase()}',
+                normalizedBackendRole,
+              );
+            }
+          } catch (e) {
+            print('⚠️ Failed to persist login role hint for $email: $e');
+          }
 
           Navigator.pushNamedAndRemoveUntil(
             context,

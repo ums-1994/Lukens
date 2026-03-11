@@ -7,6 +7,7 @@ import '../../api.dart';
 import '../../config/app_constants.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:math' as math;
 import 'login_page.dart';
@@ -147,6 +148,19 @@ class _RegisterPageState extends State<RegisterPage>
     return 'manager';
   }
 
+  Future<void> _persistRoleHintForEmail(String? email, String? role) async {
+    final normalizedEmail = (email ?? '').trim().toLowerCase();
+    final normalizedRole = (role ?? '').trim().toLowerCase();
+    if (normalizedEmail.isEmpty || normalizedRole.isEmpty) return;
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('role_hint_$normalizedEmail', normalizedRole);
+    } catch (e) {
+      print('⚠️ Failed to persist role hint for $normalizedEmail: $e');
+    }
+  }
+
   Future<void> _registerWithGoogle() async {
     setState(() => _isLoading = true);
 
@@ -182,6 +196,7 @@ class _RegisterPageState extends State<RegisterPage>
       }
 
       final role = _getBackendRole();
+      await _persistRoleHintForEmail(firebaseCredential.user?.email, role);
       final requestBody = {
         'id_token': firebaseIdToken,
         'role': role,
@@ -274,6 +289,7 @@ class _RegisterPageState extends State<RegisterPage>
       // Map role selection to backend role format
       String role;
       role = _getBackendRole();
+      await _persistRoleHintForEmail(email, role);
       print('🔍 Selected role from UI: "$_selectedRole"');
       print('🔍 Mapped role for backend: "$role"');
 
