@@ -61,7 +61,14 @@ def _has_proposal_access(cursor, proposal_id, current_user):
         return False
 
     role_key = (current_user.get('role') or '').strip().lower()
-    if role_key in {'admin', 'ceo', 'approver'} or role_key.startswith('finance'):
+    normalized = role_key.replace('_', ' ')
+    is_finance_role = (
+        normalized == 'finance'
+        or normalized.startswith('finance')
+        or normalized.startswith('financial')
+        or normalized in {'finance manager', 'financial manager'}
+    )
+    if role_key in {'admin', 'ceo', 'approver'} or is_finance_role:
         return True
 
     cursor.execute(

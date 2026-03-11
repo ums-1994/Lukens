@@ -36,7 +36,13 @@ def _normalize_status_key(raw_status: Optional[str]) -> str:
 
 
 def _is_finance_role(role_key: str) -> bool:
-    return role_key.startswith('finance') or role_key == 'finance'
+    normalized = (role_key or '').strip().lower().replace('_', ' ')
+    return (
+        normalized == 'finance'
+        or normalized.startswith('finance')
+        or normalized.startswith('financial')
+        or normalized in ['finance manager', 'financial manager']
+    )
 
 
 def _is_admin_role(role_key: str) -> bool:
@@ -412,7 +418,7 @@ def get_proposals(username=None, user_id=None, email=None):
                 requester_role = None
 
             requester_role = (requester_role or '').strip().lower()
-            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_finance = _is_finance_role(requester_role)
 
             if not user_id and not is_finance:
                 resolved_user_id = resolve_user_id(cursor, username or email)
@@ -687,7 +693,7 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 requester_role = None
 
             requester_role = (requester_role or '').strip().lower()
-            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_finance = _is_finance_role(requester_role)
 
             # Some environments do not have a dedicated `sections` column on proposals.
             # If the client sends `sections` but the DB does not support it, store it in `content`.
@@ -1075,8 +1081,7 @@ def delete_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 requester_role = None
             requester_role = (requester_role or '').strip().lower()
             is_admin = requester_role in ['admin', 'ceo']
-            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
-            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_finance = _is_finance_role(requester_role)
 
             # Verify proposal exists and ownership (unless admin)
             cursor.execute(
@@ -1171,7 +1176,7 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
 
             requester_role = (requester_role or '').strip().lower()
             is_admin = requester_role in ['admin', 'ceo', 'approver']
-            is_finance = requester_role.startswith('finance') or requester_role == 'finance'
+            is_finance = _is_finance_role(requester_role)
 
             # Detect proposals table schema
             cursor.execute(
