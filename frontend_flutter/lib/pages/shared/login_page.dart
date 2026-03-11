@@ -8,6 +8,7 @@ import '../../config/app_constants.dart';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -155,10 +156,32 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
       // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Sending Firebase token to backend...');
+
+      String? persistedRole;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        persistedRole = prefs.getString('user_role');
+      } catch (_) {
+        persistedRole = null;
+      }
+
+      String? roleForBackend;
+      final roleKey = (persistedRole ?? '').toLowerCase().trim();
+      if (roleKey.contains('finance')) {
+        roleForBackend = 'finance_manager';
+      } else if (roleKey.contains('approver') || roleKey.contains('admin')) {
+        roleForBackend = 'admin';
+      }
+
+      final requestBody = {
+        'id_token': firebaseIdToken,
+        if (roleForBackend != null) 'role': roleForBackend,
+      };
+
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id_token': firebaseIdToken}),
+        body: json.encode(requestBody),
       );
 
       if (response.statusCode != 200 && response.statusCode != 201) {
@@ -790,29 +813,9 @@ class _ForgotPasswordFormState extends State<_ForgotPasswordForm> {
   Future<void> _sendResetLink() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
-    final email = _emailController.text.trim();
-
-    // Optionally check backend; only block on explicit 404. On 405/5xx/network error, proceed to send reset.
-    try {
-      final checkResponse = await http.post(
-        Uri.parse('${AuthService.baseUrl}/api/check-email-for-reset'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'email': email}),
-      );
-      if (!mounted) return;
-      if (checkResponse.statusCode == 404) {
-        final body = json.decode(checkResponse.body) as Map<String, dynamic>?;
-        final message = body?['detail'] as String? ?? 'No account found with this email.';
-        setState(() => _loading = false);
-        widget.onError(message);
-        return;
-      }
-      // 200 = exists, proceed. 405/500/503 etc = backend issue, proceed anyway so reset still works.
-    } catch (_) {
-      // Network or other error: proceed to send reset so user isn't blocked.
-    }
-
-    final error = await FirebaseService.sendPasswordResetEmail(email);
+    final error = await FirebaseService.sendPasswordResetEmail(
+      _emailController.text.trim(),
+    );
     if (!mounted) return;
     setState(() => _loading = false);
     if (error == null) {

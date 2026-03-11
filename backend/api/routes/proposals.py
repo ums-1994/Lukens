@@ -3,14 +3,26 @@ Proposal management routes
 Extracted from app.py for better organization
 """
 from flask import Blueprint, request, jsonify
+import os
+import psycopg2
+import psycopg2.extras
+import json
+import traceback
+import os
+import psycopg2
+import psycopg2.extras
+import json
+import traceback
 from typing import Optional
+
+
 from api.utils.decorators import token_required, admin_required
 from api.utils.database import get_db_connection
-from api.utils.helpers import resolve_user_id, create_notification
+from api.utils.helpers import create_notification, resolve_user_id
+from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
+from api.utils.helpers import create_notification, resolve_user_id
+from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
 from api.utils.email import send_email
-import json
-import psycopg2.extras
-import traceback
 
 bp = Blueprint('proposals', __name__)
 
@@ -37,10 +49,11 @@ def _is_manager_role(role_key: str) -> bool:
 
 @bp.post("/proposals")
 @token_required
-def create_proposal(username=None, user_id=None, email=None):
+def create_proposal(username=None, user_id=None, email=None, auto_created=False):
     """Create a new proposal"""
     try:
         data = request.get_json()
+        print(f"📝 DEBUG: create_proposal called with auto_created={auto_created}, user_id={user_id}")
         print(f"📝 Creating proposal for user {username} (user_id: {user_id}, email: {email})")
         
         with get_db_connection() as conn:
@@ -51,11 +64,17 @@ def create_proposal(username=None, user_id=None, email=None):
             # even if this connection can't see the users row yet due to
             # eventual consistency. We don't need to re-look it up.
             found_user_id = None
+            auto_created_in_request = False
             import time
 
             if user_id:
                 found_user_id = user_id
                 print(f"🔍 Using user_id from decorator: {found_user_id} (trusting decorator verification)")
+
+                # Check if this user was auto-created in this request (avoids DB replication lag)
+                if auto_created:
+                    auto_created_in_request = True
+                    print(f"✅ User {user_id} was auto-created in this request (auto_created=True), skipping DB verification")
             else:
                 # Robust user lookup with retries (ported from creator.py)
                 # This handles cases where legacy/dev flows call this route
@@ -98,6 +117,74 @@ def create_proposal(username=None, user_id=None, email=None):
                     return jsonify({'detail': f"User not found after {max_retries} retries"}), 400
 
             user_id = found_user_id
+
+            # Safety: ensure the user actually exists in this database connection so that
+            # the proposals.owner_id → users.id foreign key will succeed. In some
+            # environments we've seen cases where the Firebase decorator created the user
+            # on a different connection/database, causing FK violations here.
+            # SKIP this check if user was auto-created in this request (we know they exist)
+            if not auto_created_in_request:
+                try:
+                    if user_id is not None:
+                        cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                        exists_row = cursor.fetchone()
+                    else:
+                        exists_row = None
+
+                    if not exists_row:
+                        # Try to recover using email (should be present for Firebase users)
+                        recovered_id = None
+                        if email:
+                            cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                            by_email = cursor.fetchone()
+                            if by_email:
+                                recovered_id = by_email[0]
+
+                        if recovered_id:
+                            print(f"🔄 Recovered user_id {recovered_id} from users table for email {email}")
+                            user_id = recovered_id
+                        elif email:
+                            # As a last resort, auto-create a minimal user record here so the FK can succeed.
+                            # This mirrors the Firebase decorator's behaviour but is scoped to this DB.
+                            base_username = (email.split('@')[0] or 'user').strip() or 'user'
+                            username_candidate = base_username
+                            counter = 1
+                            while True:
+                                cursor.execute('SELECT id FROM users WHERE username = %s', (username_candidate,))
+                                if cursor.fetchone() is None:
+                                    break
+                                username_candidate = f"{base_username}{counter}"
+                                counter += 1
+
+                            dummy_password_hash = f"firebase-proposal:{email}"
+                            role = 'manager'
+                            cursor.execute(
+                                '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
+                                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                   RETURNING id''',
+                                (
+                                    username_candidate,
+                                    email,
+                                    dummy_password_hash,
+                                    username_candidate,
+                                    role,
+                                    True,
+                                    True,
+                                ),
+                            )
+                            created_row = cursor.fetchone()
+                            user_id = created_row[0]
+                            print(f"🔧 Auto-created fallback user {username_candidate} (id={user_id}) for email {email}")
+
+                            # Commit immediately so that later INSERT into proposals can see this row
+                            conn.commit()
+                        else:
+                            print(f"❌ User id {user_id} not found in users table and no email available to recover")
+                            return jsonify({'detail': 'User not found in users table'}), 400
+                except Exception as verify_err:
+                    print(f"⚠️ Error verifying/repairing user record before proposal insert: {verify_err}")
+                    # If we cannot confidently ensure the user exists, fail fast with 400 to avoid FK 500s.
+                    return jsonify({'detail': 'Could not verify user in database'}), 400
                 
             # Extract fields
             title = data.get('title', 'Untitled Proposal')
@@ -327,61 +414,17 @@ def get_proposals(username=None, user_id=None, email=None):
             requester_role = (requester_role or '').strip().lower()
             is_finance = requester_role.startswith('finance') or requester_role in ['finance']
 
-            # Prefer the user_id provided by the Firebase-aware token_required decorator.
-            # That decorator either looked up the existing user or auto-created them
-            # and returns a trusted numeric user_id, even if this connection can't
-            # yet see the row due to Render's eventual-consistency behaviour.
-            resolved_user_id = None
-            import time
-
-            if user_id:
-                resolved_user_id = user_id
-                print(f"🔍 Using user_id from decorator: {resolved_user_id} (trusting decorator verification)")
-            else:
-                # Fallback for legacy/dev flows where user_id isn't passed through
-                lookup_strategies = []
-                if email:
-                    lookup_strategies.append(("email", email))
-                if username:
-                    lookup_strategies.append(("username", username))
-
-                max_retries = 10
-                retry_delay = 0.2
-
-                for attempt in range(max_retries):
-                    for strategy_type, strategy_value in lookup_strategies:
-                        try:
-                            if strategy_type == "email":
-                                cursor.execute("SELECT id FROM users WHERE email = %s", (strategy_value,))
-                            elif strategy_type == "username":
-                                cursor.execute("SELECT id FROM users WHERE username = %s", (strategy_value,))
-
-                            row = cursor.fetchone()
-                            if row:
-                                resolved_user_id = row[0]
-                                print(
-                                    f"✅ Found user_id {resolved_user_id} using {strategy_type}: {strategy_value} "
-                                    f"(attempt {attempt + 1})"
-                                )
-                                break
-                        except Exception as e:
-                            print(f"⚠️ Error looking up by {strategy_type}: {e}")
-
-                    if resolved_user_id:
-                        break
-
-                    if attempt < max_retries - 1:
-                        print(
-                            f"⚠️ Could not resolve user yet, waiting {retry_delay}s before "
-                            f"retry {attempt + 2}/{max_retries}..."
-                        )
-                        time.sleep(retry_delay)
-                        retry_delay = min(retry_delay * 1.3, 1.0)
-
-            user_id = resolved_user_id
             if not user_id and not is_finance:
-                print(f"⚠️ Could not resolve numeric ID for {username or email}, returning empty list")
-                return jsonify([]), 200
+                resolved_user_id = resolve_user_id(cursor, username or email)
+                user_id = resolved_user_id
+                if not user_id:
+                    print(f"⚠️ Could not resolve numeric ID for {username or email}, returning empty list")
+                    return jsonify([]), 200
+                resolved_user_id = resolve_user_id(cursor, username or email)
+                user_id = resolved_user_id
+                if not user_id:
+                    print(f"⚠️ Could not resolve numeric ID for {username or email}, returning empty list")
+                    return jsonify([]), 200
             
             # Check what columns exist in proposals table
             cursor.execute("""
@@ -635,6 +678,100 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             requester_role = (requester_role or '').strip().lower()
             is_finance = requester_role.startswith('finance') or requester_role in ['finance']
 
+            # Some environments do not have a dedicated `sections` column on proposals.
+            # If the client sends `sections` but the DB does not support it, store it in `content`.
+            if 'sections' in data and 'sections' not in existing_columns:
+                if 'content' not in data:
+                    data['content'] = data.get('sections')
+                data.pop('sections', None)
+
+            select_cols = ['status', 'content']
+            if 'sections' in existing_columns:
+                select_cols.append('sections')
+            if 'budget' in existing_columns:
+                select_cols.append('budget')
+
+            cursor.execute(
+                f"""
+                SELECT {', '.join(select_cols)}
+                FROM proposals
+                WHERE id = %s
+                """,
+                (proposal_id,),
+            )
+            before_row = cursor.fetchone()
+            if not before_row:
+                return jsonify({'detail': 'Proposal not found'}), 404
+
+            before_status = (before_row[0] or '').strip().lower()
+            before_content = before_row[1] if len(before_row) > 1 else None
+
+            before_sections = None
+            if 'sections' in existing_columns:
+                try:
+                    before_sections = before_row[select_cols.index('sections')]
+                except Exception:
+                    before_sections = None
+
+            before_budget = None
+            if 'budget' in existing_columns:
+                try:
+                    before_budget = before_row[select_cols.index('budget')]
+                except Exception:
+                    before_budget = None
+
+            sent_locked = ('sent to client' in before_status) or ('released' in before_status)
+            if sent_locked and is_finance:
+                if any(k in data for k in ['content', 'budget']):
+                    return jsonify({'detail': 'Pricing changes are not allowed after proposal is sent to client'}), 403
+
+            # Some environments do not have a dedicated `sections` column on proposals.
+            # If the client sends `sections` but the DB does not support it, store it in `content`.
+            if 'sections' in data and 'sections' not in existing_columns:
+                if 'content' not in data:
+                    data['content'] = data.get('sections')
+                data.pop('sections', None)
+
+            select_cols = ['status', 'content']
+            if 'sections' in existing_columns:
+                select_cols.append('sections')
+            if 'budget' in existing_columns:
+                select_cols.append('budget')
+
+            cursor.execute(
+                f"""
+                SELECT {', '.join(select_cols)}
+                FROM proposals
+                WHERE id = %s
+                """,
+                (proposal_id,),
+            )
+            before_row = cursor.fetchone()
+            if not before_row:
+                return jsonify({'detail': 'Proposal not found'}), 404
+
+            before_status = (before_row[0] or '').strip().lower()
+            before_content = before_row[1] if len(before_row) > 1 else None
+
+            before_sections = None
+            if 'sections' in existing_columns:
+                try:
+                    before_sections = before_row[select_cols.index('sections')]
+                except Exception:
+                    before_sections = None
+
+            before_budget = None
+            if 'budget' in existing_columns:
+                try:
+                    before_budget = before_row[select_cols.index('budget')]
+                except Exception:
+                    before_budget = None
+
+            sent_locked = ('sent to client' in before_status) or ('released' in before_status)
+            if sent_locked and is_finance:
+                if any(k in data for k in ['content', 'budget']):
+                    return jsonify({'detail': 'Pricing changes are not allowed after proposal is sent to client'}), 403
+
             # Finance users can only update pricing-related fields.
             # We enforce this server-side so Finance cannot modify scope/content/client metadata.
             if is_finance:
@@ -668,7 +805,7 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             if 'content' in data:
                 updates.append('content = %s')
                 params.append(data['content'])
-            if 'sections' in data:
+            if 'sections' in data and 'sections' in existing_columns:
                 updates.append('sections = %s')
                 try:
                     sections_json = json.dumps(data['sections'])
@@ -709,6 +846,28 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
             params.append(proposal_id)
             cursor.execute(f'''UPDATE proposals SET {', '.join(updates)} WHERE id = %s''', params)
             conn.commit()
+
+            changes = []
+            if is_finance:
+                if 'content' in data:
+                    changes.append({'field': 'content', 'old': before_content, 'new': data.get('content')})
+                if 'sections' in data and 'sections' in existing_columns:
+                    changes.append({'field': 'sections', 'old': before_sections, 'new': data.get('sections')})
+                if 'budget' in data and 'budget' in existing_columns:
+                    changes.append({'field': 'budget', 'old': before_budget, 'new': data.get('budget')})
+                if changes:
+                    log_finance_audit_async(
+                        user_id=user_id,
+                        username=username,
+                        entity_type='proposal',
+                        entity_id=str(proposal_id),
+                        action_type='PRICING_UPDATE',
+                        changes=changes,
+                    )
+                    try:
+                        evaluate_proposal_compliance(proposal_id=proposal_id)
+                    except Exception as comp_err:
+                        print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id}: {comp_err}")
             
             print(f"✅ Proposal {proposal_id} updated successfully")
             return jsonify({'detail': 'Proposal updated'}), 200
@@ -746,6 +905,8 @@ def update_proposal_status(username=None, proposal_id=None, user_id=None, email=
             proposal_row = cursor.fetchone()
             if not proposal_row:
                 return jsonify({'detail': 'Proposal not found'}), 404
+            old_status = proposal_row[0]
+            old_status = proposal_row[0]
 
             current_key = _normalize_status_key(proposal_row[0])
             target_key = _normalize_status_key(str(requested_status))
@@ -808,6 +969,32 @@ def update_proposal_status(username=None, proposal_id=None, user_id=None, email=
             )
             conn.commit()
 
+            log_finance_audit_async(
+                user_id=resolved_user_id,
+                username=username,
+                entity_type='proposal',
+                entity_id=str(proposal_id),
+                action_type='STATUS_CHANGE',
+                changes=[{'field': 'status', 'old': old_status, 'new': status_to_store}],
+            )
+            try:
+                evaluate_proposal_compliance(proposal_id=proposal_id)
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id}: {comp_err}")
+
+            log_finance_audit_async(
+                user_id=resolved_user_id,
+                username=username,
+                entity_type='proposal',
+                entity_id=str(proposal_id),
+                action_type='STATUS_CHANGE',
+                changes=[{'field': 'status', 'old': old_status, 'new': status_to_store}],
+            )
+            try:
+                evaluate_proposal_compliance(proposal_id=proposal_id)
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id}: {comp_err}")
+
             return jsonify({'detail': 'Status updated', 'status': status_to_store}), 200
     except Exception as e:
         print(f"❌ Error updating proposal status: {e}")
@@ -856,6 +1043,8 @@ def delete_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 requester_role = None
             requester_role = (requester_role or '').strip().lower()
             is_admin = requester_role in ['admin', 'ceo']
+            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
 
             # Verify proposal exists and ownership (unless admin)
             cursor.execute(
@@ -949,7 +1138,8 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 requester_role = None
 
             requester_role = (requester_role or '').strip().lower()
-            is_admin = requester_role in ['admin', 'ceo']
+            is_admin = requester_role in ['admin', 'ceo', 'approver']
+            is_finance = requester_role.startswith('finance') or requester_role == 'finance'
 
             # Detect proposals table schema
             cursor.execute(
@@ -992,9 +1182,13 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
             where_clause = 'id = %s'
             params = [proposal_id]
 
-            # Non-admins can only read their own proposals
-            if not is_admin and owner_col:
-                where_clause += f' AND {owner_col}::text = %s::text'
+            # Non-admins can only read their own proposals, OR any proposal in
+            # "Changes Requested" / "Resubmitted" state (so manager/creator can open it to edit).
+            if not is_admin and not is_finance and owner_col:
+                where_clause += (
+                    f" AND ({owner_col}::text = %s::text"
+                    " OR status IN ('Changes Requested', 'changes requested', 'Resubmitted', 'resubmitted'))"
+                )
                 params.append(str(resolved_user_id))
 
             cursor.execute(

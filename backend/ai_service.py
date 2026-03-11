@@ -16,6 +16,22 @@ from dotenv import load_dotenv
 from api.utils.ai_safety import AISafetyError, enforce_safe_for_external_ai, sanitize_for_external_ai
 from api.utils.gemini_client import GeminiClient, GeminiSchemaError
 
+# Pydantic models for AI responses
+class RiskIssue(BaseModel):
+    category: str
+    severity: str
+    section: str
+    description: str
+    recommendation: str
+
+class RiskAnalysis(BaseModel):
+    overall_risk_level: str
+    can_release: bool
+    risk_score: int
+    issues: List[RiskIssue]
+    summary: str
+    required_actions: List[str]
+
 # Load environment variables
 load_dotenv()
 
@@ -123,88 +139,46 @@ class AIService:
                 reasons=safety_result.block_reasons,
             )
 
-        prompt = f"""You are an expert proposal reviewer for Khonology. Analyze this proposal for risks and compliance issues.
+        # Call the external Risk Gate API
+        risk_gate_api_url = os.getenv("RISK_GATE_API_URL")
+        if not risk_gate_api_url:
+            raise ValueError("RISK_GATE_API_URL environment variable not set.")
 
-Proposal Data:
-{json.dumps(safety_result.sanitized, indent=2)}
-
-Analyze for:
-1. Missing or incomplete mandatory sections (Executive Summary, Scope & Deliverables, Delivery Approach, Assumptions, Risks, References, Team Bios)
-2. Incomplete client details or engagement metadata
-3. Vague or unclear deliverables
-4. Missing risk assessments or assumptions
-5. Incomplete team bios or references
-6. Compliance issues with branding/standards
-7. Any altered clauses that need review
-
-Provide a JSON response with:
-{{
-  "overall_risk_level": "low|medium|high|critical",
-  "can_release": true/false,
-  "risk_score": 0-100,
-  "issues": [
-    {{
-      "category": "missing_section|incomplete_content|compliance|clarity",
-      "severity": "low|medium|high|critical",
-      "section": "section name",
-      "description": "detailed issue description",
-      "recommendation": "how to fix"
-    }}
-  ],
-  "summary": "brief summary of all issues",
-  "required_actions": ["action 1", "action 2"]
-}}
-
-Be thorough and flag even small deviations that could compound into larger risks."""
-
-        messages = [
-            {"role": "system", "content": "You are an expert proposal risk analyzer. Always respond with valid JSON."},
-            {"role": "user", "content": prompt}
-        ]
-
-        if self.provider == "gemini":
-            if not self._gemini_client:
-                raise Exception("Gemini client not initialized")
-            try:
-                analysis = self._gemini_client.generate_json(prompt, RiskAnalysis)
-                return analysis.model_dump()
-            except GeminiSchemaError as e:
-                return {
-                    "overall_risk_level": "medium",
-                    "can_release": False,
-                    "risk_score": 50,
-                    "issues": [{
-                        "category": "analysis_error",
-                        "severity": "medium",
-                        "section": "AI Analysis",
-                        "description": str(e),
-                        "recommendation": "Manual review required"
-                    }],
-                    "summary": "AI analysis completed but response format was unexpected",
-                    "required_actions": ["Manual review recommended"]
-                }
-
-        response = self._make_request(messages, temperature=0.3)
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "proposal_title": proposal_data.get("title", "Untitled Proposal"),
+            "client_info": proposal_data.get("client", {}),
+            "sections": proposal_data.get("sections", [])
+        }
 
         try:
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            json_str = response[start_idx:end_idx]
-            return json.loads(json_str)
-        except json.JSONDecodeError:
+            response = requests.post(
+                f"{risk_gate_api_url}/ai/analyze-proposal",
+                headers=headers,
+                json=payload,
+                timeout=120  # Increased timeout for external AI call
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"Error calling external Risk Gate API: {e}")
+            # Fallback to a safe, manual review required response
             return {
-                "overall_risk_level": "medium",
-                "can_release": False,
-                "risk_score": 50,
+                "success": False,
+                "risk_score": 50.0,
+                "risk_level": "REVIEW",
                 "issues": [{
-                    "category": "analysis_error",
+                    "category": "external_api_error",
                     "severity": "medium",
-                    "section": "AI Analysis",
-                    "description": "Could not parse AI response",
-                    "recommendation": "Manual review required"
+                    "section": "Risk Gate API",
+                    "description": f"Failed to connect to Risk Gate API: {str(e)}",
+                    "recommendation": "Check Risk Gate API status and network connectivity."
                 }],
-                "summary": "AI analysis completed but response format was unexpected",
-                "required_actions": ["Manual review recommended"]
+                "recommendations": ["Manual review of proposal required."],
+                "summary": "Risk Gate API could not be reached or returned an error. Manual review is recommended.",
+                "can_release": False,
+                "total_issues": 1,
+                "priority_breakdown": {"medium": 1}
             }
     
     def generate_proposal_section(self, section_type: str, context: Dict[str, Any]) -> str:

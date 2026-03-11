@@ -6,10 +6,10 @@ Write-Host ""
 
 # Set destination (Render) database from your credentials
 # Using full domain (short hostname doesn't work from outside Render)
-$env:DEST_DB_HOST = "dpg-d4iq5fa4d50c73d9m3n0-a.oregon-postgres.render.com"
-$env:DEST_DB_NAME = "proposal_sow_builder"
-$env:DEST_DB_USER = "proposal_sow_builder_user"
-$env:DEST_DB_PASSWORD = "LTpIcMC2QUY3bd4DezTU4lmWroOxr8ez"  # Updated from connection string
+$env:DEST_DB_HOST = "dpg-d6n7nqjh46gs73c4bd9g-a.oregon-postgres.render.com"
+$env:DEST_DB_NAME = "sowbuilder_b88j"
+$env:DEST_DB_USER = "sowbuilder_b88j_user"
+$env:DEST_DB_PASSWORD = "F0aStJeARRclMbzSod8GNrbt3KHgboX9"  # Updated from connection string
 $env:DEST_DB_PORT = "5432"
 $env:DEST_DB_SSLMODE = "prefer"  # Changed to 'prefer' (tested and works)
 

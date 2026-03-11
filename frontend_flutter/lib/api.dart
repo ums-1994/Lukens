@@ -9,22 +9,26 @@ import 'config/api_config.dart';
 
 // Get API URL from JavaScript config or use AuthService.baseUrl/Render default
 String get baseUrl {
-  // Prefer explicit config injected into the web page when available
   if (kIsWeb) {
     try {
-      // Try to get from window.APP_CONFIG.API_URL
+      // Honor USE_LOCAL_API so local dev hits local backend (index.html sets this)
+      final useLocal = js.context['USE_LOCAL_API'];
+      if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
+        return 'http://127.0.0.1:5000';
+      }
+      // Try to get from window.APP_CONFIG.API_URL (set by config.js)
       final config = js.context['APP_CONFIG'];
       if (config != null) {
         final configObj = config as js.JsObject;
         final apiUrl = configObj['API_URL'];
-        if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-          return apiUrl.toString().replaceAll('"', '');
+        if (apiUrl != null && apiUrl.toString().trim().isNotEmpty) {
+          return apiUrl.toString().replaceAll('"', '').trim();
         }
       }
       // Fallback: try window.REACT_APP_API_URL
       final envUrl = js.context['REACT_APP_API_URL'];
-      if (envUrl != null && envUrl.toString().isNotEmpty) {
-        return envUrl.toString().replaceAll('"', '');
+      if (envUrl != null && envUrl.toString().trim().isNotEmpty) {
+        return envUrl.toString().replaceAll('"', '').trim();
       }
     } catch (e) {
       print('⚠️ Could not read API URL from config: $e');
@@ -35,7 +39,6 @@ String get baseUrl {
   if (kDebugMode) {
     return 'https://lukens-wp8w.onrender.com';
   }
-  // Production default (Render backend URL)
   return 'https://lukens-wp8w.onrender.com';
 }
 
@@ -108,9 +111,16 @@ class AppState extends ChangeNotifier {
         print('🔄 Synced token from AuthService in fetchContent');
       }
 
-      final r = await http.get(
+      final r = await http
+          .get(
         Uri.parse("$baseUrl/api/content"),
         headers: _headers,
+      )
+          .timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw Exception('fetchContent timed out');
+        },
       );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
@@ -124,11 +134,9 @@ class AppState extends ChangeNotifier {
         }
       } else {
         print('Error fetching content: ${r.statusCode} - ${r.body}');
-        contentBlocks = [];
       }
     } catch (e) {
       print('Error fetching content: $e');
-      contentBlocks = [];
     }
   }
 
@@ -334,9 +342,16 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final response = await http.get(
+      final response = await http
+          .get(
         Uri.parse("$baseUrl/api/notifications"),
         headers: _headers,
+      )
+          .timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw Exception('fetchNotifications timed out');
+        },
       );
 
       if (response.statusCode == 200) {
@@ -402,23 +417,29 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchProposals() async {
     try {
-      final r = await http.get(
+      final r = await http
+          .get(
         Uri.parse("$baseUrl/api/proposals"),
         headers: _headers,
+      )
+          .timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw Exception('fetchProposals timed out');
+        },
       );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
-        proposals = List<dynamic>.from(data);
+        proposals = data is List ? List<dynamic>.from(data) : [];
 
         // Calculate dashboard counts from real data
         _updateDashboardCounts();
+        notifyListeners();
       } else {
         print('Error fetching proposals: ${r.statusCode} - ${r.body}');
-        proposals = [];
       }
     } catch (e) {
       print('Error fetching proposals: $e');
-      proposals = [];
     }
   }
 
@@ -429,10 +450,14 @@ class AppState extends ChangeNotifier {
 
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
+    if (lowerStatus.contains('pricing')) return 'Draft';
+    if (lowerStatus.contains('in progress')) return 'Draft';
     if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
       return 'Pending Approval';
     if (lowerStatus.contains('pending') && lowerStatus.contains('approval'))
       return 'Pending Approval';
+    if (lowerStatus == 'submitted') return 'Pending Approval';
+    if (lowerStatus == 'in review') return 'Pending Approval';
     if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
       return 'Sent to Client';
     if (lowerStatus.contains('released')) return 'Sent to Client';
@@ -456,6 +481,12 @@ class AppState extends ChangeNotifier {
       final rawStatus = proposal['status']?.toString() ?? 'Draft';
       final status = _normalizeStatus(rawStatus);
       counts[status] = (counts[status] ?? 0) + 1;
+    }
+
+    // Backwards-compat key: creator dashboard expects this exact label.
+    if (counts.containsKey('Pending Approval') &&
+        !counts.containsKey('Pending CEO Approval')) {
+      counts['Pending CEO Approval'] = counts['Pending Approval'] ?? 0;
     }
     dashboardCounts = counts;
   }

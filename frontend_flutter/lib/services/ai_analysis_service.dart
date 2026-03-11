@@ -7,6 +7,12 @@ class AIAnalysisService {
   static String get _baseUrl => ApiService.baseUrl;
   static String? _authToken;
 
+  static String? get _effectiveToken {
+    final token = _authToken;
+    if (token != null && token.trim().isNotEmpty) return token.trim();
+    return null;
+  }
+
   // Set authentication token
   static void setAuthToken(String token) {
     _authToken = token;
@@ -16,43 +22,33 @@ class AIAnalysisService {
     required int runId,
     required String overrideReason,
   }) async {
-    final reason = overrideReason.trim();
-    if (reason.isEmpty) {
-      throw Exception('overrideReason is required');
+    final token = _effectiveToken;
+    if (token == null) {
+      throw Exception('No auth token available for risk gate override');
     }
-
-    final headers = {
-      'Content-Type': 'application/json',
-      if (_authToken != null) 'Authorization': 'Bearer $_authToken',
-    };
 
     final response = await http.post(
       Uri.parse('$_baseUrl/api/risk-gate/override'),
-      headers: headers,
-      body: jsonEncode({'run_id': runId, 'override_reason': reason}),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'run_id': runId,
+        'override_reason': overrideReason,
+      }),
     );
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      if (data is! Map<String, dynamic>) {
-        throw Exception('Unexpected override response');
+      if (data is Map<String, dynamic>) {
+        return data;
       }
-      return data;
+      throw Exception('Unexpected override response: ${response.body}');
     }
 
-    String detail = 'Risk Gate override failed';
-    try {
-      final parsed = jsonDecode(response.body);
-      if (parsed is Map<String, dynamic> && parsed['detail'] != null) {
-        detail = parsed['detail'].toString();
-      } else {
-        detail = response.body;
-      }
-    } catch (_) {
-      detail = response.body;
-    }
-
-    throw Exception(detail);
+    throw Exception(
+        'Risk gate override failed (${response.statusCode}): ${response.body}');
   }
 
   // Check if AI is configured (check backend status)
@@ -71,116 +67,44 @@ class AIAnalysisService {
 
   // AI-powered risk analysis (Wildcard Challenge) via Risk Gate endpoint
   static Future<Map<String, dynamic>> analyzeProposalRisks(
-      String proposalId) async {
+      Map<String, dynamic> proposalData) async {
     try {
-      debugPrint('🚀 Starting AI risk analysis for proposal: $proposalId');
-      
-      // Use Hugging Face URL directly instead of Render backend
-      final huggingFaceUrl = 'https://lorde01v-v3.hf.space/analyze';
-      debugPrint('🔍 Using Hugging Face URL: $huggingFaceUrl');
-      
-      final headers = {
-        'Content-Type': 'application/json',
-      };
+      final token = _effectiveToken;
+      if (token == null) {
+        throw Exception('No auth token available for risk analysis');
+      }
 
-      // For Hugging Face, we need to send the actual proposal content, not just ID
-      // Get proposal content from AppState or use mock data for now
       final response = await http.post(
-        Uri.parse(huggingFaceUrl),
-        headers: headers,
-        body: jsonEncode({
-          'proposal_text': 'Sample proposal content for risk analysis. This is a comprehensive proposal for implementing a new risk management system that includes multiple phases of development, testing, and deployment. The project will span over several months and require significant resources from various departments including IT, finance, and operations.',
-        }),
+        Uri.parse('$_baseUrl/api/risk-gate/analyze'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(proposalData),
       );
-
-      debugPrint('📡 Response status: ${response.statusCode}');
-      debugPrint('📡 Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data is! Map<String, dynamic>) {
-          throw Exception('Unexpected risk analysis response');
+        if (data is Map<String, dynamic>) {
+          return data;
         }
-
-        debugPrint('✅ Hugging Face analysis successful');
-        
-        // Convert Hugging Face response to our expected format
-        return _convertHuggingFaceToUIFormat(data);
-      } else {
-        debugPrint('❌ Hugging Face API error: ${response.statusCode} - ${response.body}');
-        throw Exception('Risk analysis failed: ${response.body}');
+        throw Exception('Unexpected risk analysis response: ${response.body}');
       }
+
+      // Risk Gate may return 400 with a valid BLOCK payload
+      if (response.statusCode == 400) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> && data['status'] == 'BLOCK') {
+          return data;
+        }
+      }
+
+      throw Exception(
+          'Risk analysis failed (${response.statusCode}): ${response.body}');
     } catch (e) {
       debugPrint('❌ Risk analysis error: $e');
       rethrow;
     }
-  }
-
-  // Convert Hugging Face response to UI format
-  static Map<String, dynamic> _convertHuggingFaceToUIFormat(
-      Map<String, dynamic> hfResponse) {
-    try {
-      final analysis = hfResponse['analysis'] as Map<String, dynamic>? ?? {};
-      final compoundRisk = analysis['compound_risk'] as Map<String, dynamic>? ?? {};
-      final score = compoundRisk['score'] as num?;
-      
-      // Convert 0-10 scale to 0-100 risk score (higher = more risk)
-      final riskScore = ((score ?? 0) * 10).toInt();
-      
-      final issues = <Map<String, dynamic>>[];
-      
-      // Add missing sections as issues
-      final structuralAnalysis = analysis['structural_analysis'] as Map<String, dynamic>? ?? {};
-      final missingSections = structuralAnalysis['missing_sections'] as List? ?? [];
-      
-      for (final section in missingSections) {
-        issues.add({
-          'type': 'missing_section',
-          'title': _formatSectionTitle(section.toString()),
-          'description': 'This section is required for complete proposal',
-          'points': 10,
-          'priority': 'critical',
-          'action': 'Add content for this section',
-        });
-      }
-      
-      // Determine status based on risk score
-      String status;
-      if (riskScore <= 30) {
-        status = 'Ready';
-      } else if (riskScore <= 60) {
-        status = 'At Risk';
-      } else {
-        status = 'Blocked';
-      }
-      
-      return {
-        'riskScore': riskScore,
-        'status': status,
-        'issues': issues,
-        'summary': compoundRisk['summary']?.toString() ?? 'Risk analysis completed',
-        'compound_risk_score': score?.toDouble(),
-        'hf_analysis': hfResponse, // Keep original data for debugging
-      };
-    } catch (e) {
-      debugPrint('❌ Error converting Hugging Face response: $e');
-      // Return fallback format
-      return {
-        'riskScore': 50,
-        'status': 'At Risk',
-        'issues': [],
-        'summary': 'Analysis completed with limited data',
-        'compound_risk_score': 5.0,
-      };
-    }
-  }
-
-  static String _formatSectionTitle(String section) {
-    return section
-        .replaceAll('_', ' ')
-        .split(' ')
-        .map((word) => word[0].toUpperCase() + word.substring(1))
-        .join(' ');
   }
 
   // AI-powered content generation
@@ -301,20 +225,8 @@ class AIAnalysisService {
   // Legacy method for backward compatibility
   static Future<Map<String, dynamic>> analyzeProposalContent(
       Map<String, dynamic> proposalData) async {
-    // If proposal has an ID and it's not 'draft', use the new risk analysis
-    if (proposalData.containsKey('id') &&
-        proposalData['id'] != null &&
-        proposalData['id'].toString() != 'draft') {
-      try {
-        return await analyzeProposalRisks(proposalData['id'].toString());
-      } catch (e) {
-        print('AI Risk Analysis failed, falling back to basic analysis: $e');
-        // Fall through to basic analysis
-      }
-    }
-
-    // For unsaved proposals or when API fails, use basic analysis
-    return _getMockAnalysis(proposalData);
+    // Always use the real-time risk analysis endpoint
+    return analyzeProposalRisks(proposalData);
   }
 
   // Mock analysis (fallback when AI is not configured)

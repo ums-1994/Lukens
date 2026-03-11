@@ -112,7 +112,11 @@ class _DashboardPageState extends State<DashboardPage>
       // Fetch risks for proposals that need review (draft or pending approval)
       final proposalsNeedingReview = app.proposals.where((proposal) {
         final status = (proposal['status'] ?? '').toString().toLowerCase();
-        return status == 'draft' || status == 'pending ceo approval';
+        return status == 'draft' ||
+            status == 'pending ceo approval' ||
+            status == 'pending approval' ||
+            status == 'in review' ||
+            status == 'submitted';
       }).toList();
 
       // Analyze risks for each proposal using the AI risk analysis API
@@ -183,9 +187,44 @@ class _DashboardPageState extends State<DashboardPage>
         return null;
       }
 
+      // Fetch the full proposal data first
+      final proposals = await ApiService.getProposals(token);
+      final proposal = proposals.firstWhere(
+        (p) => p['id'] == proposalIdInt,
+        orElse: () => <String, dynamic>{},
+      );
+
+      if (proposal.isEmpty) {
+        print('Proposal not found: $proposalId');
+        return null;
+      }
+
+      // Build proposal data for AI analysis
+      final proposalData = <String, dynamic>{
+        'id': proposal['id'],
+        'title': proposal['title'] ?? proposal['proposal_title'] ?? 'Proposal',
+        'clientName': proposal['client_name'] ?? '',
+        'clientEmail': proposal['client_email'] ?? '',
+        'projectType': proposal['project_type'] ?? '',
+        'estimatedValue': proposal['estimated_value'] ?? '',
+        'timeline': proposal['timeline'] ?? '',
+      };
+
+      // Add content sections if available
+      if (proposal['content'] != null) {
+        final content = proposal['content'];
+        if (content is Map) {
+          content.forEach((key, value) {
+            if (value != null && value.toString().isNotEmpty) {
+              proposalData[key] = value.toString();
+            }
+          });
+        }
+      }
+
       final raw = await ApiService.analyzeRisks(
         token: token,
-        proposalId: proposalIdInt,
+        proposalData: proposalData,
       );
       if (raw == null) return null;
 
@@ -211,9 +250,12 @@ class _DashboardPageState extends State<DashboardPage>
       }
 
       return {
-        'risk_score': riskScore,
+        'overallRiskLevel': overallRiskLevel,
+        'riskScore': riskScore,
+        'status': status,
         'issues': issues,
-        'overall_risk_level': overallRiskLevel,
+        'canRelease': status == 'PASS',
+        'lastAnalyzed': DateTime.now().toIso8601String(),
       };
     } catch (e) {
       print('Error fetching proposal risks: $e');
@@ -278,7 +320,8 @@ class _DashboardPageState extends State<DashboardPage>
 
       // Special handling for "changes requested" - handle case variations
       if (filter == 'changes requested') {
-        return status == 'changes requested' || status.contains('changes requested');
+        return status == 'changes requested' ||
+            status.contains('changes requested');
       }
 
       // For other statuses, do exact match after normalization
@@ -1333,7 +1376,8 @@ class _DashboardPageState extends State<DashboardPage>
             'Active', context),
         _buildStatCard(
             'Pending CEO Approval',
-            counts['Pending CEO Approval']?.toString() ?? '0',
+            (counts['Pending CEO Approval'] ?? counts['Pending Approval'] ?? 0)
+                .toString(),
             'Awaiting Review',
             context),
         _buildStatCard(
@@ -1926,9 +1970,14 @@ class _DashboardPageState extends State<DashboardPage>
                   'Pending CEO Approval',
                   'pending ceo approval',
                   proposals
-                      .where((p) =>
-                          (p['status'] ?? '').toString().toLowerCase() ==
-                          'pending ceo approval')
+                      .where((p) => (() {
+                            final s =
+                                (p['status'] ?? '').toString().toLowerCase();
+                            return s == 'pending ceo approval' ||
+                                s == 'pending approval' ||
+                                s == 'in review' ||
+                                s == 'submitted';
+                          })())
                       .length),
               const SizedBox(width: 8),
               _buildFilterTab(
@@ -2051,148 +2100,169 @@ class _DashboardPageState extends State<DashboardPage>
     final subtitle = 'Last modified: ${_formatDate(proposal['updated_at'])}';
     final isSentToClient = status.toLowerCase() == 'sent to client';
     final clientName = proposal['client_name'] ?? proposal['client'] ?? '';
+    final proposalId = proposal['id']?.toString();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: PremiumTheme.glassWhite,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: PremiumTheme.glassWhiteBorder,
-          width: 1,
+    // Read-only for statuses where editing is not allowed
+    final editableStatuses = {'draft', 'changes requested'};
+    final isEditable = editableStatuses.contains(status.toLowerCase());
+
+    void openProposal() {
+      if (proposalId == null) return;
+      Navigator.of(context).pushNamed(
+        '/blank-document',
+        arguments: {
+          'proposalId': proposalId,
+          'readOnly': !isEditable,
+        },
+      );
+    }
+
+    return GestureDetector(
+      onTap: openProposal,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: PremiumTheme.glassWhite,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isEditable
+                ? statusColor.withOpacity(0.4)
+                : PremiumTheme.glassWhiteBorder,
+            width: isEditable ? 1.5 : 1,
+          ),
         ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                // Client Initials Badge (for Sent to Client)
-                if (isSentToClient && clientName.isNotEmpty) ...[
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: PremiumTheme.info.withOpacity(0.2),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: PremiumTheme.info.withOpacity(0.3),
-                        width: 1,
-                      ),
-                    ),
-                    child: Center(
-                      child: Text(
-                        _getClientInitials(clientName),
-                        style: TextStyle(
-                          color: PremiumTheme.info,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  // Client Initials Badge (for Sent to Client)
+                  if (isSentToClient && clientName.isNotEmpty) ...[
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: PremiumTheme.info.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: PremiumTheme.info.withOpacity(0.3),
+                          width: 1,
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: PremiumTheme.bodyLarge.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: PremiumTheme.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Text(
-                            subtitle,
-                            style: PremiumTheme.bodyMedium.copyWith(
-                              fontSize: 13,
-                            ),
+                      child: Center(
+                        child: Text(
+                          _getClientInitials(clientName),
+                          style: TextStyle(
+                            color: PremiumTheme.info,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
                           ),
-                          if (isSentToClient) ...[
-                            const SizedBox(width: 8),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: PremiumTheme.bodyLarge.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: PremiumTheme.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
                             Text(
-                              '•',
+                              subtitle,
                               style: PremiumTheme.bodyMedium.copyWith(
                                 fontSize: 13,
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            FutureBuilder<Map<String, dynamic>?>(
-                              future:
-                                  _getLastActivity(proposal['id']?.toString()),
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return const SizedBox(
-                                    width: 12,
-                                    height: 12,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
+                            if (isSentToClient) ...[
+                              const SizedBox(width: 8),
+                              Text(
+                                '•',
+                                style: PremiumTheme.bodyMedium.copyWith(
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              FutureBuilder<Map<String, dynamic>?>(
+                                future: _getLastActivity(
+                                    proposal['id']?.toString()),
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2),
+                                    );
+                                  }
+                                  final lastActivity =
+                                      _formatLastActivity(snapshot.data);
+                                  return Text(
+                                    lastActivity,
+                                    style: PremiumTheme.bodyMedium.copyWith(
+                                      fontSize: 13,
+                                      color: PremiumTheme.info,
+                                    ),
                                   );
-                                }
-                                final lastActivity =
-                                    _formatLastActivity(snapshot.data);
-                                return Text(
-                                  lastActivity,
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    fontSize: 13,
-                                    color: PremiumTheme.info,
-                                  ),
-                                );
-                              },
-                            ),
+                                },
+                              ),
+                            ],
                           ],
-                        ],
-                      ),
-                    ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Row(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: statusColor.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    status,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: statusColor,
+                    ),
                   ),
                 ),
+                if (isSentToClient) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.insights, size: 20),
+                    color: PremiumTheme.info,
+                    tooltip: 'View Insights',
+                    onPressed: () => _showInsightsModal(proposal),
+                  ),
+                ],
               ],
             ),
-          ),
-          Row(
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: statusColor.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: statusColor.withOpacity(0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  status,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: statusColor,
-                  ),
-                ),
-              ),
-              if (isSentToClient) ...[
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.insights, size: 20),
-                  color: PremiumTheme.info,
-                  tooltip: 'View Insights',
-                  onPressed: () => _showInsightsModal(proposal),
-                ),
-              ],
-            ],
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      ), // Container
+    ); // GestureDetector
   }
 
   String _getClientInitials(String clientName) {
@@ -2426,7 +2496,7 @@ class _DashboardPageState extends State<DashboardPage>
                     size: 48, color: Color(0xFFE67E22)),
                 const SizedBox(height: 12),
                 Text(
-                  '${counts['Pending CEO Approval'] ?? 0} proposals pending your approval',
+                  '${(counts['Pending CEO Approval'] ?? counts['Pending Approval'] ?? 0)} proposals pending your approval',
                   style: const TextStyle(
                       fontSize: 18, fontWeight: FontWeight.w600),
                 ),

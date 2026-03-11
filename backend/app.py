@@ -124,6 +124,8 @@ from api.routes.cycle_time import bp as cycle_time_bp
 from api.routes.pipeline import bp as pipeline_bp
 from api.routes.risk_gate import bp as risk_gate_bp
 from api.routes.finance_export import bp as finance_export_bp
+from api.routes.finance_audit import bp as finance_audit_bp
+from api.routes.finance_audit import bp as finance_audit_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -137,6 +139,20 @@ app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp)
 app.register_blueprint(finance_export_bp, url_prefix='/api')
+app.register_blueprint(finance_audit_bp, url_prefix='/api')
+
+
+@app.route("/", methods=["GET", "HEAD"])
+def root():
+    return {
+        "status": "ok",
+        "service": "lukens-backend",
+    }, 200
+
+
+@app.route("/health", methods=["GET", "HEAD"])
+def health():
+    return {"status": "ok"}, 200
 
 # Catch-all OPTIONS after blueprints so specific routes (e.g. finance export) handle their path first
 @app.route("/", methods=["OPTIONS"])
@@ -218,8 +234,25 @@ def _build_db_config_from_env():
         from urllib.parse import urlparse, parse_qs
 
         parsed = urlparse(database_url)
+        host = (parsed.hostname or '').strip()
+        # Render "Internal" URL host looks like dpg-xxx-a (no domain). It only works on Render.
+        # From your PC we must use the External URL. Prefer DATABASE_URL_EXTERNAL, else DB_HOST if it has a domain.
+        if host.startswith('dpg-') and '.' not in host:
+            external_url = os.getenv('DATABASE_URL_EXTERNAL')
+            if external_url:
+                database_url = external_url
+                parsed = urlparse(database_url)
+                host = (parsed.hostname or '').strip()
+            elif os.getenv('DB_HOST') and '.' in (os.getenv('DB_HOST') or ''):
+                return {
+                    'host': os.getenv('DB_HOST').strip(),
+                    'database': os.getenv('DB_NAME') or (parsed.path or '').lstrip('/') or 'proposal_db',
+                    'user': os.getenv('DB_USER') or parsed.username,
+                    'password': os.getenv('DB_PASSWORD') or parsed.password,
+                    'port': int(os.getenv('DB_PORT') or str(parsed.port or 5432)),
+                    'sslmode': os.getenv('DB_SSLMODE') or 'require',
+                }
         # Accept common Postgres URL scheme variants.
-        # psycopg2 uses a standard Postgres DSN; SQLAlchemy URLs may include a driver.
         scheme = (parsed.scheme or '').lower()
         if scheme.startswith('postgresql+'):
             scheme = 'postgresql'
@@ -390,6 +423,86 @@ def init_pg_schema():
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
 
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS finance_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER,
+            username VARCHAR(255),
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(64) NOT NULL,
+            field_name VARCHAR(255) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            action_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_entity
+               ON finance_audit_logs(entity_type, entity_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_user
+               ON finance_audit_logs(user_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_compliance (
+            proposal_id INTEGER PRIMARY KEY,
+            status VARCHAR(20) NOT NULL,
+            reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_compliance_status
+               ON proposal_compliance(status, evaluated_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS finance_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER,
+            username VARCHAR(255),
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(64) NOT NULL,
+            field_name VARCHAR(255) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            action_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_entity
+               ON finance_audit_logs(entity_type, entity_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_user
+               ON finance_audit_logs(user_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_compliance (
+            proposal_id INTEGER PRIMARY KEY,
+            status VARCHAR(20) NOT NULL,
+            reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_compliance_status
+               ON proposal_compliance(status, evaluated_at DESC)'''
+        )
+
         # Ensure the status CHECK constraint supports the full workflow.
         # This is critical for production (Render) where the constraint may already exist.
         try:
@@ -417,6 +530,10 @@ def init_pg_schema():
                         'Pending Approval',
                         'Pricing In Progress',
                         'Priced',
+                        'Changes Requested',
+                        'changes requested',
+                        'Resubmitted',
+                        'resubmitted',
                         'Sent to Client',
                         'Sent for Signature',
                         'In Review',
@@ -2651,11 +2768,26 @@ def create_comment(username, proposal_id):
         return {'detail': str(e)}, 500
 
 @app.get("/api/comments/document/<int:proposal_id>")
-@token_required
-def get_document_comments(username, proposal_id):
+def get_document_comments(proposal_id):
     """
     Get all comments for a proposal document for the admin/manager review screens.
+    Uses Firebase-aware token validation (accepts Firebase JWT or legacy token).
     """
+    # --- auth: accept Firebase JWT or legacy token ---
+    from api.utils.firebase_auth import verify_firebase_token
+    auth_header = request.headers.get('Authorization', '')
+    token = auth_header.split(' ')[-1] if auth_header else None
+    if not token:
+        return {'detail': 'Token is missing'}, 401
+    username = None
+    decoded = verify_firebase_token(token)
+    if decoded:
+        username = decoded.get('email') or decoded.get('name') or 'firebase_user'
+    else:
+        username = verify_token(token)
+    if not username:
+        return {'detail': 'Invalid or expired token'}, 401
+    # --- end auth ---
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

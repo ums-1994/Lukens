@@ -2,6 +2,7 @@
 Database connection and schema utilities
 """
 import os
+from pathlib import Path
 import psycopg2
 import psycopg2.extras
 import psycopg2.pool
@@ -15,19 +16,33 @@ from dotenv import load_dotenv
 _pg_pool = None
 _db_initialized = False
 
-
-# Load environment variables from .env so DATABASE_URL works when this module
-# is imported directly (e.g., python -c ... from the backend folder).
-load_dotenv()
+# Load .env from backend directory so DB_HOST / DATABASE_URL_EXTERNAL are always found
+_backend_dir = Path(__file__).resolve().parent.parent.parent
+load_dotenv(dotenv_path=_backend_dir / ".env")
 
 
 def _build_db_config_from_env():
     database_url = os.getenv('DATABASE_URL')
     if database_url:
         parsed = urlparse(database_url)
-
+        host = (parsed.hostname or '').strip()
+        # Render internal host (dpg-xxx-a) only works on Render. Use external URL or DB_HOST for local dev.
+        if host.startswith('dpg-') and '.' not in host:
+            external_url = os.getenv('DATABASE_URL_EXTERNAL')
+            if external_url:
+                database_url = external_url
+                parsed = urlparse(database_url)
+                host = (parsed.hostname or '').strip()
+            elif os.getenv('DB_HOST') and '.' in (os.getenv('DB_HOST') or ''):
+                return {
+                    'host': os.getenv('DB_HOST').strip(),
+                    'database': os.getenv('DB_NAME') or (parsed.path or '').lstrip('/') or 'proposal_db',
+                    'user': os.getenv('DB_USER') or parsed.username,
+                    'password': os.getenv('DB_PASSWORD') or parsed.password,
+                    'port': int(os.getenv('DB_PORT') or str(parsed.port or 5432)),
+                    'sslmode': os.getenv('DB_SSLMODE') or 'require',
+                }
         # Accept common Postgres URL scheme variants.
-        # psycopg2 uses a standard Postgres DSN; SQLAlchemy URLs may include a driver.
         scheme = (parsed.scheme or '').lower()
         if scheme.startswith('postgresql+'):
             scheme = 'postgresql'
@@ -140,7 +155,6 @@ def release_pg_conn(conn):
                 # Check if connection is in a transaction and rollback if needed
                 import psycopg2.extensions
                 if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
-                    print(f"[DB] Connection in transaction, rolling back before returning to pool")
                     conn.rollback()
                 
                 # Reset autocommit to default state (False)
@@ -195,6 +209,24 @@ def init_pg_schema():
         conn = _pg_conn()
         cursor = conn.cursor()
 
+        savepoint_counter = 0
+
+        def _exec_with_savepoint(sql, params=None):
+            nonlocal savepoint_counter
+            savepoint_counter += 1
+            sp_name = f"sp_init_schema_{savepoint_counter}"
+            cursor.execute(f"SAVEPOINT {sp_name}")
+            try:
+                if params is None:
+                    cursor.execute(sql)
+                else:
+                    cursor.execute(sql, params)
+                cursor.execute(f"RELEASE SAVEPOINT {sp_name}")
+            except Exception:
+                cursor.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+                cursor.execute(f"RELEASE SAVEPOINT {sp_name}")
+                raise
+
         # Users table
         cursor.execute('''CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -209,6 +241,16 @@ def init_pg_schema():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
+        
+        # Ensure UNIQUE constraint on email (prevents duplicate user creation)
+        try:
+            cursor.execute('''
+                ALTER TABLE users 
+                ADD CONSTRAINT users_email_unique UNIQUE (email)
+            ''')
+            print("[OK] Added UNIQUE constraint on users.email")
+        except Exception as e:
+            print(f"[INFO] UNIQUE constraint on email may already exist: {e}")
         
         # Add is_email_verified column if it doesn't exist (migration for existing databases)
         try:
@@ -236,6 +278,86 @@ def init_pg_schema():
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
 
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS finance_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER,
+            username VARCHAR(255),
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(64) NOT NULL,
+            field_name VARCHAR(255) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            action_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_entity
+               ON finance_audit_logs(entity_type, entity_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_user
+               ON finance_audit_logs(user_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_compliance (
+            proposal_id INTEGER PRIMARY KEY,
+            status VARCHAR(20) NOT NULL,
+            reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_compliance_status
+               ON proposal_compliance(status, evaluated_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS finance_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER,
+            username VARCHAR(255),
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(64) NOT NULL,
+            field_name VARCHAR(255) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            action_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_entity
+               ON finance_audit_logs(entity_type, entity_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_user
+               ON finance_audit_logs(user_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_compliance (
+            proposal_id INTEGER PRIMARY KEY,
+            status VARCHAR(20) NOT NULL,
+            reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_compliance_status
+               ON proposal_compliance(status, evaluated_at DESC)'''
+        )
+
         try:
             cursor.execute("""
                 ALTER TABLE proposals
@@ -261,6 +383,10 @@ def init_pg_schema():
                         'Pending Approval',
                         'Pricing In Progress',
                         'Priced',
+                        'Changes Requested',
+                        'changes requested',
+                        'Resubmitted',
+                        'resubmitted',
                         'Sent to Client',
                         'Sent for Signature',
                         'In Review',
@@ -382,7 +508,7 @@ def init_pg_schema():
 
         # Ensure proposals.client_id has a foreign key to clients.id
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE proposals
                 ADD CONSTRAINT proposals_client_id_fkey
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
@@ -392,19 +518,19 @@ def init_pg_schema():
         
         # Add company_name column if it doesn't exist (migration for existing databases)
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE clients 
                 ADD COLUMN IF NOT EXISTS company_name VARCHAR(255)
             ''')
             # If column was just added and is NULL, set a default value
-            cursor.execute('''
+            _exec_with_savepoint('''
                 UPDATE clients 
                 SET company_name = COALESCE(email, 'Unknown Company')
                 WHERE company_name IS NULL
             ''')
             # Then make it NOT NULL if it's safe
             try:
-                cursor.execute('''
+                _exec_with_savepoint('''
                     ALTER TABLE clients 
                     ALTER COLUMN company_name SET NOT NULL
                 ''')
@@ -416,7 +542,7 @@ def init_pg_schema():
 
         # Add contact_person column if it doesn't exist (migration for existing databases)
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE clients 
                 ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255)
             ''')
@@ -424,7 +550,7 @@ def init_pg_schema():
             print(f"[WARN] Could not add contact_person column (may already exist): {e}")
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE clients
                 ADD COLUMN IF NOT EXISTS region VARCHAR(80)
             ''')

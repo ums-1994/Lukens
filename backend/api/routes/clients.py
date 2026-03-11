@@ -19,9 +19,34 @@ from api.utils.email import send_email, get_logo_html
 bp = Blueprint('clients', __name__)
 
 
+def _resolve_current_user(cursor, username=None, user_id=None, email=None):
+    if user_id:
+        try:
+            cursor.execute("SELECT id, username, email, role FROM users WHERE id = %s", (user_id,))
+            row = cursor.fetchone()
+            if row:
+                return row
+        except Exception:
+            pass
+
+    if email:
+        cursor.execute("SELECT id, username, email, role FROM users WHERE email = %s", (email,))
+        row = cursor.fetchone()
+        if row:
+            return row
+
+    if username:
+        cursor.execute("SELECT id, username, email, role FROM users WHERE username = %s", (username,))
+        row = cursor.fetchone()
+        if row:
+            return row
+
+    return None
+
+
 @bp.post("/clients/invite")
 @token_required
-def send_client_invitation(username=None):
+def send_client_invitation(username=None, user_id=None, email=None):
     """Send a secure onboarding invitation to a client"""
     try:
         print(f"[INVITE] Received invitation request from user: {username}")
@@ -44,12 +69,11 @@ def send_client_invitation(username=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
-            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
+            current_user = _resolve_current_user(cursor, username=username, user_id=user_id, email=email)
+            if not current_user:
                 return jsonify({"error": "User not found"}), 404
 
-            user_id = user_row[0]
+            resolved_user_id = current_user[0]
 
             cursor.execute(
                 """
@@ -58,7 +82,7 @@ def send_client_invitation(username=None):
                 VALUES (%s, %s, %s, %s, 'pending', %s)
                 RETURNING id, access_token, invited_at
                 """,
-                (access_token, invited_email, user_id, expected_company, expires_at),
+                (access_token, invited_email, resolved_user_id, expected_company, expires_at),
             )
 
             result = cursor.fetchone()
@@ -154,18 +178,27 @@ def send_client_invitation(username=None):
 
 @bp.get("/clients/invitations")
 @token_required
-def get_invitations(username=None):
+def get_invitations(username=None, user_id=None, email=None):
     """Get all client invitations for the current user"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
+            current_user = _resolve_current_user(cursor, username=username, user_id=user_id, email=email)
+            if not current_user:
                 return jsonify({"error": "User not found"}), 404
 
-            user_id = user_row['id']
+            user_role = (current_user.get('role') or '').lower().strip()
+            allowed_roles = {'finance', 'admin', 'ceo'}
+            is_finance_variant = user_role.startswith('finance') or user_role.replace(' ', '_').startswith('finance_')
+            if user_role not in allowed_roles and not is_finance_variant:
+                return jsonify({"error": "Insufficient permissions"}), 403
+
+            current_user = _resolve_current_user(cursor, username=username, user_id=user_id, email=email)
+            if not current_user:
+                return jsonify({"error": "User not found"}), 404
+
+            resolved_user_id = current_user['id']
 
             cursor.execute(
                 """
@@ -188,7 +221,7 @@ def get_invitations(username=None):
                 WHERE invited_by = %s
                 ORDER BY invited_at DESC
                 """,
-                (user_id,),
+                (resolved_user_id,),
             )
 
             invitations = cursor.fetchall()
@@ -483,22 +516,18 @@ def delete_invitation(username=None, invitation_id=None):
 
 @bp.get("/clients")
 @token_required
-def get_clients(username=None):
+def get_clients(username=None, user_id=None, email=None):
     """Get all clients for the current user"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
+            current_user = _resolve_current_user(cursor, username=username, user_id=user_id, email=email)
+            if not current_user:
                 return jsonify({"error": "User not found"}), 404
 
-            user_id = user_row['id']
-
-            cursor.execute("SELECT role FROM users WHERE username = %s", (username,))
-            role_row = cursor.fetchone() or {}
-            user_role = (role_row.get('role') or '').lower().strip()
+            resolved_user_id = current_user['id']
+            user_role = (current_user.get('role') or '').lower().strip()
 
             # Check which columns exist in the clients table
             cursor.execute("""
@@ -565,11 +594,11 @@ def get_clients(username=None):
             order_by = 'created_at DESC' if 'created_at' in available_columns else 'id DESC'
             
             # Ensure user_id is an integer
-            if not isinstance(user_id, int):
+            if not isinstance(resolved_user_id, int):
                 try:
-                    user_id = int(user_id)
+                    resolved_user_id = int(resolved_user_id)
                 except (ValueError, TypeError):
-                    print(f"[ERROR] Invalid user_id type: {type(user_id)} = {user_id}")
+                    print(f"[ERROR] Invalid user_id type: {type(resolved_user_id)} = {resolved_user_id}")
                     return jsonify({"error": "Invalid user ID"}), 400
             
             if user_role == 'manager':
@@ -587,7 +616,7 @@ def get_clients(username=None):
                         WHERE created_by = %s OR created_by IS NULL
                         ORDER BY {order_by}
                     """
-                    query_params = (user_id,)
+                    query_params = (resolved_user_id,)
                 else:
                     # Older schemas may not have created_by; fall back to returning all clients
                     query = f"""
@@ -627,20 +656,20 @@ def get_clients(username=None):
 
 @bp.post("/clients")
 @token_required
-def create_client(username=None):
+def create_client(username=None, user_id=None, email=None):
     """Create a client (finance/admin)"""
     try:
         data = request.json or {}
         company_name = (data.get('company_name') or '').strip()
         contact_person = (data.get('contact_person') or '').strip()
-        email = (data.get('email') or '').strip()
+        client_email = (data.get('email') or '').strip()
         phone = (data.get('phone') or '').strip()
         holding_information = (data.get('holding_information') or '').strip()
         address = (data.get('address') or '').strip()
         client_contact_email = (data.get('client_contact_email') or '').strip()
         client_contact_mobile = (data.get('client_contact_mobile') or '').strip()
 
-        if not company_name or not email:
+        if not company_name or not client_email:
             return jsonify({"error": "Company name and email are required"}), 400
 
         with get_db_connection() as conn:
@@ -659,13 +688,12 @@ def create_client(username=None):
             }
             clients_columns = {c for c in clients_columns if c}
 
-            cursor.execute("SELECT id, role FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
+            current_user = _resolve_current_user(cursor, username=username, user_id=user_id, email=email)
+            if not current_user:
                 return jsonify({"error": "User not found"}), 404
 
-            user_id = user_row['id']
-            user_role = (user_row.get('role') or '').lower().strip()
+            resolved_user_id = current_user['id']
+            user_role = (current_user.get('role') or '').lower().strip()
             allowed_roles = {'finance', 'admin', 'ceo'}
             is_finance_variant = user_role.startswith('finance') or user_role.replace(' ', '_').startswith('finance_')
             if user_role not in allowed_roles and not is_finance_variant:
@@ -686,7 +714,7 @@ def create_client(username=None):
                 additional_info = json.dumps(additional_info_obj) if additional_info_obj else None
 
             insert_fields = ['email']
-            insert_values = [email]
+            insert_values = [client_email]
             update_set_parts = []
 
             if 'company_name' in clients_columns:
@@ -719,7 +747,7 @@ def create_client(username=None):
 
             if 'created_by' in clients_columns:
                 insert_fields.append('created_by')
-                insert_values.append(user_id)
+                insert_values.append(resolved_user_id)
 
             if 'contact_person' in clients_columns:
                 insert_fields.insert(1, 'contact_person')
@@ -855,7 +883,7 @@ def get_client(username=None, client_id=None):
 
 @bp.patch("/clients/<int:client_id>")
 @token_required
-def update_client(username=None, client_id=None):
+def update_client(username=None, client_id=None, user_id=None, email=None):
     """Update a client (finance/admin)"""
     try:
         data = request.json or {}
@@ -863,12 +891,11 @@ def update_client(username=None, client_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-            cursor.execute("SELECT id, role FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
+            current_user = _resolve_current_user(cursor, username=username, user_id=user_id, email=email)
+            if not current_user:
                 return jsonify({"error": "User not found"}), 404
 
-            user_role = (user_row.get('role') or '').lower().strip()
+            user_role = (current_user.get('role') or '').lower().strip()
             allowed_roles = {'finance', 'admin', 'ceo'}
             is_finance_variant = user_role.startswith('finance') or user_role.replace(' ', '_').startswith('finance_')
             if user_role not in allowed_roles and not is_finance_variant:
@@ -1031,18 +1058,17 @@ def update_client(username=None, client_id=None):
 
 @bp.delete("/clients/<int:client_id>")
 @token_required
-def delete_client(username=None, client_id=None):
+def delete_client(username=None, client_id=None, user_id=None, email=None):
     """Delete a client (finance/admin)"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-            cursor.execute("SELECT id, role FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
+            current_user = _resolve_current_user(cursor, username=username, user_id=user_id, email=email)
+            if not current_user:
                 return jsonify({"error": "User not found"}), 404
 
-            user_role = (user_row.get('role') or '').lower().strip()
+            user_role = (current_user.get('role') or '').lower().strip()
             allowed_roles = {'finance', 'admin', 'ceo'}
             is_finance_variant = user_role.startswith('finance') or user_role.replace(' ', '_').startswith('finance_')
             if user_role not in allowed_roles and not is_finance_variant:
@@ -1071,7 +1097,7 @@ def delete_client(username=None, client_id=None):
 
 @bp.patch("/clients/<int:client_id>/status")
 @token_required
-def update_client_status(username=None, client_id=None):
+def update_client_status(username=None, client_id=None, user_id=None, email=None):
     """Update client status"""
     try:
         data = request.json or {}
@@ -1081,7 +1107,17 @@ def update_client_status(username=None, client_id=None):
             return jsonify({"error": "Status is required"}), 400
 
         with get_db_connection() as conn:
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            current_user = _resolve_current_user(cursor, username=username, user_id=user_id, email=email)
+            if not current_user:
+                return jsonify({"error": "User not found"}), 404
+
+            user_role = (current_user.get('role') or '').lower().strip()
+            allowed_roles = {'finance', 'admin', 'ceo'}
+            is_finance_variant = user_role.startswith('finance') or user_role.replace(' ', '_').startswith('finance_')
+            if user_role not in allowed_roles and not is_finance_variant:
+                return jsonify({"error": "Insufficient permissions"}), 403
 
             cursor.execute(
                 """
@@ -1135,7 +1171,7 @@ def get_client_notes(username=None, client_id=None):
 
 @bp.post("/clients/<int:client_id>/notes")
 @token_required
-def add_client_note(username=None, client_id=None):
+def add_client_note(username=None, client_id=None, user_id=None, email=None):
     """Add a note to a client"""
     try:
         data = request.json or {}
@@ -1147,12 +1183,11 @@ def add_client_note(username=None, client_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
+            current_user = _resolve_current_user(cursor, username=username, user_id=user_id, email=email)
+            if not current_user:
                 return jsonify({"error": "User not found"}), 404
 
-            user_id = user_row['id']
+            resolved_user_id = current_user['id']
 
             cursor.execute(
                 """
@@ -1160,7 +1195,7 @@ def add_client_note(username=None, client_id=None):
                 VALUES (%s, %s, %s)
                 RETURNING id, created_at
                 """,
-                (client_id, note_text, user_id),
+                (client_id, note_text, resolved_user_id),
             )
 
             result = cursor.fetchone()
@@ -1594,7 +1629,7 @@ def get_client_linked_proposals(username=None, client_id=None):
 
 @bp.post("/clients/<int:client_id>/proposals")
 @token_required
-def link_client_proposal(username=None, client_id=None):
+def link_client_proposal(username=None, client_id=None, user_id=None, email=None):
     """Link a proposal to a client"""
     try:
         data = request.json or {}
@@ -1607,12 +1642,11 @@ def link_client_proposal(username=None, client_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-            cursor.execute("SELECT id FROM users WHERE username = %s", (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
+            current_user = _resolve_current_user(cursor, username=username, user_id=user_id, email=email)
+            if not current_user:
                 return jsonify({"error": "User not found"}), 404
 
-            user_id = user_row['id']
+            resolved_user_id = current_user['id']
 
             cursor.execute(
                 """
@@ -1621,7 +1655,7 @@ def link_client_proposal(username=None, client_id=None):
                 ON CONFLICT (client_id, proposal_id) DO NOTHING
                 RETURNING id
                 """,
-                (client_id, proposal_id, relationship_type, user_id),
+                (client_id, proposal_id, relationship_type, resolved_user_id),
             )
 
             result = cursor.fetchone()

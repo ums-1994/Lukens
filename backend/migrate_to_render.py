@@ -16,7 +16,7 @@ LOCAL_DB = {
 }
 
 # Render database (INTERNAL connection string - use from Render env vars)
-RENDER_CONNECTION_STRING = "postgresql://sowbuilder_jdyx_user:LvUDRxCLtJSQn7tTKhux50kfCsL89cuF@dpg-d61mhge3jp1c7390jcm0-a/sowbuilder_jdyx"
+RENDER_CONNECTION_STRING = "postgresql://sowbuilder_b88j_user:F0aStJeARRclMbzSod8GNrbt3KHgboX9@dpg-d6n7nqjh46gs73c4bd9g-a.oregon-postgres.render.com/sowbuilder_b88j"
 
 def connect_to_local():
     """Connect to local database"""

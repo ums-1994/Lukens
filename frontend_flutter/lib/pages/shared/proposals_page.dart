@@ -147,11 +147,6 @@ class _ProposalsPageState extends State<ProposalsPage>
       }
     } catch (e) {
       print('Γ¥î Error loading proposals: $e');
-      if (mounted) {
-        setState(() {
-          proposals = [];
-        });
-      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -852,6 +847,12 @@ class ProposalItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = (proposal['status'] ?? '').toString().toLowerCase().trim();
+    final editableStatuses = {
+      'draft',
+      'changes requested',
+      'resubmitted',
+    };
+    final isEditable = editableStatuses.contains(status);
     Color statusColor;
     switch (status) {
       case 'draft':
@@ -922,8 +923,7 @@ class ProposalItem extends StatelessWidget {
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () {
-                if ((proposal['status'] ?? '').toString().toLowerCase() ==
-                    'draft') {
+                if (isEditable) {
                   Navigator.pushNamed(context, '/compose', arguments: proposal)
                       .then((_) {
                     if (onRefresh != null) onRefresh!();
@@ -941,10 +941,7 @@ class ProposalItem extends StatelessWidget {
                   });
                 }
               },
-              child: Text(
-                  (proposal['status'] ?? '').toString().toLowerCase() == 'draft'
-                      ? 'Edit'
-                      : 'View'),
+              child: Text(isEditable ? 'Edit' : 'View'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: PremiumTheme.purple,
                 foregroundColor: Colors.white,
