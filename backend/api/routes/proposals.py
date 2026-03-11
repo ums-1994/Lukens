@@ -49,10 +49,11 @@ def _is_manager_role(role_key: str) -> bool:
 
 @bp.post("/proposals")
 @token_required
-def create_proposal(username=None, user_id=None, email=None):
+def create_proposal(username=None, user_id=None, email=None, auto_created=False):
     """Create a new proposal"""
     try:
         data = request.get_json()
+        print(f"📝 DEBUG: create_proposal called with auto_created={auto_created}, user_id={user_id}")
         print(f"📝 Creating proposal for user {username} (user_id: {user_id}, email: {email})")
         
         with get_db_connection() as conn:
@@ -63,18 +64,18 @@ def create_proposal(username=None, user_id=None, email=None):
             # even if this connection can't see the users row yet due to
             # eventual consistency. We don't need to re-look it up.
             found_user_id = None
+            auto_created_in_request = False
             import time
 
             if user_id:
-                # Ensure user still exists (e.g. after DB switch) to avoid FK violation
-                cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                if cursor.fetchone():
-                    found_user_id = user_id
-                    print(f"🔍 Using user_id from decorator: {found_user_id} (trusting decorator verification)")
-                else:
-                    found_user_id = None
-                    print(f"⚠️ user_id {user_id} from decorator not found in DB, will try lookup by email/username")
-            if found_user_id is None:
+                found_user_id = user_id
+                print(f"🔍 Using user_id from decorator: {found_user_id} (trusting decorator verification)")
+
+                # Check if this user was auto-created in this request (avoids DB replication lag)
+                if auto_created:
+                    auto_created_in_request = True
+                    print(f"✅ User {user_id} was auto-created in this request (auto_created=True), skipping DB verification")
+            else:
                 # Robust user lookup with retries (ported from creator.py)
                 # This handles cases where legacy/dev flows call this route
                 # without a trusted user_id from the decorator.
@@ -121,67 +122,69 @@ def create_proposal(username=None, user_id=None, email=None):
             # the proposals.owner_id → users.id foreign key will succeed. In some
             # environments we've seen cases where the Firebase decorator created the user
             # on a different connection/database, causing FK violations here.
-            try:
-                if user_id is not None:
-                    cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
-                    exists_row = cursor.fetchone()
-                else:
-                    exists_row = None
-
-                if not exists_row:
-                    # Try to recover using email (should be present for Firebase users)
-                    recovered_id = None
-                    if email:
-                        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
-                        by_email = cursor.fetchone()
-                        if by_email:
-                            recovered_id = by_email[0]
-
-                    if recovered_id:
-                        print(f"🔄 Recovered user_id {recovered_id} from users table for email {email}")
-                        user_id = recovered_id
-                    elif email:
-                        # As a last resort, auto-create a minimal user record here so the FK can succeed.
-                        # This mirrors the Firebase decorator's behaviour but is scoped to this DB.
-                        base_username = (email.split('@')[0] or 'user').strip() or 'user'
-                        username_candidate = base_username
-                        counter = 1
-                        while True:
-                            cursor.execute('SELECT id FROM users WHERE username = %s', (username_candidate,))
-                            if cursor.fetchone() is None:
-                                break
-                            username_candidate = f"{base_username}{counter}"
-                            counter += 1
-
-                        dummy_password_hash = f"firebase-proposal:{email}"
-                        role = 'manager'
-                        cursor.execute(
-                            '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
-                               VALUES (%s, %s, %s, %s, %s, %s, %s)
-                               RETURNING id''',
-                            (
-                                username_candidate,
-                                email,
-                                dummy_password_hash,
-                                username_candidate,
-                                role,
-                                True,
-                                True,
-                            ),
-                        )
-                        created_row = cursor.fetchone()
-                        user_id = created_row[0]
-                        print(f"🔧 Auto-created fallback user {username_candidate} (id={user_id}) for email {email}")
-
-                        # Commit immediately so that later INSERT into proposals can see this row
-                        conn.commit()
+            # SKIP this check if user was auto-created in this request (we know they exist)
+            if not auto_created_in_request:
+                try:
+                    if user_id is not None:
+                        cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+                        exists_row = cursor.fetchone()
                     else:
-                        print(f"❌ User id {user_id} not found in users table and no email available to recover")
-                        return jsonify({'detail': 'User not found in users table'}), 400
-            except Exception as verify_err:
-                print(f"⚠️ Error verifying/repairing user record before proposal insert: {verify_err}")
-                # If we cannot confidently ensure the user exists, fail fast with 400 to avoid FK 500s.
-                return jsonify({'detail': 'Could not verify user in database'}), 400
+                        exists_row = None
+
+                    if not exists_row:
+                        # Try to recover using email (should be present for Firebase users)
+                        recovered_id = None
+                        if email:
+                            cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+                            by_email = cursor.fetchone()
+                            if by_email:
+                                recovered_id = by_email[0]
+
+                        if recovered_id:
+                            print(f"🔄 Recovered user_id {recovered_id} from users table for email {email}")
+                            user_id = recovered_id
+                        elif email:
+                            # As a last resort, auto-create a minimal user record here so the FK can succeed.
+                            # This mirrors the Firebase decorator's behaviour but is scoped to this DB.
+                            base_username = (email.split('@')[0] or 'user').strip() or 'user'
+                            username_candidate = base_username
+                            counter = 1
+                            while True:
+                                cursor.execute('SELECT id FROM users WHERE username = %s', (username_candidate,))
+                                if cursor.fetchone() is None:
+                                    break
+                                username_candidate = f"{base_username}{counter}"
+                                counter += 1
+
+                            dummy_password_hash = f"firebase-proposal:{email}"
+                            role = 'manager'
+                            cursor.execute(
+                                '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
+                                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                   RETURNING id''',
+                                (
+                                    username_candidate,
+                                    email,
+                                    dummy_password_hash,
+                                    username_candidate,
+                                    role,
+                                    True,
+                                    True,
+                                ),
+                            )
+                            created_row = cursor.fetchone()
+                            user_id = created_row[0]
+                            print(f"🔧 Auto-created fallback user {username_candidate} (id={user_id}) for email {email}")
+
+                            # Commit immediately so that later INSERT into proposals can see this row
+                            conn.commit()
+                        else:
+                            print(f"❌ User id {user_id} not found in users table and no email available to recover")
+                            return jsonify({'detail': 'User not found in users table'}), 400
+                except Exception as verify_err:
+                    print(f"⚠️ Error verifying/repairing user record before proposal insert: {verify_err}")
+                    # If we cannot confidently ensure the user exists, fail fast with 400 to avoid FK 500s.
+                    return jsonify({'detail': 'Could not verify user in database'}), 400
                 
             # Extract fields
             title = data.get('title', 'Untitled Proposal')
