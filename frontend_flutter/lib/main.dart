@@ -493,15 +493,17 @@ class _AuthWrapperState extends State<AuthWrapper> {
             await appState.init();
 
             final rawRole = userProfile['role']?.toString() ?? '';
-            final userRole = rawRole.toLowerCase().trim();
+            final userRole = rawRole
+                .toLowerCase()
+                .trim()
+                .replaceAll('_', ' ')
+                .replaceAll('-', ' ');
             String dashboardRoute;
 
             final isAdmin = userRole == 'admin' || userRole == 'ceo';
             final isFinance = userRole == 'finance' ||
-                userRole == 'finance manager' ||
-                userRole == 'financial manager' ||
-                userRole == 'finance_manager' ||
-                userRole == 'financial_manager';
+                userRole.startsWith('finance') ||
+                userRole.startsWith('financial');
             final isManager = userRole == 'manager' ||
                 userRole == 'creator' ||
                 userRole == 'user';

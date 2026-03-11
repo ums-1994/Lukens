@@ -224,7 +224,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           // Redirect based on user role
           // Only two roles: admin and manager
           final rawRole = userProfile['role']?.toString() ?? '';
-          final userRole = rawRole.toLowerCase().trim();
+          final userRole = rawRole
+              .toLowerCase()
+              .trim()
+              .replaceAll('_', ' ')
+              .replaceAll('-', ' ');
 
           // Use RoleService mapping as one view of the role
           final currentRole = roleService.currentRole;
@@ -238,10 +242,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
           final isAdmin = userRole == 'admin' || userRole == 'ceo';
           final isFinance = userRole == 'finance' ||
-              userRole == 'finance manager' ||
-              userRole == 'financial manager' ||
-              userRole == 'finance_manager' ||
-              userRole == 'financial_manager';
+              userRole.startsWith('finance') ||
+              userRole.startsWith('financial');
           final isManager = userRole == 'manager' ||
               userRole == 'creator' ||
               userRole == 'user';
