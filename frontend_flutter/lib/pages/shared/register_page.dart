@@ -240,7 +240,8 @@ class _RegisterPageState extends State<RegisterPage>
 
         final roleService = context.read<RoleService>();
         await roleService.initializeRoleFromUser(userProfile);
-        await appState.init();
+        // Keep navigation snappy: initialize app data in background.
+        appState.init();
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -431,7 +432,8 @@ class _RegisterPageState extends State<RegisterPage>
           final roleService = context.read<RoleService>();
           await roleService.initializeRoleFromUser(userProfile);
 
-          await appState.init();
+          // Keep navigation snappy: initialize app data in background.
+          appState.init();
 
           print('🔍 Requested role: "$role"');
 

@@ -238,7 +238,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           final roleService = context.read<RoleService>();
           await roleService.initializeRoleFromUser(userProfile);
 
-          await appState.init();
+          // Do not block navigation on full app bootstrap.
+          // This init triggers multiple network calls and can make login feel stuck.
+          appState.init();
 
           // Redirect based on user role
           // Only two roles: admin and manager
