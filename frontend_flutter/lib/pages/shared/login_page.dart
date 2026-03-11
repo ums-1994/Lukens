@@ -8,6 +8,7 @@ import '../../config/app_constants.dart';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -155,10 +156,32 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
       // Step 3: Send Firebase ID token to backend to create/update user in database
       print('📡 Sending Firebase token to backend...');
+
+      String? persistedRole;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        persistedRole = prefs.getString('user_role');
+      } catch (_) {
+        persistedRole = null;
+      }
+
+      String? roleForBackend;
+      final roleKey = (persistedRole ?? '').toLowerCase().trim();
+      if (roleKey.contains('finance')) {
+        roleForBackend = 'finance_manager';
+      } else if (roleKey.contains('approver') || roleKey.contains('admin')) {
+        roleForBackend = 'admin';
+      }
+
+      final requestBody = {
+        'id_token': firebaseIdToken,
+        if (roleForBackend != null) 'role': roleForBackend,
+      };
+
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id_token': firebaseIdToken}),
+        body: json.encode(requestBody),
       );
 
       if (response.statusCode != 200 && response.statusCode != 201) {

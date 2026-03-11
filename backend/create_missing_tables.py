@@ -20,10 +20,10 @@ SOURCE_CONFIG = {
 
 # Destination (Render) - to create tables
 DEST_CONFIG = {
-    'host': os.getenv('DEST_DB_HOST', 'dpg-d4iq5fa4d50c73d9m3n0-a.oregon-postgres.render.com'),
-    'database': os.getenv('DEST_DB_NAME', 'proposal_sow_builder'),
-    'user': os.getenv('DEST_DB_USER', 'proposal_sow_builder_user'),
-    'password': os.getenv('DEST_DB_PASSWORD', 'LTpIcMC2QUY3bd4DezTU4lmWroOxr8ez'),
+    'host': os.getenv('DEST_DB_HOST', 'dpg-d6n7nqjh46gs73c4bd9g-a.oregon-postgres.render.com'),
+    'database': os.getenv('DEST_DB_NAME', 'sowbuilder_b88j'),
+    'user': os.getenv('DEST_DB_USER', 'sowbuilder_b88j_user'),
+    'password': os.getenv('DEST_DB_PASSWORD', 'F0aStJeARRclMbzSod8GNrbt3KHgboX9'),
     'port': int(os.getenv('DEST_DB_PORT', '5432')),
     'sslmode': 'prefer',
     'connect_timeout': 30,

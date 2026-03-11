@@ -238,6 +238,24 @@ def init_pg_schema():
         conn = _pg_conn()
         cursor = conn.cursor()
 
+        savepoint_counter = 0
+
+        def _exec_with_savepoint(sql, params=None):
+            nonlocal savepoint_counter
+            savepoint_counter += 1
+            sp_name = f"sp_init_schema_{savepoint_counter}"
+            cursor.execute(f"SAVEPOINT {sp_name}")
+            try:
+                if params is None:
+                    cursor.execute(sql)
+                else:
+                    cursor.execute(sql, params)
+                cursor.execute(f"RELEASE SAVEPOINT {sp_name}")
+            except Exception:
+                cursor.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+                cursor.execute(f"RELEASE SAVEPOINT {sp_name}")
+                raise
+
         # Users table
         cursor.execute('''CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -252,6 +270,16 @@ def init_pg_schema():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
+        
+        # Ensure UNIQUE constraint on email (prevents duplicate user creation)
+        try:
+            cursor.execute('''
+                ALTER TABLE users 
+                ADD CONSTRAINT users_email_unique UNIQUE (email)
+            ''')
+            print("[OK] Added UNIQUE constraint on users.email")
+        except Exception as e:
+            print(f"[INFO] UNIQUE constraint on email may already exist: {e}")
         
         # Add is_email_verified column if it doesn't exist (migration for existing databases)
         try:
@@ -529,18 +557,10 @@ def init_pg_schema():
 
         # Ensure proposals.client_id has a foreign key to clients.id (only if not already present)
         try:
-            cursor.execute('''
-                DO $$
-                BEGIN
-                  IF NOT EXISTS (
-                    SELECT 1 FROM pg_constraint
-                    WHERE conname = 'proposals_client_id_fkey'
-                  ) THEN
-                    ALTER TABLE proposals
-                    ADD CONSTRAINT proposals_client_id_fkey
-                    FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL;
-                  END IF;
-                END $$;
+            _exec_with_savepoint('''
+                ALTER TABLE proposals
+                ADD CONSTRAINT proposals_client_id_fkey
+                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
             ''')
         except Exception as e:
             print(f"[WARN] Could not add proposals.client_id foreign key constraint (may already exist or be incompatible): {e}")
@@ -548,19 +568,19 @@ def init_pg_schema():
 
         # Add company_name column if it doesn't exist (migration for existing databases)
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE clients 
                 ADD COLUMN IF NOT EXISTS company_name VARCHAR(255)
             ''')
             # If column was just added and is NULL, set a default value
-            cursor.execute('''
+            _exec_with_savepoint('''
                 UPDATE clients 
                 SET company_name = COALESCE(email, 'Unknown Company')
                 WHERE company_name IS NULL
             ''')
             # Then make it NOT NULL if it's safe
             try:
-                cursor.execute('''
+                _exec_with_savepoint('''
                     ALTER TABLE clients 
                     ALTER COLUMN company_name SET NOT NULL
                 ''')
@@ -573,7 +593,7 @@ def init_pg_schema():
 
         # Add contact_person column if it doesn't exist (migration for existing databases)
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE clients 
                 ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255)
             ''')
@@ -582,7 +602,7 @@ def init_pg_schema():
             conn.rollback()
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE clients
                 ADD COLUMN IF NOT EXISTS region VARCHAR(80)
             ''')

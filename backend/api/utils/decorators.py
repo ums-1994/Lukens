@@ -19,6 +19,33 @@ from api.utils.auth import verify_token
 USER_CACHE_BY_EMAIL = {}
 
 
+def _verify_user_readable(conn, user_id, max_retries=10):
+    """
+    Verify that a user can be read from the database with retries.
+    Handles eventual consistency in distributed databases.
+    Returns True if user is readable, False otherwise.
+    """
+    import time
+    for attempt in range(max_retries):
+        try:
+            cursor = conn.cursor()
+            cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+            if cursor.fetchone():
+                if attempt > 0:
+                    print(f"[FIREBASE] ✅ User {user_id} became readable on attempt {attempt + 1}")
+                return True
+            cursor.close()
+        except Exception:
+            pass
+        
+        if attempt < max_retries - 1:
+            wait_time = min(0.5 + (attempt * 0.1), 2.0)
+            print(f"[FIREBASE] ⚠️ User {user_id} not readable (attempt {attempt + 1}/{max_retries}), waiting {wait_time:.1f}s...")
+            time.sleep(wait_time)
+    
+    return False
+
+
 def token_required(f):
     """
     Decorator to require valid authentication token.
@@ -71,21 +98,28 @@ def token_required(f):
                     name = firebase_user.get('name') or email.split('@')[0]
 
                     # Fast path: reuse cached user to avoid a DB round-trip
+                    # But verify it actually exists in the DB with retries
                     cached = USER_CACHE_BY_EMAIL.get(email)
                     if cached:
                         cached_user_id, cached_username = cached
-                        import inspect
-                        sig = inspect.signature(f)
-                        clean_kwargs = {
-                            k: v
-                            for k, v in kwargs.items()
-                            if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']
-                        }
-                        if 'user_id' in sig.parameters:
-                            clean_kwargs['user_id'] = cached_user_id
-                        if 'email' in sig.parameters:
-                            clean_kwargs['email'] = email
-                        return f(username=cached_username, *args, **clean_kwargs)
+                        with get_db_connection() as verify_conn:
+                            if _verify_user_readable(verify_conn, cached_user_id, max_retries=5):
+                                print(f"[FIREBASE] Using cached user_id {cached_user_id} for {email}")
+                                import inspect
+                                sig = inspect.signature(f)
+                                clean_kwargs = {
+                                    k: v
+                                    for k, v in kwargs.items()
+                                    if k not in ['firebase_user', 'firebase_uid', 'user_id', 'email']
+                                }
+                                if 'user_id' in sig.parameters:
+                                    clean_kwargs['user_id'] = cached_user_id
+                                if 'email' in sig.parameters:
+                                    clean_kwargs['email'] = email
+                                return f(username=cached_username, *args, **clean_kwargs)
+                            else:
+                                print(f"[FIREBASE] ⚠️ Cached user_id {cached_user_id} for {email} not found in DB; invalidating cache")
+                                del USER_CACHE_BY_EMAIL[email]
 
                     with get_db_connection() as conn:
                         original_autocommit = conn.autocommit
@@ -161,36 +195,28 @@ def token_required(f):
 
                                     try:
                                         conn.commit()
-
-                                        if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
-                                            conn.commit()
-
-                                        cursor.close()
-                                        cursor = conn.cursor()
-
-                                        if original_autocommit:
-                                            conn.autocommit = True
-
+                                        print(f"[FIREBASE] ✅ Auto-created user committed: {username} (id: {user_id})")
                                     except Exception as commit_error:
                                         print(f"[FIREBASE] ERROR during commit: {commit_error}")
-                                        conn.rollback()
+                                        try:
+                                            conn.rollback()
+                                        except:
+                                            pass
                                         raise
 
-                                    print(f"[FIREBASE] Auto-created user: {username} (email: {email}, user_id: {user_id})")
-
+                                    # Verify user is readable with retries
+                                    import time
+                                    if _verify_user_readable(conn, user_id, max_retries=10):
+                                        print(f"[FIREBASE] ✅ User {user_id} verified readable after creation")
+                                    else:
+                                        print(f"[FIREBASE] ⚠️ WARNING: User {user_id} not readable after verification attempts, but proceeding with caution")
+                                    
+                                    # Close old cursor and create fresh one from the committed state
                                     try:
-                                        cursor.execute('SELECT pg_backend_pid()')
-                                        cursor.fetchone()
-                                        import time
-                                        time.sleep(0.3)
-                                        cursor.execute('SELECT 1')
-                                        cursor.fetchone()
-                                    except Exception as sync_error:
-                                        if "was not persisted" in str(sync_error):
-                                            raise
-
-                                    if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
-                                        conn.rollback()
+                                        cursor.close()
+                                    except:
+                                        pass
+                                    cursor = conn.cursor()
                                 except psycopg2.IntegrityError:
                                     conn.rollback()
                                     import time
@@ -213,9 +239,11 @@ def token_required(f):
                                 raise
 
                             import time
-                            time.sleep(0.25)
+                            time.sleep(0.1)
 
+                            # Cache the verified user
                             USER_CACHE_BY_EMAIL[email] = (user_id, username)
+                            print(f"[FIREBASE] ✅ User cached for {email}: {username} (id: {user_id})")
 
                             import inspect
                             sig = inspect.signature(f)

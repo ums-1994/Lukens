@@ -10,7 +10,7 @@ print("🔍 Simple Connection Test")
 print("=" * 70)
 
 # Try with the EXACT connection string from user
-CONNECTION_STRING = "postgresql://proposal_sow_builder_user:LTpIcMC2QUY3bd4DezTU4lmWroOxr8ez@dpg-d4iq5fa4d50c73d9m3n0-a/proposal_sow_builder"
+CONNECTION_STRING = "postgresql://sowbuilder_b88j_user:F0aStJeARRclMbzSod8GNrbt3KHgboX9@dpg-d6n7nqjh46gs73c4bd9g-a.oregon-postgres.render.com/sowbuilder_b88j"
 
 # Parse connection string
 from urllib.parse import urlparse

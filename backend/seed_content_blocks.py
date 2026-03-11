@@ -5,6 +5,24 @@ from datetime import datetime
 import psycopg2
 from dotenv import load_dotenv
 
+# Ensure database schema exists before attempting to seed. When the script is
+# invoked during deployment (e.g. as part of Render startCommand) it may run
+# before the main application has initialized its schema.  The migration logic
+# lives in migrate_db.py / api.utils.database.init_pg_schema, so import and run
+# it here to avoid `relation "content" does not exist` errors.
+try:
+    # migrate_db inside backend may not be on sys.path when run from project root
+    import sys, os
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    os.chdir(script_dir)
+    from migrate_db import run_migration
+except Exception:
+    # fallback if migrate_db import fails (e.g. during testing); we'll attempt
+    # to import the core initializer directly later
+    run_migration = None
+
 load_dotenv()
 
 def get_db_config():
@@ -27,6 +45,24 @@ def get_db_config():
     return config
 
 DATABASE_CONFIG = get_db_config()
+
+# run migrations if possible (idempotent)
+if run_migration:
+    print("🔁 running database migration before seeding content blocks...")
+    try:
+        run_migration()
+    except Exception as exc:
+        print(f"⚠️  migration failed: {exc}")
+        # migration failure isn't fatal here; seeding may still succeed later
+
+# if migrate_db couldn't be imported try direct initializer
+if not run_migration:
+    try:
+        from api.utils.database import init_pg_schema
+        print("🔁 initializing schema via api.utils.database.init_pg_schema...")
+        init_pg_schema()
+    except Exception:
+        pass
 
 LEGACY_LABELS_TO_REMOVE = [
     'Risk Management',
