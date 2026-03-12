@@ -463,14 +463,18 @@ def firebase_auth():
                     normalized_role = 'manager'
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
 
-                # If the frontend is explicitly asking for a higher-privilege role (admin/finance_manager)
-                # and the DB currently has a lower-privilege role (e.g. 'manager'), upgrade the stored role.
+                # Optional role upgrade guard:
+                # existing users should not have their role changed during normal login.
+                # This is only allowed when an explicit flag is provided.
+                allow_role_upgrade = bool(data.get('allow_role_upgrade') is True)
+
+                # If explicitly requested and allowed, upgrade stored role.
                 try:
                     requested_role_lower = requested_role.lower().strip() if requested_role else ''
                 except Exception:
                     requested_role_lower = ''
 
-                if requested_role_lower:
+                if allow_role_upgrade and requested_role_lower:
                     # Upgrade to admin if requested and not already admin.
                     if requested_role_lower in ['admin', 'ceo'] and normalized_role != 'admin':
                         try:
