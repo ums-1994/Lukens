@@ -430,7 +430,7 @@ def firebase_auth():
                 try:
                     requested_lower = requested_role.lower().strip() if requested_role else ''
                     current_lower = user_role.lower().strip() if user_role else ''
-                    if requested_lower in ['admin', 'ceo'] and current_lower != 'admin':
+                    if requested_lower in ['admin', 'ceo', 'approver'] and current_lower != 'admin':
                         cursor.execute(
                             '''UPDATE users SET role = %s WHERE id = %s''',
                             ('admin', user_id)
@@ -445,8 +445,9 @@ def firebase_auth():
                 
                 # Normalize role: map variations to standardized roles
                 # Supported normalized roles: 'admin', 'manager', 'finance_manager'
+                # Accept 'approver' as admin so frontend enum name is never treated as manager
                 role_lower = user_role.lower().strip() if user_role else 'user'
-                if role_lower in ['admin', 'ceo']:
+                if role_lower in ['admin', 'ceo', 'approver']:
                     normalized_role = 'admin'
                 elif role_lower in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager']:
                     # Preserve a distinct finance manager role so frontend can route to finance dashboard
@@ -504,8 +505,9 @@ def firebase_auth():
                 
                 # Use requested role if provided, otherwise default to 'manager'
                 # Supported roles: 'admin', 'manager', 'finance_manager'
+                # Accept 'approver' as admin so frontend never accidentally stores manager
                 normalized_role = requested_role.lower().strip() if requested_role else 'manager'
-                if normalized_role in ['admin', 'ceo']:
+                if normalized_role in ['admin', 'ceo', 'approver']:
                     role_to_use = 'admin'
                 elif normalized_role in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
                     # Preserve a distinct finance manager role so frontend can route to finance dashboard

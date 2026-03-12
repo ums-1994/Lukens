@@ -18,12 +18,11 @@ class RoleService extends ChangeNotifier {
   UserRole get currentRole => _currentRole;
   String get currentRoleName => _getRoleName(_currentRole);
 
-  // Available roles for the current user (can be expanded based on permissions)
+  // Available roles for the current user (single Admin concept; no duplicate approver/admin)
   List<UserRole> get availableRoles => [
         UserRole.creator,
-        UserRole.approver,
+        UserRole.admin,
         UserRole.finance,
-        // UserRole.admin, // Uncomment when admin features are ready
       ];
 
   String getRoleName(UserRole role) {
@@ -68,15 +67,15 @@ class RoleService extends ChangeNotifier {
     }
   }
 
-  // Map backend role to frontend UserRole
+  // Map backend role to frontend UserRole (one Admin enum value; backend 'admin' → UserRole.admin)
   UserRole mapBackendRoleToFrontendRole(String? backendRole) {
     if (backendRole == null) return UserRole.creator;
 
     final role = backendRole.toLowerCase().trim();
 
-    // Admin roles → Approver (Admin Dashboard)
-    if (role == 'admin' || role == 'ceo') {
-      return UserRole.approver;
+    // Admin roles → UserRole.admin (single Admin concept; avoids approver vs admin confusion)
+    if (role == 'admin' || role == 'ceo' || role == 'approver') {
+      return UserRole.admin;
     }
 
     // Finance roles → Finance Dashboard
@@ -95,6 +94,19 @@ class RoleService extends ChangeNotifier {
 
     // Default to creator
     return UserRole.creator;
+  }
+
+  /// Canonical backend role string for API requests. Use this when sending role to the backend.
+  String getBackendRoleString(UserRole role) {
+    switch (role) {
+      case UserRole.admin:
+      case UserRole.approver:
+        return 'admin';
+      case UserRole.finance:
+        return 'finance_manager';
+      case UserRole.creator:
+        return 'manager';
+    }
   }
 
   // Initialize role from backend user data
@@ -134,9 +146,7 @@ class RoleService extends ChangeNotifier {
       if (savedRole != null) {
         if (savedRole.contains('creator')) {
           _currentRole = UserRole.creator;
-        } else if (savedRole.contains('approver')) {
-          _currentRole = UserRole.approver;
-        } else if (savedRole.contains('admin')) {
+        } else if (savedRole.contains('approver') || savedRole.contains('admin')) {
           _currentRole = UserRole.admin;
         } else if (savedRole.contains('finance')) {
           _currentRole = UserRole.finance;
@@ -154,7 +164,7 @@ class RoleService extends ChangeNotifier {
   }
 
   bool isCreator() => _currentRole == UserRole.creator;
-  bool isApprover() => _currentRole == UserRole.approver;
+  bool isApprover() => _currentRole == UserRole.approver || _currentRole == UserRole.admin;
   bool isAdmin() => _currentRole == UserRole.admin;
   bool isFinance() => _currentRole == UserRole.finance;
 

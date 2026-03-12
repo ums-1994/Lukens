@@ -160,7 +160,7 @@ class RoleSwitcher extends StatelessWidget {
 
                 // Navigate based on role
                 if (context.mounted) {
-                  if (role == UserRole.approver) {
+                  if (role == UserRole.approver || role == UserRole.admin) {
                     print('➡️ Navigating to approver dashboard...');
                     Navigator.of(context)
                         .pushReplacementNamed('/approver_dashboard');
@@ -244,7 +244,7 @@ class CompactRoleSwitcher extends StatelessWidget {
 
                 // Navigate based on role
                 if (context.mounted) {
-                  if (role == UserRole.approver) {
+                  if (role == UserRole.approver || role == UserRole.admin) {
                     Navigator.of(context)
                         .pushReplacementNamed('/approver_dashboard');
                   } else if (role == UserRole.finance) {
