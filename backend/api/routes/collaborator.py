@@ -157,13 +157,15 @@ def add_guest_comment():
         return {'detail': str(e)}, 500
 
 @bp.route("/api/comments/document/<int:proposal_id>", methods=['OPTIONS'])
+@bp.route("/comments/document/<int:proposal_id>", methods=['OPTIONS'])
 def options_comments_document(proposal_id=None):
     """Handle CORS preflight for comments document endpoint"""
     return {}, 200
 
 @bp.post("/api/comments/document/<int:proposal_id>")
+@bp.post("/comments/document/<int:proposal_id>")
 @token_required
-def create_comment(username=None, proposal_id=None):
+def create_comment(username=None, user_id=None, proposal_id=None):
     """Create a new comment on a document with support for threading and block-level comments"""
     try:
         data = request.get_json()
@@ -171,6 +173,8 @@ def create_comment(username=None, proposal_id=None):
         section_index = data.get('section_index')
         section_name = data.get('section_name')
         highlighted_text = data.get('highlighted_text')
+        start_offset = data.get('start_offset')
+        end_offset = data.get('end_offset')
         parent_id = data.get('parent_id')  # For threaded replies
         block_type = data.get('block_type')  # 'text', 'table', 'image'
         block_id = data.get('block_id')  # Identifier for the block
@@ -181,13 +185,26 @@ def create_comment(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Get user ID
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
-            user = cursor.fetchone()
-            
+            # Resolve user
+            # Prefer user_id injected by token_required (Firebase flow).
+            user = None
+            if user_id is not None:
+                cursor.execute(
+                    'SELECT id, email, full_name FROM users WHERE id = %s',
+                    (user_id,),
+                )
+                user = cursor.fetchone()
+
+            if not user:
+                cursor.execute(
+                    'SELECT id, email, full_name FROM users WHERE username = %s',
+                    (username,),
+                )
+                user = cursor.fetchone()
+
             if not user:
                 return {'detail': 'User not found'}, 404
-            
+
             user_id = user['id']
             
             cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
@@ -209,13 +226,13 @@ def create_comment(username=None, proposal_id=None):
                 cursor.execute("""
                     INSERT INTO document_comments 
                     (proposal_id, comment_text, created_by, section_index, section_name, 
-                     highlighted_text, parent_id, block_type, block_id, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     highlighted_text, start_offset, end_offset, parent_id, block_type, block_id, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id, proposal_id, comment_text, created_by, created_at, 
-                              section_index, section_name, highlighted_text, parent_id,
-                              block_type, block_id, status, updated_at
+                              section_index, section_name, highlighted_text, start_offset, end_offset,
+                              parent_id, block_type, block_id, status, updated_at
                 """, (proposal_id, comment_text, user_id, section_index, section_name, 
-                      highlighted_text, parent_id, block_type, block_id, 'open'))
+                      highlighted_text, start_offset, end_offset, parent_id, block_type, block_id, 'open'))
             except Exception as seq_error:
                 # If sequence issue, reset it and try again
                 if 'duplicate key' in str(seq_error).lower() or 'pkey' in str(seq_error).lower():
@@ -229,13 +246,13 @@ def create_comment(username=None, proposal_id=None):
                     cursor.execute("""
                         INSERT INTO document_comments 
                         (proposal_id, comment_text, created_by, section_index, section_name, 
-                         highlighted_text, parent_id, block_type, block_id, status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         highlighted_text, start_offset, end_offset, parent_id, block_type, block_id, status)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id, proposal_id, comment_text, created_by, created_at, 
-                                  section_index, section_name, highlighted_text, parent_id,
-                                  block_type, block_id, status, updated_at
+                                  section_index, section_name, highlighted_text, start_offset, end_offset,
+                                  parent_id, block_type, block_id, status, updated_at
                     """, (proposal_id, comment_text, user_id, section_index, section_name, 
-                          highlighted_text, parent_id, block_type, block_id, 'open'))
+                          highlighted_text, start_offset, end_offset, parent_id, block_type, block_id, 'open'))
                 else:
                     raise
             
@@ -271,6 +288,7 @@ def create_comment(username=None, proposal_id=None):
         return {'detail': str(e)}, 500
 
 @bp.get("/api/comments/document/<int:proposal_id>")
+@bp.get("/comments/document/<int:proposal_id>")
 @token_required
 def get_document_comments(username=None, proposal_id=None):
     """Get all comments for a document with threaded structure"""
@@ -306,8 +324,9 @@ def get_document_comments(username=None, proposal_id=None):
             
             cursor.execute(f"""
                 SELECT dc.id, dc.comment_text, dc.created_at, dc.created_by,
-                       dc.section_index, dc.section_name, dc.highlighted_text, dc.status,
-                       dc.parent_id, dc.block_type, dc.block_id,
+                       dc.section_index, dc.section_name, dc.highlighted_text,
+                       dc.start_offset, dc.end_offset,
+                       dc.status, dc.parent_id, dc.block_type, dc.block_id,
                        dc.resolved_by, dc.resolved_at, dc.updated_at,
                        u.full_name as author_name, u.email as author_email, u.username as author_username,
                        ru.full_name as resolver_name

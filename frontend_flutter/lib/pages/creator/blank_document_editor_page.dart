@@ -1,11 +1,13 @@
 // ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:convert';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
+import 'package:intl/intl.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
@@ -25,6 +27,7 @@ import '../../document_editor/models/document_table.dart';
 import '../../document_editor/models/positioned_pricing_table.dart';
 // Block-based section widget
 import '../../document_editor/widgets/section_widget.dart';
+import '../../document_editor/controllers/highlighting_text_controller.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
@@ -143,6 +146,280 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  void _scrollToCommentCard(int commentId) {
+    if (!_commentsScrollController.hasClients) return;
+
+    final rootComments =
+        _comments.where((c) => c['parent_id'] == null).toList();
+    final filteredRootComments = _commentFilterStatus == 'all'
+        ? rootComments
+        : rootComments
+            .where((c) => c['status'] == _commentFilterStatus)
+            .toList();
+
+    filteredRootComments.sort((a, b) {
+      final aTime =
+          DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final bTime =
+          DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
+      return bTime.compareTo(aTime);
+    });
+
+    final index = filteredRootComments
+        .indexWhere((c) => c['id']?.toString() == commentId.toString());
+    if (index < 0) return;
+
+    const itemExtentEstimate = 170.0;
+    final target = (index * itemExtentEstimate)
+        .clamp(0.0, _commentsScrollController.position.maxScrollExtent);
+    _commentsScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  List<Widget> _buildRightGutterCommentBubbles({
+    required int sectionIndex,
+    required double pageContentWidth,
+  }) {
+    final section = _sections[sectionIndex];
+
+    final rootCommentsForSection = _comments
+        .where((c) =>
+            c['parent_id'] == null &&
+            (c['status']?.toString().toLowerCase() ?? 'open') != 'deleted' &&
+            c['block_id']?.toString() == section.id)
+        .toList();
+
+    if (rootCommentsForSection.isEmpty) return const <Widget>[];
+
+    // Estimate the y-position by measuring the content text and mapping the
+    // start_offset caret position to a dy. This doesn't perfectly account for
+    // the title field, but places bubbles next to the correct paragraph.
+    final contentText = section.controller.text;
+    final contentStyle = _getContentTextStyle();
+    final painter = TextPainter(
+      textDirection: ui.TextDirection.ltr,
+      text: TextSpan(text: contentText, style: contentStyle),
+      maxLines: null,
+    );
+
+    // Content TextField is inside a small padding; keep a small left/right
+    // gutter so line wrapping matches closely.
+    final textWidth = (pageContentWidth - 32).clamp(200.0, pageContentWidth);
+    painter.layout(maxWidth: textWidth);
+
+    const bubbleRightOutsidePage = -220.0; // place outside A4 card
+    const bubbleWidth = 200.0;
+    const baseYInSection = 86.0; // approx: title + spacers + padding
+
+    rootCommentsForSection.sort((a, b) {
+      final aStart = int.tryParse(a['start_offset']?.toString() ?? '') ?? 0;
+      final bStart = int.tryParse(b['start_offset']?.toString() ?? '') ?? 0;
+      return aStart.compareTo(bStart);
+    });
+
+    return rootCommentsForSection.map((c) {
+      final start = int.tryParse(c['start_offset']?.toString() ?? '') ?? 0;
+      final clamped = start.clamp(0, contentText.length);
+      final caretOffset = painter.getOffsetForCaret(
+        TextPosition(offset: clamped),
+        Rect.zero,
+      );
+
+      final top = baseYInSection + caretOffset.dy;
+      final name = c['commenter_name']?.toString() ?? 'User';
+      final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
+      final commentText = c['comment_text']?.toString() ?? '';
+      final timestampLabel = _formatTimestamp(c['timestamp']);
+
+      final replies = _comments
+          .where((r) => r['parent_id']?.toString() == c['id']?.toString())
+          .toList()
+        ..sort((a, b) {
+          final aTime = _tryParseTimestamp(a['timestamp']);
+          final bTime = _tryParseTimestamp(b['timestamp']);
+          if (aTime == null && bTime == null) return 0;
+          if (aTime == null) return -1;
+          if (bTime == null) return 1;
+          return aTime.compareTo(bTime);
+        });
+
+      final latestReply = replies.isNotEmpty ? replies.last : null;
+      final latestReplyText = latestReply?['comment_text']?.toString() ?? '';
+      final latestReplyAuthor =
+          latestReply?['commenter_name']?.toString().trim() ?? '';
+      final isResolved =
+          (c['status']?.toString().toLowerCase() ?? 'open') == 'resolved';
+
+      return Positioned(
+        right: bubbleRightOutsidePage,
+        top: top,
+        width: bubbleWidth,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (details) {
+            final id = int.tryParse(c['id']?.toString() ?? '');
+            if (id == null) return;
+            _showThreadOverlay(
+              rootCommentId: id,
+              globalPosition: details.globalPosition,
+            );
+          },
+          child: Opacity(
+            opacity: isResolved ? 0.7 : 1.0,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isResolved
+                      ? Colors.grey.shade300
+                      : const Color(0xFF00BCD4).withOpacity(0.35),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.10),
+                    blurRadius: 10,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 14,
+                    backgroundColor: const Color(0xFF00BCD4),
+                    child: Text(
+                      initial,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        if (timestampLabel.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            timestampLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        Text(
+                          commentText,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.25,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                        if (replies.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Reply (${replies.length})',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                          if (latestReplyText.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              latestReplyAuthor.isNotEmpty
+                                  ? '$latestReplyAuthor: $latestReplyText'
+                                  : latestReplyText,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.25,
+                                color: Colors.grey.shade800,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  void _applyInlineHighlights() {
+    try {
+      final Map<String, List<HighlightRange>> rangesByBlock = {};
+
+      for (final c in _comments) {
+        final status = (c['status'] ?? 'open').toString().toLowerCase();
+        if (status != 'open' && status != 'resolved') continue;
+
+        // Root comments + replies both can have offsets; apply to all.
+        final blockId = c['block_id']?.toString();
+        if (blockId == null || blockId.isEmpty) continue;
+
+        final startRaw = c['start_offset'];
+        final endRaw = c['end_offset'];
+        final start = int.tryParse(startRaw?.toString() ?? '');
+        final end = int.tryParse(endRaw?.toString() ?? '');
+        if (start == null || end == null) continue;
+        if (end <= start) continue;
+
+        final color = status == 'open'
+            ? Colors.yellow.withOpacity(0.3)
+            : Colors.yellow.withOpacity(0.12);
+
+        rangesByBlock.putIfAbsent(blockId, () => <HighlightRange>[]).add(
+              HighlightRange(
+                start: start,
+                end: end,
+                color: color,
+                commentId: int.tryParse(c['id']?.toString() ?? ''),
+              ),
+            );
+      }
+
+      for (final section in _sections) {
+        final ranges = rangesByBlock[section.id] ?? const <HighlightRange>[];
+        section.controller.setHighlights(ranges);
+      }
+    } catch (e) {
+      print('⚠️ Error applying inline highlights: $e');
+    }
+  }
+
   List<String> _uploadedImages = [];
   List<Map<String, dynamic>> _libraryImages = [];
   bool _isLoadingLibraryImages = false;
@@ -184,11 +461,330 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   List<Map<String, dynamic>> _comments = [];
   late TextEditingController _commentController;
   final FocusNode _commentFocusNode = FocusNode();
+  final ScrollController _commentsScrollController = ScrollController();
+  OverlayEntry? _threadOverlay;
+  int? _activeThreadRootId;
+  late TextEditingController _threadReplyController;
+  final FocusNode _threadReplyFocusNode = FocusNode();
   String _commentFilterStatus = 'all';
   String _highlightedText = '';
   int? _selectedSectionForComment;
+  TextSelection? _currentSelection;
+  int? _selectionSectionIndex;
+  int? _draftSectionIndex;
+  String? _draftBlockId;
+  int? _draftStartOffset;
+  int? _draftEndOffset;
+  String _draftSelectedText = '';
+  Timer? _selectionSnackDebounce;
+  int? _lastSelectionHash;
+  final Map<String, int?> _lastSelectionHashBySectionId = {};
+  final Set<String> _selectionListenerAttachedSectionIds = {};
+  OverlayEntry? _addCommentOverlay;
+  Offset? _lastContentTapGlobalPosition;
+  int? _pendingScrollToCommentId;
   List<Map<String, dynamic>> _collaborators = [];
   bool _isCollaborating = false;
+
+  void _showSnack(SnackBar snackBar) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.clearSnackBars();
+    messenger.showSnackBar(snackBar);
+  }
+
+  void _removeAddCommentOverlay() {
+    _addCommentOverlay?.remove();
+    _addCommentOverlay = null;
+  }
+
+  void _removeThreadOverlay() {
+    _threadOverlay?.remove();
+    _threadOverlay = null;
+    _activeThreadRootId = null;
+  }
+
+  void _showThreadOverlay(
+      {required int rootCommentId, required Offset globalPosition}) {
+    _removeThreadOverlay();
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+
+    final root = _comments.firstWhere(
+      (c) => c['id']?.toString() == rootCommentId.toString(),
+      orElse: () => <String, dynamic>{},
+    );
+    if (root.isEmpty) return;
+
+    setState(() {
+      _activeThreadRootId = rootCommentId;
+      _draftSectionIndex =
+          int.tryParse(root['section_index']?.toString() ?? '');
+      _draftBlockId = root['block_id']?.toString();
+      _draftStartOffset = int.tryParse(root['start_offset']?.toString() ?? '');
+      _draftEndOffset = int.tryParse(root['end_offset']?.toString() ?? '');
+      _draftSelectedText = root['highlighted_text']?.toString() ?? '';
+    });
+
+    _threadOverlay = OverlayEntry(
+      builder: (context) {
+        final screen = MediaQuery.of(context).size;
+        final left = (globalPosition.dx + 12).clamp(8.0, screen.width - 360);
+        final top = (globalPosition.dy - 40).clamp(8.0, screen.height - 420);
+
+        final replies = _comments
+            .where(
+                (c) => c['parent_id']?.toString() == rootCommentId.toString())
+            .toList()
+          ..sort((a, b) {
+            final aTime = DateTime.tryParse(a['timestamp']?.toString() ?? '') ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            final bTime = DateTime.tryParse(b['timestamp']?.toString() ?? '') ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            return aTime.compareTo(bTime);
+          });
+
+        return Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 340,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.14),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          root['commenter_name']?.toString() ?? 'User',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _removeThreadOverlay,
+                        icon: const Icon(Icons.close, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if ((root['comment_text']?.toString() ?? '').isNotEmpty)
+                    Text(
+                      root['comment_text']?.toString() ?? '',
+                      style: const TextStyle(fontSize: 13, height: 1.35),
+                    ),
+                  if (replies.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 180),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: replies
+                              .map(
+                                (r) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      '${r['commenter_name'] ?? 'User'}: ${r['comment_text'] ?? ''}',
+                                      style: const TextStyle(
+                                          fontSize: 12, height: 1.35),
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _threadReplyController,
+                    focusNode: _threadReplyFocusNode,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      hintText: 'Reply or add others with @',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                            color: Color(0xFF00BCD4), width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.all(10),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      ElevatedButton(
+                        onPressed: () async {
+                          if (_threadReplyController.text.trim().isEmpty)
+                            return;
+                          _commentController.text = _threadReplyController.text;
+                          await _addComment(parentId: rootCommentId);
+                          _threadReplyController.clear();
+                          if (!mounted) return;
+                          await _loadCommentsFromDatabase(_savedProposalId!);
+                          _threadOverlay?.markNeedsBuild();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00BCD4),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Reply'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_threadOverlay!);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _threadReplyFocusNode.requestFocus();
+    });
+  }
+
+  void _showAddCommentOverlay({required Offset globalPosition}) {
+    _removeAddCommentOverlay();
+
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+
+    _addCommentOverlay = OverlayEntry(
+      builder: (context) {
+        final screenSize = MediaQuery.of(context).size;
+        final left = (globalPosition.dx + 8).clamp(8.0, screenSize.width - 160);
+        final top =
+            (globalPosition.dy - 44).clamp(8.0, screenSize.height - 120);
+
+        return Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            color: Colors.transparent,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.grey.shade300),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () {
+                  if (!mounted) return;
+                  final idx = _selectionSectionIndex;
+                  final sel = _currentSelection;
+                  if (idx == null || sel == null || sel.isCollapsed) return;
+
+                  final sectionText = _sections[idx].controller.text;
+                  final base = sel.baseOffset;
+                  final extent = sel.extentOffset;
+                  final start = base < extent ? base : extent;
+                  final end = base < extent ? extent : base;
+                  final clampedStart = start.clamp(0, sectionText.length);
+                  final clampedEnd = end.clamp(0, sectionText.length);
+                  final selectedText = clampedEnd > clampedStart
+                      ? sectionText.substring(clampedStart, clampedEnd)
+                      : '';
+
+                  final section = _sections[idx];
+
+                  setState(() {
+                    _selectedSectionForComment = idx;
+                    _highlightedText = selectedText;
+                    _draftSectionIndex = idx;
+                    _draftBlockId = section.id;
+                    _draftStartOffset = clampedStart;
+                    _draftEndOffset = clampedEnd;
+                    _draftSelectedText = selectedText;
+                    _showCommentsPanel = true;
+                  });
+
+                  if (_savedProposalId != null) {
+                    _loadCommentsFromDatabase(_savedProposalId!);
+                  }
+
+                  _removeAddCommentOverlay();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    if (_commentsScrollController.hasClients) {
+                      _commentsScrollController.animateTo(
+                        0,
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOut,
+                      );
+                    }
+                    _commentFocusNode.requestFocus();
+                  });
+                },
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.add_comment,
+                          size: 16, color: Color(0xFF00BCD4)),
+                      SizedBox(width: 8),
+                      Text(
+                        'Add comment',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_addCommentOverlay!);
+  }
 
   // Auto-save and versioning
   Timer? _autoSaveTimer;
@@ -238,6 +834,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _commentController = TextEditingController();
     _commentController.addListener(_handleCommentTextChanged);
     _commentFocusNode.addListener(_handleCommentFocusChange);
+    _threadReplyController = TextEditingController();
 
     // Auto-show comments panel for collaborators
     if (widget.isCollaborator) {
@@ -265,6 +862,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       });
 
       _selectedSectionIndex = 0; // Select first section
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _ensureSectionSelectionListeners();
+      });
     } else if (widget.proposalId == null) {
       // Only create initial section for new documents without AI content
       final initialSection = DocumentSection(
@@ -279,6 +880,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Add focus listeners for UI updates
       initialSection.contentFocus.addListener(() => setState(() {}));
       initialSection.titleFocus.addListener(() => setState(() {}));
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _ensureSectionSelectionListeners();
+      });
     }
 
     // Setup auto-save listeners
@@ -369,6 +975,49 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ),
       );
     }
+  }
+
+  void _onContentSelectionChanged(
+      int sectionIndex, TextSelection selection, SelectionChangedCause? cause) {
+    if (selection.isCollapsed) {
+      _selectionSnackDebounce?.cancel();
+      _lastSelectionHash = null;
+      _removeAddCommentOverlay();
+      setState(() {
+        _currentSelection = null;
+        _selectionSectionIndex = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _currentSelection = selection;
+      _selectionSectionIndex = sectionIndex;
+    });
+
+    final base = selection.baseOffset;
+    final extent = selection.extentOffset;
+    final start = base < extent ? base : extent;
+    final end = base < extent ? extent : base;
+    if (start < 0 || end <= start) return;
+
+    final selectionHash = Object.hash(sectionIndex, start, end);
+    if (_lastSelectionHash == selectionHash) return;
+    _lastSelectionHash = selectionHash;
+
+    _selectionSnackDebounce?.cancel();
+    _selectionSnackDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      if (_currentSelection == null || _currentSelection!.isCollapsed) return;
+      if (_selectionSectionIndex != sectionIndex) return;
+
+      final anchor = _lastContentTapGlobalPosition ?? const Offset(24, 120);
+      _showAddCommentOverlay(globalPosition: anchor);
+    });
+  }
+
+  void _onContentTapUp(TapUpDetails details) {
+    _lastContentTapGlobalPosition = details.globalPosition;
   }
 
   Future<void> _startPricingFinance() async {
@@ -901,7 +1550,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     sectionTypeRaw.trim().toLowerCase();
                 final bool isCover = _isTruthy(sectionData['isCoverPage']) ||
                     sectionTypeNormalized == 'cover';
+                final String? sectionId =
+                    sectionData is Map ? (sectionData['id']?.toString()) : null;
                 final newSection = DocumentSection(
+                  id: sectionId,
                   title: (sectionData['title'] ??
                           (isCover ? '' : 'Untitled Section'))
                       .toString(),
@@ -1002,6 +1654,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             }
           });
 
+          _ensureSectionSelectionListeners();
+
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
@@ -1042,6 +1696,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
+
+          _ensureSectionSelectionListeners();
         }
       }
     } catch (e) {
@@ -1142,16 +1798,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _comments.add({
             'id': comment['id'],
             'parent_id': comment['parent_id'],
+            'block_type': comment['block_type'],
+            'block_id': comment['block_id'],
             'commenter_name': comment['author_name'] ??
                 comment['author_username'] ??
                 comment['author_email'] ??
                 'User #${comment['created_by']}',
+            'created_by': comment['created_by'],
             'comment_text': comment['comment_text'],
             'section_index': comment['section_index'],
             'section_name': comment['section_name'],
-            'block_type': comment['block_type'],
-            'block_id': comment['block_id'],
             'highlighted_text': comment['highlighted_text'],
+            'start_offset': comment['start_offset'],
+            'end_offset': comment['end_offset'],
             'timestamp': comment['created_at'],
             'status': comment['status'] ?? 'open',
             'resolved_by': comment['resolved_by'],
@@ -1161,7 +1820,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           });
         }
       });
+
+      // If a thread overlay is open, force it to rebuild so new replies appear.
+      _threadOverlay?.markNeedsBuild();
       print('✅ Loaded ${flatComments.length} comments (including replies)');
+
+      _applyInlineHighlights();
 
       if (mounted) {
         try {
@@ -1171,6 +1835,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
       }
     } catch (e) {
+      if (e.toString().contains('unauthorized')) {
+        AuthService.logout();
+        if (mounted) {
+          _showSnack(
+            const SnackBar(
+              content: Text('Session expired. Please log in again.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
       print('⚠️ Error loading comments: $e');
     }
   }
@@ -1320,10 +1997,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   @override
   void dispose() {
     _autoSaveTimer?.cancel();
+    _selectionSnackDebounce?.cancel();
+    _removeAddCommentOverlay();
+    _removeThreadOverlay();
+    _commentsScrollController.dispose();
+    _threadReplyController.dispose();
+    _threadReplyFocusNode.dispose();
     _titleController.dispose();
     _clientNameController.dispose();
     _clientEmailController.dispose();
-    _commentController.removeListener(_handleCommentTextChanged);
     _commentController.dispose();
     _commentFocusNode.removeListener(_handleCommentFocusChange);
     _commentFocusNode.dispose();
@@ -1382,13 +2064,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     setState(() {
       _sections.insert(index + 1, newSection);
       _selectedSectionIndex = index + 1;
-
-      newSection.controller.addListener(_onContentChanged);
-      newSection.titleController.addListener(_onContentChanged);
-
-      newSection.contentFocus.addListener(() => setState(() {}));
-      newSection.titleFocus.addListener(() => setState(() {}));
     });
+
+    _ensureSectionSelectionListeners();
   }
 
   void _deleteSection(int index) {
@@ -2094,8 +2772,29 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             : 'Untitled Section')
         : null;
 
-    // Clear form
-    _commentController.clear();
+    final selectedIndex = _selectedSectionForComment;
+    final selection = _currentSelection;
+    final hasSelection =
+        selectedIndex != null && selection != null && !selection.isCollapsed;
+
+    String? blockId;
+    int? startOffset;
+    int? endOffset;
+    if (_draftBlockId != null &&
+        _draftStartOffset != null &&
+        _draftEndOffset != null &&
+        _draftEndOffset! > _draftStartOffset!) {
+      blockId = _draftBlockId;
+      startOffset = _draftStartOffset;
+      endOffset = _draftEndOffset;
+    } else if (hasSelection) {
+      final section = _sections[selectedIndex];
+      blockId = section.id;
+      final base = selection.baseOffset;
+      final extent = selection.extentOffset;
+      startOffset = base < extent ? base : extent;
+      endOffset = base < extent ? extent : base;
+    }
     _clearMentionState();
 
     // Save comment to database
@@ -2116,22 +2815,47 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         token: token,
         proposalId: _savedProposalId!,
         commentText: commentText,
+        createdBy: commenterName,
         sectionIndex: _selectedSectionForComment,
         sectionName: sectionName,
-        highlightedText: _highlightedText.isNotEmpty ? _highlightedText : null,
+        highlightedText: (_draftSelectedText.isNotEmpty
+                    ? _draftSelectedText
+                    : _highlightedText)
+                .isNotEmpty
+            ? (_draftSelectedText.isNotEmpty
+                ? _draftSelectedText
+                : _highlightedText)
+            : null,
         parentId: parentId,
-        blockType: null, // TODO: Add block type support
-        blockId: null, // TODO: Add block ID support
+        blockType: 'text',
+        blockId: blockId,
+        startOffset: startOffset,
+        endOffset: endOffset,
       );
 
       if (savedComment != null) {
+        final createdId = int.tryParse(savedComment['id']?.toString() ?? '');
+        if (createdId != null) {
+          _pendingScrollToCommentId = createdId;
+        }
+
+        setState(() {
+          _showCommentsPanel = true;
+        });
+
         // Reload comments from database to get updated structure
         await _loadCommentsFromDatabase(_savedProposalId!);
 
         // Clear form fields
         setState(() {
+          _commentController.clear();
           _highlightedText = '';
           _selectedSectionForComment = null;
+          _draftSectionIndex = null;
+          _draftBlockId = null;
+          _draftStartOffset = null;
+          _draftEndOffset = null;
+          _draftSelectedText = '';
         });
 
         if (mounted) {
@@ -2145,6 +2869,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           );
 
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (_pendingScrollToCommentId == null) return;
+            _scrollToCommentCard(_pendingScrollToCommentId!);
+            _pendingScrollToCommentId = null;
+          });
+
           try {
             await context.read<AppState>().fetchNotifications();
           } catch (e) {
@@ -2155,6 +2886,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         throw Exception('Failed to save comment');
       }
     } catch (e) {
+      if (e.toString().contains('unauthorized')) {
+        AuthService.logout();
+        if (mounted) {
+          _showSnack(
+            const SnackBar(
+              content: Text('Session expired. Please log in again.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
       print('⚠️ Error saving comment to database: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2519,26 +3263,107 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return _comments.where((c) => c['status'] == _commentFilterStatus).toList();
   }
 
-  String _formatTimestamp(dynamic timestamp) {
-    if (timestamp == null) return '';
-    try {
-      final DateTime dt = DateTime.parse(timestamp.toString());
-      final now = DateTime.now();
-      final difference = now.difference(dt);
+  DateTime? _tryParseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return null;
 
-      if (difference.inMinutes < 1) {
-        return 'Just now';
-      } else if (difference.inHours < 1) {
-        return '${difference.inMinutes}m ago';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h ago';
-      } else if (difference.inDays < 7) {
-        return '${difference.inDays}d ago';
-      } else {
-        return '${dt.day}/${dt.month}/${dt.year}';
+    if (timestamp is DateTime) return timestamp;
+
+    if (timestamp is int) {
+      // Accept both seconds and milliseconds epoch.
+      final isMillis = timestamp.abs() > 100000000000;
+      return DateTime.fromMillisecondsSinceEpoch(
+        isMillis ? timestamp : timestamp * 1000,
+        isUtc: true,
+      );
+    }
+
+    final raw = timestamp.toString().trim();
+    if (raw.isEmpty) return null;
+
+    // Numeric string epoch.
+    final asInt = int.tryParse(raw);
+    if (asInt != null) {
+      final isMillis = asInt.abs() > 100000000000;
+      return DateTime.fromMillisecondsSinceEpoch(
+        isMillis ? asInt : asInt * 1000,
+        isUtc: true,
+      );
+    }
+
+    // Common Postgres format: 'YYYY-MM-DD HH:MM:SS[.ffffff][+TZ]'
+    // Convert the first space between date/time into 'T' so DateTime can parse.
+    String normalized = raw;
+    if (normalized.contains(' ') && !normalized.contains('T')) {
+      final firstSpace = normalized.indexOf(' ');
+      if (firstSpace > 0) {
+        normalized =
+            '${normalized.substring(0, firstSpace)}T${normalized.substring(firstSpace + 1)}';
       }
+    }
+
+    final dt = DateTime.tryParse(normalized);
+    if (dt != null) {
+      // Naive timestamps are already in local time (UTC+2) - do not convert to UTC
+      return dt;
+    }
+
+    // RFC1123 / HTTP-date (often used by some JSON serializers)
+    // Example: "Mon, 09 Mar 2026 15:10:00 GMT"
+    try {
+      final parsed =
+          DateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", 'en_US').parseUtc(raw);
+      return parsed;
+    } catch (_) {
+      // ignore
+    }
+
+    // Variant without explicit GMT token
+    try {
+      final parsed =
+          DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').parseUtc(raw);
+      return parsed;
+    } catch (_) {
+      // ignore
+    }
+
+    return null;
+  }
+
+  String _formatTimestamp(dynamic timestamp) {
+    final parsed = _tryParseTimestamp(timestamp);
+    if (parsed == null) return '';
+    try {
+      final DateTime dt = parsed;  // Already in local time, no conversion needed
+      final now = DateTime.now();
+
+      final timePart = DateFormat('HH:mm').format(dt);
+      final isSameDate =
+          dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      if (isSameDate) {
+        return '$timePart Today';
+      }
+
+      final yesterday = now.subtract(const Duration(days: 1));
+      final isYesterday = dt.year == yesterday.year &&
+          dt.month == yesterday.month &&
+          dt.day == yesterday.day;
+      if (isYesterday) {
+        return '$timePart Yesterday';
+      }
+
+      final startOfToday = DateTime(now.year, now.month, now.day);
+      final startOfThatDay = DateTime(dt.year, dt.month, dt.day);
+      final daysAgo = startOfToday.difference(startOfThatDay).inDays;
+
+      if (daysAgo >= 2 && daysAgo < 7) {
+        final weekday = DateFormat('EEEE').format(dt);
+        return '$timePart $weekday';
+      }
+
+      final datePart = DateFormat('d MMM yyyy').format(dt);
+      return '$timePart $datePart';
     } catch (e) {
-      return 'Invalid date';
+      return '';
     }
   }
 
@@ -2730,7 +3555,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2ECC71)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71)),
             child: const Text('Resubmit'),
           ),
         ],
@@ -2741,7 +3567,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final token = await _getAuthToken();
       if (token == null) throw Exception('Not authenticated');
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$_savedProposalId/send-for-approval'),
+        Uri.parse(
+            '${ApiService.baseUrl}/api/proposals/$_savedProposalId/send-for-approval'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -2758,7 +3585,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               duration: Duration(seconds: 2),
             ),
           );
-          Navigator.of(context).pushNamedAndRemoveUntil('/proposals', (r) => false);
+          Navigator.of(context)
+              .pushNamedAndRemoveUntil('/proposals', (r) => false);
         }
       } else {
         throw Exception('Failed to resubmit: ${response.body}');
@@ -2800,7 +3628,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2ECC71)),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71)),
             child: const Text('Submit'),
           ),
         ],
@@ -2811,7 +3640,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final token = await _getAuthToken();
       if (token == null) throw Exception('Not authenticated');
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/$_savedProposalId/finance-resubmit'),
+        Uri.parse(
+            '${ApiService.baseUrl}/api/proposals/$_savedProposalId/finance-resubmit'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
@@ -3003,10 +3833,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  void _ensureSectionSelectionListeners() {
+    for (final section in _sections) {
+      void onControllerChanged() {
+        final selection = section.controller.selection;
+        if (!selection.isValid) return;
+
+        final sectionIndex = _sections.indexOf(section);
+        if (sectionIndex < 0) return;
+
+        final base = selection.baseOffset;
+        final extent = selection.extentOffset;
+        final start = base < extent ? base : extent;
+        final end = base < extent ? extent : base;
+        final selectionHash = Object.hash(start, end, selection.isCollapsed);
+
+        final lastHash = _lastSelectionHashBySectionId[section.id];
+        if (lastHash == selectionHash) return;
+        _lastSelectionHashBySectionId[section.id] = selectionHash;
+
+        _onContentSelectionChanged(sectionIndex, selection, null);
+      }
+
+      if (_selectionListenerAttachedSectionIds.contains(section.id)) {
+        continue;
+      }
+
+      _selectionListenerAttachedSectionIds.add(section.id);
+      _lastSelectionHashBySectionId.putIfAbsent(section.id, () => null);
+      section.controller.addListener(onControllerChanged);
+    }
+  }
+
   void _onContentChanged() {
     setState(() {
       _hasUnsavedChanges = true;
     });
+
+    _ensureSectionSelectionListeners();
 
     // Cancel existing timer
     _autoSaveTimer?.cancel();
@@ -3025,6 +3889,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       'title': _titleController.text,
       'sections': _sections
           .map((section) => {
+                'id': section.id,
                 'title': section.titleController.text,
                 'content': section.controller.text,
                 'backgroundColor': section.backgroundColor.value,
@@ -5227,9 +6092,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFE67E22),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
               ),
             ),
           if (isManagerRole && isChangesRequested) const SizedBox(width: 12),
@@ -5243,9 +6110,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2980B9),
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
               ),
             ),
           if (isFinanceRole && isChangesRequested) const SizedBox(width: 12),
@@ -5605,7 +6474,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // A4 dimensions: 210mm x 297mm (aspect ratio 0.707)
     // Using larger width of 900px for better visibility
     // Height: 1273px (A4 aspect ratio maintained)
-    const double pageWidth = 900;
+    const double pageWidth = 700;
     const double pageHeight = 1273; // A4 aspect ratio
 
     return List.generate(
@@ -5666,6 +6535,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                     Expanded(
                       child: SingleChildScrollView(
+                        clipBehavior: Clip.none,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 60,
@@ -5679,6 +6549,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               clipBehavior: Clip.none,
                               children: [
                                 _buildSectionContent(index),
+                                ..._buildRightGutterCommentBubbles(
+                                  sectionIndex: index,
+                                  pageContentWidth: pageWidth - 120,
+                                ),
                                 ...section.positionedPricingTables
                                     .asMap()
                                     .entries
@@ -5774,16 +6648,25 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     final isFinanceRole = context.watch<RoleService>().isFinance();
     final isManagerRole = context.watch<RoleService>().isCreator();
-    // Finance can edit freely when a proposal is returned to them for changes
-    final _statusForLock = (_proposalStatus ?? '').toLowerCase().trim();
-    final financeTextLocked = isFinanceRole && _statusForLock != 'changes requested';
 
     return SectionWidget(
       section: section,
       isHovered: isHovered,
       isSelected: isSelected,
-      readOnly: widget.readOnly || financeTextLocked,
-      canDelete: !isFinanceRole && (_sections.length > 1),
+      readOnly: widget.readOnly,
+      canDelete: (_sections.length > 1),
+      onContentTap: () {
+        // Keep track of which section selection belongs to.
+        setState(() {
+          _selectedSectionIndex = index;
+        });
+      },
+      onContentSelectionChanged: (selection, cause) {
+        _onContentSelectionChanged(index, selection, cause);
+      },
+      onContentTapUp: (details) {
+        _onContentTapUp(details);
+      },
       onHoverChanged: (hovered) {
         setState(() {
           _hoveredSectionIndex = hovered ? index : -1;
@@ -5792,23 +6675,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       onTap: () {
         setState(() => _selectedSectionIndex = index);
       },
-      onInsertBelow: isFinanceRole ? () {} : () => _insertSection(index),
+      onInsertBelow: () => _insertSection(index),
       onInsertFromLibrary: () {
         setState(() {
           _selectedSectionIndex = index;
         });
         _addFromLibrary();
       },
-      onShowAIAssistant: isFinanceRole
-          ? () {}
-          : () {
-              setState(() {
-                _selectedSectionIndex = index;
-              });
-              _showAIAssistantDialog();
-            },
-      onDuplicate: isFinanceRole ? () {} : () => _duplicateSection(index),
-      onDelete: isFinanceRole ? () {} : () => _deleteSection(index),
+      onShowAIAssistant: () {
+        setState(() {
+          _selectedSectionIndex = index;
+        });
+        _showAIAssistantDialog();
+      },
+      onDuplicate: () => _duplicateSection(index),
+      onDelete: () => _deleteSection(index),
       getContentTextStyle: _getContentTextStyle,
       getTextAlignment: _getTextAlignment,
       onReorderTables: (int oldIndex, int newIndex) {
@@ -5844,7 +6725,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
       },
       onRemoveInlineImage: (imageIndex) {
-        if (isFinanceRole) return;
         setState(() {
           _sections[index].inlineImages.removeAt(imageIndex);
         });
@@ -6206,7 +7086,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           // Table content
           Directionality(
-            textDirection: TextDirection.ltr,
+            textDirection: ui.TextDirection.ltr,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
@@ -6219,7 +7099,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       child: Text(
                         table.cells[0][colIndex],
                         style: const TextStyle(fontWeight: FontWeight.bold),
-                        textDirection: TextDirection.ltr,
+                        textDirection: ui.TextDirection.ltr,
                       ),
                     ),
                   ),
@@ -6239,7 +7119,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               padding: const EdgeInsets.all(8),
                               child: Text(
                                 table.cells[rowIndex + 1][colIndex],
-                                textDirection: TextDirection.ltr,
+                                textDirection: ui.TextDirection.ltr,
                                 style: const TextStyle(
                                   fontSize: 13,
                                   textBaseline: TextBaseline.alphabetic,
@@ -6251,12 +7131,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
                         return DataCell(
                           Directionality(
-                            textDirection: TextDirection.ltr,
+                            textDirection: ui.TextDirection.ltr,
                             child: TextFormField(
                               key: ValueKey(
                                 '${table.hashCode}-$rowIndex-$colIndex',
                               ),
-                              textDirection: TextDirection.ltr,
+                              textDirection: ui.TextDirection.ltr,
                               textAlign: TextAlign.left,
                               initialValue: table.cells[rowIndex + 1][colIndex],
                               onChanged: (value) {
@@ -8878,6 +9758,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         .where((c) => c['status'] == 'resolved' && c['parent_id'] == null)
         .length;
 
+    final hasDraft = _draftBlockId != null && _showCommentsPanel;
+
     return Container(
       width: 400,
       color: Colors.white,
@@ -8986,7 +9868,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
           // Comments list
           Expanded(
-            child: filteredRootComments.isEmpty
+            child: (filteredRootComments.isEmpty && !hasDraft)
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -9017,182 +9899,190 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                   )
                 : ListView.builder(
+                    controller: _commentsScrollController,
                     padding: const EdgeInsets.all(12),
-                    itemCount: filteredRootComments.length,
+                    itemCount: filteredRootComments.length + (hasDraft ? 1 : 0),
                     itemBuilder: (context, index) {
-                      final comment = filteredRootComments[index];
+                      if (hasDraft && index == 0) {
+                        return _buildDraftCommentCard();
+                      }
+                      final comment =
+                          filteredRootComments[hasDraft ? index - 1 : index];
                       return _buildCommentCard(comment);
                     },
                   ),
           ),
 
-          // Add comment form
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: Colors.grey[200]!)),
-              color: Colors.grey[50],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: _commentController,
-                  focusNode: _commentFocusNode,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    hintText: 'Add a comment... (use @ to mention)',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey[300]!),
+          if (!hasDraft)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                color: Colors.grey[50],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _commentController,
+                    focusNode: _commentFocusNode,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'Add a comment... (use @ to mention)',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                            color: Color(0xFF00BCD4), width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.all(12),
                     ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide:
-                          const BorderSide(color: Color(0xFF00BCD4), width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
+                    onChanged: (text) {
+                      _handleCommentTextChanged();
+                    },
                   ),
-                  onChanged: (text) {
-                    // Handle @mentions detection
-                    _handleCommentTextChanged();
-                  },
-                ),
-                // @mentions autocomplete dropdown
-                if (_isSearchingMentions && _mentionQuery.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(strokeWidth: 2)),
+                      TextButton(
+                        onPressed: () {
+                          _commentController.clear();
+                          _clearMentionState();
+                        },
+                        child: const Text('Cancel'),
+                      ),
                       const SizedBox(width: 8),
-                      Text(
-                        'Searching teammates...',
-                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      ElevatedButton(
+                        onPressed: () async {
+                          await _addComment();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00BCD4),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Post'),
                       ),
                     ],
                   ),
-                ] else if (_mentionSuggestions.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 150),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[300]!),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: _mentionSuggestions.length,
-                      separatorBuilder: (_, __) =>
-                          Divider(height: 1, color: Colors.grey[200]),
-                      itemBuilder: (context, index) {
-                        final user = _mentionSuggestions[index];
-                        final name = user['full_name']?.toString() ??
-                            user['first_name']?.toString() ??
-                            user['email']?.toString() ??
-                            'User';
-                        final email = user['email']?.toString();
-                        final username = user['username']?.toString();
-                        return InkWell(
-                          onTap: () => _insertMention(user),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 14,
-                                  backgroundColor: const Color(0xFF00BCD4),
-                                  child: Text(
-                                    name.isNotEmpty
-                                        ? name[0].toUpperCase()
-                                        : '@',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        name,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      if (username != null || email != null)
-                                        Text(
-                                          [
-                                            if (username != null &&
-                                                username.isNotEmpty)
-                                              '@$username',
-                                            if (email != null &&
-                                                email.isNotEmpty)
-                                              email,
-                                          ].join(' • '),
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.grey[600],
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                const Icon(Icons.alternate_email,
-                                    size: 16, color: Color(0xFF00BCD4)),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
                 ],
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        _commentController.clear();
-                        _clearMentionState();
-                      },
-                      child: const Text('Cancel'),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: () async {
-                        await _addComment();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00BCD4),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Post'),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDraftCommentCard() {
+    final selectedText = _draftSelectedText;
+    final sectionName = (_draftSectionIndex != null &&
+            _draftSectionIndex! >= 0 &&
+            _draftSectionIndex! < _sections.length)
+        ? (_sections[_draftSectionIndex!].titleController.text.isNotEmpty
+            ? _sections[_draftSectionIndex!].titleController.text
+            : 'Untitled Section')
+        : 'Selected text';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF00BCD4).withOpacity(0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF00BCD4).withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.mode_comment_outlined,
+                  size: 16, color: Color(0xFF00BCD4)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  sectionName,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _draftSectionIndex = null;
+                    _draftBlockId = null;
+                    _draftStartOffset = null;
+                    _draftEndOffset = null;
+                    _draftSelectedText = '';
+                  });
+                  _commentController.clear();
+                  _clearMentionState();
+                },
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+          if (selectedText.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Text(
+                selectedText.length > 160
+                    ? '${selectedText.substring(0, 160)}...'
+                    : selectedText,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF1A1A1A)),
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          TextField(
+            controller: _commentController,
+            focusNode: _commentFocusNode,
+            maxLines: 3,
+            decoration: InputDecoration(
+              hintText: 'Reply or add others with @',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    const BorderSide(color: Color(0xFF00BCD4), width: 2),
+              ),
+              contentPadding: const EdgeInsets.all(12),
+            ),
+            onChanged: (text) {
+              _handleCommentTextChanged();
+            },
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              ElevatedButton(
+                onPressed: () async {
+                  await _addComment();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00BCD4),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Post'),
+              ),
+            ],
           ),
         ],
       ),
@@ -9528,7 +10418,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               final section = entry.value;
 
                               // Match A4 layout used in _buildA4Pages
-                              const double pageWidth = 900;
+                              const double pageWidth = 700;
                               const double pageHeight = 1273;
                               final headerLogoWidget = _buildHeaderLogoWidget();
                               final isCover = section.isCoverPage ||

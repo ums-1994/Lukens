@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 
+import '../controllers/highlighting_text_controller.dart';
+
 import 'inline_image.dart';
 import 'document_table.dart';
 import 'positioned_pricing_table.dart';
 
 class DocumentSection {
+  final String id;
+  final GlobalKey<EditableTextState> contentEditableKey;
   String title;
   String content;
-  final TextEditingController controller;
+  final HighlightingTextController controller;
   final TextEditingController titleController;
   final FocusNode contentFocus;
   final FocusNode titleFocus;
@@ -19,7 +23,14 @@ class DocumentSection {
   List<DocumentTable> tables; // Tables in this section
   List<PositionedPricingTable> positionedPricingTables;
 
+  static int _idCounter = 0;
+  static String _newId() {
+    _idCounter += 1;
+    return '${DateTime.now().microsecondsSinceEpoch}-${_idCounter.toString()}';
+  }
+
   DocumentSection({
+    String? id,
     required this.title,
     required this.content,
     this.backgroundColor = Colors.white,
@@ -29,7 +40,9 @@ class DocumentSection {
     List<InlineImage>? inlineImages,
     List<DocumentTable>? tables,
     List<PositionedPricingTable>? positionedPricingTables,
-  })  : controller = TextEditingController(text: content),
+  })  : id = id ?? _newId(),
+        contentEditableKey = GlobalKey<EditableTextState>(),
+        controller = HighlightingTextController(text: content),
         titleController = TextEditingController(text: title),
         contentFocus = FocusNode(),
         titleFocus = FocusNode(),

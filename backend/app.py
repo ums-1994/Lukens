@@ -229,6 +229,20 @@ _pg_pool = None
 
 
 def _build_db_config_from_env():
+    prefer_local = os.getenv('DB_PREFER_LOCAL', 'false').lower() == 'true'
+    if prefer_local:
+        local_config = {
+            'host': os.getenv('LOCAL_DB_HOST', 'localhost'),
+            'database': os.getenv('LOCAL_DB_NAME', os.getenv('DB_NAME', 'proposal_db')),
+            'user': os.getenv('LOCAL_DB_USER', os.getenv('DB_USER', 'postgres')),
+            'password': os.getenv('LOCAL_DB_PASSWORD', os.getenv('DB_PASSWORD', '')),
+            'port': int(os.getenv('LOCAL_DB_PORT', os.getenv('DB_PORT', '5432'))),
+        }
+        local_sslmode = os.getenv('LOCAL_DB_SSLMODE')
+        if local_sslmode:
+            local_config['sslmode'] = local_sslmode
+        return local_config
+
     database_url = os.getenv('DATABASE_URL')
     if database_url:
         from urllib.parse import urlparse, parse_qs
@@ -2686,7 +2700,7 @@ def get_client_dashboard_stats(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/api/comments/document/<int:proposal_id>")
+@app.post("/api/_legacy/comments/document/<int:proposal_id>")
 @token_required
 def create_comment(username, proposal_id):
     """Create a new comment on a document"""
@@ -2767,7 +2781,7 @@ def create_comment(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.get("/api/comments/document/<int:proposal_id>")
+@app.get("/api/_legacy/comments/document/<int:proposal_id>")
 def get_document_comments(proposal_id):
     """
     Get all comments for a proposal document for the admin/manager review screens.
