@@ -3602,7 +3602,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final parsed = _tryParseTimestamp(timestamp);
     if (parsed == null) return '';
     try {
-      final DateTime dt = parsed; // Already in local time, no conversion needed
+      // Normalise to local timezone so labels match South African time.
+      final DateTime dt = parsed.toLocal();
       final now = DateTime.now();
 
       final timePart = DateFormat('HH:mm').format(dt);
