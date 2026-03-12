@@ -43,6 +43,13 @@ class _ContentLibrarySelectionDialogState
     return value.trim().toLowerCase().replaceAll(RegExp(r'[_\-\s]+'), '');
   }
 
+  /// Alias so "cover" and "covers" match (frontend/backend naming consistency).
+  String _coverCoversAlias(String normalized) {
+    if (normalized == 'cover') return 'covers';
+    if (normalized == 'covers') return 'cover';
+    return normalized;
+  }
+
   bool _isFolder(dynamic value) {
     if (value is bool) return value;
     if (value is int) return value == 1;
@@ -155,7 +162,9 @@ class _ContentLibrarySelectionDialogState
         final isFolder = _isFolder(m['is_folder']);
         final label = _normalizeName((m['label'] ?? '').toString());
         final key = _normalizeName((m['key'] ?? '').toString());
-        if (isFolder && (label == target || key == target)) {
+        final labelMatches = label == target || key == target ||
+            label == _coverCoversAlias(target) || key == _coverCoversAlias(target);
+        if (isFolder && labelMatches) {
           parentFolderId = _asInt(m['id']);
           break;
         }

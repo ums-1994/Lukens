@@ -1359,11 +1359,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _loadLibraryImages() async {
     if (_isLoadingLibraryImages) return;
 
+    if (!mounted) return;
     setState(() => _isLoadingLibraryImages = true);
 
     try {
       final token = await _getAuthToken();
       if (token == null) {
+        if (mounted) setState(() => _isLoadingLibraryImages = false);
         print('⚠️ No token available for loading library images');
         return;
       }
@@ -1376,6 +1378,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         },
       );
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final List<dynamic> content = data is Map && data.containsKey('content')
@@ -1414,11 +1417,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         print('✅ Loaded ${_libraryImages.length} images from library');
       } else {
         print('⚠️ Failed to load library images: ${response.statusCode}');
-        setState(() => _isLoadingLibraryImages = false);
+        if (mounted) setState(() => _isLoadingLibraryImages = false);
       }
     } catch (e) {
       print('❌ Error loading library images: $e');
-      setState(() => _isLoadingLibraryImages = false);
+      if (mounted) setState(() => _isLoadingLibraryImages = false);
     }
   }
 
@@ -1716,6 +1719,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         proposalId: proposalId,
       );
 
+      if (!mounted) return;
       if (versions.isNotEmpty) {
         setState(() {
           _versionHistory.clear();
@@ -1791,6 +1795,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         addCommentWithReplies(comment as Map<String, dynamic>);
       }
 
+      if (!mounted) return;
       // Always update state, even if empty (to clear old comments)
       setState(() {
         _comments.clear();
@@ -2899,14 +2904,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
         return;
       }
+      final msg = e.toString().replaceFirst('Exception: ', '').trim();
       print('⚠️ Error saving comment to database: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error saving comment: ${e.toString()}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg.isNotEmpty ? msg : 'Could not post comment. Try again.'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 
@@ -3929,6 +3937,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Save to backend
       await _saveToBackend();
 
+      if (!mounted) return;
       // For stricter approver sessions, auto-save should NOT create
       // a new version without an explicit description. Just persist
       // the latest content.

@@ -88,6 +88,7 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
   }
 
   Future<void> _fetch() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -102,6 +103,7 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
         },
       );
 
+      if (!mounted) return;
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
         setState(() {
@@ -112,7 +114,7 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
               Map<String, dynamic>.from(data['status_breakdown'] ?? {});
           _loading = false;
         });
-        _animCtrl.forward(from: 0);
+        if (mounted) _animCtrl.forward(from: 0);
       } else {
         setState(() {
           _error = 'Failed to load completion rates (${resp.statusCode})';
@@ -120,6 +122,7 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Network error: $e';
         _loading = false;
