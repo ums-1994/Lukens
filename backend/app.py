@@ -80,6 +80,8 @@ app = Flask(__name__)
 # Use compiled regexes so localhost dev ports (Flutter web) are allowed.
 _cors_origins = [
     "https://proposals2025.netlify.app",
+    # Render production frontend
+    "https://lukens-1.onrender.com",
     # Allow Flutter web dev server ports (e.g. http://localhost:56886)
     re.compile(r"^http://localhost(:\d+)?$"),
     re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
