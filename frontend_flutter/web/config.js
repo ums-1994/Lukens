@@ -23,7 +23,7 @@ window.APP_CONFIG = {
     }
     // Default based on runtime hostname
     const hostname = (window.location && window.location.hostname) ? window.location.hostname : '';
-    const defaultUrl = 'https://lukens-tae3.onrender.com';
+    const defaultUrl = 'https://lukens-wp8w.onrender.com';
     console.log('🌐 Using default API URL (Render backend):', defaultUrl);
     return defaultUrl;
   })(),

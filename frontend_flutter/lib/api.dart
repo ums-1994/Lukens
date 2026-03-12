@@ -35,8 +35,8 @@ String get baseUrl {
     }
   }
 
-  // Default URLs based on environment - point to the current Render backend
-  const url = 'https://lukens-tae3.onrender.com';
+  // Default URLs based on environment - point to the primary Render backend
+  const url = 'https://lukens-wp8w.onrender.com';
   return url;
 }
 

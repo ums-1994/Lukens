@@ -4,10 +4,10 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web/web.dart' as web;
 
 class AuthService {
-  // Get API URL: always use the current Render backend for auth-related calls
+  // Get API URL: always use the primary Render backend for auth-related calls
   static String get baseUrl {
-    // Force all environments (web/local/prod) to use the deployed Render backend.
-    const url = 'https://lukens-tae3.onrender.com';
+    // Force all environments (web/local/prod) to use the lukens-wp8w backend.
+    const url = 'https://lukens-wp8w.onrender.com';
     print('🌐 AuthService: Using Render API URL (forced): $url');
     return url;
   }

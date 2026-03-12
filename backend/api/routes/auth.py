@@ -424,6 +424,24 @@ def firebase_auth():
                 user_id = user[0]
                 username = user[1]
                 user_role = user[4]  # Get role from database
+
+                # If the frontend explicitly requested an admin role, allow promotion
+                # for this user without needing manual DB updates.
+                try:
+                    requested_lower = requested_role.lower().strip() if requested_role else ''
+                    current_lower = user_role.lower().strip() if user_role else ''
+                    if requested_lower in ['admin', 'ceo'] and current_lower != 'admin':
+                        cursor.execute(
+                            '''UPDATE users SET role = %s WHERE id = %s''',
+                            ('admin', user_id)
+                        )
+                        conn.commit()
+                        user_role = 'admin'
+                        print(f'✅ Promoted user {email} to admin based on requested_role="{requested_role}"')
+                except Exception as e:
+                    # Don't fail login if promotion fails; just log it.
+                    conn.rollback()
+                    print(f'⚠️ Failed to promote user {email} to admin: {e}')
                 
                 # Normalize role: map variations to standardized roles
                 # Supported normalized roles: 'admin', 'manager', 'finance_manager'

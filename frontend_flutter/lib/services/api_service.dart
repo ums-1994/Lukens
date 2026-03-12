@@ -57,7 +57,7 @@ class ApiService {
       if (hostname != null &&
           (hostname.contains('netlify.app') ||
               hostname.contains('onrender.com'))) {
-        const url = 'https://lukens-tae3.onrender.com';
+        const url = 'https://lukens-wp8w.onrender.com';
         print('🌐 ApiService: Using production API URL: $url');
         return url;
       }
@@ -68,7 +68,7 @@ class ApiService {
         return 'http://127.0.0.1:5000';
       }
     }
-    const url = 'https://lukens-tae3.onrender.com';
+    const url = 'https://lukens-wp8w.onrender.com';
     print('🌐 ApiService: Using Render API URL: $url');
     return url;
   }
