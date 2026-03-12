@@ -66,7 +66,7 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
     try {
       final token = AuthService.token;
       final resp = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/completion-rates'),
+        Uri.parse('${ApiService.baseUrl}/api/analytics/completion-rates'),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
@@ -96,7 +96,7 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
     try {
       final token = AuthService.token;
       final resp = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/proposals/completion-rates'),
+        Uri.parse('${ApiService.baseUrl}/api/analytics/completion-rates'),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
