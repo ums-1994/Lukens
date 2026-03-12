@@ -2216,8 +2216,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   bool _isAdminUser() {
     final user = AuthService.currentUser;
     final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
-    return backendRole == 'admin' || backendRole == 'ceo' ||
-        backendRole == 'manager' || backendRole == 'creator' ||
+    // Treat only true admin-style roles as admin here.
+    // Managers/creators should keep the creator sidebar; admins get admin view.
+    return backendRole == 'admin' ||
+        backendRole == 'ceo' ||
+        backendRole == 'finance_manager' ||
         backendRole == 'financial manager';
   }
 
