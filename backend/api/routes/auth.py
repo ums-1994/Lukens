@@ -427,6 +427,10 @@ def firebase_auth():
         
         uid = firebase_user['uid']
         email = firebase_user['email']
+        if not email:
+            return {'detail': 'Email required'}, 400
+        # Normalize email to lowercase so lookup/insert always match (avoid duplicate users or wrong role)
+        email = email.strip().lower()
         name = firebase_user.get('name') or email.split('@')[0]  # Use email prefix if no name
         
         # Check if user exists in database
@@ -434,10 +438,10 @@ def firebase_auth():
         cursor = conn.cursor()
         
         try:
-            # Try to find user by email or create firebase_uid column if needed
+            # Try to find user by email (case-insensitive via normalized value)
             cursor.execute(
                 '''SELECT id, username, email, full_name, role, department, is_active
-                   FROM users WHERE email = %s''',
+                   FROM users WHERE LOWER(TRIM(email)) = %s''',
                 (email,)
             )
             user = cursor.fetchone()

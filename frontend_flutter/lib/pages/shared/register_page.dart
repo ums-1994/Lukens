@@ -185,6 +185,8 @@ class _RegisterPageState extends State<RegisterPage>
       final requestBody = {
         'id_token': firebaseIdToken,
         'role': role,
+        // Registration flow may legitimately set/upgrade the selected role.
+        'allow_role_upgrade': true,
       };
 
       final response = await http.post(
@@ -358,6 +360,8 @@ class _RegisterPageState extends State<RegisterPage>
       final requestBody = {
         'id_token': firebaseIdToken,
         'role': role, // Send role to backend
+        // Registration flow may legitimately set/upgrade the selected role.
+        'allow_role_upgrade': true,
       };
       print('🔍 Request body role: "${requestBody['role']}"');
       final response = await http.post(
@@ -382,43 +386,12 @@ class _RegisterPageState extends State<RegisterPage>
 
       final result = json.decode(response.body);
       final userProfile = result['user'] as Map<String, dynamic>?;
-      final String authToken = firebaseIdToken;
 
       if (mounted) {
         setState(() => _isLoading = false);
 
         if (userProfile != null) {
-          // Normalize roles for comparison (handle space vs underscore differences)
-          final backendRole = (userProfile['role']?.toString() ?? '')
-              .toLowerCase()
-              .trim()
-              .replaceAll(' ', '_');
-          final requestedRoleNormalized =
-              role.toLowerCase().trim().replaceAll(' ', '_');
-
-          // Update role in backend if needed
-          if (backendRole != requestedRoleNormalized) {
-            // Role might need to be updated in backend
-            print(
-                '⚠️ Role mismatch: backend has "${userProfile['role']}", requested "$role"');
-          }
-
-          // Auto-login after successful registration
-          final appState = context.read<AppState>();
-          appState.authToken = authToken;
-          appState.currentUser = userProfile;
-
-          // Store Firebase ID token in AuthService
-          AuthService.setUserData(userProfile, authToken);
-
-          // Initialize role service
-          final roleService = context.read<RoleService>();
-          await roleService.initializeRoleFromUser(userProfile);
-
-          await appState.init();
-
-          print('🔍 Requested role: "$role"');
-
+          // Registration success: do NOT auto-login. Ask user to log in.
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text(
@@ -427,7 +400,6 @@ class _RegisterPageState extends State<RegisterPage>
             ),
           );
 
-          // Redirect to login page after successful registration
           Navigator.pushNamedAndRemoveUntil(
             context,
             '/login',
