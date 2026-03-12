@@ -35,11 +35,9 @@ String get baseUrl {
     }
   }
 
-  // Default URLs based on environment
-  if (kDebugMode) {
-    return 'https://lukens-wp8w.onrender.com';
-  }
-  return 'https://lukens-wp8w.onrender.com';
+  // Default URLs based on environment - point to the current Render backend
+  const url = 'https://lukens-tae3.onrender.com';
+  return url;
 }
 
 class AppState extends ChangeNotifier {

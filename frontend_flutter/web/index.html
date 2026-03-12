@@ -5,12 +5,15 @@
   <meta name='viewport' content='width=device-width, initial-scale=1.0'>
   <base href="$FLUTTER_BASE_HREF">
   <title>Proposal & SOW Builder v2</title>
-  <!-- Force Flutter web to use local backend when running locally -->
+  <!-- Optional: toggle local backend for web.
+       By default we use the Render backend URL.
+       To use a local backend for debugging, set window.USE_LOCAL_API = true
+       in the browser console *before* the app initializes, or hard‑code it
+       here temporarily. -->
   <script>
-    // Force Flutter web to use your local backend ONLY when running locally
     (function () {
-      var h = (window.location && window.location.hostname) ? window.location.hostname : '';
-      window.USE_LOCAL_API = (h === 'localhost' || h === '127.0.0.1');
+      // Default: do NOT force local backend; use Render URL instead.
+      window.USE_LOCAL_API = false;
     })();
   </script>
   <!-- App Configuration - Load before Flutter app -->

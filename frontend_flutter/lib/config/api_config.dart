@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 class ApiConfig {
   // Production URLs
   static const String _productionBackendUrl =
-      'https://lukens-wp8w.onrender.com';
+      'https://lukens-tae3.onrender.com';
   static const String _productionFrontendUrl =
       'https://frontend-sow.onrender.com';
 

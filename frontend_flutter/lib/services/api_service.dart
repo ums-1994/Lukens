@@ -57,9 +57,9 @@ class ApiService {
       if (hostname != null &&
           (hostname.contains('netlify.app') ||
               hostname.contains('onrender.com'))) {
-        print(
-            '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-        return 'https://lukens-wp8w.onrender.com';
+        const url = 'https://lukens-tae3.onrender.com';
+        print('🌐 ApiService: Using production API URL: $url');
+        return url;
       }
       // When on localhost with no override, use local backend so dev works
       if (hostname == 'localhost' || hostname == '127.0.0.1') {
@@ -68,9 +68,9 @@ class ApiService {
         return 'http://127.0.0.1:5000';
       }
     }
-    print(
-        '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+    const url = 'https://lukens-tae3.onrender.com';
+    print('🌐 ApiService: Using Render API URL: $url');
+    return url;
   }
 
   // Get headers with Firebase token
