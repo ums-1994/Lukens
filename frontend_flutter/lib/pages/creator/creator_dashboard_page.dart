@@ -15,6 +15,7 @@ import '../../theme/premium_theme.dart';
 import '../../theme/app_colors.dart';
 import '../shared/proposal_insights_modal.dart';
 import '../../widgets/app_side_nav.dart';
+import 'widgets/completion_rates_widget.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -683,7 +684,9 @@ class _DashboardPageState extends State<DashboardPage>
                     .toString()
                     .toLowerCase()
                     .trim();
-                final isAdmin = role == 'admin' || role == 'ceo';
+                final isAdmin = role == 'admin' || role == 'ceo' ||
+                    role == 'manager' || role == 'creator' ||
+                    role == 'financial manager';
                 return AppSideNav(
                   isCollapsed: _isSidebarCollapsed,
                   currentLabel: _currentNavLabel,
@@ -2525,6 +2528,18 @@ class _DashboardPageState extends State<DashboardPage>
           _buildRecentProposals(app.proposals),
         ),
       ],
+    );
+  }
+
+  void _openProposalFromWidget(int proposalId, String status) {
+    final editableStatuses = {'draft', 'changes requested'};
+    final isEditable = editableStatuses.contains(status.toLowerCase());
+    Navigator.of(context).pushNamed(
+      '/blank-document',
+      arguments: {
+        'proposalId': proposalId,
+        'readOnly': !isEditable,
+      },
     );
   }
 

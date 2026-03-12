@@ -58,8 +58,8 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
       duration: const Duration(seconds: 4),
     )..repeat();
 
-    // Precache all frames
-    _precacheFrames();
+    // Precache frames after first frame so context is ready
+    WidgetsBinding.instance.addPostFrameCallback((_) => _precacheFrames());
 
     // Start animation sequence
     _startAnimationSequence();
