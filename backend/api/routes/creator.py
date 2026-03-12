@@ -510,6 +510,20 @@ def get_content():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+
+@bp.get("/proposals/completion-rates")
+@token_required
+def proposals_completion_rates(username=None, user_id=None, email=None):
+    """
+    Backwards-compatible alias for the completion-rates analytics endpoint.
+    The Flutter completion-rates widget calls /api/proposals/completion-rates,
+    while the newer analytics page uses /api/analytics/completion-rates.
+    Delegate to the shared implementation in the pipeline blueprint so both
+    creator and admin views see consistent data.
+    """
+    from api.routes.pipeline import completion_rates as _completion_rates
+    return _completion_rates(username=username, user_id=user_id, email=email)
+
 @bp.post("/content")
 def create_content():
     """Create a new content item (no auth for content library)"""
