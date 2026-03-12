@@ -22,7 +22,14 @@ load_dotenv(dotenv_path=_backend_dir / ".env")
 
 
 def _build_db_config_from_env():
-    database_url = os.getenv('DATABASE_URL')
+    # Prefer explicit external Render URLs so local/dev runs do not
+    # accidentally connect to a local DB when registration is expected
+    # to use the Render database.
+    database_url = (
+        os.getenv('DATABASE_URL_EXTERNAL')
+        or os.getenv('RENDER_DATABASE_URL')
+        or os.getenv('DATABASE_URL')
+    )
     if database_url:
         parsed = urlparse(database_url)
         host = (parsed.hostname or '').strip()

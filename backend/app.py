@@ -229,7 +229,13 @@ _pg_pool = None
 
 
 def _build_db_config_from_env():
-    database_url = os.getenv('DATABASE_URL')
+    # Prefer explicit external Render URLs so registration/login consistently
+    # use Render Postgres outside Render private networking.
+    database_url = (
+        os.getenv('DATABASE_URL_EXTERNAL')
+        or os.getenv('RENDER_DATABASE_URL')
+        or os.getenv('DATABASE_URL')
+    )
     if database_url:
         from urllib.parse import urlparse, parse_qs
 

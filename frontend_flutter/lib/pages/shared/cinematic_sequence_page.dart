@@ -23,6 +23,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
   ];
 
   int _currentFrameIndex = 0;
+  bool _framesPrecached = false;
 
   @override
   void initState() {
@@ -58,17 +59,29 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
       duration: const Duration(seconds: 4),
     )..repeat();
 
-    // Precache all frames
-    _precacheFrames();
-
     // Start animation sequence
     _startAnimationSequence();
     _cycleBackgrounds();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // `precacheImage` depends on inherited widgets and should run after initState.
+    if (_framesPrecached) return;
+    _framesPrecached = true;
+    _precacheFrames();
+  }
+
   Future<void> _precacheFrames() async {
     for (final imagePath in _backgroundImages) {
-      await precacheImage(AssetImage(imagePath), context);
+      try {
+        await precacheImage(AssetImage(imagePath), context);
+      } catch (e) {
+        // Non-fatal: allow page to continue rendering.
+        // ignore: avoid_print
+        print('⚠️ Failed to precache image "$imagePath": $e');
+      }
     }
   }
 
