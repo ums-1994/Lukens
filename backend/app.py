@@ -755,6 +755,24 @@ def init_pg_schema():
         # Create index for faster mention queries
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_mentions_user 
                          ON comment_mentions(mentioned_user_id, is_read, created_at DESC)''')
+
+        # Comment reactions table
+        cursor.execute('''CREATE TABLE IF NOT EXISTS comment_reactions (
+        id SERIAL PRIMARY KEY,
+        comment_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        emoji VARCHAR(32) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (comment_id) REFERENCES document_comments(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE (comment_id, user_id, emoji)
+        )''')
+
+        # Indexes for fast reaction lookups
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment
+                         ON comment_reactions(comment_id, created_at DESC)''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_reactions_user
+                         ON comment_reactions(user_id, created_at DESC)''')
         
         # DocuSign signatures table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_signatures (

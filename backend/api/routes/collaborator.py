@@ -15,6 +15,54 @@ from api.utils.email import send_email, get_logo_html
 
 bp = Blueprint('collaborator', __name__)
 
+def _ensure_comment_reactions_table(cursor):
+    """Create comment reactions table/indexes if missing."""
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS comment_reactions (
+            id SERIAL PRIMARY KEY,
+            comment_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            emoji VARCHAR(32) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (comment_id) REFERENCES document_comments(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE (comment_id, user_id, emoji)
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment
+        ON comment_reactions(comment_id, created_at DESC)
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_comment_reactions_user
+        ON comment_reactions(user_id, created_at DESC)
+    """)
+
+def _get_comment_reaction_summary(cursor, comment_id, user_id):
+    """Get aggregate + current-user reaction data for a comment."""
+    cursor.execute("""
+        SELECT emoji, COUNT(*)::int AS reaction_count
+        FROM comment_reactions
+        WHERE comment_id = %s
+        GROUP BY emoji
+    """, (comment_id,))
+    rows = cursor.fetchall()
+    counts = {row['emoji']: int(row['reaction_count']) for row in rows}
+
+    cursor.execute("""
+        SELECT emoji
+        FROM comment_reactions
+        WHERE comment_id = %s AND user_id = %s
+        ORDER BY created_at ASC
+    """, (comment_id, user_id))
+    current_user = [row['emoji'] for row in cursor.fetchall()]
+
+    return {
+        'reaction_counts': counts,
+        'current_user_reactions': current_user,
+        'reaction_total': sum(counts.values()),
+    }
+
 @bp.get("/api/collaborate")
 def get_collaboration_access():
     """Get proposal access for collaborator using token"""
@@ -282,6 +330,13 @@ def get_document_comments(username=None, proposal_id=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            _ensure_comment_reactions_table(cursor)
+
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            current_user = cursor.fetchone()
+            if not current_user:
+                return {'detail': 'User not found'}, 404
+            current_user_id = current_user['id']
             
             # Build WHERE clause
             where_clauses = ['dc.proposal_id = %s']
@@ -310,13 +365,30 @@ def get_document_comments(username=None, proposal_id=None):
                        dc.parent_id, dc.block_type, dc.block_id,
                        dc.resolved_by, dc.resolved_at, dc.updated_at,
                        u.full_name as author_name, u.email as author_email, u.username as author_username,
-                       ru.full_name as resolver_name
+                       ru.full_name as resolver_name,
+                       COALESCE(rc.reaction_counts, '{{}}'::jsonb) AS reaction_counts,
+                       COALESCE(cur.current_user_reactions, ARRAY[]::text[]) AS current_user_reactions
                 FROM document_comments dc
                 LEFT JOIN users u ON dc.created_by = u.id
                 LEFT JOIN users ru ON dc.resolved_by = ru.id
+                LEFT JOIN (
+                    SELECT src.comment_id, jsonb_object_agg(src.emoji, src.reaction_count) AS reaction_counts
+                    FROM (
+                        SELECT comment_id, emoji, COUNT(*)::int AS reaction_count
+                        FROM comment_reactions
+                        GROUP BY comment_id, emoji
+                    ) src
+                    GROUP BY src.comment_id
+                ) rc ON rc.comment_id = dc.id
+                LEFT JOIN (
+                    SELECT comment_id, array_agg(emoji) AS current_user_reactions
+                    FROM comment_reactions
+                    WHERE user_id = %s
+                    GROUP BY comment_id
+                ) cur ON cur.comment_id = dc.id
                 WHERE {where_sql}
                 ORDER BY dc.created_at ASC
-            """, tuple(params))
+            """, tuple([current_user_id] + params))
             
             comments = cursor.fetchall()
             
@@ -349,6 +421,72 @@ def get_document_comments(username=None, proposal_id=None):
             
     except Exception as e:
         print(f"❌ Error getting document comments: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+@bp.post("/api/comments/<int:comment_id>/reactions")
+@token_required
+def toggle_comment_reaction(username=None, comment_id=None):
+    """Toggle emoji reaction for a comment by current user."""
+    try:
+        data = request.get_json() or {}
+        emoji = (data.get('emoji') or '').strip()
+        if not emoji:
+            return {'detail': 'Emoji is required'}, 400
+        if len(emoji) > 32:
+            return {'detail': 'Emoji value is too long'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            _ensure_comment_reactions_table(cursor)
+
+            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            if not user:
+                return {'detail': 'User not found'}, 404
+            user_id = user['id']
+
+            cursor.execute("""
+                SELECT id, proposal_id
+                FROM document_comments
+                WHERE id = %s
+            """, (comment_id,))
+            comment = cursor.fetchone()
+            if not comment:
+                return {'detail': 'Comment not found'}, 404
+
+            cursor.execute("""
+                SELECT id
+                FROM comment_reactions
+                WHERE comment_id = %s AND user_id = %s AND emoji = %s
+            """, (comment_id, user_id, emoji))
+            existing = cursor.fetchone()
+
+            added = False
+            if existing:
+                cursor.execute("""
+                    DELETE FROM comment_reactions
+                    WHERE id = %s
+                """, (existing['id'],))
+            else:
+                cursor.execute("""
+                    INSERT INTO comment_reactions (comment_id, user_id, emoji)
+                    VALUES (%s, %s, %s)
+                """, (comment_id, user_id, emoji))
+                added = True
+
+            summary = _get_comment_reaction_summary(cursor, comment_id, user_id)
+            conn.commit()
+
+            return {
+                'comment_id': comment_id,
+                'emoji': emoji,
+                'added': added,
+                **summary,
+            }, 200
+
+    except Exception as e:
+        print(f"❌ Error toggling comment reaction: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 

@@ -611,6 +611,30 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>?> toggleCommentReaction({
+    required String token,
+    required int commentId,
+    required String emoji,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/comments/$commentId/reactions'),
+        headers: _getHeaders(token),
+        body: json.encode({'emoji': emoji}),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+      print(
+          'Error toggling comment reaction: ${response.statusCode} - ${response.body}');
+      return null;
+    } catch (e) {
+      print('Error toggling comment reaction: $e');
+      return null;
+    }
+  }
+
   // User search for @mentions autocomplete
   static Future<List<dynamic>> searchUsersForMentions({
     required String token,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/content_library_service.dart';
@@ -36,6 +38,7 @@ class _ContentLibrarySelectionDialogState
   List<Map<String, dynamic>> _modules = [];
   bool _loading = true;
   String _search = '';
+  String? _loadErrorMessage;
 
   String _normalizeName(String value) {
     return value.trim().toLowerCase().replaceAll(RegExp(r'[_\-\s]+'), '');
@@ -93,7 +96,10 @@ class _ContentLibrarySelectionDialogState
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _loadErrorMessage = null;
+    });
     try {
       final token = _getToken();
       if (token == null || token.isEmpty) {
@@ -101,6 +107,7 @@ class _ContentLibrarySelectionDialogState
         setState(() {
           _modules = [];
           _loading = false;
+          _loadErrorMessage = 'Your session has expired. Please sign in again.';
         });
         return;
       }
@@ -115,14 +122,19 @@ class _ContentLibrarySelectionDialogState
       setState(() {
         _modules = modules;
         _loading = false;
+        _loadErrorMessage = null;
       });
       print(
           '✅ Loaded ${modules.length} content modules (${nonFolderCount} non-folder items available for insertion)');
     } catch (e) {
       print('❌ Error loading content modules: $e');
+      final isTimeout = e is TimeoutException;
       setState(() {
         _modules = [];
         _loading = false;
+        _loadErrorMessage = isTimeout
+            ? 'The cover library took too long to respond. Please try again.'
+            : 'Unable to load the cover library right now. Please retry.';
       });
     }
   }
@@ -285,7 +297,35 @@ class _ContentLibrarySelectionDialogState
                           ],
                         ),
                       )
-                    : _modules.isEmpty
+                    : _loadErrorMessage != null
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.cloud_off,
+                                  size: 64,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  _loadErrorMessage!,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    color: Colors.grey[700],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                FilledButton.icon(
+                                  onPressed: _load,
+                                  icon: const Icon(Icons.refresh),
+                                  label: const Text('Retry'),
+                                ),
+                              ],
+                            ),
+                          )
+                        : _modules.isEmpty
                         ? Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,

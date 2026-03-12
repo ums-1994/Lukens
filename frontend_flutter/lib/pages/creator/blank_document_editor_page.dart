@@ -182,6 +182,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     'Manager Approval'
   ];
   List<Map<String, dynamic>> _comments = [];
+  static const List<String> _commentReactionEmojis = [
+    '👍',
+    '❤️',
+    '😂',
+    '🎉',
+    '👀',
+    '🔥',
+  ];
+  int? _hoveredCommentId;
   late TextEditingController _commentController;
   final FocusNode _commentFocusNode = FocusNode();
   String _commentFilterStatus = 'all';
@@ -1127,6 +1136,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             'resolved_by': comment['resolved_by'],
             'resolved_at': comment['resolved_at'],
             'resolver_name': comment['resolver_name'],
+            'reaction_counts':
+                Map<String, dynamic>.from(comment['reaction_counts'] ?? {}),
+            'current_user_reactions':
+                List<String>.from(comment['current_user_reactions'] ?? []),
             'replies': comment['replies'] ?? [],
           });
         }
@@ -2235,6 +2248,71 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
         );
       }
+    }
+  }
+
+  Map<String, int> _getReactionCounts(Map<String, dynamic> comment) {
+    final raw = comment['reaction_counts'];
+    if (raw is! Map) return {};
+    return raw.map<String, int>((key, value) {
+      final count = int.tryParse(value.toString()) ?? 0;
+      return MapEntry(key.toString(), count);
+    });
+  }
+
+  Set<String> _getCurrentUserReactions(Map<String, dynamic> comment) {
+    final raw = comment['current_user_reactions'];
+    if (raw is! List) return {};
+    return raw.map((e) => e.toString()).toSet();
+  }
+
+  Future<void> _toggleCommentReaction(int commentId, String emoji) async {
+    try {
+      final token = await _getAuthToken();
+      if (token == null) return;
+
+      final response = await ApiService.toggleCommentReaction(
+        token: token,
+        commentId: commentId,
+        emoji: emoji,
+      );
+
+      if (response == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not apply reaction. Please try again.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      final counts = Map<String, dynamic>.from(response['reaction_counts'] ?? {});
+      final current =
+          List<String>.from(response['current_user_reactions'] ?? <String>[]);
+
+      if (!mounted) return;
+      setState(() {
+        for (final c in _comments) {
+          if (c['id'] == commentId) {
+            c['reaction_counts'] = counts;
+            c['current_user_reactions'] = current;
+            break;
+          }
+        }
+      });
+    } catch (e) {
+      print('⚠️ Error toggling comment reaction: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error applying reaction: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 2),
+        ),
+      );
     }
   }
 
@@ -9174,6 +9252,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final hasHighlightedText = comment['highlighted_text'] != null &&
         comment['highlighted_text'].toString().isNotEmpty;
     final isReply = comment['parent_id'] != null;
+    final commentId = int.tryParse(comment['id'].toString());
+    final isHovered = commentId != null && _hoveredCommentId == commentId;
+    final reactionCounts = _getReactionCounts(comment);
+    final currentUserReactions = _getCurrentUserReactions(comment);
 
     // Get replies for this comment
     final replies =
@@ -9195,22 +9277,33 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       commentType = 'Section';
     }
 
-    return Container(
-      margin: EdgeInsets.only(bottom: 12, left: isReply ? 24 : 0),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isResolved ? Colors.grey[50] : Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: isResolved
-              ? Colors.grey[300]!
-              : const Color(0xFF00BCD4).withOpacity(0.3),
-          width: isReply ? 1 : 1.5,
+    return MouseRegion(
+      onEnter: (_) {
+        if (commentId != null) {
+          setState(() => _hoveredCommentId = commentId);
+        }
+      },
+      onExit: (_) {
+        if (commentId != null && _hoveredCommentId == commentId) {
+          setState(() => _hoveredCommentId = null);
+        }
+      },
+      child: Container(
+        margin: EdgeInsets.only(bottom: 12, left: isReply ? 24 : 0),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isResolved ? Colors.grey[50] : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isResolved
+                ? Colors.grey[300]!
+                : const Color(0xFF00BCD4).withOpacity(0.3),
+            width: isReply ? 1 : 1.5,
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           // Comment header
           Row(
             children: [
@@ -9380,6 +9473,88 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           ),
 
+          if (reactionCounts.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: reactionCounts.entries
+                  .where((entry) => entry.value > 0)
+                  .map((entry) {
+                final selected = currentUserReactions.contains(entry.key);
+                return InkWell(
+                  onTap: commentId == null
+                      ? null
+                      : () => _toggleCommentReaction(commentId, entry.key),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xFF00BCD4).withOpacity(0.12)
+                          : Colors.grey[100],
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFF00BCD4).withOpacity(0.5)
+                            : Colors.grey[300]!,
+                      ),
+                    ),
+                    child: Text(
+                      '${entry.key} ${entry.value}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w500,
+                        color: selected
+                            ? const Color(0xFF007C8A)
+                            : const Color(0xFF1A1A1A),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+
+          if (isHovered || currentUserReactions.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: _commentReactionEmojis.map((emoji) {
+                final selected = currentUserReactions.contains(emoji);
+                return InkWell(
+                  onTap: commentId == null
+                      ? null
+                      : () => _toggleCommentReaction(commentId, emoji),
+                  borderRadius: BorderRadius.circular(14),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xFF00BCD4).withOpacity(0.14)
+                          : Colors.grey[100],
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFF00BCD4).withOpacity(0.6)
+                            : Colors.grey[300]!,
+                      ),
+                    ),
+                    child: Text(
+                      emoji,
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+
           const SizedBox(height: 8),
 
           // Action buttons (only for root comments or if user is author)
@@ -9437,6 +9612,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ],
         ],
       ),
+    ),
     );
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
@@ -37,10 +38,17 @@ class ContentLibraryService {
       final effectiveToken =
           (token != null && token.isNotEmpty) ? token : AuthService.token;
 
-      final response = await http.get(
-        Uri.parse(url),
-        headers: _getHeaders(token: effectiveToken),
-      );
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: _getHeaders(token: effectiveToken),
+          )
+          .timeout(
+            ApiConfig.receiveTimeout,
+            onTimeout: () {
+              throw TimeoutException('Content library request timed out');
+            },
+          );
 
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
