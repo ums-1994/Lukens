@@ -440,50 +440,9 @@ def firebase_auth():
                     normalized_role = 'manager'
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
 
-                # If the frontend is explicitly asking for a higher-privilege role (admin/finance_manager)
-                # and the DB currently has a lower-privilege role (e.g. 'manager'), upgrade the stored role.
-                try:
-                    requested_role_lower = requested_role.lower().strip() if requested_role else ''
-                except Exception:
-                    requested_role_lower = ''
-
-                if requested_role_lower:
-                    # Upgrade to admin if requested and not already admin.
-                    if requested_role_lower in ['admin', 'ceo'] and normalized_role != 'admin':
-                        try:
-                            cursor.execute(
-                                '''UPDATE users SET role = 'admin' WHERE id = %s''',
-                                (user_id,),
-                            )
-                            conn.commit()
-                            user_role = 'admin'
-                            normalized_role = 'admin'
-                            print(f'🔐 Upgraded user {email} to admin based on requested_role="{requested_role_lower}"')
-                        except Exception as upgrade_err:
-                            conn.rollback()
-                            print(f'⚠️ Failed to upgrade role to admin for {email}: {upgrade_err}')
-
-                    # Upgrade to finance_manager if requested and not already finance_manager/admin.
-                    elif requested_role_lower in [
-                        'financial manager',
-                        'finance manager',
-                        'finance_manager',
-                        'financial_manager',
-                        'finance',
-                    ] and normalized_role not in ['admin', 'finance_manager']:
-                        try:
-                            cursor.execute(
-                                '''UPDATE users SET role = 'finance_manager' WHERE id = %s''',
-                                (user_id,),
-                            )
-                            conn.commit()
-                            user_role = 'finance_manager'
-                            normalized_role = 'finance_manager'
-                            print(f'🔐 Upgraded user {email} to finance_manager based on requested_role="{requested_role_lower}"')
-                        except Exception as upgrade_err:
-                            conn.rollback()
-                            print(f'⚠️ Failed to upgrade role to finance_manager for {email}: {upgrade_err}')
-
+                # For existing users, always use the role from DB. Do not change role based on
+                # requested_role from the frontend (e.g. from SharedPreferences), which can be
+                # stale from a previous session and would send admins to the wrong dashboard.
                 print(f'🔍 Login: User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"')
                 
                 # Check if firebase_uid column exists, if not we'll skip updating it

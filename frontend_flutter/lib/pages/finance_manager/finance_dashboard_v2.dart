@@ -318,7 +318,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
       return bd.compareTo(ad);
     });
 
-    final recent = normalized.take(25).toList();
+    // Use a large limit so finance sees all non-draft proposals (e.g. sent for pricing)
+    const int maxProposals = 500;
+    final recent = normalized.take(maxProposals).toList();
 
     for (final p in recent) {
       final statusLower = (p['status'] ?? '').toString().trim().toLowerCase();
@@ -379,7 +381,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
 
   bool _isPricingInProgressStatus(String raw) {
     final s = raw.toLowerCase();
-    return s.contains('pricing in progress') || s.contains('in pricing');
+    return s.contains('pricing in progress') ||
+        s.contains('in pricing') ||
+        s == 'pricing in progress';
   }
 
   double _extractAmount(Map<String, dynamic> p) {
@@ -2013,7 +2017,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                 onPressed: () {
                   setState(() {
                     _currentTab = 'proposals';
-                    _statusFilter = 'pending';
+                    _statusFilter = 'pending_review';
                   });
                 },
                 icon: const Icon(Icons.arrow_forward, size: 16),
