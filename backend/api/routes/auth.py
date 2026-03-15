@@ -389,8 +389,9 @@ def firebase_auth():
         if not id_token:
             return {'detail': 'Firebase ID token required'}, 400
         
-        # Get role from request (for new registrations and potential upgrades)
-        requested_role = data.get('role', 'user')
+        # Get role from request only when explicitly provided (e.g. registration form).
+        # Do not default so that login without role does not overwrite DB role.
+        requested_role = data.get('role') if 'role' in data else None
         
         # Verify Firebase token
         decoded_token = verify_firebase_token(id_token)
@@ -440,9 +441,34 @@ def firebase_auth():
                     normalized_role = 'manager'
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
 
-                # For existing users, always use the role from DB. Do not change role based on
-                # requested_role from the frontend (e.g. from SharedPreferences), which can be
-                # stale from a previous session and would send admins to the wrong dashboard.
+                # If the request explicitly sends a role (e.g. from registration form), update
+                # the user's role so "I registered as Finance Manager" is respected on next login.
+                requested_role_str = (requested_role or '').strip() if requested_role is not None else ''
+                if requested_role_str:
+                    try:
+                        req_lower = requested_role_str.lower().strip()
+                        if req_lower in ['admin', 'ceo']:
+                            new_role = 'admin'
+                        elif req_lower in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
+                            new_role = 'finance_manager'
+                        elif req_lower in ['manager', 'creator', 'user']:
+                            new_role = 'manager'
+                        else:
+                            new_role = None
+                        if new_role and new_role != normalized_role:
+                            cursor.execute(
+                                '''UPDATE users SET role = %s WHERE id = %s''',
+                                (new_role, user_id),
+                            )
+                            conn.commit()
+                            user_role = new_role
+                            normalized_role = new_role
+                            print(f'🔐 Updated user {email} role to "{new_role}" (requested="{requested_role_str}")')
+                    except Exception as role_err:
+                        conn.rollback()
+                        print(f'⚠️ Failed to update role for {email}: {role_err}')
+
+                # For login without role in body, we use DB role only (no change).
                 print(f'🔍 Login: User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"')
                 
                 # Check if firebase_uid column exists, if not we'll skip updating it

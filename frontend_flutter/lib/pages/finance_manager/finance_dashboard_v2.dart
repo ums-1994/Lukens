@@ -28,7 +28,14 @@ class FinanceDashboardV2Page extends StatefulWidget {
 
 class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   bool _isLoading = false;
-  String _statusFilter = 'all'; // all, pending, approved, other
+  static const List<String> _validStatusFilters = [
+    'all',
+    'pending_review',
+    'in_pricing',
+    'released',
+    'signed',
+  ];
+  String _statusFilter = 'all';
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _currentTab = 'dashboard'; // dashboard, proposals, clients
@@ -2159,9 +2166,18 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
             ),
           );
 
+          // Ensure value is one of the dropdown items to avoid assertion (e.g. never use 'pending')
+          final effectiveStatusFilter = _validStatusFilters.contains(_statusFilter)
+              ? _statusFilter
+              : 'all';
+          if (_statusFilter != effectiveStatusFilter) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _statusFilter = effectiveStatusFilter);
+            });
+          }
           final statusDropdown = Expanded(
             child: DropdownButtonFormField<String>(
-              initialValue: _statusFilter,
+              initialValue: effectiveStatusFilter,
               dropdownColor: PremiumTheme.darkBg1,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(
