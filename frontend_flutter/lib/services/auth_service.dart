@@ -12,15 +12,17 @@ class AuthService {
       final isLocalHost =
           hostname == 'localhost' || hostname == '127.0.0.1' || hostname.isEmpty;
       if (isLocalHost) {
+        // On localhost: default to Render backend, only use local API
+        // if explicitly requested via USE_LOCAL_API.
         try {
           final useLocal = js.context['USE_LOCAL_API'];
           if (useLocal == true || useLocal?.toString().toLowerCase() == 'true') {
-            print('🌐 AuthService: Using local API URL: http://127.0.0.1:5000');
+            print('🌐 AuthService: Using local API URL (USE_LOCAL_API): http://127.0.0.1:5000');
             return 'http://127.0.0.1:5000';
           }
         } catch (_) {}
-        print('🌐 AuthService: Using local API URL (localhost): http://127.0.0.1:5000');
-        return 'http://127.0.0.1:5000';
+        print('🌐 AuthService: Using Render API URL on localhost: https://lukens-wp8w.onrender.com');
+        return 'https://lukens-wp8w.onrender.com';
       }
       final isProduction = hostname.contains('netlify.app') ||
           hostname.contains('onrender.com');

@@ -61,11 +61,11 @@ class ApiService {
             '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
         return 'https://lukens-wp8w.onrender.com';
       }
-      // When on localhost with no override, use local backend so dev works
+      // When on localhost with no override, use Render backend (same as production)
       if (hostname == 'localhost' || hostname == '127.0.0.1') {
         print(
-            '🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:5000');
-        return 'http://127.0.0.1:5000';
+            '🌐 ApiService: Using Render API URL on localhost: https://lukens-wp8w.onrender.com');
+        return 'https://lukens-wp8w.onrender.com';
       }
     }
     print(
