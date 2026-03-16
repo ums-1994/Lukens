@@ -175,6 +175,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     return result;
   }
 
+  String _normalizeOtp(String raw) {
+    return raw.replaceAll(RegExp(r'\D'), '');
+  }
+
   Future<bool> _ensureDeviceSession({required String token}) async {
     _deviceId ??= _getOrCreateDeviceId();
     final deviceId = _deviceId;
@@ -197,10 +201,24 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     if (_pendingDeviceOtpChallengeId != null &&
         _pendingDeviceOtpChallengeId!.isNotEmpty) {
+      final activeChallengeId = _pendingDeviceOtpChallengeId!;
       final exp = _pendingDeviceOtpExpiresAt;
       if (exp == null || exp.isAfter(DateTime.now())) {
         final otp = await _promptForOtp();
         if (otp == null || otp.trim().isEmpty) {
+          return false;
+        }
+
+        final normalizedOtp = _normalizeOtp(otp.trim());
+        if (normalizedOtp.length != 6) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Please enter the 6-digit code.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
           return false;
         }
 
@@ -210,8 +228,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               verifyUri,
               headers: {'Content-Type': 'application/json'},
               body: jsonEncode({
-                'challenge_id': _pendingDeviceOtpChallengeId,
-                'otp': otp.trim(),
+                'challenge_id': activeChallengeId,
+                'otp': normalizedOtp,
               }),
             )
             .timeout(
@@ -346,12 +364,25 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return false;
     }
 
+    final normalizedOtp = _normalizeOtp(otp.trim());
+    if (normalizedOtp.length != 6) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter the 6-digit code.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+
     final verifyUri = Uri.parse('$baseUrl/api/client/device-session/verify-otp');
     final verifyResp = await http
         .post(
           verifyUri,
           headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'challenge_id': challengeId, 'otp': otp.trim()}),
+          body: jsonEncode({'challenge_id': challengeId, 'otp': normalizedOtp}),
         )
         .timeout(
           const Duration(seconds: 12),
