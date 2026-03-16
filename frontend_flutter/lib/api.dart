@@ -1011,6 +1011,79 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<Map<String, dynamic>> sendToClientWithStatus(
+    String proposalId, {
+    String? idLast4,
+  }) async {
+    final cleanLast4 = idLast4?.trim();
+    final r = await http.post(
+      Uri.parse("$baseUrl/proposals/$proposalId/send_to_client"),
+      headers: _headers,
+      body: jsonEncode({
+        if (cleanLast4 != null && cleanLast4.isNotEmpty) 'id_last4': cleanLast4,
+      }),
+    );
+
+    Map<String, dynamic> data = {};
+    try {
+      data = jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (_) {
+      data = {};
+    }
+
+    if (r.statusCode >= 400) {
+      return {
+        'ok': false,
+        'detail': data['detail'] ?? 'Send to client failed',
+        'email_sent': data['email_sent'],
+        'email_error': data['email_error'],
+        'access_token': data['access_token'],
+      };
+    }
+
+    await fetchProposals();
+    await fetchDashboard();
+    notifyListeners();
+
+    return {
+      'ok': true,
+      'detail': data['detail'],
+      'email_sent': data['email_sent'],
+      'email_error': data['email_error'],
+      'access_token': data['access_token'],
+    };
+  }
+
+  Future<Map<String, dynamic>> resendClientEmail(
+    String proposalId, {
+    String? accessToken,
+    String? clientEmail,
+  }) async {
+    final r = await http.post(
+      Uri.parse("$baseUrl/api/proposals/$proposalId/resend-client-email"),
+      headers: _headers,
+      body: jsonEncode({
+        if (accessToken != null && accessToken.trim().isNotEmpty)
+          'access_token': accessToken.trim(),
+        if (clientEmail != null && clientEmail.trim().isNotEmpty)
+          'client_email': clientEmail.trim(),
+      }),
+    );
+
+    Map<String, dynamic> data = {};
+    try {
+      data = jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (_) {
+      data = {};
+    }
+
+    return {
+      'ok': r.statusCode < 400,
+      'status_code': r.statusCode,
+      ...data,
+    };
+  }
+
   Future<String?> clientDeclineProposal(String proposalId,
       {String comments = ""}) async {
     try {

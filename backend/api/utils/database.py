@@ -259,26 +259,26 @@ def init_pg_schema():
         
         # Ensure UNIQUE constraint on email (prevents duplicate user creation)
         try:
-            cursor.execute('''
+            _exec_with_savepoint(
+                '''
                 ALTER TABLE users 
                 ADD CONSTRAINT users_email_unique UNIQUE (email)
-            ''')
+                '''
+            )
             print("[OK] Added UNIQUE constraint on users.email")
         except Exception as e:
             print(f"[INFO] UNIQUE constraint on email may already exist: {e}")
         
         # Add is_email_verified column if it doesn't exist (migration for existing databases)
         try:
-            cursor.execute('''
+            _exec_with_savepoint(
+                '''
                 ALTER TABLE users 
                 ADD COLUMN IF NOT EXISTS is_email_verified BOOLEAN DEFAULT true
-            ''')
+                '''
+            )
         except Exception as e:
             print(f"[WARN] Could not add is_email_verified column (may already exist): {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
         # Proposals table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
@@ -377,68 +377,75 @@ def init_pg_schema():
                ON proposal_compliance(status, evaluated_at DESC)'''
         )
 
+        # Update the status check constraint safely.
+        # If existing rows violate the new constraint, we must NOT leave the table with
+        # the old constraint dropped, and we must not abort the overall init transaction.
         try:
-            cursor.execute("""
-                ALTER TABLE proposals
-                DROP CONSTRAINT IF EXISTS proposals_status_check;
-            """)
-
-            cursor.execute("""
-                ALTER TABLE proposals
-                ADD CONSTRAINT proposals_status_check
-                CHECK (
-                    status IN (
-                        'draft',
-                        'Draft',
-                        'submitted',
-                        'Submitted',
-                        'approved',
-                        'Approved',
-                        'rejected',
-                        'Rejected',
-                        'archived',
-                        'Archived',
-                        'Pending CEO Approval',
-                        'Pending Approval',
-                        'Pricing In Progress',
-                        'Priced',
-                        'Changes Requested',
-                        'changes requested',
-                        'Resubmitted',
-                        'resubmitted',
-                        'Sent to Client',
-                        'Sent for Signature',
-                        'In Review',
-                        'Signed',
-                        'signed',
-                        'Client Signed',
-                        'Client Approved',
-                        'Client Declined'
-                    ) OR status IS NULL
-                );
-            """)
+            savepoint_counter += 1
+            sp_name = f"sp_init_schema_status_check_{savepoint_counter}"
+            cursor.execute(f"SAVEPOINT {sp_name}")
+            try:
+                cursor.execute(
+                    """
+                    ALTER TABLE proposals
+                    DROP CONSTRAINT IF EXISTS proposals_status_check;
+                    """
+                )
+                cursor.execute(
+                    """
+                    ALTER TABLE proposals
+                    ADD CONSTRAINT proposals_status_check
+                    CHECK (
+                        status IN (
+                            'draft',
+                            'Draft',
+                            'submitted',
+                            'Submitted',
+                            'approved',
+                            'Approved',
+                            'rejected',
+                            'Rejected',
+                            'archived',
+                            'Archived',
+                            'Pending CEO Approval',
+                            'Pending Approval',
+                            'Pricing In Progress',
+                            'Priced',
+                            'Changes Requested',
+                            'changes requested',
+                            'Resubmitted',
+                            'resubmitted',
+                            'Sent to Client',
+                            'Sent for Signature',
+                            'In Review',
+                            'Signed',
+                            'signed',
+                            'Client Signed',
+                            'Client Approved',
+                            'Client Declined'
+                        ) OR status IS NULL
+                    );
+                    """
+                )
+                cursor.execute(f"RELEASE SAVEPOINT {sp_name}")
+            except Exception:
+                cursor.execute(f"ROLLBACK TO SAVEPOINT {sp_name}")
+                cursor.execute(f"RELEASE SAVEPOINT {sp_name}")
+                raise
         except Exception as e:
             print(f"[WARN] Could not update proposals_status_check constraint: {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
         # Ensure client_email column exists for storing client contact email
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE proposals 
                 ADD COLUMN IF NOT EXISTS client_email VARCHAR(255)
             ''')
         except Exception as e:
             print(f"[WARN] Could not add client_email column to proposals (may already exist or be incompatible): {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE proposals 
                 ADD COLUMN IF NOT EXISTS opportunity_id VARCHAR(50)
             ''')
@@ -446,64 +453,44 @@ def init_pg_schema():
             print(f"[WARN] Could not add opportunity_id column to proposals (may already exist or be incompatible): {e}")
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE proposals 
                 ADD COLUMN IF NOT EXISTS engagement_stage VARCHAR(50)
             ''')
         except Exception as e:
             print(f"[WARN] Could not add engagement_stage column to proposals (may already exist or be incompatible): {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE proposals 
                 ADD COLUMN IF NOT EXISTS engagement_opened_at TIMESTAMP
             ''')
         except Exception as e:
             print(f"[WARN] Could not add engagement_opened_at column to proposals (may already exist or be incompatible): {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE proposals 
                 ADD COLUMN IF NOT EXISTS engagement_target_close_at TIMESTAMP
             ''')
         except Exception as e:
             print(f"[WARN] Could not add engagement_target_close_at column to proposals (may already exist or be incompatible): {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE proposals 
                 ADD COLUMN IF NOT EXISTS client_id INTEGER
             ''')
         except Exception as e:
             print(f"[WARN] Could not add client_id column to proposals (may already exist or be incompatible): {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 CREATE INDEX IF NOT EXISTS idx_proposals_client_id
                 ON proposals(client_id)
             ''')
         except Exception as e:
             print(f"[WARN] Could not create idx_proposals_client_id index (may already exist or be incompatible): {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
         # Content library table
         cursor.execute('''CREATE TABLE IF NOT EXISTS content (
@@ -520,6 +507,46 @@ def init_pg_schema():
         is_deleted BOOLEAN DEFAULT false,
         FOREIGN KEY (parent_id) REFERENCES content(id)
         )''')
+
+        # Versioned content modules (used by the hackathon brief's "modules + version history")
+        _exec_with_savepoint(
+            '''CREATE TABLE IF NOT EXISTS content_modules (
+            id SERIAL PRIMARY KEY,
+            title VARCHAR(255) NOT NULL,
+            category VARCHAR(100) DEFAULT 'Other',
+            body TEXT NOT NULL,
+            version INTEGER DEFAULT 1,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            is_editable BOOLEAN DEFAULT true,
+            FOREIGN KEY (created_by) REFERENCES users(id)
+            )'''
+        )
+        _exec_with_savepoint(
+            '''CREATE TABLE IF NOT EXISTS module_versions (
+            id SERIAL PRIMARY KEY,
+            module_id INTEGER REFERENCES content_modules(id) ON DELETE CASCADE,
+            version INTEGER NOT NULL,
+            snapshot TEXT NOT NULL,
+            note TEXT,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users(id)
+            )'''
+        )
+        try:
+            _exec_with_savepoint(
+                "CREATE INDEX IF NOT EXISTS idx_content_modules_category ON content_modules(category)"
+            )
+            _exec_with_savepoint(
+                "CREATE INDEX IF NOT EXISTS idx_content_modules_title ON content_modules(title)"
+            )
+            _exec_with_savepoint(
+                "CREATE INDEX IF NOT EXISTS idx_module_versions_module_id ON module_versions(module_id)"
+            )
+        except Exception as e:
+            print(f"[WARN] Could not create indexes for content_modules/module_versions: {e}")
 
         # Settings table
         cursor.execute('''CREATE TABLE IF NOT EXISTS settings (
@@ -562,10 +589,6 @@ def init_pg_schema():
             ''')
         except Exception as e:
             print(f"[WARN] Could not add proposals.client_id foreign key constraint (may already exist or be incompatible): {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
         # Add company_name column if it doesn't exist (migration for existing databases)
         try:
@@ -590,10 +613,6 @@ def init_pg_schema():
                 pass
         except Exception as e:
             print(f"[WARN] Could not add company_name column (may already exist): {e}")
-            try:
-                conn.rollback()
-            except Exception:
-                pass
 
         # Add contact_person column if it doesn't exist (migration for existing databases)
         try:
@@ -659,7 +678,7 @@ def init_pg_schema():
 
         # Migrations for existing databases
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE document_comments
                 ADD COLUMN IF NOT EXISTS section_name TEXT
             ''')
@@ -667,11 +686,11 @@ def init_pg_schema():
             print(f"[WARN] Could not add section_name to document_comments: {e}")
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE document_comments
                 ADD COLUMN IF NOT EXISTS start_offset INTEGER
             ''')
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE document_comments
                 ADD COLUMN IF NOT EXISTS end_offset INTEGER
             ''')
@@ -679,15 +698,15 @@ def init_pg_schema():
             print(f"[WARN] Could not add offset columns to document_comments: {e}")
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE document_comments
                 ADD COLUMN IF NOT EXISTS parent_id INTEGER
             ''')
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE document_comments
                 ADD COLUMN IF NOT EXISTS block_type VARCHAR(50)
             ''')
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE document_comments
                 ADD COLUMN IF NOT EXISTS block_id TEXT
             ''')
@@ -695,7 +714,7 @@ def init_pg_schema():
             print(f"[WARN] Could not add threading/block columns to document_comments: {e}")
 
         try:
-            cursor.execute('''
+            _exec_with_savepoint('''
                 ALTER TABLE document_comments
                 ADD CONSTRAINT document_comments_parent_id_fkey
                 FOREIGN KEY (parent_id) REFERENCES document_comments(id) ON DELETE CASCADE
@@ -705,7 +724,7 @@ def init_pg_schema():
             print(f"[INFO] document_comments parent_id FK not added (may already exist): {e}")
 
         # Collaboration invitations table
-        cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
+        _exec_with_savepoint('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
         id SERIAL PRIMARY KEY,
         proposal_id INTEGER NOT NULL,
         invited_email VARCHAR(255) NOT NULL,

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -480,7 +480,14 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               try {
                 final resp = await http.post(
                   Uri.parse('$baseUrl/api/client/proposals/$proposalId/sign_token'),
-                  headers: const {'Content-Type': 'application/json'},
+                  headers: {
+                    'Content-Type': 'application/json',
+                    if (_deviceId != null && _deviceId!.isNotEmpty)
+                      'X-Client-Device-Id': _deviceId!,
+                    if (_clientSessionToken != null &&
+                        _clientSessionToken!.isNotEmpty)
+                      'X-Client-Session-Token': _clientSessionToken!,
+                  },
                   body: jsonEncode({
                     'token': _accessToken,
                     'signer_name': signerName,

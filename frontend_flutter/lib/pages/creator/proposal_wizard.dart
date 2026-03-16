@@ -64,6 +64,11 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
 
+  bool _showEmailFailedBanner = false;
+  String? _lastEmailError;
+  String? _lastClientAccessToken;
+  bool _isRetryingEmail = false;
+
   int _countIssuesByPriority(
       List<Map<String, dynamic>> issues, Set<String> priorities) {
     return issues.where((i) {
@@ -98,21 +103,29 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     setState(() => _isLoading = true);
     try {
       final app = context.read<AppState>();
-      final error = await app.sendToClient(
+      final result = await app.sendToClientWithStatus(
         _proposalId!.toString(),
       );
       if (!mounted) return;
-      if (error == null) {
+      if (result['ok'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ Sent to client successfully!'),
             backgroundColor: Colors.green,
           ),
         );
+
+        final emailSent = result['email_sent'];
+        final emailOk = (emailSent == true) || (emailSent == null);
+        setState(() {
+          _showEmailFailedBanner = !emailOk;
+          _lastEmailError = result['email_error']?.toString();
+          _lastClientAccessToken = result['access_token']?.toString();
+        });
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(error),
+            content: Text(result['detail']?.toString() ?? 'Send to client failed'),
             backgroundColor: Colors.red,
           ),
         );
@@ -126,9 +139,59 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         ),
       );
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _retryClientEmail() async {
+    if (_proposalId == null) return;
+    if (_isRetryingEmail) return;
+    setState(() => _isRetryingEmail = true);
+    try {
+      final app = context.read<AppState>();
+      final r = await app.resendClientEmail(
+        _proposalId!.toString(),
+        accessToken: _lastClientAccessToken,
+      );
+      if (!mounted) return;
+
+      final ok = r['ok'] == true;
+      final emailSent = r['email_sent'] == true;
+      if (ok && emailSent) {
+        setState(() {
+          _showEmailFailedBanner = false;
+          _lastEmailError = null;
+          _lastClientAccessToken = r['access_token']?.toString() ?? _lastClientAccessToken;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Email resent successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        setState(() {
+          _showEmailFailedBanner = true;
+          _lastEmailError = r['email_error']?.toString() ?? _lastEmailError;
+          _lastClientAccessToken = r['access_token']?.toString() ?? _lastClientAccessToken;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(r['detail']?.toString() ?? 'Email resend failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error retrying email: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isRetryingEmail = false);
     }
   }
 
@@ -1166,6 +1229,54 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       body: Stack(
         fit: StackFit.expand,
         children: [
+          if (_showEmailFailedBanner)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.12),
+                    border: Border(
+                      bottom: BorderSide(color: Colors.red.withOpacity(0.35)),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _lastEmailError == null || _lastEmailError!.trim().isEmpty
+                              ? 'Email failed to send – retry'
+                              : 'Email failed to send – ${_lastEmailError!}',
+                          style: const TextStyle(color: Colors.red),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: _isRetryingEmail ? null : _retryClientEmail,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: Text(_isRetryingEmail ? 'Retrying…' : 'Retry'),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () => setState(() => _showEmailFailedBanner = false),
+                        icon: const Icon(Icons.close, color: Colors.red),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           // Background image
           Positioned.fill(
             child: Image.asset(

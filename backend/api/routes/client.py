@@ -327,13 +327,23 @@ def _identity_access_row(cursor, invitation_token: str, proposal_id: int):
     )
     row = cursor.fetchone()
     if not row:
+        # Concurrency-safe insert: multiple device-session/start calls can race.
+        # Insert if missing, otherwise ignore and re-select.
         cursor.execute(
             """
             INSERT INTO client_identity_access (invitation_token, proposal_id, attempts, locked_at, verified_at, last_attempt_at)
             VALUES (%s, %s, 0, NULL, NULL, NULL)
-            RETURNING invitation_token, proposal_id, attempts, locked_at, verified_at, unlocked_token, unlocked_expires_at
+            ON CONFLICT (invitation_token) DO NOTHING
             """,
             (invitation_token, proposal_id),
+        )
+        cursor.execute(
+            """
+            SELECT invitation_token, proposal_id, attempts, locked_at, verified_at, unlocked_token, unlocked_expires_at
+            FROM client_identity_access
+            WHERE invitation_token = %s
+            """,
+            (invitation_token,),
         )
         row = cursor.fetchone()
     return dict(row) if isinstance(row, dict) else {
@@ -2100,13 +2110,20 @@ def client_sign_proposal_token(proposal_id=None):
             if token_proposal_id is not None and str(token_proposal_id) != str(proposal_id):
                 return {'detail': 'Token is not valid for this proposal'}, 403
 
-            configured, err_or_hash, status = _require_identity_configured(cursor, int(proposal_id))
-            if not configured:
-                return err_or_hash, status
+            # In environments where OTP/device-session is the primary client
+            # verification mechanism, identity unlock can be bypassed for the
+            # simple sign_token flow. When DEV_BYPASS_CLIENT_IDENTITY=true we
+            # rely on the existing token + OTP gating and skip the
+            # identity_last4 check.
+            bypass_identity = os.getenv("DEV_BYPASS_CLIENT_IDENTITY", "false").lower() == "true"
+            if not bypass_identity:
+                configured, err_or_hash, status = _require_identity_configured(cursor, int(proposal_id))
+                if not configured:
+                    return err_or_hash, status
 
-            allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, int(proposal_id))
-            if not allowed:
-                return err_payload, status
+                allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, int(proposal_id))
+                if not allowed:
+                    return err_payload, status
 
             signer_email = (invitation.get('invited_email') or '').strip() or None
 

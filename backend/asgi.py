@@ -21,10 +21,18 @@ except Exception as e:
 
 # Import Flask app
 from app import app as flask_app
-from asgiref.wsgi import WsgiToAsgi
 
-# Create ASGI app by wrapping the Flask WSGI app
-app = WsgiToAsgi(flask_app)
+# Create ASGI app by wrapping the Flask WSGI app.
+# Prefer Starlette's WSGIMiddleware to avoid asgiref's thread-sensitive deadlock
+# under concurrent requests.
+try:
+    from starlette.middleware.wsgi import WSGIMiddleware  # type: ignore
+
+    app = WSGIMiddleware(flask_app)
+except Exception:
+    from asgiref.wsgi import WsgiToAsgi
+
+    app = WsgiToAsgi(flask_app)
 
 # Make sure this is the entry point Uvicorn calls
 __all__ = ['app']

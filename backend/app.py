@@ -134,6 +134,7 @@ from api.routes.approver import bp as approver_bp
 from api.routes.cycle_time import bp as cycle_time_bp
 from api.routes.pipeline import bp as pipeline_bp
 from api.routes.risk_gate import bp as risk_gate_bp
+from api.routes.content_modules import bp as content_modules_bp
 from api.routes.finance_export import bp as finance_export_bp
 from api.routes.finance_audit import bp as finance_audit_bp
 from api.routes.finance_audit import bp as finance_audit_bp
@@ -150,6 +151,7 @@ app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp)
+app.register_blueprint(content_modules_bp, url_prefix='/api')
 app.register_blueprint(finance_export_bp, url_prefix='/api')
 app.register_blueprint(finance_audit_bp, url_prefix='/api')
 
@@ -838,6 +840,15 @@ def init_db():
     if (
         os.getenv("DEV_BYPASS_DB_FOR_FIREBASE", "false").lower() == "true"
         and request.path.startswith("/api/firebase")
+    ):
+        return
+
+    # In dev mode you may bypass the content DB entirely. If so, don't run
+    # schema init work for /api/content, otherwise ASGI can still deadlock
+    # before the route handler short-circuits.
+    if (
+        os.getenv("DEV_BYPASS_DB_FOR_CONTENT", "false").lower() == "true"
+        and request.path.startswith("/api/content")
     ):
         return
 
@@ -4323,33 +4334,48 @@ def get_client_proposals():
 
 @app.post('/api/client/session/start')
 def client_start_session():
+    """
+    Start a client session for time tracking.
+
+    The Flutter client portal calls /api/client/session/start, but the full
+    implementation lives in the client portal blueprint at /client/session/start.
+    We delegate so the returned session_id matches the DB schema (typically int).
+    """
+    try:
+        from api.routes.client import start_client_session as _start_client_session
+        return _start_client_session()
+    except Exception as e:
+        # Never fail the UI for analytics.
+        print(f"❌ Error starting client session: {e}")
+        traceback.print_exc()
+        data = request.get_json(silent=True) or {}
+        return {'message': 'ok', 'session_id': data.get('session_id')}, 200
+
+
+@app.post('/api/client/session/end')
+def client_end_session():
+    """
+    End a client session for analytics/time tracking.
+
+    NOTE: This endpoint exists because the Flutter client portal calls
+    /api/client/session/end. We keep this lightweight and resilient so it never
+    breaks the UI even if analytics tables are missing.
+    """
     try:
         data = request.get_json(silent=True) or {}
-        token = data.get('token')
-        proposal_id = data.get('proposal_id')
-        if not token:
-            return {'detail': 'Access token required'}, 400
+        session_id = data.get('session_id')
+        if not session_id:
+            return {'detail': 'session_id required'}, 400
 
-        with get_db_connection() as conn:
-            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
-            try:
-                invitation, err_body, err_code = _client_get_invitation_by_token(cursor, token)
-                if err_body:
-                    return err_body, err_code
-                invited_email = invitation.get('invited_email')
-            except Exception:
-                invited_email = None
-
-        session_id = secrets.token_urlsafe(12)
-        return {
-            'session_id': session_id,
-            'proposal_id': proposal_id,
-            'invited_email': invited_email,
-        }, 200
-
+        # Best-effort: delegate to blueprint implementation if available.
+        try:
+            from api.routes.client import end_client_session as _end_client_session
+            return _end_client_session()
+        except Exception:
+            # Never fail the UI for analytics.
+            return {'message': 'ok', 'session_id': session_id}, 200
     except Exception as e:
-        print(f"❌ Error starting client session: {e}")
+        print(f"❌ Error ending client session: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
@@ -4697,11 +4723,12 @@ def client_approve_proposal(proposal_id):
         return {'detail': str(e)}, 500
 
 
+@app.get("/api/client/proposals/<int:proposal_id>/get_signing_url")
 @app.post("/api/client/proposals/<int:proposal_id>/get_signing_url")
 def client_get_signing_url(proposal_id):
     try:
         data = request.get_json(silent=True) or {}
-        token = data.get('token')
+        token = (data.get('token') if isinstance(data, dict) else None) or request.args.get('token')
         if not token:
             return {'detail': 'Access token required'}, 400
 

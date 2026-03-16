@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../services/asset_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/content_library_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../theme/app_colors.dart';
 import '../../mixins/sidebar_mixin.dart';
@@ -41,6 +42,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   String searchQuery = "";
   String typeFilter = "all";
   bool _showAIGenerator = false;
+  final _versionedModulesCache = <int, List<Map<String, dynamic>>>{};
 
   // SidebarMixin implementation
   @override
@@ -537,7 +539,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                 tooltip: "Version history",
                 icon:
                     const Icon(Icons.history, size: 18, color: Colors.white70),
-                onPressed: () => _showVersionHistory(context),
+                onPressed: () => _showVersionHistory(context, item),
               ),
               IconButton(
                 tooltip: "Edit block",
@@ -1338,12 +1340,108 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     });
   }
 
-  void _showVersionHistory(BuildContext context) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Version history coming soon'),
-        duration: Duration(seconds: 2),
-      ),
+  Future<void> _showVersionHistory(
+    BuildContext context,
+    Map<String, dynamic> item,
+  ) async {
+    final moduleId = item["module_id"] ?? item["id"];
+    if (moduleId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No version history available')),
+      );
+      return;
+    }
+
+    final service = ContentLibraryService();
+    List<Map<String, dynamic>> versions =
+        _versionedModulesCache[moduleId] ?? const [];
+
+    if (versions.isEmpty) {
+      versions = await service.getModuleVersions(moduleId as int);
+      _versionedModulesCache[moduleId] = versions;
+    }
+
+    if (!mounted) return;
+
+    if (versions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No versions found for this module')),
+      );
+      return;
+    }
+
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF10141C),
+          title: Text(
+            'Version history',
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          content: SizedBox(
+            width: 480,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  (item["label"] ?? item["title"] ?? item["key"] ?? "")
+                      .toString(),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 260,
+                  child: ListView.builder(
+                    itemCount: versions.length,
+                    itemBuilder: (context, index) {
+                      final v = versions[index];
+                      final versionNum = v["version"] ?? "?";
+                      final note =
+                          (v["note"] ?? "Snapshot").toString().trim();
+                      final createdAt = v["created_at"]?.toString() ?? "";
+                      return ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          "Version $versionNum",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        subtitle: Text(
+                          [
+                            if (createdAt.isNotEmpty) createdAt,
+                            note,
+                          ].where((s) => s.isNotEmpty).join(" • "),
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 

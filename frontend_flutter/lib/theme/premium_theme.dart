@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'dart:ui';
 
 /// Premium glassmorphic theme inspired by executive dashboards
@@ -305,41 +305,49 @@ class PremiumStatCard extends StatelessWidget {
           return Container(
             padding: padding,
             decoration: PremiumTheme.statCard(gradient),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final tightH = constraints.maxHeight.isFinite && constraints.maxHeight < 110;
+                final gap = (compact || tightH) ? 8.0 : 16.0;
+                final showSubtitle = subtitle != null && !compact && !tightH;
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: titleStyle,
-                        maxLines: 2,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: titleStyle,
+                            maxLines: tightH ? 1 : 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (icon != null) iconWidget(),
+                      ],
+                    ),
+                    SizedBox(height: gap),
+                    Text(
+                      value,
+                      style: valueStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (showSubtitle) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle!,
+                        style: subtitleStyle,
+                        maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    if (icon != null) iconWidget(),
+                    ],
                   ],
-                ),
-                SizedBox(height: compact ? 10 : 16),
-                Text(
-                  value,
-                  style: valueStyle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (subtitle != null && !compact) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle!,
-                    style: subtitleStyle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
+                );
+              },
             ),
           );
         },
