@@ -560,6 +560,59 @@ def start_client_device_session():
                     'expires_at': session['expires_at'].isoformat(),
                 }, 200
 
+            # If the client hits device-session/start multiple times in quick
+            # succession (refresh/retry), avoid generating multiple OTPs and
+            # sending multiple emails. Reuse the most recent challenge created
+            # very recently for this invitation + device.
+            try:
+                dedupe_window_seconds = int(os.getenv('CLIENT_OTP_DEDUPE_WINDOW_SECONDS') or '30')
+            except Exception:
+                dedupe_window_seconds = 30
+
+            try:
+                cursor.execute(
+                    """
+                    SELECT id, expires_at, created_at
+                    FROM client_device_otp_challenges
+                    WHERE invitation_token = %s
+                      AND device_id = %s
+                      AND verified_at IS NULL
+                      AND expires_at > NOW()
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    (invitation_token, device_id),
+                )
+                existing = cursor.fetchone()
+                if existing:
+                    created_at = existing.get('created_at') if isinstance(existing, dict) else None
+                    expires_at_existing = existing.get('expires_at') if isinstance(existing, dict) else None
+                    existing_id = existing.get('id') if isinstance(existing, dict) else None
+
+                    # If created_at can't be parsed, fall back to creating a new challenge.
+                    reuse_ok = False
+                    if created_at is not None and existing_id:
+                        try:
+                            created_at_utc = _as_utc_aware(created_at)
+                            if created_at_utc is not None:
+                                reuse_ok = (_now_utc() - created_at_utc).total_seconds() <= dedupe_window_seconds
+                        except Exception:
+                            reuse_ok = False
+
+                    if reuse_ok:
+                        payload = {
+                            'otp_required': True,
+                            'challenge_id': existing_id,
+                            'expires_at': (_as_utc_aware(expires_at_existing) or expires_at_existing).isoformat()
+                            if expires_at_existing is not None
+                            else None,
+                            'reused_challenge': True,
+                        }
+                        return payload, 200
+            except Exception:
+                # Best-effort dedupe only; never block OTP generation.
+                pass
+
             otp_code = f"{secrets.randbelow(1_000_000):06d}"
             challenge_id = secrets.token_urlsafe(24)
             challenge_salt = secrets.token_urlsafe(16)
@@ -634,9 +687,27 @@ def verify_client_device_otp():
         data = request.get_json(silent=True) or {}
         challenge_id = (data.get('challenge_id') or data.get('challengeId') or '').strip()
         otp = (data.get('otp') or data.get('code') or '').strip()
+        try:
+            otp = ''.join([c for c in str(otp) if c.isdigit()])
+        except Exception:
+            otp = str(otp).strip()
         if not challenge_id:
+            try:
+                raw_len = len(request.get_data(cache=False, as_text=False) or b'')
+                print(
+                    f"[CLIENT_PORTAL] verify-otp missing challenge_id content_type={request.content_type} raw_len={raw_len} keys={list(data.keys())}"
+                )
+            except Exception:
+                pass
             return {'detail': 'challenge_id is required'}, 400
         if not otp:
+            try:
+                raw_len = len(request.get_data(cache=False, as_text=False) or b'')
+                print(
+                    f"[CLIENT_PORTAL] verify-otp missing otp content_type={request.content_type} raw_len={raw_len} challenge_id={challenge_id[:10]}... keys={list(data.keys())}"
+                )
+            except Exception:
+                pass
             return {'detail': 'otp is required'}, 400
 
         with get_db_connection() as conn:

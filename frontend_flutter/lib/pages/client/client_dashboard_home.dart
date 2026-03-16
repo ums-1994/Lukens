@@ -27,6 +27,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String? _clientSessionToken;
   String? _pendingDeviceOtpChallengeId;
   DateTime? _pendingDeviceOtpExpiresAt;
+  Future<bool>? _deviceSessionInFlight;
+  Future<void>? _loadProposalsInFlight;
   List<Map<String, dynamic>> _proposals = [];
   Map<String, dynamic>? _selectedDocument;
   int _selectedNavIndex = 0;
@@ -180,6 +182,23 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Future<bool> _ensureDeviceSession({required String token}) async {
+    final inflight = _deviceSessionInFlight;
+    if (inflight != null) {
+      return inflight;
+    }
+
+    final f = _ensureDeviceSessionInternal(token: token);
+    _deviceSessionInFlight = f;
+    try {
+      return await f;
+    } finally {
+      if (identical(_deviceSessionInFlight, f)) {
+        _deviceSessionInFlight = null;
+      }
+    }
+  }
+
+  Future<bool> _ensureDeviceSessionInternal({required String token}) async {
     _deviceId ??= _getOrCreateDeviceId();
     final deviceId = _deviceId;
     if (deviceId == null || deviceId.isEmpty) {
@@ -1416,6 +1435,23 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Future<void> _loadClientProposals() async {
+    final inflight = _loadProposalsInFlight;
+    if (inflight != null) {
+      return inflight;
+    }
+
+    final f = _loadClientProposalsInternal();
+    _loadProposalsInFlight = f;
+    try {
+      return await f;
+    } finally {
+      if (identical(_loadProposalsInFlight, f)) {
+        _loadProposalsInFlight = null;
+      }
+    }
+  }
+
+  Future<void> _loadClientProposalsInternal() async {
     if (_accessToken == null) return;
 
     final token = _sanitizeToken(_accessToken!);
@@ -1434,112 +1470,144 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     });
 
     try {
-      final uri = Uri.parse('$baseUrl/api/client/proposals')
-          .replace(queryParameters: {'token': token});
-      final response = await http
-          .get(
-            uri,
-            headers: {
-              if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
-              if (_clientSessionToken != null)
-                'X-Client-Session-Token': _clientSessionToken!,
-            },
-          )
-          .timeout(
-            const Duration(seconds: 8),
-            onTimeout: () {
-              throw TimeoutException('Request timed out');
-            },
-          );
-
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded is! Map) {
-          throw Exception('Unexpected response format');
+      for (var attempt = 0; attempt < 2; attempt++) {
+        String? sentSessionToken = _clientSessionToken;
+        if (kIsWeb) {
+          try {
+            final stored =
+                web.window.localStorage['lukens_client_session_token']?.trim();
+            if (stored != null && stored.isNotEmpty) {
+              if (sentSessionToken == null || sentSessionToken.trim().isEmpty) {
+                sentSessionToken = stored;
+                _clientSessionToken = stored;
+              }
+            }
+          } catch (_) {
+            // ignore
+          }
         }
-        final data = Map<String, dynamic>.from(decoded);
-        final proposalsRaw = data['proposals'];
-        if (proposalsRaw is! List) {
-          throw Exception('Invalid token response (missing proposals)');
-        }
-        if (!mounted) return;
-        setState(() {
-          _clientEmail = data['client_email'];
-          _proposals = proposalsRaw
-              .map((p) => Map<String, dynamic>.from(p))
-              .toList();
 
-          if (_selectedDocument != null) {
-            final selId = _selectedDocument?['id']?.toString();
-            final updated = _proposals
-                .where((p) => p['id']?.toString() == selId)
-                .cast<Map<String, dynamic>>()
+        sentSessionToken = sentSessionToken?.trim();
+        if (sentSessionToken != null && sentSessionToken.isEmpty) {
+          sentSessionToken = null;
+        }
+
+        final uri = Uri.parse('$baseUrl/api/client/proposals')
+            .replace(queryParameters: {'token': token});
+        final response = await http
+            .get(
+              uri,
+              headers: {
+                if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
+                if (sentSessionToken != null)
+                  'X-Client-Session-Token': sentSessionToken,
+              },
+            )
+            .timeout(
+              const Duration(seconds: 8),
+              onTimeout: () {
+                throw TimeoutException('Request timed out');
+              },
+            );
+
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          if (decoded is! Map) {
+            throw Exception('Unexpected response format');
+          }
+          final data = Map<String, dynamic>.from(decoded);
+          final proposalsRaw = data['proposals'];
+          if (proposalsRaw is! List) {
+            throw Exception('Invalid token response (missing proposals)');
+          }
+          if (!mounted) return;
+          setState(() {
+            _clientEmail = data['client_email'];
+            _proposals = proposalsRaw
+                .map((p) => Map<String, dynamic>.from(p))
                 .toList();
-            if (updated.isNotEmpty) {
-              _selectedDocument = updated.first;
+
+            if (_selectedDocument != null) {
+              final selId = _selectedDocument?['id']?.toString();
+              final updated = _proposals
+                  .where((p) => p['id']?.toString() == selId)
+                  .cast<Map<String, dynamic>>()
+                  .toList();
+              if (updated.isNotEmpty) {
+                _selectedDocument = updated.first;
+              }
+            }
+
+            // Calculate status counts
+            _statusCounts = {
+              'pending': 0,
+              'approved': 0,
+              'rejected': 0,
+              'viewed': 0,
+            };
+
+            for (var proposal in _proposals) {
+              final status = (proposal['status'] as String? ?? '');
+              final key = _groupStatusForCounts(status);
+              _statusCounts[key] = (_statusCounts[key] ?? 0) + 1;
+            }
+
+            _isLoading = false;
+          });
+          return;
+        }
+
+        if (response.statusCode == 428) {
+          Map<String, dynamic>? decoded;
+          try {
+            final body = jsonDecode(response.body);
+            if (body is Map) {
+              decoded = Map<String, dynamic>.from(body);
+            }
+          } catch (_) {}
+
+          final bool needsDevice = decoded?['requires_device_session'] == true ||
+              decoded?['otp_required'] == true;
+
+          if (needsDevice && attempt == 0 && _accessToken != null) {
+            final ok = await _ensureDeviceSession(token: token);
+            if (ok) {
+              // session token should now be available; retry the GET
+              continue;
             }
           }
 
-          // Calculate status counts
-          _statusCounts = {
-            'pending': 0,
-            'approved': 0,
-            'rejected': 0,
-            'viewed': 0,
-          };
-
-          for (var proposal in _proposals) {
-            final status = (proposal['status'] as String? ?? '');
-            final key = _groupStatusForCounts(status);
-            _statusCounts[key] = (_statusCounts[key] ?? 0) + 1;
+          if (sentSessionToken != null) {
+            _saveCachedClientSession(null);
+            _clientSessionToken = null;
           }
 
-          _isLoading = false;
-        });
-      } else if (response.statusCode == 428) {
-        _saveCachedClientSession(null);
-        _clientSessionToken = null;
-        Map<String, dynamic>? decoded;
-        try {
-          final body = jsonDecode(response.body);
-          if (body is Map) {
-            decoded = Map<String, dynamic>.from(body);
-          }
-        } catch (_) {}
-
-        final bool needsDevice = decoded?['requires_device_session'] == true ||
-            decoded?['otp_required'] == true;
-
-        if (needsDevice && _accessToken != null) {
-          final token = _sanitizeToken(_accessToken!);
-          final ok = await _ensureDeviceSession(token: token);
-          if (ok) {
-            await _loadClientProposals();
-            return;
-          }
+          if (!mounted) return;
+          setState(() {
+            _error =
+                decoded?['detail']?.toString() ?? 'Device verification required.';
+            _isLoading = false;
+          });
+          return;
         }
 
-        if (!mounted) return;
-        setState(() {
-          _error = decoded?['detail']?.toString() ??
-              'Device verification required.';
-          _isLoading = false;
-        });
-      } else if (response.statusCode == 423) {
-        Map<String, dynamic>? decoded;
-        try {
-          final body = jsonDecode(response.body);
-          if (body is Map) {
-            decoded = Map<String, dynamic>.from(body);
-          }
-        } catch (_) {}
-        if (!mounted) return;
-        setState(() {
-          _error = decoded?['detail']?.toString() ??
-              'Access locked due to too many failed attempts.';
-          _isLoading = false;
-        });
-      } else {
+        if (response.statusCode == 423) {
+          Map<String, dynamic>? decoded;
+          try {
+            final body = jsonDecode(response.body);
+            if (body is Map) {
+              decoded = Map<String, dynamic>.from(body);
+            }
+          } catch (_) {}
+          if (!mounted) return;
+          setState(() {
+            _error = decoded?['detail']?.toString() ??
+                'Access locked due to too many failed attempts.';
+            _isLoading = false;
+          });
+          return;
+        }
+
         Map<String, dynamic>? error;
         try {
           final decoded = jsonDecode(response.body);
@@ -1553,6 +1621,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               'Failed to load proposals (HTTP ${response.statusCode})';
           _isLoading = false;
         });
+        return;
       }
     } catch (e) {
       if (!mounted) return;
