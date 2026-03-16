@@ -367,7 +367,9 @@ class AppState extends ChangeNotifier {
             ? data['unread_count'] as int
             : 0;
         // Debug: confirm API response for notification bell
-        final uid = (currentUser is Map<String, dynamic>) ? (currentUser as Map<String, dynamic>)['id'] : null;
+        final uid = (currentUser is Map<String, dynamic>)
+            ? (currentUser as Map<String, dynamic>)['id']
+            : null;
         print(
             'Dashboard - Notifications API: ${response.statusCode}, count: ${rawNotifications.length}, unread: $unreadNotifications (user_id: $uid)');
       } else {
@@ -463,11 +465,11 @@ class AppState extends ChangeNotifier {
     if (lowerStatus.contains('pricing')) return 'Draft';
     if (lowerStatus.contains('in progress')) return 'Draft';
     if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
-      return 'Pending Approval';
+      return 'Request for Change';
     if (lowerStatus.contains('pending') && lowerStatus.contains('approval'))
-      return 'Pending Approval';
-    if (lowerStatus == 'submitted') return 'Pending Approval';
-    if (lowerStatus == 'in review') return 'Pending Approval';
+      return 'Request for Change';
+    if (lowerStatus == 'submitted') return 'Request for Change';
+    if (lowerStatus == 'in review') return 'Request for Change';
     if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
       return 'Sent to Client';
     if (lowerStatus.contains('released')) return 'Sent to Client';
@@ -494,9 +496,11 @@ class AppState extends ChangeNotifier {
     }
 
     // Backwards-compat key: creator dashboard expects this exact label.
-    if (counts.containsKey('Pending Approval') &&
-        !counts.containsKey('Pending CEO Approval')) {
-      counts['Pending CEO Approval'] = counts['Pending Approval'] ?? 0;
+    if (counts.containsKey('Request for Change')) {
+      counts['Pending Approval'] = counts['Request for Change'] ?? 0;
+      if (!counts.containsKey('Pending CEO Approval')) {
+        counts['Pending CEO Approval'] = counts['Request for Change'] ?? 0;
+      }
     }
     dashboardCounts = counts;
   }
@@ -995,7 +999,8 @@ class AppState extends ChangeNotifier {
         Uri.parse("$baseUrl/proposals/$proposalId/send_to_client"),
         headers: _headers,
         body: jsonEncode({
-          if (cleanLast4 != null && cleanLast4.isNotEmpty) 'id_last4': cleanLast4,
+          if (cleanLast4 != null && cleanLast4.isNotEmpty)
+            'id_last4': cleanLast4,
         }),
       );
       if (r.statusCode >= 400) {

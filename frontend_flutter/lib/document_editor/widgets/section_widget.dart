@@ -186,6 +186,24 @@ class SectionWidget extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.all(8),
                 child: Listener(
+                  onPointerDown: (event) {
+                    if (onContentTapUp == null) return;
+                    onContentTapUp!(
+                      TapUpDetails(
+                        globalPosition: event.position,
+                        kind: event.kind,
+                      ),
+                    );
+                  },
+                  onPointerMove: (event) {
+                    if (onContentTapUp == null) return;
+                    onContentTapUp!(
+                      TapUpDetails(
+                        globalPosition: event.position,
+                        kind: event.kind,
+                      ),
+                    );
+                  },
                   onPointerUp: (event) {
                     if (onContentTapUp == null) return;
                     onContentTapUp!(
