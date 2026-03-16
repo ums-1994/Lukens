@@ -32,6 +32,59 @@ def _normalize_role(raw_role, default='manager'):
         return 'manager'
     return default
 
+def _select_firebase_user(cursor, email, uid):
+    """
+    Resolve a Firebase-authenticated user deterministically.
+    Prefer firebase_uid match (authoritative), then email fallback.
+    This avoids role drift when duplicate email rows exist.
+    """
+    # 1) Preferred path: exact firebase UID match
+    try:
+        cursor.execute(
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users
+               WHERE firebase_uid = %s
+               ORDER BY id DESC
+               LIMIT 1''',
+            (uid,)
+        )
+        user = cursor.fetchone()
+        if user:
+            return user
+    except psycopg2.ProgrammingError:
+        # firebase_uid column may not exist in older schemas
+        cursor.connection.rollback()
+
+    # 2) Fallback path: email (prefer rows already linked to a firebase_uid)
+    try:
+        cursor.execute(
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users
+               WHERE email = %s
+               ORDER BY
+                   CASE
+                       WHEN firebase_uid = %s THEN 0
+                       WHEN firebase_uid IS NOT NULL THEN 1
+                       ELSE 2
+                   END,
+                   id DESC
+               LIMIT 1''',
+            (email, uid)
+        )
+        return cursor.fetchone()
+    except psycopg2.ProgrammingError:
+        # Column fallback for very old schema
+        cursor.connection.rollback()
+        cursor.execute(
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users
+               WHERE email = %s
+               ORDER BY id DESC
+               LIMIT 1''',
+            (email,)
+        )
+        return cursor.fetchone()
+
 # Initialize Firebase on module load (with error handling to prevent import failures)
 try:
     print("[AUTH] Initializing Firebase Admin SDK...")
@@ -455,13 +508,8 @@ def firebase_auth():
         cursor = conn.cursor()
         
         try:
-            # Try to find user by email or create firebase_uid column if needed
-            cursor.execute(
-                '''SELECT id, username, email, full_name, role, department, is_active
-                   FROM users WHERE email = %s''',
-                (email,)
-            )
-            user = cursor.fetchone()
+            # Resolve user by firebase_uid first, then email fallback.
+            user = _select_firebase_user(cursor, email, uid)
             
             if user:
                 # User exists, update Firebase UID if needed
