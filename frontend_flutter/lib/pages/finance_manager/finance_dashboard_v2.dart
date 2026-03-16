@@ -39,7 +39,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _currentTab = 'dashboard'; // dashboard, proposals, clients
-  bool _isSidebarCollapsed = false;
 
   bool _auditLoading = false;
   List<Map<String, dynamic>> _auditItems = [];
@@ -1072,6 +1071,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final isSidebarCollapsed = app.isFinanceSidebarCollapsed;
     final dashboardProposals =
         _getFilteredProposals(app, ignoreStatusFilter: true);
     final proposalsTabProposals = _getFilteredProposals(app);
@@ -1126,7 +1126,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
               child: Row(
                 children: [
                   FinanceSidebar(
-                    isCollapsed: _isSidebarCollapsed,
+                    isCollapsed: isSidebarCollapsed,
                     currentPage: _currentTab == 'dashboard'
                         ? 'Dashboard'
                         : _currentTab == 'proposals'
@@ -1138,11 +1138,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                                     : 'Dashboard',
                     showAudit: _canAccessAudit(app),
                     pendingBadge: pendingBadge > 0 ? pendingBadge : null,
-                    onToggle: () {
-                      setState(() {
-                        _isSidebarCollapsed = !_isSidebarCollapsed;
-                      });
-                    },
+                    onToggle: app.toggleFinanceSidebar,
                     onSelect: (label) {
                       if (label == 'Dashboard') {
                         setState(() => _currentTab = 'dashboard');

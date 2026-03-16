@@ -51,6 +51,19 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Finance navigation/sidebar state
+  bool _isFinanceSidebarCollapsed = false;
+  bool get isFinanceSidebarCollapsed => _isFinanceSidebarCollapsed;
+  void setFinanceSidebarCollapsed(bool value) {
+    _isFinanceSidebarCollapsed = value;
+    notifyListeners();
+  }
+
+  void toggleFinanceSidebar() {
+    _isFinanceSidebarCollapsed = !_isFinanceSidebarCollapsed;
+    notifyListeners();
+  }
+
   String get _apiBaseUrl => '$baseUrl/api';
 
   Future<void> init() async {
