@@ -118,11 +118,13 @@ class _ContentLibrarySelectionDialogState
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() => _loading = true);
     try {
       final token = _getToken();
       if (token == null || token.isEmpty) {
         print('⚠️ No authentication token available');
+        if (!mounted) return;
         setState(() {
           _modules = [];
           _loading = false;
@@ -137,6 +139,7 @@ class _ContentLibrarySelectionDialogState
       );
       final nonFolderCount =
           modules.where((m) => m['is_folder'] != true).length;
+      if (!mounted) return;
       setState(() {
         _modules = modules;
         _loading = false;
@@ -145,6 +148,7 @@ class _ContentLibrarySelectionDialogState
           '✅ Loaded ${modules.length} content modules (${nonFolderCount} non-folder items available for insertion)');
     } catch (e) {
       print('❌ Error loading content modules: $e');
+      if (!mounted) return;
       setState(() {
         _modules = [];
         _loading = false;

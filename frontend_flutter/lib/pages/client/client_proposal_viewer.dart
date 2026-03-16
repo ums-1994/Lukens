@@ -57,6 +57,25 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
   static const Duration _networkTimeout = Duration(seconds: 20);
 
+  Map<String, String> _clientDeviceHeaders() {
+    final headers = <String, String>{};
+    try {
+      // Align with ClientDashboardHome keys
+      final deviceId = web.window.localStorage['lukens_client_device_id']?.trim();
+      if (deviceId != null && deviceId.isNotEmpty) {
+        headers['X-Client-Device-Id'] = deviceId;
+      }
+      final sessionToken =
+          web.window.localStorage['lukens_client_session_token']?.trim();
+      if (sessionToken != null && sessionToken.isNotEmpty) {
+        headers['X-Client-Session-Token'] = sessionToken;
+      }
+    } catch (_) {
+      // ignore
+    }
+    return headers;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -506,10 +525,12 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     });
 
     try {
+      final extraHeaders = kIsWeb ? _clientDeviceHeaders() : const <String, String>{};
       final response = await http
           .get(
             Uri.parse(
                 '$baseUrl/api/client/proposals/${widget.proposalId}?token=${Uri.encodeComponent(widget.accessToken)}'),
+            headers: extraHeaders.isEmpty ? null : extraHeaders,
           )
           .timeout(_networkTimeout);
 
@@ -605,6 +626,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/comment'),
         headers: {
           'Content-Type': 'application/json',
+          ..._clientDeviceHeaders(),
         },
         body: jsonEncode({
           'token': widget.accessToken,

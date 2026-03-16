@@ -64,8 +64,8 @@ class ApiService {
       // When on localhost with no override, use Render backend (same as production)
       if (hostname == 'localhost' || hostname == '127.0.0.1') {
         print(
-            '🌐 ApiService: Using Render API URL on localhost: https://lukens-wp8w.onrender.com');
-        return 'https://lukens-wp8w.onrender.com';
+            '🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:5000');
+        return 'http://127.0.0.1:5000';
       }
     }
     print(
@@ -546,15 +546,9 @@ class ApiService {
       if (response.statusCode == 401) {
         throw Exception('unauthorized');
       }
-      String detail = 'Failed to save comment';
-      try {
-        final body = json.decode(response.body);
-        if (body is Map && body['detail'] != null) {
-          detail = body['detail'].toString();
-        }
-      } catch (_) {}
-      print('Error creating comment: ${response.statusCode} - ${response.body}');
-      throw Exception(detail);
+      print(
+          'Error creating comment: ${response.statusCode} - ${response.body}');
+      return null;
     } catch (e) {
       print('Error creating comment: $e');
       rethrow;
