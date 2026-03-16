@@ -20,6 +20,18 @@ from werkzeug.security import check_password_hash
 
 bp = Blueprint('auth', __name__)
 
+# Keep role normalization in one place so registration/login stay consistent.
+def _normalize_role(raw_role, default='manager'):
+    role_key = (raw_role or '').strip().lower().replace('-', '_').replace(' ', '_')
+
+    if role_key in {'admin', 'ceo', 'approver'}:
+        return 'admin'
+    if role_key.startswith('finance'):
+        return 'finance_manager'
+    if role_key in {'manager', 'creator', 'user'}:
+        return 'manager'
+    return default
+
 # Initialize Firebase on module load (with error handling to prevent import failures)
 try:
     print("[AUTH] Initializing Firebase Admin SDK...")
@@ -418,18 +430,7 @@ def firebase_auth():
             save_tokens(get_valid_tokens())
 
             # Map requested role to the normalized roles used on the frontend.
-            role_lower = (requested_role or "user").lower().strip()
-            if role_lower in ["admin", "ceo"]:
-                normalized_role = "admin"
-            elif role_lower in [
-                "financial manager",
-                "finance manager",
-                "finance_manager",
-                "financial_manager",
-            ]:
-                normalized_role = "finance_manager"
-            else:
-                normalized_role = "manager"
+            normalized_role = _normalize_role(requested_role, default='manager')
 
             return {
                 "token": id_token,
@@ -470,17 +471,8 @@ def firebase_auth():
 
                 # Normalize role: map variations to standardized roles
                 # Supported normalized roles: 'admin', 'manager', 'finance_manager'
-                role_lower = user_role.lower().strip() if user_role else 'user'
-                if role_lower in ['admin', 'ceo']:
-                    normalized_role = 'admin'
-                elif role_lower in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager']:
-                    # Preserve a distinct finance manager role so frontend can route to finance dashboard
-                    normalized_role = 'finance_manager'
-                elif role_lower in ['manager', 'creator', 'user']:
-                    normalized_role = 'manager'
-                else:
-                    # Default to manager for unknown roles but log it for visibility
-                    normalized_role = 'manager'
+                normalized_role = _normalize_role(user_role, default='manager')
+                if normalized_role == 'manager' and (user_role or '').strip():
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
 
                 print(f'🔍 Login: User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"')
@@ -529,17 +521,9 @@ def firebase_auth():
                 
                 # Use requested role if provided, otherwise default to 'manager'
                 # Supported roles: 'admin', 'manager', 'finance_manager'
-                normalized_role = requested_role.lower().strip() if requested_role else 'manager'
-                if normalized_role in ['admin', 'ceo']:
-                    role_to_use = 'admin'
-                elif normalized_role in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
-                    # Preserve a distinct finance manager role so frontend can route to finance dashboard
-                    role_to_use = 'finance_manager'
-                elif normalized_role in ['manager', 'creator', 'user']:
-                    role_to_use = 'manager'
-                else:
-                    # Default to manager for unknown roles
-                    role_to_use = 'manager'
+                role_to_use = _normalize_role(requested_role, default='manager')
+                normalized_role = (requested_role or '').lower().strip()
+                if role_to_use == 'manager' and (requested_role or '').strip():
                     print(f'⚠️ Unknown role "{requested_role}", defaulting to "manager"')
                 
                 print(f'🔍 Registration: requested_role="{requested_role}", normalized="{normalized_role}", using="{role_to_use}"')

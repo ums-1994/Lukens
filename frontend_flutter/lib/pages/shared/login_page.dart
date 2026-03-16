@@ -218,15 +218,16 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
           String dashboardRoute;
 
-          final isAdmin = userRole == 'admin' || userRole == 'ceo';
-          final isFinance = userRole == 'finance' ||
-              userRole == 'finance manager' ||
-              userRole == 'financial manager' ||
-              userRole == 'finance_manager' ||
-              userRole == 'financial_manager';
-          final isManager = userRole == 'manager' ||
-              userRole == 'creator' ||
-              userRole == 'user';
+          final roleKey = userRole.replaceAll('-', '_');
+          final isAdmin = roleKey == 'admin' ||
+              roleKey == 'ceo' ||
+              roleKey == 'approver';
+          final isFinance = roleKey.startsWith('finance') ||
+              roleKey == 'financial_manager' ||
+              roleKey == 'financial manager';
+          final isManager = roleKey == 'manager' ||
+              roleKey == 'creator' ||
+              roleKey == 'user';
 
           if (isAdmin) {
             dashboardRoute = '/approver_dashboard';
