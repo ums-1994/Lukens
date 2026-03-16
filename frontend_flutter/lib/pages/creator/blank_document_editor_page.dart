@@ -2907,10 +2907,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       print('⚠️ Error saving comment to database: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg.isNotEmpty ? msg : 'Could not post comment. Try again.'),
+          const SnackBar(
+            content: Text('Could not post comment. Try again.'),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
+            duration: Duration(seconds: 4),
           ),
         );
       }
