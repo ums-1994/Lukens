@@ -12,6 +12,8 @@ class ApiService {
   static String get baseUrl {
     if (kIsWeb) {
       try {
+        final hostname = html.window.location.hostname;
+
         // Honor USE_LOCAL_API first (set in index.html for local dev)
         final useLocal = js.context['USE_LOCAL_API'];
         if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
@@ -34,6 +36,15 @@ class ApiService {
           final url = explicitEnvUrl.toString().replaceAll('"', '').trim();
           print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
           return url;
+        }
+
+        // For local web development, prefer local backend by default.
+        // This prevents stale/cached APP_CONFIG values from forcing Render
+        // and causing CORS failures from http://localhost:* origins.
+        if (hostname == 'localhost' || hostname == '127.0.0.1') {
+          print(
+              '🌐 ApiService: Using local API URL (localhost default): http://127.0.0.1:5000');
+          return 'http://127.0.0.1:5000';
         }
 
         // Try to get from window.APP_CONFIG.API_URL
