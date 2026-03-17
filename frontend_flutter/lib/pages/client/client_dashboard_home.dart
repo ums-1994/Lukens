@@ -25,10 +25,12 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String? _clientEmail;
   String? _deviceId;
   String? _clientSessionToken;
+  String? _clientSessionAccessToken;
   String? _pendingDeviceOtpChallengeId;
   DateTime? _pendingDeviceOtpExpiresAt;
   Future<bool>? _deviceSessionInFlight;
   Future<void>? _loadProposalsInFlight;
+  int _loadClientProposalsSeq = 0;
   List<Map<String, dynamic>> _proposals = [];
   Map<String, dynamic>? _selectedDocument;
   int _selectedNavIndex = 0;
@@ -109,13 +111,29 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     }
   }
 
-  void _loadCachedClientSession() {
+  void _loadCachedClientSession({String? accessToken}) {
     if (!kIsWeb) return;
     try {
-      final token = web.window.localStorage['lukens_client_session_token'];
-      final clean = token?.trim();
-      if (clean != null && clean.isNotEmpty) {
-        _clientSessionToken = clean;
+      final storedSession =
+          web.window.localStorage['lukens_client_session_token']?.trim();
+      final storedAccess =
+          web.window.localStorage['lukens_client_session_access_token']?.trim();
+
+      final currentAccess = accessToken?.trim();
+      if (currentAccess != null && currentAccess.isNotEmpty) {
+        if (storedAccess != currentAccess) {
+          web.window.localStorage.removeItem('lukens_client_session_token');
+          web.window.localStorage
+              .removeItem('lukens_client_session_access_token');
+          _clientSessionToken = null;
+          _clientSessionAccessToken = null;
+          return;
+        }
+      }
+
+      if (storedSession != null && storedSession.isNotEmpty) {
+        _clientSessionToken = storedSession;
+        _clientSessionAccessToken = storedAccess;
       }
     } catch (_) {}
   }
@@ -125,8 +143,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     try {
       if (token == null || token.trim().isEmpty) {
         web.window.localStorage.removeItem('lukens_client_session_token');
+        web.window.localStorage.removeItem('lukens_client_session_access_token');
+        _clientSessionAccessToken = null;
       } else {
         web.window.localStorage['lukens_client_session_token'] = token.trim();
+        if (_accessToken != null && _accessToken!.trim().isNotEmpty) {
+          web.window.localStorage['lukens_client_session_access_token'] =
+              _accessToken!.trim();
+          _clientSessionAccessToken = _accessToken!.trim();
+        }
       }
     } catch (_) {}
   }
@@ -211,6 +236,32 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         );
       }
       return false;
+    }
+
+    // If we already have a cached session token, try it first.
+    if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty) {
+      final bound = _clientSessionAccessToken?.trim();
+      if (bound != null && bound.isNotEmpty && bound != token.trim()) {
+        _clientSessionToken = null;
+        _clientSessionAccessToken = null;
+        _saveCachedClientSession(null);
+      } else {
+        return true;
+      }
+    }
+
+    if (kIsWeb) {
+      try {
+        final storedAccess =
+            web.window.localStorage['lukens_client_session_access_token']?.trim();
+        if (storedAccess != null && storedAccess.isNotEmpty && storedAccess != token.trim()) {
+          _clientSessionToken = null;
+          _clientSessionAccessToken = null;
+          _saveCachedClientSession(null);
+        }
+      } catch (_) {
+        // ignore
+      }
     }
 
     // If we already have a cached session token, try it first.
@@ -1370,7 +1421,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     );
   }
 
-  void _extractTokenAndLoad() {
+  void _extractTokenAndLoad() async {
     String? token = widget.initialToken;
 
     try {
@@ -1429,7 +1480,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     });
 
     _deviceId = _getOrCreateDeviceId();
-    _loadCachedClientSession();
+    _loadCachedClientSession(accessToken: token);
 
     _loadClientProposals();
   }
@@ -1454,6 +1505,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   Future<void> _loadClientProposalsInternal() async {
     if (_accessToken == null) return;
 
+    final int seq = ++_loadClientProposalsSeq;
+
     final token = _sanitizeToken(_accessToken!);
     if (token.isEmpty) {
       setState(() {
@@ -1465,6 +1518,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     if (!mounted) return;
     setState(() {
+      if (seq != _loadClientProposalsSeq) return;
       _isLoading = true;
       _error = null;
     });
@@ -1474,12 +1528,24 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         String? sentSessionToken = _clientSessionToken;
         if (kIsWeb) {
           try {
-            final stored =
+            final storedSession =
                 web.window.localStorage['lukens_client_session_token']?.trim();
-            if (stored != null && stored.isNotEmpty) {
+            final storedAccess = web
+                .window.localStorage['lukens_client_session_access_token']
+                ?.trim();
+
+            // Only use a cached session token if it's bound to this invitation token.
+            if (storedAccess != null && storedAccess.isNotEmpty && storedAccess != token.trim()) {
+              web.window.localStorage.removeItem('lukens_client_session_token');
+              web.window.localStorage.removeItem('lukens_client_session_access_token');
+              _clientSessionToken = null;
+              _clientSessionAccessToken = null;
+              sentSessionToken = null;
+            } else if (storedSession != null && storedSession.isNotEmpty) {
               if (sentSessionToken == null || sentSessionToken.trim().isEmpty) {
-                sentSessionToken = stored;
-                _clientSessionToken = stored;
+                sentSessionToken = storedSession;
+                _clientSessionToken = storedSession;
+                _clientSessionAccessToken = storedAccess;
               }
             }
           } catch (_) {
@@ -1522,6 +1588,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           }
           if (!mounted) return;
           setState(() {
+            if (seq != _loadClientProposalsSeq) return;
             _clientEmail = data['client_email'];
             _proposals = proposalsRaw
                 .map((p) => Map<String, dynamic>.from(p))
@@ -1584,6 +1651,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
           if (!mounted) return;
           setState(() {
+            if (seq != _loadClientProposalsSeq) return;
             _error =
                 decoded?['detail']?.toString() ?? 'Device verification required.';
             _isLoading = false;
@@ -1601,6 +1669,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           } catch (_) {}
           if (!mounted) return;
           setState(() {
+            if (seq != _loadClientProposalsSeq) return;
             _error = decoded?['detail']?.toString() ??
                 'Access locked due to too many failed attempts.';
             _isLoading = false;
@@ -1617,6 +1686,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         } catch (_) {}
         if (!mounted) return;
         setState(() {
+          if (seq != _loadClientProposalsSeq) return;
           _error = error?['detail'] ??
               'Failed to load proposals (HTTP ${response.statusCode})';
           _isLoading = false;
@@ -1626,6 +1696,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
+        if (seq != _loadClientProposalsSeq) return;
         _error = e is TimeoutException
             ? 'This link timed out. Please retry or ask the sender to resend it.'
             : 'Error: $e';

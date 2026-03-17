@@ -560,6 +560,16 @@ def start_client_device_session():
                     'expires_at': session['expires_at'].isoformat(),
                 }, 200
 
+            try:
+                cursor.execute(
+                    """
+                    SELECT pg_advisory_xact_lock(hashtext(%s))
+                    """,
+                    (f"client_otp:{invitation_token}:{device_id}",),
+                )
+            except Exception:
+                pass
+
             # If the client hits device-session/start multiple times in quick
             # succession (refresh/retry), avoid generating multiple OTPs and
             # sending multiple emails. Reuse the most recent challenge created
