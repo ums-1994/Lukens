@@ -74,7 +74,20 @@ def create_proposal(username=None, user_id=None, email=None, auto_created=False)
                 # Check if this user was auto-created in this request (avoids DB replication lag)
                 if auto_created:
                     auto_created_in_request = True
-                    print(f"✅ User {user_id} was auto-created in this request (auto_created=True), skipping DB verification")
+                    print(
+                        f"✅ User {user_id} was auto-created in this request (auto_created=True), skipping DB verification")
+
+                if not auto_created_in_request:
+                    try:
+                        from flask import g
+
+                        auto_created_row = getattr(g, '_auto_created_user', None)
+                        if auto_created_row and auto_created_row.get('user_id') == user_id:
+                            auto_created_in_request = True
+                            print(
+                                f"✅ User {user_id} was auto-created in this request, skipping DB verification")
+                    except Exception as e:
+                        print(f"⚠️ Could not check g object: {e}")
             else:
                 # Robust user lookup with retries (ported from creator.py)
                 # This handles cases where legacy/dev flows call this route

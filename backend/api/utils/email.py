@@ -3,11 +3,14 @@ Email sending utilities - SendGrid only
 """
 import os
 import traceback
+import re
 from pathlib import Path
 import base64
 import smtplib
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import parseaddr, formataddr
 
 # SendGrid SDK
 try:
@@ -35,6 +38,17 @@ def send_email_via_sendgrid(to_email, subject, html_content):
         sendgrid_from_email = os.getenv('SENDGRID_FROM_EMAIL')
         sendgrid_from_name = os.getenv('SENDGRID_FROM_NAME', 'Khonology')
 
+        def _extract_email(raw: str | None) -> str:
+            if not raw:
+                return ''
+            raw = str(raw).strip()
+            _, parsed = parseaddr(raw)
+            parsed = (parsed or '').strip()
+            if parsed and re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", parsed):
+                return parsed
+            m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", raw)
+            return (m.group(0).strip() if m else '')
+
         # Strip whitespace and newlines from API key (common issue with environment variables)
         if sendgrid_api_key:
             sendgrid_api_key = sendgrid_api_key.strip()
@@ -47,12 +61,17 @@ def send_email_via_sendgrid(to_email, subject, html_content):
             print('[ERROR] SENDGRID_FROM_EMAIL not set')
             return False
 
-        print(f"[EMAIL] Using SendGrid to send email to {to_email}")
+        safe_to_email = _extract_email(to_email)
+        if not safe_to_email:
+            print(f"[ERROR] Invalid recipient email for SendGrid: {to_email}")
+            return False
+
+        print(f"[EMAIL] Using SendGrid to send email to {safe_to_email}")
         print(f"[EMAIL] From: {sendgrid_from_name} <{sendgrid_from_email}>")
 
         message = Mail(
             from_email=Email(sendgrid_from_email, sendgrid_from_name),
-            to_emails=to_email,
+            to_emails=safe_to_email,
             subject=subject,
             html_content=html_content
         )
@@ -63,7 +82,7 @@ def send_email_via_sendgrid(to_email, subject, html_content):
             response = sg.send(message)
             
             if response.status_code in [200, 201, 202]:
-                print(f"[SUCCESS] Email sent via SendGrid to {to_email} (Status: {response.status_code})")
+                print(f"[SUCCESS] Email sent via SendGrid to {safe_to_email} (Status: {response.status_code})")
                 return True
             else:
                 # Get detailed error information
@@ -183,12 +202,46 @@ def send_email(to_email, subject, html_content):
 
 def send_email_via_smtp(to_email, subject, html_content):
     try:
-        smtp_host = os.getenv('SMTP_HOST')
+        smtp_host = (os.getenv('SMTP_HOST') or '').strip()
         smtp_port = int((os.getenv('SMTP_PORT') or '587').strip())
-        smtp_user = os.getenv('SMTP_USER')
+        smtp_user = (os.getenv('SMTP_USER') or '').strip()
         smtp_pass = os.getenv('SMTP_PASS')
-        smtp_from_email = os.getenv('SMTP_FROM_EMAIL') or smtp_user
+        smtp_pass = smtp_pass.strip() if isinstance(smtp_pass, str) else smtp_pass
+        smtp_from_email = (os.getenv('SMTP_FROM_EMAIL') or smtp_user).strip()
         smtp_from_name = os.getenv('SMTP_FROM_NAME', 'Khonology')
+
+        # Sanitize the From header to avoid malformed values (multiple emails, stray text, etc.)
+        # Some SMTP relays will silently drop or reject messages with invalid From headers.
+        def _extract_email(raw: str | None) -> str:
+            if not raw:
+                return ''
+            raw = str(raw).strip()
+            _, parsed = parseaddr(raw)
+            parsed = (parsed or '').strip()
+            if parsed and re.fullmatch(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", parsed):
+                return parsed
+            # Some env vars accidentally contain extra text after the email.
+            # Extract the first email-like token.
+            m = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", raw)
+            return (m.group(0).strip() if m else '')
+
+        safe_to_email = _extract_email(to_email)
+        if not safe_to_email:
+            print(f"[ERROR] Invalid recipient email for SMTP: {to_email}")
+            return False
+
+        parsed_name, parsed_email = parseaddr(f"{smtp_from_name} <{smtp_from_email}>")
+        parsed_email = (parsed_email or '').strip()
+        parsed_email = _extract_email(parsed_email) or _extract_email(smtp_from_email)
+        if not parsed_email:
+            parsed_email = _extract_email(smtp_from_email)
+        if not parsed_email and smtp_user:
+            parsed_email = _extract_email(smtp_user)
+        if not parsed_email:
+            print('[ERROR] SMTP_FROM_EMAIL invalid and SMTP_USER missing; cannot send email')
+            return False
+        safe_from_name = (parsed_name or smtp_from_name or 'Khonology').replace('\r', ' ').replace('\n', ' ').strip()
+        safe_from = formataddr((safe_from_name, parsed_email))
 
         if not all([smtp_host, smtp_user, smtp_pass, smtp_from_email]):
             print('[ERROR] SMTP configuration incomplete')
@@ -196,22 +249,39 @@ def send_email_via_smtp(to_email, subject, html_content):
 
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
-        msg['From'] = f"{smtp_from_name} <{smtp_from_email}>"
-        msg['To'] = to_email
+        msg['From'] = safe_from
+        msg['To'] = safe_to_email
         msg.attach(MIMEText(html_content, 'html'))
 
-        print(f"[EMAIL] Using SMTP to send email to {to_email}")
+        print(f"[EMAIL] Using SMTP to send email to {safe_to_email}")
         print(f"[EMAIL] SMTP Host: {smtp_host}, Port: {smtp_port}, User: {smtp_user}")
-        print(f"[EMAIL] From: {smtp_from_name} <{smtp_from_email}>")
+        print(f"[EMAIL] From: {safe_from}")
 
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
-        print(f"[SUCCESS] Email sent via SMTP to {to_email}")
+        timeout_s = int((os.getenv('SMTP_TIMEOUT_SECONDS') or '20').strip())
+        use_ssl_env = (os.getenv('SMTP_USE_SSL') or '').strip().lower() in ('1', 'true', 'yes')
+        use_ssl = use_ssl_env or smtp_port == 465
+        context = ssl.create_default_context()
+
+        if use_ssl:
+            with smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=timeout_s, context=context) as server:
+                server.ehlo()
+                server.login(smtp_user, smtp_pass)
+                server.send_message(msg)
+        else:
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=timeout_s) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.ehlo()
+                server.login(smtp_user, smtp_pass)
+                server.send_message(msg)
+        print(f"[SUCCESS] Email sent via SMTP to {safe_to_email}")
         return True
     except Exception as e:
         print(f"[ERROR] SMTP email error: {e}")
+        print(
+            "[HELP] If using Mailgun SMTP, confirm: SMTP_HOST=smtp.mailgun.org, SMTP_PORT=587 (STARTTLS) or 465 (SSL), "
+            "SMTP_USER=postmaster@<your-mailgun-domain>, SMTP_PASS is correct, and your network allows outbound SMTP."
+        )
         traceback.print_exc()
         return False
 

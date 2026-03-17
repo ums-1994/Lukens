@@ -1193,26 +1193,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                     ),
                   ),
                 ),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: _adminBase.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: PremiumTheme.orange.withValues(alpha: 0.35),
-                      width: 1,
-                    ),
-                  ),
-                  child: Text(
-                    'Pending Approval',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: PremiumTheme.orange,
-                    ),
-                  ),
-                ),
               ],
             ),
             SizedBox(height: compact ? 10 : 12),

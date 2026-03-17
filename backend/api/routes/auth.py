@@ -391,21 +391,64 @@ def firebase_auth():
         
         # Get role from request (for new registrations and potential upgrades)
         requested_role = data.get('role', 'user')
-        
+
         # Verify Firebase token
         decoded_token = verify_firebase_token(id_token)
         if not decoded_token:
             return {'detail': 'Invalid or expired Firebase token'}, 401
-        
+
         # Extract user info from Firebase token
         firebase_user = get_user_from_token(decoded_token)
         if not firebase_user:
             return {'detail': 'Could not extract user information from token'}, 401
-        
+
         uid = firebase_user['uid']
         email = firebase_user['email']
         name = firebase_user.get('name') or email.split('@')[0]  # Use email prefix if no name
-        
+
+        # ------------------------------------------------------------------
+        # DEV SHORT-CIRCUIT: allow Firebase auth without Postgres
+        # ------------------------------------------------------------------
+        # When DEV_BYPASS_DB_FOR_FIREBASE=true, we skip all database access
+        # and return a synthetic user object. This is handy for local UI
+        # work when the cloud Postgres instance is unreachable.
+        if os.getenv("DEV_BYPASS_DB_FOR_FIREBASE", "false").lower() == "true":
+            username = email.split("@")[0]
+            backend_token = generate_token(username)
+            save_tokens(get_valid_tokens())
+
+            # Map requested role to the normalized roles used on the frontend.
+            role_lower = (requested_role or "user").lower().strip()
+            if role_lower in ["admin", "ceo"]:
+                normalized_role = "admin"
+            elif role_lower in [
+                "financial manager",
+                "finance manager",
+                "finance_manager",
+                "financial_manager",
+            ]:
+                normalized_role = "finance_manager"
+            else:
+                normalized_role = "manager"
+
+            return {
+                "token": id_token,
+                "backend_token": backend_token,
+                "user": {
+                    "id": 0,
+                    "username": username,
+                    "email": email,
+                    "full_name": name,
+                    "role": normalized_role,
+                    "department": None,
+                    "firebase_uid": uid,
+                },
+            }, 200
+
+        # ------------------------------------------------------------------
+        # Normal path: use PostgreSQL for user lookup / creation
+        # ------------------------------------------------------------------
+
         # Check if user exists in database
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -439,50 +482,6 @@ def firebase_auth():
                     # Default to manager for unknown roles but log it for visibility
                     normalized_role = 'manager'
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
-
-                # If the frontend is explicitly asking for a higher-privilege role (admin/finance_manager)
-                # and the DB currently has a lower-privilege role (e.g. 'manager'), upgrade the stored role.
-                try:
-                    requested_role_lower = requested_role.lower().strip() if requested_role else ''
-                except Exception:
-                    requested_role_lower = ''
-
-                if requested_role_lower:
-                    # Upgrade to admin if requested and not already admin.
-                    if requested_role_lower in ['admin', 'ceo'] and normalized_role != 'admin':
-                        try:
-                            cursor.execute(
-                                '''UPDATE users SET role = 'admin' WHERE id = %s''',
-                                (user_id,),
-                            )
-                            conn.commit()
-                            user_role = 'admin'
-                            normalized_role = 'admin'
-                            print(f'🔐 Upgraded user {email} to admin based on requested_role="{requested_role_lower}"')
-                        except Exception as upgrade_err:
-                            conn.rollback()
-                            print(f'⚠️ Failed to upgrade role to admin for {email}: {upgrade_err}')
-
-                    # Upgrade to finance_manager if requested and not already finance_manager/admin.
-                    elif requested_role_lower in [
-                        'financial manager',
-                        'finance manager',
-                        'finance_manager',
-                        'financial_manager',
-                        'finance',
-                    ] and normalized_role not in ['admin', 'finance_manager']:
-                        try:
-                            cursor.execute(
-                                '''UPDATE users SET role = 'finance_manager' WHERE id = %s''',
-                                (user_id,),
-                            )
-                            conn.commit()
-                            user_role = 'finance_manager'
-                            normalized_role = 'finance_manager'
-                            print(f'🔐 Upgraded user {email} to finance_manager based on requested_role="{requested_role_lower}"')
-                        except Exception as upgrade_err:
-                            conn.rollback()
-                            print(f'⚠️ Failed to upgrade role to finance_manager for {email}: {upgrade_err}')
 
                 print(f'🔍 Login: User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"')
                 

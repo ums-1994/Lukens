@@ -546,15 +546,9 @@ class ApiService {
       if (response.statusCode == 401) {
         throw Exception('unauthorized');
       }
-      String detail = 'Failed to save comment';
-      try {
-        final body = json.decode(response.body);
-        if (body is Map && body['detail'] != null) {
-          detail = body['detail'].toString();
-        }
-      } catch (_) {}
-      print('Error creating comment: ${response.statusCode} - ${response.body}');
-      throw Exception(detail);
+      print(
+          'Error creating comment: ${response.statusCode} - ${response.body}');
+      return null;
     } catch (e) {
       print('Error creating comment: $e');
       rethrow;

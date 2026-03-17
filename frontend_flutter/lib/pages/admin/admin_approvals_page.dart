@@ -203,20 +203,18 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       // Use the admin/approver endpoint so admins can see proposals across all users.
       List<dynamic> proposals = [];
       try {
-        final allResponse = await http
-            .get(
-              Uri.parse('${ApiService.baseUrl}/api/proposals/all'),
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $token',
-              },
-            )
-            .timeout(
-              const Duration(seconds: 10),
-              onTimeout: () {
-                throw Exception('Request timed out');
-              },
-            );
+        final allResponse = await http.get(
+          Uri.parse('${ApiService.baseUrl}/api/proposals/all'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        ).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            throw Exception('Request timed out');
+          },
+        );
 
         if (allResponse.statusCode == 200) {
           final decoded = json.decode(allResponse.body);
@@ -886,7 +884,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           _buildStatusTab('All', 'all', _allProposals.length),
           const SizedBox(width: 8),
           _buildStatusTab(
-              'Pending Approval', 'pending', _pendingProposals.length),
+              'Request for Change', 'pending', _pendingProposals.length),
           const SizedBox(width: 8),
           _buildStatusTab('Approved', 'approved', _approvedProposals.length),
           const SizedBox(width: 8),
@@ -1284,7 +1282,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         return 'Draft';
       case 'pending':
       case 'pending approval':
-        return 'Pending Approval';
+        return 'Request for Change';
       case 'pending ceo approval':
         return 'Pending CEO Approval';
       case 'sent':

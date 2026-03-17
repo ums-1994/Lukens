@@ -30,7 +30,26 @@ from api.utils.decorators import token_required
 from api.utils.ai_safety import AISafetyError
 from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
 
+from api.routes.client import _encode_identity_hash
+
 bp = Blueprint('creator', __name__, url_prefix='')
+
+
+def _ensure_invitation_email_tracking_schema(cursor):
+    """Best-effort: add columns used to track email send attempts for invitations."""
+    try:
+        cursor.execute(
+            """
+            ALTER TABLE collaboration_invitations
+            ADD COLUMN IF NOT EXISTS last_email_sent_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS last_email_status TEXT,
+            ADD COLUMN IF NOT EXISTS last_email_error TEXT,
+            ADD COLUMN IF NOT EXISTS last_email_attempts INTEGER DEFAULT 0
+            """
+        )
+    except Exception as e:
+        # Do not fail core flow if schema migrations are not permitted.
+        print(f"⚠️ Failed to ensure invitation email tracking columns: {e}")
 
 
 def _build_upload_base_url():
@@ -916,6 +935,15 @@ def finance_resubmit(username=None, proposal_id=None, user_id=None, email=None):
 def send_to_client(username=None, proposal_id=None):
     """Send proposal to client"""
     try:
+        data = request.get_json(force=True, silent=True) or {}
+        id_last4 = (data.get('id_last4') or data.get('last4') or '').strip()
+        if id_last4:
+            if len(id_last4) != 4 or not id_last4.isdigit():
+                return {
+                    'detail': 'id_last4 must be exactly 4 digits',
+                    'error': 'invalid_id_last4',
+                }, 400
+
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -1000,6 +1028,29 @@ def send_to_client(username=None, proposal_id=None):
             # Update status
             old_status = proposal.get('status')
             new_status = 'Sent to Client'
+
+            if id_last4:
+                try:
+                    if 'identity_last4_hash' not in proposal_cols:
+                        cursor.execute("ALTER TABLE proposals ADD COLUMN identity_last4_hash TEXT")
+                        proposal_cols.add('identity_last4_hash')
+                except Exception as schema_err:
+                    print(f"⚠️ Failed to ensure identity_last4_hash column exists: {schema_err}")
+
+                try:
+                    identity_hash = _encode_identity_hash(id_last4)
+                    cursor.execute(
+                        """UPDATE proposals SET identity_last4_hash = %s WHERE id = %s""",
+                        (identity_hash, proposal_id),
+                    )
+                except Exception as id_hash_err:
+                    print(f"❌ Failed to store identity_last4_hash for proposal {proposal_id}: {id_hash_err}")
+                    traceback.print_exc()
+                    return {
+                        'detail': 'Failed to configure identity verification for this proposal',
+                        'error': 'identity_config_failed',
+                    }, 500
+
             cursor.execute(
                 """UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
                 (new_status, proposal_id)
@@ -1022,6 +1073,9 @@ def send_to_client(username=None, proposal_id=None):
             
             # Send email to client
             email_sent = False
+            email_error_message = None
+            access_token = None
+            invitation_row_id = None
             client_email = proposal.get('client_email')
             client_name = proposal.get('client_name', 'Client')
             proposal_title = proposal.get('title', 'Proposal')
@@ -1085,6 +1139,23 @@ def send_to_client(username=None, proposal_id=None):
                                 tuple(insert_vals),
                             )
                             conn.commit()
+
+                            # Retrieve the invitation row so we can track email status and enable retries.
+                            try:
+                                cursor.execute(
+                                    """
+                                    SELECT id
+                                    FROM collaboration_invitations
+                                    WHERE proposal_id = %s AND lower(invited_email) = lower(%s) AND access_token = %s
+                                    ORDER BY invited_at DESC
+                                    LIMIT 1
+                                    """,
+                                    (proposal_id, client_email.strip(), access_token),
+                                )
+                                inv_row = cursor.fetchone()
+                                invitation_row_id = inv_row.get('id') if isinstance(inv_row, dict) else (inv_row[0] if inv_row else None)
+                            except Exception:
+                                invitation_row_id = None
                         else:
                             print(
                                 "⚠️ collaboration_invitations schema missing required columns; skipping invitation insert"
@@ -1093,7 +1164,7 @@ def send_to_client(username=None, proposal_id=None):
                         print(f"⚠️ Failed to insert collaboration invitation: {inv_err}")
                         traceback.print_exc()
 
-                    client_link = f"{frontend_url}/#/collaborate?token={access_token}"
+                    client_link = f"{frontend_url}/#/client/proposals?token={access_token}"
                     
                     sender_name = sender.get('full_name') or sender.get('username') or 'Your Team'
                     
@@ -1103,6 +1174,7 @@ def send_to_client(username=None, proposal_id=None):
                     <h2>Your Proposal is Ready</h2>
                     <p>Dear {client_name},</p>
                     <p>We're pleased to share your proposal: <strong>{proposal_title}</strong></p>
+                    <p><strong>Security notice:</strong> You will be asked to enter the last 4 digits of your ID to unlock access.</p>
                     <p>Click the link below to view and review your proposal:</p>
                     <p style="text-align: center; margin: 30px 0;">
                         <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>
@@ -1120,7 +1192,31 @@ def send_to_client(username=None, proposal_id=None):
                         print(f"[EMAIL] Failed to send proposal email to {client_email}")
                 except Exception as email_error:
                     print(f"[EMAIL] Error sending proposal email: {email_error}")
+                    email_error_message = str(email_error)
                     traceback.print_exc()
+
+                # Persist send status on invitation row if possible.
+                try:
+                    _ensure_invitation_email_tracking_schema(cursor)
+                    if invitation_row_id:
+                        cursor.execute(
+                            """
+                            UPDATE collaboration_invitations
+                            SET last_email_sent_at = NOW(),
+                                last_email_status = %s,
+                                last_email_error = %s,
+                                last_email_attempts = COALESCE(last_email_attempts, 0) + 1
+                            WHERE id = %s
+                            """,
+                            (
+                                'sent' if email_sent else 'failed',
+                                None if email_sent else (email_error_message or 'send_email returned false'),
+                                invitation_row_id,
+                            ),
+                        )
+                        conn.commit()
+                except Exception as track_err:
+                    print(f"⚠️ Failed to store invitation email send status: {track_err}")
             else:
                 if client_email is None:
                     print(f"[EMAIL] No client_email column available on proposals table for proposal {proposal_id}")
@@ -1130,10 +1226,142 @@ def send_to_client(username=None, proposal_id=None):
             return {
                 'detail': 'Proposal sent to client',
                 'status': new_status,
-                'email_sent': email_sent
+                'email_sent': email_sent,
+                'email_error': email_error_message,
+                'access_token': access_token,
             }, 200
     except Exception as e:
         print(f"❌ Error sending proposal to client: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post('/api/proposals/<int:proposal_id>/resend-client-email')
+@bp.post('/proposals/<int:proposal_id>/resend-client-email')
+@token_required
+def resend_client_email(username=None, proposal_id=None, user_id=None, email=None):
+    """Retry sending the client proposal email without generating a new access token."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        override_email = (payload.get('client_email') or payload.get('clientEmail') or '').strip()
+        override_token = (payload.get('access_token') or payload.get('token') or '').strip()
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            _ensure_invitation_email_tracking_schema(cursor)
+            conn.commit()
+
+            # Load proposal basics
+            cursor.execute(
+                """
+                SELECT id, title, client_name, client_email
+                FROM proposals
+                WHERE id = %s
+                """,
+                (proposal_id,),
+            )
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+
+            effective_email = (override_email or (proposal.get('client_email') or '')).strip()
+            if not effective_email or '@' not in effective_email:
+                return {
+                    'detail': 'Cannot resend: missing or invalid client email',
+                    'error': 'missing_client_email',
+                }, 400
+
+            # Find the invitation row to reuse token
+            if override_token:
+                cursor.execute(
+                    """
+                    SELECT id, access_token, invited_email
+                    FROM collaboration_invitations
+                    WHERE proposal_id = %s AND access_token = %s
+                    ORDER BY invited_at DESC
+                    LIMIT 1
+                    """,
+                    (proposal_id, override_token),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT id, access_token, invited_email
+                    FROM collaboration_invitations
+                    WHERE proposal_id = %s AND lower(invited_email) = lower(%s)
+                    ORDER BY invited_at DESC
+                    LIMIT 1
+                    """,
+                    (proposal_id, effective_email),
+                )
+
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {
+                    'detail': 'No existing client invitation token found to resend',
+                    'error': 'missing_invitation',
+                }, 404
+
+            access_token = invitation.get('access_token')
+            invitation_id = invitation.get('id')
+
+            try:
+                from api.utils.email import send_email, get_logo_html
+                from api.utils.helpers import get_frontend_url
+                frontend_url = get_frontend_url()
+
+                client_name = (proposal.get('client_name') or 'Client').strip() or 'Client'
+                proposal_title = (proposal.get('title') or 'Proposal').strip() or 'Proposal'
+                client_link = f"{frontend_url}/#/client/proposals?token={access_token}"
+
+                email_subject = f"Proposal: {proposal_title}"
+                email_body = f"""
+                {get_logo_html()}
+                <h2>Your Proposal is Ready</h2>
+                <p>Dear {client_name},</p>
+                <p>We're pleased to share your proposal: <strong>{proposal_title}</strong></p>
+                <p>Click the link below to view and review your proposal:</p>
+                <p style="text-align: center; margin: 30px 0;">
+                    <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>
+                </p>
+                <p>Or copy and paste this link into your browser:</p>
+                <p style="word-break: break-all; color: #666;"><a href="{client_link}" style="color: #0066cc; text-decoration: underline;">{client_link}</a></p>
+                """
+
+                ok = send_email(effective_email, email_subject, email_body)
+                err_msg = None if ok else 'send_email returned false'
+
+            except Exception as e:
+                ok = False
+                err_msg = str(e)
+
+            try:
+                cursor.execute(
+                    """
+                    UPDATE collaboration_invitations
+                    SET last_email_sent_at = NOW(),
+                        last_email_status = %s,
+                        last_email_error = %s,
+                        last_email_attempts = COALESCE(last_email_attempts, 0) + 1
+                    WHERE id = %s
+                    """,
+                    ('sent' if ok else 'failed', err_msg, invitation_id),
+                )
+                conn.commit()
+            except Exception as track_err:
+                print(f"⚠️ Failed to update resend status: {track_err}")
+
+            return {
+                'detail': 'Email resent' if ok else 'Email resend failed',
+                'email_sent': bool(ok),
+                'email_error': err_msg,
+                'access_token': access_token,
+                'invitation_id': invitation_id,
+            }, (200 if ok else 502)
+
+    except Exception as e:
+        print(f"❌ Error resending proposal email: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 

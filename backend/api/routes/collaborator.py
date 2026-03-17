@@ -254,15 +254,6 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                                   parent_id, block_type, block_id, status, updated_at
                     """, (proposal_id, comment_text, user_id, section_index, section_name, 
                           highlighted_text, start_offset, end_offset, parent_id, block_type, block_id, 'open'))
-                # If column does not exist (old schema), try minimal insert
-                elif 'column' in err_msg.lower() and 'does not exist' in err_msg.lower():
-                    print(f"⚠️ document_comments missing columns ({err_msg[:80]}...), using minimal insert")
-                    cursor.execute("""
-                        INSERT INTO document_comments 
-                        (proposal_id, comment_text, created_by, section_index, highlighted_text, status)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                        RETURNING id, proposal_id, comment_text, created_by, created_at, section_index, status
-                    """, (proposal_id, comment_text, user_id, section_index, highlighted_text or '', 'open'))
                 else:
                     raise
             
