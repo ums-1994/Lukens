@@ -432,6 +432,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     // Fetch content if empty
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final app = context.read<AppState>();
+      app.setCurrentNavLabel('Content Library');
       if (app.contentBlocks.isEmpty) {
         await app.fetchContent();
       }
@@ -1592,13 +1593,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                         .trim();
                     final isAdmin = role == 'admin' || role == 'ceo';
                     return AppSideNav(
-                      isCollapsed: _isSidebarCollapsed,
-                      currentLabel: _currentPage,
+                      isCollapsed: app.isSidebarCollapsed,
+                      currentLabel: app.currentNavLabel,
                       isAdmin: isAdmin,
-                      onToggle: () => setState(
-                        () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                      ),
+                      onToggle: app.toggleSidebar,
                       onSelect: (label) {
+                        app.setCurrentNavLabel(label);
                         setState(() => _currentPage = label);
                         _navigateToPage(context, label);
                       },

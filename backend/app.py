@@ -80,6 +80,8 @@ app = Flask(__name__)
 # Use compiled regexes so localhost dev ports (Flutter web) are allowed.
 _cors_origins = [
     "https://proposals2025.netlify.app",
+    # Render production frontend
+    "https://lukens-1.onrender.com",
     # Allow Flutter web dev server ports (e.g. http://localhost:56886)
     re.compile(r"^http://localhost(:\d+)?$"),
     re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
@@ -667,7 +669,13 @@ def init_pg_schema():
         created_by INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         section_index INTEGER,
+        section_name TEXT,
         highlighted_text TEXT,
+        start_offset INTEGER,
+        end_offset INTEGER,
+        parent_id INTEGER,
+        block_type VARCHAR(50),
+        block_id TEXT,
         status VARCHAR(50) DEFAULT 'open',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         resolved_by INTEGER,
@@ -676,7 +684,33 @@ def init_pg_schema():
         FOREIGN KEY (created_by) REFERENCES users(id),
         FOREIGN KEY (resolved_by) REFERENCES users(id)
         )''')
-        
+        # Migrations for document_comments (add columns if missing on existing DBs).
+        # IMPORTANT: if any ALTER fails, roll back that statement so the transaction
+        # is not left in an aborted state (which would break later DDL).
+        for col_sql in [
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS section_name TEXT',
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS start_offset INTEGER',
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS end_offset INTEGER',
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS parent_id INTEGER',
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS block_type VARCHAR(50)',
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS block_id TEXT',
+        ]:
+            try:
+                cursor.execute(col_sql)
+            except Exception:
+                # Column may already exist or other benign error; ensure we clear the
+                # failed statement so the rest of the migration can continue.
+                conn.rollback()
+                cursor = conn.cursor()
+        try:
+            cursor.execute('''ALTER TABLE document_comments ADD CONSTRAINT document_comments_parent_id_fkey
+                FOREIGN KEY (parent_id) REFERENCES document_comments(id) ON DELETE CASCADE''')
+        except Exception:
+            # Constraint likely already exists; roll back this single statement
+            # so subsequent schema initialization can continue normally.
+            conn.rollback()
+            cursor = conn.cursor()
+
         # Collaboration invitations table
         cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
         id SERIAL PRIMARY KEY,

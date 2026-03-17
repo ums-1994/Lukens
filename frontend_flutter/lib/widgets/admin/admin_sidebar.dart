@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../config/app_constants.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 
@@ -80,28 +81,13 @@ class AdminSidebar extends StatelessWidget {
                       ),
                     ),
                     child: Row(
-                      mainAxisAlignment: effectiveCollapsed
-                          ? MainAxisAlignment.center
-                          : MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        if (!effectiveCollapsed)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'Navigation',
-                              style: TextStyle(color: Colors.white, fontSize: 12),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: effectiveCollapsed ? 0 : 8),
-                          child: Icon(
-                            effectiveCollapsed
-                                ? Icons.keyboard_arrow_right
-                                : Icons.keyboard_arrow_left,
-                            color: Colors.white,
-                          ),
+                        Icon(
+                          effectiveCollapsed
+                              ? Icons.keyboard_arrow_right
+                              : Icons.keyboard_arrow_left,
+                          color: Colors.white,
                         ),
                       ],
                     ),
@@ -145,6 +131,33 @@ class AdminSidebar extends StatelessWidget {
                 accent: _adminAccent,
                 base: _adminBase,
               ),
+              if (!effectiveCollapsed) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1F2E),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: const Color(0xFF2C3E50),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      AppConstants.fullVersion,
+                      style: const TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 20),
             ],
           );
@@ -199,13 +212,16 @@ class _AdminSidebarNavItem extends StatelessWidget {
                   color: base.withValues(alpha: 0.25),
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: isActive ? accent : Colors.white.withValues(alpha: 0.18),
+                    color: isActive
+                        ? accent
+                        : Colors.white.withValues(alpha: 0.18),
                     width: isActive ? 2 : 1,
                   ),
                 ),
                 padding: const EdgeInsets.all(6),
                 child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
+                  child: AssetService.buildImageWidget(assetPath,
+                      fit: BoxFit.contain),
                 ),
               ),
             ),
@@ -224,7 +240,9 @@ class _AdminSidebarNavItem extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isActive ? base.withValues(alpha: 0.30) : base.withValues(alpha: 0.18),
+              color: isActive
+                  ? base.withValues(alpha: 0.30)
+                  : base.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: isActive
@@ -242,13 +260,16 @@ class _AdminSidebarNavItem extends StatelessWidget {
                     color: base.withValues(alpha: 0.25),
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: isActive ? accent : Colors.white.withValues(alpha: 0.18),
+                      color: isActive
+                          ? accent
+                          : Colors.white.withValues(alpha: 0.18),
                       width: isActive ? 2 : 1,
                     ),
                   ),
                   padding: const EdgeInsets.all(6),
                   child: ClipOval(
-                    child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
+                    child: AssetService.buildImageWidget(assetPath,
+                        fit: BoxFit.contain),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -264,7 +285,8 @@ class _AdminSidebarNavItem extends StatelessWidget {
                   ),
                 ),
                 if (isActive)
-                  const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
+                  const Icon(Icons.arrow_forward_ios,
+                      size: 12, color: Colors.white),
               ],
             ),
           ),
@@ -273,4 +295,3 @@ class _AdminSidebarNavItem extends StatelessWidget {
     );
   }
 }
-

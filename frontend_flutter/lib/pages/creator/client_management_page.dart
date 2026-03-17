@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../services/client_service.dart';
@@ -529,139 +529,102 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     return Scaffold(
       body: Container(
         color: Colors.transparent,
-        child: Column(
+        child: Row(
           children: [
-            // Header
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withValues(alpha: 0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isNarrow = constraints.maxWidth < 620;
-
-                    final title = Text(
-                      'Client Management',
-                      style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                      overflow: TextOverflow.ellipsis,
-                    );
-
-                    final userControls = Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ClipOval(
-                          child: Image.asset(
-                            'assets/images/User_Profile.png',
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _getUserName(user),
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold),
+            Consumer<AppState>(
+              builder: (context, app, _) {
+                final user = AuthService.currentUser ?? app.currentUser;
+                final role = (user?['role'] ?? '').toString().toLowerCase().trim();
+                final isAdmin = role == 'admin' || role == 'ceo';
+                return AppSideNav(
+                  isCollapsed: app.isSidebarCollapsed,
+                  currentLabel: app.currentNavLabel,
+                  isAdmin: isAdmin,
+                  onToggle: app.toggleSidebar,
+                  onSelect: (label) {
+                    app.setCurrentNavLabel(label);
+                    _navigateToPage(context, label);
+                  },
+                );
+              },
+            ),
+            Expanded(
+              child: Column(
+                children: [
+                  Container(
+                    height: 70,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.black.withValues(alpha: 0.3),
+                          Colors.transparent,
+                        ],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ClipOval(
+                              child: Image.asset(
+                                'assets/images/User_Profile.png',
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
                               ),
-                              Text(
-                                userRole.toString(),
-                                style: const TextStyle(
-                                    color: Colors.white70, fontSize: 12),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          icon:
-                              const Icon(Icons.more_vert, color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'logout') {
-                              app.logout();
-                              AuthService.logout();
-                              Navigator.pushNamed(context, '/login');
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => const [
-                            PopupMenuItem<String>(
-                              value: 'logout',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
-                                ],
-                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _getUserName(user),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                Text(
+                                  userRole.toString(),
+                                  style: const TextStyle(
+                                      color: Colors.white70, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 10),
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert, color: Colors.white),
+                              onSelected: (value) {
+                                if (value == 'logout') {
+                                  app.logout();
+                                  AuthService.logout();
+                                  Navigator.pushNamed(context, '/login');
+                                }
+                              },
+                              itemBuilder: (BuildContext context) => const [
+                                PopupMenuItem<String>(
+                                  value: 'logout',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.logout),
+                                      SizedBox(width: 8),
+                                      Text('Logout'),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
-                    );
-
-                    if (!isNarrow) {
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(child: title),
-                          userControls,
-                        ],
-                      );
-                    }
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        title,
-                        const SizedBox(height: 8),
-                        userControls,
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ),
-
-            // Main Content with Sidebar
-            Expanded(
-              child: Row(
-                children: [
-                  Consumer<AppState>(
-                    builder: (context, app, _) {
-                      final user = AuthService.currentUser ?? app.currentUser;
-                      final role =
-                          (user?['role'] ?? '').toString().toLowerCase().trim();
-                      final isAdmin = role == 'admin' || role == 'ceo';
-                      return AppSideNav(
-                        isCollapsed: app.isSidebarCollapsed,
-                        currentLabel: app.currentNavLabel,
-                        isAdmin: isAdmin,
-                        onToggle: app.toggleSidebar,
-                        onSelect: (label) {
-                          app.setCurrentNavLabel(label);
-                          _navigateToPage(context, label);
-                        },
-                      );
-                    },
+                      ),
+                    ),
                   ),
-
-                  // Content Area
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
@@ -697,11 +660,10 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       ),
                     ),
                   ),
+                  const Footer(),
                 ],
               ),
             ),
-
-            const Footer(),
           ],
         ),
       ),

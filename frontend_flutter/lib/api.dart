@@ -51,6 +51,19 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Finance navigation/sidebar state
+  bool _isFinanceSidebarCollapsed = false;
+  bool get isFinanceSidebarCollapsed => _isFinanceSidebarCollapsed;
+  void setFinanceSidebarCollapsed(bool value) {
+    _isFinanceSidebarCollapsed = value;
+    notifyListeners();
+  }
+
+  void toggleFinanceSidebar() {
+    _isFinanceSidebarCollapsed = !_isFinanceSidebarCollapsed;
+    notifyListeners();
+  }
+
   String get _apiBaseUrl => '$baseUrl/api';
 
   Future<void> init() async {
@@ -861,9 +874,9 @@ class AppState extends ChangeNotifier {
           'department': department,
       };
 
-      final analyticsUri = Uri.parse("$baseUrl/api/analytics/risk-gate-summary")
-          .replace(queryParameters: queryParameters);
       final legacyUri = Uri.parse("$baseUrl/api/risk-gate/summary")
+          .replace(queryParameters: queryParameters);
+      final analyticsUri = Uri.parse("$baseUrl/api/analytics/risk-gate-summary")
           .replace(queryParameters: queryParameters);
 
       // The backend exposes this as /api/risk-gate/summary.

@@ -28,11 +28,17 @@ class FinanceDashboardV2Page extends StatefulWidget {
 
 class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   bool _isLoading = false;
-  String _statusFilter = 'all'; // all, pending, approved, other
+  static const List<String> _validStatusFilters = [
+    'all',
+    'pending_review',
+    'in_pricing',
+    'released',
+    'signed',
+  ];
+  String _statusFilter = 'all';
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   String _currentTab = 'dashboard'; // dashboard, proposals, clients
-  bool _isSidebarCollapsed = false;
 
   int _selectedYear = DateTime.now().year;
   Future<Map<String, dynamic>>? _financeSummaryFuture;
@@ -1402,7 +1408,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
       return bd.compareTo(ad);
     });
 
-    final recent = normalized.take(25).toList();
+    // Use a large limit so finance sees all non-draft proposals (e.g. sent for pricing)
+    const int maxProposals = 500;
+    final recent = normalized.take(maxProposals).toList();
 
     for (final p in recent) {
       final statusLower = (p['status'] ?? '').toString().trim().toLowerCase();
@@ -1463,7 +1471,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
 
   bool _isPricingInProgressStatus(String raw) {
     final s = raw.toLowerCase();
-    return s.contains('pricing in progress') || s.contains('in pricing');
+    return s.contains('pricing in progress') ||
+        s.contains('in pricing') ||
+        s == 'pricing in progress';
   }
 
   double _extractAmount(Map<String, dynamic> p) {
@@ -2145,6 +2155,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final isSidebarCollapsed = app.isFinanceSidebarCollapsed;
     final dashboardProposals =
         _getFilteredProposals(app, ignoreStatusFilter: true);
     final proposalsTabProposals = _getFilteredProposals(app);
@@ -2199,7 +2210,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
               child: Row(
                 children: [
                   FinanceSidebar(
-                    isCollapsed: _isSidebarCollapsed,
+                    isCollapsed: isSidebarCollapsed,
                     currentPage: _currentTab == 'dashboard'
                         ? 'Dashboard'
                         : _currentTab == 'proposals'
@@ -2211,11 +2222,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                                     : 'Dashboard',
                     showAudit: _canAccessAudit(app),
                     pendingBadge: pendingBadge > 0 ? pendingBadge : null,
-                    onToggle: () {
-                      setState(() {
-                        _isSidebarCollapsed = !_isSidebarCollapsed;
-                      });
-                    },
+                    onToggle: app.toggleFinanceSidebar,
                     onSelect: (label) {
                       if (label == 'Dashboard') {
                         setState(() => _currentTab = 'dashboard');
@@ -3191,7 +3198,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                 onPressed: () {
                   setState(() {
                     _currentTab = 'proposals';
-                    _statusFilter = 'pending';
+                    _statusFilter = 'pending_review';
                   });
                 },
                 icon: const Icon(Icons.arrow_forward, size: 16),
@@ -3333,9 +3340,18 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
             ),
           );
 
+          // Ensure value is one of the dropdown items to avoid assertion (e.g. never use 'pending')
+          final effectiveStatusFilter = _validStatusFilters.contains(_statusFilter)
+              ? _statusFilter
+              : 'all';
+          if (_statusFilter != effectiveStatusFilter) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() => _statusFilter = effectiveStatusFilter);
+            });
+          }
           final statusDropdown = Expanded(
             child: DropdownButtonFormField<String>(
-              initialValue: _statusFilter,
+              initialValue: effectiveStatusFilter,
               dropdownColor: PremiumTheme.darkBg1,
               style: const TextStyle(color: Colors.white),
               decoration: InputDecoration(

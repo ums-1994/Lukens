@@ -1,6 +1,7 @@
 // ignore_for_file: unused_field, unused_element, unused_local_variable
 
 import 'package:flutter/foundation.dart';
+import '../services/api_service.dart';
 
 /// Centralized API configuration for the Flutter application
 class ApiConfig {
@@ -14,66 +15,9 @@ class ApiConfig {
   static const String _developmentBackendUrl = 'http://localhost:8000';
   static const String _developmentFrontendUrl = 'http://localhost:3000';
 
-  /// Get the backend API base URL
+  /// Get the backend API base URL (uses same logic as ApiService so content library uses local when appropriate)
   static String get backendBaseUrl {
-    // Force production for now - remove this after testing
-    print('🔧 FORCING PRODUCTION BACKEND URL: $_productionBackendUrl');
-    return _productionBackendUrl;
-
-    // Original logic below - comment out for now
-    /*
-    // For web builds, try to get from JavaScript config first
-    if (kIsWeb) {
-      try {
-        final config = js.context['APP_CONFIG'];
-        if (config != null) {
-          final configObj = config as js.JsObject;
-          final apiUrl = configObj['API_URL'];
-          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-            final url = apiUrl.toString().replaceAll('"', '').trim();
-            if (url.isNotEmpty) {
-              print('🌐 Using API URL from JavaScript config: $url');
-              return url;
-            }
-          }
-        }
-      } catch (e) {
-        print('⚠️ Failed to read JavaScript config: $e');
-        // Fall through to environment-based detection
-      }
-      
-      // Environment-based fallback with better production detection
-      try {
-        final hostname = js.context['window']['location']['hostname'];
-        print('🔍 Detected hostname: ${hostname ?? 'NULL'}');
-        print('🔍 Current origin: ${js.context['window']['location']['origin'] ?? 'NULL'}');
-        
-        if (hostname != null && hostname.toString().contains('onrender.com')) {
-          print('🌐 Detected Render environment, using production backend');
-          return _productionBackendUrl;
-        } else if (hostname != null && hostname.toString() == 'localhost') {
-          print('🌐 Detected localhost environment, using development backend');
-          return _developmentBackendUrl;
-        } else {
-          print('🌐 Unknown hostname, defaulting to production backend');
-          return _productionBackendUrl;
-        }
-      } catch (e) {
-        print('⚠️ Could not detect hostname: $e');
-        print('⚠️ Defaulting to production backend');
-        return _productionBackendUrl;
-      }
-    }
-
-    // Final fallback based on build mode
-    if (kReleaseMode) {
-      print('🌐 Using production backend (release mode)');
-      return _productionBackendUrl;
-    } else {
-      print('🌐 Using development backend (debug mode)');
-      return _developmentBackendUrl;
-    }
-    */
+    return ApiService.baseUrl;
   }
 
   /// Get the frontend base URL (for deep links, redirects, etc.)

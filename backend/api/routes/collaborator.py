@@ -168,7 +168,7 @@ def options_comments_document(proposal_id=None):
 def create_comment(username=None, user_id=None, proposal_id=None):
     """Create a new comment on a document with support for threading and block-level comments"""
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         comment_text = data.get('comment_text')
         section_index = data.get('section_index')
         section_name = data.get('section_name')
@@ -221,7 +221,8 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                 if not parent_comment:
                     return {'detail': 'Parent comment not found'}, 404
             
-            # Create comment - handle sequence issues by not specifying id
+            # Create comment - handle sequence issues and missing columns (old DB schema)
+            err_msg = None
             try:
                 cursor.execute("""
                     INSERT INTO document_comments 
@@ -234,15 +235,15 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                 """, (proposal_id, comment_text, user_id, section_index, section_name, 
                       highlighted_text, start_offset, end_offset, parent_id, block_type, block_id, 'open'))
             except Exception as seq_error:
+                err_msg = str(seq_error)
                 # If sequence issue, reset it and try again
-                if 'duplicate key' in str(seq_error).lower() or 'pkey' in str(seq_error).lower():
+                if 'duplicate key' in err_msg.lower() or 'pkey' in err_msg.lower():
                     print(f"⚠️ Sequence issue detected, resetting sequence for document_comments")
                     cursor.execute("""
                         SELECT setval(pg_get_serial_sequence('document_comments', 'id'), 
                                      COALESCE((SELECT MAX(id) FROM document_comments), 1), true)
                     """)
                     conn.commit()
-                    # Retry the insert
                     cursor.execute("""
                         INSERT INTO document_comments 
                         (proposal_id, comment_text, created_by, section_index, section_name, 
@@ -369,7 +370,13 @@ def get_document_comments(username=None, proposal_id=None):
     except Exception as e:
         print(f"❌ Error getting document comments: {e}")
         traceback.print_exc()
-        return {'detail': str(e)}, 500
+        # Return empty structure so UI can still load (e.g. table missing columns)
+        return {
+            'comments': [],
+            'total': 0,
+            'open_count': 0,
+            'resolved_count': 0,
+        }, 200
 
 @bp.patch("/api/comments/<int:comment_id>/resolve")
 @token_required

@@ -100,28 +100,13 @@ class _AppSideNavState extends State<AppSideNav> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
-                      mainAxisAlignment: widget.isCollapsed
-                          ? MainAxisAlignment.center
-                          : MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        if (!widget.isCollapsed)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'Navigation',
-                              style:
-                                  TextStyle(color: Colors.white, fontSize: 12),
-                            ),
-                          ),
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: widget.isCollapsed ? 0 : 8),
-                          child: Icon(
-                            widget.isCollapsed
-                                ? Icons.keyboard_arrow_right
-                                : Icons.keyboard_arrow_left,
-                            color: Colors.white,
-                          ),
+                        Icon(
+                          widget.isCollapsed
+                              ? Icons.keyboard_arrow_right
+                              : Icons.keyboard_arrow_left,
+                          color: Colors.white,
                         ),
                       ],
                     ),
