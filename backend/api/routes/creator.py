@@ -2025,7 +2025,7 @@ def get_proposal_analytics(username=None, proposal_id=None):
             
             # Verify proposal exists and user has access
             cursor.execute("""
-                SELECT id, title, status, client, '' as client_email
+                SELECT id, title, status, client_id
                 FROM proposals 
                 WHERE id = %s OR id::text = %s
             """, (proposal_id, str(proposal_id)))
