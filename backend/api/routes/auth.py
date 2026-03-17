@@ -44,7 +44,14 @@ def _select_firebase_user(cursor, email, uid):
             '''SELECT id, username, email, full_name, role, department, is_active
                FROM users
                WHERE firebase_uid = %s
-               ORDER BY id DESC
+               ORDER BY
+                   CASE
+                       WHEN lower(coalesce(role, '')) IN ('admin', 'ceo', 'approver') THEN 0
+                       WHEN lower(coalesce(role, '')) LIKE 'finance%%' THEN 1
+                       WHEN lower(coalesce(role, '')) IN ('manager', 'creator', 'user') THEN 2
+                       ELSE 3
+                   END,
+                   id DESC
                LIMIT 1''',
             (uid,)
         )
@@ -66,6 +73,12 @@ def _select_firebase_user(cursor, email, uid):
                        WHEN firebase_uid = %s THEN 0
                        WHEN firebase_uid IS NOT NULL THEN 1
                        ELSE 2
+                   END,
+                   CASE
+                       WHEN lower(coalesce(role, '')) IN ('admin', 'ceo', 'approver') THEN 0
+                       WHEN lower(coalesce(role, '')) LIKE 'finance%%' THEN 1
+                       WHEN lower(coalesce(role, '')) IN ('manager', 'creator', 'user') THEN 2
+                       ELSE 3
                    END,
                    id DESC
                LIMIT 1''',
@@ -555,6 +568,43 @@ def firebase_auth():
                 }, 200
             else:
                 # User doesn't exist, create new user
+                # Guard against concurrent /api/firebase calls creating duplicate rows.
+                cursor.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', (email,))
+                user_after_lock = _select_firebase_user(cursor, email, uid)
+                if user_after_lock:
+                    user = user_after_lock
+                    user_id = user[0]
+                    username = user[1]
+                    user_role = user[4]
+                    normalized_role = _normalize_role(user_role, default='manager')
+                    if normalized_role == 'manager' and (user_role or '').strip():
+                        print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
+                    print(f'🔍 Login (post-lock): User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"')
+                    try:
+                        cursor.execute(
+                            '''UPDATE users SET firebase_uid = %s WHERE id = %s''',
+                            (uid, user_id)
+                        )
+                        conn.commit()
+                    except psycopg2.ProgrammingError:
+                        conn.rollback()
+
+                    backend_token = generate_token(username)
+                    save_tokens(get_valid_tokens())
+                    return {
+                        'token': id_token,
+                        'backend_token': backend_token,
+                        'user': {
+                            'id': user[0],
+                            'username': user[1],
+                            'email': user[2],
+                            'full_name': user[3],
+                            'role': normalized_role,
+                            'department': user[5],
+                            'firebase_uid': uid
+                        }
+                    }, 200
+
                 username = email.split('@')[0]  # Use email prefix as username
                 
                 # Make username unique if needed
