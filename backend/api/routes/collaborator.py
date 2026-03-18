@@ -291,8 +291,8 @@ def create_comment(username=None, user_id=None, proposal_id=None):
 @bp.get("/api/comments/document/<int:proposal_id>")
 @bp.get("/comments/document/<int:proposal_id>")
 @token_required
-def get_document_comments(username=None, proposal_id=None):
-    """Get all comments for a document with threaded structure"""
+def get_document_comments(username=None, user_id=None, proposal_id=None):
+    """Get all comments for a document with threaded structure and reactions"""
     try:
         section_id = request.args.get('section_id', type=int)
         block_id = request.args.get('block_id')
@@ -301,6 +301,13 @@ def get_document_comments(username=None, proposal_id=None):
         
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Resolve user_id if not from token (legacy username flow)
+            current_user_id = user_id
+            if current_user_id is None and username:
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                u = cursor.fetchone()
+                current_user_id = u['id'] if u else None
             
             # Build WHERE clause
             where_clauses = ['dc.proposal_id = %s']
@@ -339,6 +346,31 @@ def get_document_comments(username=None, proposal_id=None):
             """, tuple(params))
             
             comments = cursor.fetchall()
+            comment_ids = [c['id'] for c in comments]
+            
+            # Fetch reactions for all comments (table may not exist on old DBs)
+            reactions_by_comment = {}
+            if comment_ids:
+                try:
+                    placeholders = ','.join(['%s'] * len(comment_ids))
+                    cursor.execute(f"""
+                        SELECT cr.comment_id, cr.emoji, cr.user_id, u.full_name as reactor_name
+                        FROM comment_reactions cr
+                        LEFT JOIN users u ON cr.user_id = u.id
+                        WHERE cr.comment_id IN ({placeholders})
+                    """, tuple(comment_ids))
+                    for row in cursor.fetchall():
+                        cid = row['comment_id']
+                        if cid not in reactions_by_comment:
+                            reactions_by_comment[cid] = {}
+                        emoji = row['emoji']
+                        if emoji not in reactions_by_comment[cid]:
+                            reactions_by_comment[cid][emoji] = {'user_ids': [], 'reactor_names': []}
+                        reactions_by_comment[cid][emoji]['user_ids'].append(row['user_id'])
+                        name = row['reactor_name'] or f"User #{row['user_id']}"
+                        reactions_by_comment[cid][emoji]['reactor_names'].append(name)
+                except Exception as re:
+                    print(f"⚠️ Could not fetch reactions (table may not exist): {re}")
             
             # Build threaded structure (parent comments with nested replies)
             comments_dict = {}
@@ -347,6 +379,20 @@ def get_document_comments(username=None, proposal_id=None):
             for comment in comments:
                 comment_dict = dict(comment)
                 comment_dict['replies'] = []
+                # Add reactions as list of {emoji, count, user_ids, reactor_names, reacted_by_me}
+                raw_reactions = reactions_by_comment.get(comment['id'], {})
+                comment_dict['reactions'] = []
+                for emoji, data in raw_reactions.items():
+                    user_ids = data['user_ids']
+                    reactor_names = data['reactor_names']
+                    reacted_by_me = current_user_id in user_ids if current_user_id else False
+                    comment_dict['reactions'].append({
+                        'emoji': emoji,
+                        'count': len(user_ids),
+                        'user_ids': user_ids,
+                        'reactor_names': reactor_names,
+                        'reacted_by_me': reacted_by_me,
+                    })
                 comments_dict[comment['id']] = comment_dict
                 
                 if comment['parent_id']:
@@ -377,6 +423,67 @@ def get_document_comments(username=None, proposal_id=None):
             'open_count': 0,
             'resolved_count': 0,
         }, 200
+
+@bp.post("/api/comments/<int:comment_id>/reactions")
+@token_required
+def toggle_comment_reaction(username=None, user_id=None, comment_id=None):
+    """Add or remove an emoji reaction on a comment (toggle)"""
+    try:
+        data = request.get_json() or {}
+        emoji = (data.get('emoji') or '').strip()
+        if not emoji or len(emoji) > 20:
+            return {'detail': 'Valid emoji required (1-20 chars)'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            
+            # Resolve user_id
+            current_user_id = user_id
+            if current_user_id is None and username:
+                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                u = cursor.fetchone()
+                current_user_id = u['id'] if u else None
+            
+            if not current_user_id:
+                return {'detail': 'User not found'}, 404
+            
+            # Verify comment exists and user has access (same proposal)
+            cursor.execute("""
+                SELECT id, proposal_id FROM document_comments WHERE id = %s
+            """, (comment_id,))
+            comment = cursor.fetchone()
+            if not comment:
+                return {'detail': 'Comment not found'}, 404
+            
+            # Check if reaction exists
+            cursor.execute("""
+                SELECT id FROM comment_reactions
+                WHERE comment_id = %s AND user_id = %s AND emoji = %s
+            """, (comment_id, current_user_id, emoji))
+            existing = cursor.fetchone()
+            
+            if existing:
+                # Remove reaction
+                cursor.execute("""
+                    DELETE FROM comment_reactions
+                    WHERE comment_id = %s AND user_id = %s AND emoji = %s
+                """, (comment_id, current_user_id, emoji))
+                conn.commit()
+                return {'action': 'removed', 'emoji': emoji}, 200
+            else:
+                # Add reaction
+                cursor.execute("""
+                    INSERT INTO comment_reactions (comment_id, user_id, emoji)
+                    VALUES (%s, %s, %s)
+                """, (comment_id, current_user_id, emoji))
+                conn.commit()
+                return {'action': 'added', 'emoji': emoji}, 200
+            
+    except Exception as e:
+        print(f"❌ Error toggling comment reaction: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 
 @bp.patch("/api/comments/<int:comment_id>/resolve")
 @token_required

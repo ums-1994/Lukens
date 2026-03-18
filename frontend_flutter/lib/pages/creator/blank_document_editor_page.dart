@@ -1822,6 +1822,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             'resolved_at': comment['resolved_at'],
             'resolver_name': comment['resolver_name'],
             'replies': comment['replies'] ?? [],
+            'reactions': comment['reactions'] ?? [],
           });
         }
       });
@@ -10356,6 +10357,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ],
             ),
 
+          // Emoji reactions (for all comments - root and replies)
+          _buildCommentReactions(comment),
+
           // Replies section
           if (replies.isNotEmpty && !isReply) ...[
             const SizedBox(height: 12),
@@ -10366,6 +10370,98 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ],
       ),
     );
+  }
+
+  static const List<String> _reactionEmojis = ['👍', '👎', '👀', '❤️', '😄', '😕', '🎉'];
+
+  Widget _buildCommentReactions(Map<String, dynamic> comment) {
+    final reactions = (comment['reactions'] as List<dynamic>?) ?? [];
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          // Display existing reactions
+          ...reactions.map<Widget>((r) {
+            final emoji = r['emoji']?.toString() ?? '';
+            final count = (r['count'] as num?)?.toInt() ?? 0;
+            final reactedByMe = r['reacted_by_me'] == true;
+            if (emoji.isEmpty || count == 0) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: InkWell(
+                onTap: () => _toggleReaction(comment['id'], emoji),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: reactedByMe
+                        ? const Color(0xFF00BCD4).withOpacity(0.2)
+                        : Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                    border: reactedByMe
+                        ? Border.all(color: const Color(0xFF00BCD4), width: 1)
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(emoji, style: const TextStyle(fontSize: 14)),
+                      if (count > 1) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          count.toString(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+          // Add reaction button
+          PopupMenuButton<String>(
+            padding: EdgeInsets.zero,
+            offset: const Offset(0, -120),
+            icon: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Icon(Icons.add_reaction_outlined, size: 18, color: Colors.grey[600]),
+            ),
+            onSelected: (emoji) => _toggleReaction(comment['id'], emoji),
+            itemBuilder: (context) => _reactionEmojis
+                .map((emoji) => PopupMenuItem<String>(
+                      value: emoji,
+                      child: Text(emoji, style: const TextStyle(fontSize: 20)),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleReaction(dynamic commentId, String emoji) async {
+    final id = commentId is int ? commentId : int.tryParse(commentId?.toString() ?? '');
+    if (id == null) return;
+    final token = await _getAuthToken();
+    if (token == null) return;
+    final result = await ApiService.toggleCommentReaction(
+      token: token,
+      commentId: id,
+      emoji: emoji,
+    );
+    if (result != null && _savedProposalId != null && mounted) {
+      await _loadCommentsFromDatabase(_savedProposalId!);
+    }
   }
 
   void _showPreview() {
