@@ -799,6 +799,24 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return ClientOnboardingPage(token: onboardingToken);
     }
 
+    // Check for email verification URL (from Google sign-up verification link)
+    final isVerifyEmail = currentUrl.contains('verify-email') ||
+        uri.path.contains('verify-email') ||
+        hash.contains('verify-email');
+    String? verifyToken = uri.queryParameters['token'];
+    if ((verifyToken == null || verifyToken.isEmpty) && hash.contains('token=')) {
+      final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+      if (hashMatch != null) verifyToken = hashMatch.group(1);
+    }
+    if ((verifyToken == null || verifyToken.isEmpty) && currentUrl.contains('token=')) {
+      final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+      if (urlMatch != null) verifyToken = urlMatch.group(1);
+    }
+    if (isVerifyEmail && verifyToken != null && verifyToken.isNotEmpty) {
+      print('✅ Detected verify-email URL - showing EmailVerificationPage');
+      return EmailVerificationPage(token: verifyToken);
+    }
+
     // Check for client proposals URL (priority - must be before collaboration check)
     final isClientProposals = currentUrl.contains('/client/proposals') ||
         hash.contains('/client/proposals') ||

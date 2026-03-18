@@ -41,7 +41,8 @@ def _select_firebase_user(cursor, email, uid):
     # 1) Preferred path: exact firebase UID match
     try:
         cursor.execute(
-            '''SELECT id, username, email, full_name, role, department, is_active
+            '''SELECT id, username, email, full_name, role, department, is_active,
+                      COALESCE(is_email_verified, true)
                FROM users
                WHERE firebase_uid = %s
                ORDER BY
@@ -65,7 +66,8 @@ def _select_firebase_user(cursor, email, uid):
     # 2) Fallback path: email (prefer rows already linked to a firebase_uid)
     try:
         cursor.execute(
-            '''SELECT id, username, email, full_name, role, department, is_active
+            '''SELECT id, username, email, full_name, role, department, is_active,
+                      COALESCE(is_email_verified, true)
                FROM users
                WHERE email = %s
                ORDER BY
@@ -86,17 +88,32 @@ def _select_firebase_user(cursor, email, uid):
         )
         return cursor.fetchone()
     except psycopg2.ProgrammingError:
-        # Column fallback for very old schema
+        # Column fallback for very old schema (no is_email_verified or firebase_uid)
         cursor.connection.rollback()
-        cursor.execute(
-            '''SELECT id, username, email, full_name, role, department, is_active
-               FROM users
-               WHERE email = %s
-               ORDER BY id DESC
-               LIMIT 1''',
-            (email,)
-        )
-        return cursor.fetchone()
+        try:
+            cursor.execute(
+                '''SELECT id, username, email, full_name, role, department, is_active, true
+                   FROM users
+                   WHERE email = %s
+                   ORDER BY id DESC
+                   LIMIT 1''',
+                (email,)
+            )
+            return cursor.fetchone()
+        except psycopg2.ProgrammingError:
+            cursor.connection.rollback()
+            cursor.execute(
+                '''SELECT id, username, email, full_name, role, department, is_active
+                   FROM users
+                   WHERE email = %s
+                   ORDER BY id DESC
+                   LIMIT 1''',
+                (email,)
+            )
+            row = cursor.fetchone()
+            if row and len(row) == 7:
+                return row + (True,)  # Append is_email_verified=True for old schema
+            return row
 
 # Initialize Firebase on module load (with error handling to prevent import failures)
 try:
@@ -112,24 +129,44 @@ except Exception as e:
     print(f"[AUTH] Stack trace: {traceback.format_exc()}")
     print("[AUTH]    Firebase authentication features may not be available until Firebase is properly configured.")
 
-def generate_verification_token(user_id, email):
-    """Generate a verification token for email verification and store in database"""
+def _insert_verification_token(cursor, user_id, email):
+    """Insert verification token using given cursor (same transaction as user insert).
+    Returns the token string. Caller must commit."""
     import secrets
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
-    
-    conn = _pg_conn()
+    cursor.execute(
+        '''UPDATE user_email_verification_tokens 
+           SET used_at = CURRENT_TIMESTAMP 
+           WHERE user_id = %s AND used_at IS NULL''',
+        (user_id,)
+    )
+    cursor.execute(
+        '''INSERT INTO user_email_verification_tokens (user_id, token, email, expires_at)
+           VALUES (%s, %s, %s, %s)''',
+        (user_id, token, email, expires_at)
+    )
+    return token
+
+
+def generate_verification_token(user_id, email, conn=None):
+    """Generate a verification token for email verification and store in database.
+    If cursor is provided, use it (same transaction - no commit). Otherwise use own connection."""
+    import secrets
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+
+    own_conn = conn is None
+    if own_conn:
+        conn = _pg_conn()
     cursor = conn.cursor()
     try:
-        # Invalidate any existing unused tokens for this user
         cursor.execute(
             '''UPDATE user_email_verification_tokens 
                SET used_at = CURRENT_TIMESTAMP 
                WHERE user_id = %s AND used_at IS NULL''',
             (user_id,)
         )
-        
-        # Insert new token
         cursor.execute(
             '''INSERT INTO user_email_verification_tokens (user_id, token, email, expires_at)
                VALUES (%s, %s, %s, %s)''',
@@ -137,8 +174,8 @@ def generate_verification_token(user_id, email):
         )
         conn.commit()
     finally:
-        release_pg_conn(conn)
-    
+        if own_conn:
+            release_pg_conn(conn)
     return token
 
 @bp.post("/register")
@@ -204,10 +241,9 @@ def register():
                     raise
             
             user_id = cursor.fetchone()[0]
+            # Insert token in SAME transaction (before commit) so FK sees user
+            verification_token = _insert_verification_token(cursor, user_id, email)
             conn.commit()
-            
-            # Generate verification token and send email
-            verification_token = generate_verification_token(user_id, email)
             email_sent = send_verification_email(email, verification_token, username)
             
             if not email_sent:
@@ -529,6 +565,18 @@ def firebase_auth():
                 user_id = user[0]
                 username = user[1]
                 user_role = user[4]  # Get role from database
+                is_email_verified = user[7] if len(user) > 7 else True  # COALESCE default true
+
+                # Google sign-up: require email verification before full auth
+                if not is_email_verified:
+                    print(f'🔍 Login: User {email} not yet verified - sending verification_pending')
+                    verification_token = generate_verification_token(user_id, email)
+                    send_verification_email(email, verification_token, username)
+                    return {
+                        'verification_pending': True,
+                        'email': email,
+                        'detail': 'Please verify your email. A new verification link has been sent.'
+                    }, 200
 
                 # Normalize role: map variations to standardized roles
                 # Supported normalized roles: 'admin', 'manager', 'finance_manager'
@@ -576,6 +624,16 @@ def firebase_auth():
                     user_id = user[0]
                     username = user[1]
                     user_role = user[4]
+                    is_email_verified = user[7] if len(user) > 7 else True
+                    if not is_email_verified:
+                        print(f'🔍 Login (post-lock): User {email} not yet verified - sending verification_pending')
+                        verification_token = generate_verification_token(user_id, email)
+                        send_verification_email(email, verification_token, username)
+                        return {
+                            'verification_pending': True,
+                            'email': email,
+                            'detail': 'Please verify your email. A new verification link has been sent.'
+                        }, 200
                     normalized_role = _normalize_role(user_role, default='manager')
                     if normalized_role == 'manager' and (user_role or '').strip():
                         print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
@@ -630,11 +688,12 @@ def firebase_auth():
                 # Just store a deterministic non-null string to satisfy NOT NULL constraint.
                 dummy_password_hash = f"firebase:{uid}:{email}"
 
+                # Google sign-up: require email verification - set is_email_verified = False
                 cursor.execute(
                     '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
                        VALUES (%s, %s, %s, %s, %s, %s, %s)
                        RETURNING id, username, email, full_name, role, department, is_active''',
-                    (username, email, dummy_password_hash, name, role_to_use, True, firebase_user.get('email_verified', False))
+                    (username, email, dummy_password_hash, name, role_to_use, True, False)
                 )
                 user = cursor.fetchone()
                 user_id = user[0]
@@ -648,25 +707,21 @@ def firebase_auth():
                 except psycopg2.ProgrammingError:
                     # Column doesn't exist, that's okay
                     pass
-                
+
+                # Insert verification token in SAME transaction (before commit) so FK sees user
+                verification_token = _insert_verification_token(cursor, user_id, email)
                 conn.commit()
 
-                # Generate backend auth token for this new user using legacy token system
-                backend_token = generate_token(user[1])
-                save_tokens(get_valid_tokens())
+                # Send verification email - user must verify before full auth
+                email_sent = send_verification_email(email, verification_token, username)
+                if not email_sent:
+                    print(f'[WARN] Failed to send verification email to {email}, but user was created')
                 
                 return {
-                    'token': id_token,  # Return Firebase token for frontend
-                    'backend_token': backend_token,
-                    'user': {
-                        'id': user[0],
-                        'username': user[1],
-                        'email': user[2],
-                        'full_name': user[3],
-                        'role': user[4],
-                        'department': user[5],
-                        'firebase_uid': uid
-                    }
+                    'verification_pending': True,
+                    'email': email,
+                    'detail': 'Please check your email and click the verification link to complete registration.',
+                    'email_sent': email_sent
                 }, 201  # Created
         finally:
             release_pg_conn(conn)
@@ -992,6 +1047,14 @@ def verify_email():
             
             print(f"[VERIFY] ✅ Email verified successfully for user_id: {user_id}, email: {email}")
             
+            # Fetch full user for auth response
+            cursor.execute(
+                '''SELECT id, username, email, full_name, role, department
+                   FROM users WHERE id = %s''',
+                (user_id,)
+            )
+            user_row = cursor.fetchone()
+            
             # Return HTML for GET requests (from email link), JSON for POST
             if request.method == 'GET':
                 from api.utils.helpers import get_frontend_url
@@ -1064,6 +1127,26 @@ def verify_email():
                 """
                 from flask import Response
                 return Response(html_response, mimetype='text/html'), 200
+            
+            # POST (from frontend): return auth token + user so user can be logged in
+            if user_row:
+                uid, username, user_email, full_name, role, department = user_row
+                normalized_role = _normalize_role(role, default='manager')
+                backend_token = generate_token(username)
+                save_tokens(get_valid_tokens())
+                return {
+                    'detail': 'Email verified successfully',
+                    'email': email,
+                    'token': backend_token,
+                    'user': {
+                        'id': uid,
+                        'username': username,
+                        'email': user_email,
+                        'full_name': full_name,
+                        'role': normalized_role,
+                        'department': department,
+                    }
+                }, 200
             
             return {
                 'detail': 'Email verified successfully',
