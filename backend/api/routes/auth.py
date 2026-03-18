@@ -217,6 +217,7 @@ def register():
                     ''')
                     conn.commit()
             except Exception as e:
+                conn.rollback()
                 print(f"[WARN] Could not check/add is_email_verified column: {e}")
             
             # Insert user with email not verified
@@ -698,15 +699,18 @@ def firebase_auth():
                 user = cursor.fetchone()
                 user_id = user[0]
                 
-                # Try to add firebase_uid if column exists
+                # Try to add firebase_uid if column exists (use savepoint so failure doesn't abort transaction)
                 try:
+                    cursor.execute('SAVEPOINT sp_firebase_uid')
                     cursor.execute(
                         '''UPDATE users SET firebase_uid = %s WHERE id = %s''',
                         (uid, user_id)
                     )
                 except psycopg2.ProgrammingError:
-                    # Column doesn't exist, that's okay
-                    pass
+                    cursor.execute('ROLLBACK TO SAVEPOINT sp_firebase_uid')
+                except Exception:
+                    cursor.execute('ROLLBACK TO SAVEPOINT sp_firebase_uid')
+                    raise
 
                 # Insert verification token in SAME transaction (before commit) so FK sees user
                 verification_token = _insert_verification_token(cursor, user_id, email)
@@ -771,6 +775,10 @@ def firebase_auth():
                 pass
             raise
         finally:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             release_pg_conn(conn)
             
     except Exception as e:

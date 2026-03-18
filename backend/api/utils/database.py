@@ -167,10 +167,11 @@ def release_pg_conn(conn):
         if conn:
             # Check if connection is still valid and reset its state before returning to pool
             try:
-                # Check if connection is in a transaction and rollback if needed
-                import psycopg2.extensions
-                if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+                # Always rollback unconditionally - clears aborted transactions and is safe when idle
+                try:
                     conn.rollback()
+                except Exception:
+                    pass  # If rollback fails, connection may be corrupted; we'll close it below
                 
                 # Reset autocommit to default state (False)
                 conn.autocommit = False
