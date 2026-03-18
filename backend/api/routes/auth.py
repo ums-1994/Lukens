@@ -723,6 +723,53 @@ def firebase_auth():
                     'detail': 'Please check your email and click the verification link to complete registration.',
                     'email_sent': email_sent
                 }, 201  # Created
+        except psycopg2.IntegrityError:
+            # User already exists (e.g. registered with email/password) - treat as login
+            conn.rollback()
+            try:
+                user = _select_firebase_user(cursor, email, uid)
+                if user:
+                    user_id, username, user_role = user[0], user[1], user[4]
+                    is_email_verified = user[7] if len(user) > 7 else True
+                    if not is_email_verified:
+                        verification_token = generate_verification_token(user_id, email)
+                        send_verification_email(email, verification_token, username)
+                        return {
+                            'verification_pending': True,
+                            'email': email,
+                            'detail': 'Please verify your email. A new verification link has been sent.'
+                        }, 200
+                    normalized_role = _normalize_role(user_role, default='manager')
+                    try:
+                        cursor.execute(
+                            '''UPDATE users SET firebase_uid = %s WHERE id = %s''',
+                            (uid, user_id)
+                        )
+                        conn.commit()
+                    except psycopg2.ProgrammingError:
+                        conn.rollback()
+                    backend_token = generate_token(username)
+                    save_tokens(get_valid_tokens())
+                    return {
+                        'token': id_token,
+                        'backend_token': backend_token,
+                        'user': {
+                            'id': user[0], 'username': user[1], 'email': user[2],
+                            'full_name': user[3], 'role': normalized_role,
+                            'department': user[5], 'firebase_uid': uid
+                        }
+                    }, 200
+            except Exception as inner_e:
+                conn.rollback()
+                print(f'Firebase auth IntegrityError fallback failed: {inner_e}')
+                traceback.print_exc()
+                return {'detail': 'Account exists with this email. Please sign in instead.'}, 400
+        except Exception as inner_e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
         finally:
             release_pg_conn(conn)
             
