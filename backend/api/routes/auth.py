@@ -466,7 +466,7 @@ def firebase_auth():
         id_token = data.get('idToken') or data.get('id_token')
         if not id_token:
             return {'detail': 'Firebase ID token required'}, 400
-        
+
         # Get role from request (for new registrations and potential upgrades)
         requested_role = data.get('role', 'user')
 
@@ -474,12 +474,12 @@ def firebase_auth():
         decoded_token = verify_firebase_token(id_token)
         if not decoded_token:
             return {'detail': 'Invalid or expired Firebase token'}, 401
-
+        
         # Extract user info from Firebase token
         firebase_user = get_user_from_token(decoded_token)
         if not firebase_user:
             return {'detail': 'Could not extract user information from token'}, 401
-
+        
         uid = firebase_user['uid']
         email = firebase_user['email']
         name = firebase_user.get('name') or email.split('@')[0]  # Use email prefix if no name

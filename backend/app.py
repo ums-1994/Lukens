@@ -66,10 +66,15 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
 from api.utils.ai_safety import AISafetyError
-from api.utils.database import get_db_connection, init_database
+from api.utils.decorators import token_required as firebase_token_required
+try:
+    from hf_ai_assistant_service import HFAIAssistantError
+except ImportError:
+    HFAIAssistantError = type("HFAIAssistantError", (Exception,), {})  # no-op if module missing
 
 # Load environment variables
 load_dotenv(dotenv_path=Path(__file__).resolve().with_name('.env'), override=True)
@@ -108,17 +113,7 @@ CORS(
     app,
     origins=_cors_origins,
     supports_credentials=True,
-    allow_headers=[
-        "Content-Type",
-        "Authorization",
-        "X-Requested-With",
-        "Accept",
-        "X-Client-Device-Id",
-        "X-Client-Session-Token",
-        "X-Client-Session-Id",
-        "X-Client-Device-Name",
-        "X-Device-Id",
-    ],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
     methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
     expose_headers=["Content-Type", "Authorization"],
 )
@@ -131,12 +126,10 @@ from api.routes.shared import bp as shared_bp
 from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
-from api.routes.client import bp as client_portal_bp
 from api.routes.approver import bp as approver_bp
 from api.routes.cycle_time import bp as cycle_time_bp
 from api.routes.pipeline import bp as pipeline_bp
 from api.routes.risk_gate import bp as risk_gate_bp
-from api.routes.content_modules import bp as content_modules_bp
 from api.routes.finance_export import bp as finance_export_bp
 from api.routes.finance_audit import bp as finance_audit_bp
 from api.routes.finance_analytics import bp as finance_analytics_bp
@@ -148,12 +141,10 @@ app.register_blueprint(shared_bp, url_prefix='/api')
 app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
-app.register_blueprint(client_portal_bp)
 app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp)
-app.register_blueprint(content_modules_bp, url_prefix='/api')
 app.register_blueprint(finance_export_bp, url_prefix='/api')
 app.register_blueprint(finance_audit_bp, url_prefix='/api')
 app.register_blueprint(finance_analytics_bp, url_prefix='/api')
@@ -180,22 +171,12 @@ def handle_options_preflight(remaining=None):
     if origin:
         resp.headers['Access-Control-Allow-Origin'] = origin
     resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
-    resp.headers['Access-Control-Allow-Headers'] = (
-        'Content-Type, Authorization, X-Requested-With, Accept, '
-        'X-Client-Device-Id, X-Client-Session-Token, X-Client-Session-Id, X-Client-Device-Name, X-Device-Id'
-    )
+    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
     return resp
 
-# Wrap Flask app with ASGI adapter for Uvicorn compatibility.
-# Prefer Starlette's WSGIMiddleware to avoid asgiref's thread-sensitive deadlock
-# in local/dev environments under concurrent requests.
-try:
-    from starlette.middleware.wsgi import WSGIMiddleware  # type: ignore
-
-    asgi_app = WSGIMiddleware(app)
-except Exception:
-    asgi_app = WsgiToAsgi(app)
+# Wrap Flask app with ASGI adapter for Uvicorn compatibility
+asgi_app = WsgiToAsgi(app)
 
 # Mark if database has been initialized
 _db_initialized = False
@@ -407,8 +388,19 @@ def release_pg_conn(conn):
     except Exception as e:
         print(f"[WARN] Error releasing PostgreSQL connection: {e}")
 
-# Context manager for automatic connection cleanup - use shared pool from api.utils.database
-# get_db_connection is imported from api.utils.database above so all routes use the same DB.
+# Context manager for automatic connection cleanup
+from contextlib import contextmanager
+
+@contextmanager
+def get_db_connection():
+    """Context manager that ensures connections are always returned to pool"""
+    conn = None
+    try:
+        conn = _pg_conn()
+        yield conn
+    finally:
+        if conn:
+            release_pg_conn(conn)
 
 # Token for encryption
 ENCRYPTION_KEY = os.getenv('ENCRYPTION_KEY', 'dev-key-change-in-production')
@@ -859,7 +851,7 @@ def init_db():
         if _db_initialized:
             return
         print("[*] Initializing PostgreSQL schema (no request context)...")
-        init_database()
+        init_pg_schema()
         _db_initialized = True
         print("[OK] Database schema initialized successfully")
         return
@@ -867,32 +859,12 @@ def init_db():
     # which will cause browsers to block the request due to failed preflight.
     if request.method == 'OPTIONS':
         return {}, 200
-
-    # In dev mode you may want to exercise certain endpoints (like /api/firebase)
-    # without a live PostgreSQL database. When the flag below is set, we skip all
-    # DB initialization work for those endpoints so the request can succeed using
-    # in-memory or file-based auth only.
-    if (
-        os.getenv("DEV_BYPASS_DB_FOR_FIREBASE", "false").lower() == "true"
-        and request.path.startswith("/api/firebase")
-    ):
-        return
-
-    # In dev mode you may bypass the content DB entirely. If so, don't run
-    # schema init work for /api/content, otherwise ASGI can still deadlock
-    # before the route handler short-circuits.
-    if (
-        os.getenv("DEV_BYPASS_DB_FOR_CONTENT", "false").lower() == "true"
-        and request.path.startswith("/api/content")
-    ):
-        return
-
     if _db_initialized:
         return
     
     try:
         print("[*] Initializing PostgreSQL schema...")
-        init_database()
+        init_pg_schema()
         _db_initialized = True
         print("[OK] Database schema initialized successfully")
     except Exception as e:
@@ -1548,10 +1520,51 @@ def verify_token(token):
 
 
 def send_email(to_email, subject, html_content):
-    """Send email using the shared email utility (SMTP/SendGrid + From sanitization)."""
-    from api.utils.email import send_email as _send_email
-
-    return _send_email(to_email, subject, html_content)
+    """Send email using SMTP"""
+    try:
+        print(f"[EMAIL] Attempting to send email to {to_email}")
+        
+        smtp_host = os.getenv('SMTP_HOST')
+        smtp_port = int(os.getenv('SMTP_PORT', '587'))
+        smtp_user = os.getenv('SMTP_USER')
+        smtp_pass = os.getenv('SMTP_PASS')
+        smtp_from_email = os.getenv('SMTP_FROM_EMAIL', smtp_user)
+        smtp_from_name = os.getenv('SMTP_FROM_NAME', 'Khonology')
+        
+        print(f"[EMAIL] SMTP Config - Host: {smtp_host}, Port: {smtp_port}, User: {smtp_user}")
+        print(f"[EMAIL] From: {smtp_from_name} <{smtp_from_email}>")
+        
+        if not all([smtp_host, smtp_user, smtp_pass]):
+            print(f"[ERROR] SMTP configuration incomplete")
+            print(f"[ERROR] Missing: Host={smtp_host}, User={smtp_user}, Pass={'SET' if smtp_pass else 'NOT SET'}")
+            return False
+        
+        # Create message
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = f"{smtp_from_name} <{smtp_from_email}>"
+        msg['To'] = to_email
+        
+        # Attach HTML content
+        html_part = MIMEText(html_content, 'html')
+        msg.attach(html_part)
+        
+        # Send email
+        print(f"[EMAIL] Connecting to SMTP server...")
+        with smtplib.SMTP(smtp_host, smtp_port) as server:
+            print(f"[EMAIL] Starting TLS...")
+            server.starttls()
+            print(f"[EMAIL] Logging in...")
+            server.login(smtp_user, smtp_pass)
+            print(f"[EMAIL] Sending message...")
+            server.send_message(msg)
+        
+        print(f"[SUCCESS] Email sent to {to_email}")
+        return True
+    except Exception as e:
+        print(f"[ERROR] Error sending email: {e}")
+        traceback.print_exc()
+        return False
 
 
 def send_password_reset_email(email, reset_token):
@@ -1817,13 +1830,8 @@ def get_user_profile(username):
 
 @app.get("/api/content")
 @app.get("/content")
-@token_required
-def get_content(username):
-    # In dev mode you can bypass the content DB entirely to avoid
-    # ASGI deadlock issues and still exercise the UI.
-    if os.getenv("DEV_BYPASS_DB_FOR_CONTENT", "false").lower() == "true":
-        return {"content": []}, 200
-
+@firebase_token_required
+def get_content(username=None):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -3009,8 +3017,8 @@ def get_version(username, proposal_id, version_number):
 # ============================================================
 
 @app.post("/ai/generate")
-@token_required
-def ai_generate_content(username):
+@firebase_token_required
+def ai_generate_content(username=None):
     """Generate proposal content using AI"""
     import time
     start_time = time.time()
@@ -3059,13 +3067,25 @@ def ai_generate_content(username):
             'section_type': section_type
         }, 200
         
+    except HFAIAssistantError as e:
+        print(f"❌ HF AI Assistant error: {e}")
+        body = {"detail": str(e)}
+        if getattr(e, "reasons", None):
+            body["reasons"] = e.reasons
+        status = 401 if getattr(e, "status_code", None) == 401 else 400
+        return body, status
     except Exception as e:
         print(f"❌ Error generating AI content: {e}")
-        return {'detail': str(e)}, 500
+        detail = str(e)
+        if "rate limit" in detail.lower() or "429" in detail:
+            return {'detail': detail}, 503
+        if "temporarily unavailable" in detail.lower() or "server error" in detail.lower():
+            return {'detail': detail}, 503
+        return {'detail': detail}, 500
 
 @app.post("/ai/improve")
-@token_required
-def ai_improve_content(username):
+@firebase_token_required
+def ai_improve_content(username=None):
     """Improve existing content using AI"""
     import time
     start_time = time.time()
@@ -3105,16 +3125,26 @@ def ai_improve_content(username):
         
     except AISafetyError as e:
         return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
+    except HFAIAssistantError as e:
+        print(f"❌ HF AI Assistant error: {e}")
+        body = {"detail": str(e), "blocked": bool(getattr(e, "reasons", None))}
+        if getattr(e, "reasons", None):
+            body["reasons"] = e.reasons
+        status = 401 if getattr(e, "status_code", None) == 401 else 400
+        return body, status
     except Exception as e:
         print(f"❌ Error improving content: {e}")
+        detail = str(e)
+        if "rate limit" in detail.lower() or "429" in detail:
+            return {"detail": detail, "blocked": False}, 503
         return {
             "detail": "Upstream AI provider error",
             "blocked": False,
         }, 502
 
 @app.post("/ai/generate-full-proposal")
-@token_required
-def ai_generate_full_proposal(username):
+@firebase_token_required
+def ai_generate_full_proposal(username=None):
     """Generate a complete multi-section proposal"""
     import time
     start_time = time.time()
@@ -3166,7 +3196,10 @@ def ai_generate_full_proposal(username):
         
     except Exception as e:
         print(f"❌ Error generating full proposal: {e}")
-        return {'detail': str(e)}, 500
+        detail = str(e)
+        if "rate limit" in detail.lower() or "429" in detail:
+            return {'detail': detail}, 503
+        return {'detail': detail}, 500
 
 @app.post("/ai/analyze-risks")
 @token_required
@@ -4360,57 +4393,127 @@ def client_upload_signed_physical(proposal_id):
 @app.get("/api/client/proposals")
 def get_client_proposals():
     """Get all proposals for a client using their access token"""
-    # Delegate to the client portal blueprint implementation so
-    # identity verification + device-session OTP gating is enforced.
-    from api.routes.client import get_client_proposals as _gated_get_client_proposals
+    try:
+        token = request.args.get('token')
+        if not token:
+            return {'detail': 'Access token required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    return _gated_get_client_proposals()
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return [
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                ]
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+            
+            # Get invitation details to find client email
+            inv_cols = _get_table_columns('collaboration_invitations')
+            inv_email_col = _pick_first(inv_cols, ['invited_email', 'invitee_email', 'email', 'client_email'])
+            expires_col = _pick_first(inv_cols, ['expires_at'])
+            token_col = _pick_first(inv_cols, ['access_token', 'token'])
+
+            if not inv_email_col:
+                return {'detail': 'Collaboration invitations schema missing email column'}, 500
+            if not token_col:
+                return {'detail': 'Collaboration invitations schema missing token column'}, 500
+
+            expires_select = f", {expires_col}" if expires_col else ", NULL::timestamp as expires_at"
+            cursor.execute(
+                f"""
+                SELECT {inv_email_col} AS invited_email{expires_select}
+                FROM collaboration_invitations
+                WHERE {token_col} = %s
+                """,
+                (token,),
+            )
+            
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+            
+            # Check if expired
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'Access token has expired'}, 403
+            
+            client_email = invitation['invited_email']
+            
+            # Get all proposals for this client email
+            prop_cols = _get_table_columns('proposals')
+            client_col = 'client' if 'client' in prop_cols else ('client_name' if 'client_name' in prop_cols else None)
+            client_select = f"p.{client_col}" if client_col else "NULL::text"
+            client_email_col = 'client_email' if 'client_email' in prop_cols else None
+
+            if not client_email_col:
+                return {'detail': 'Proposals schema missing client_email column'}, 500
+
+            cursor.execute(
+                f"""
+                SELECT p.id, p.title, p.status, p.created_at, p.updated_at, {client_select} AS client, p.{client_email_col} AS client_email
+                FROM proposals p
+                WHERE p.{client_email_col} = %s
+                ORDER BY p.updated_at DESC
+                """,
+                (client_email,),
+            )
+            
+            proposals = cursor.fetchall()
+            
+            return {
+                'client_email': client_email,
+                'proposals': [dict(p) for p in proposals]
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting client proposals: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
 
 @app.post('/api/client/session/start')
 def client_start_session():
-    """
-    Start a client session for time tracking.
-
-    The Flutter client portal calls /api/client/session/start, but the full
-    implementation lives in the client portal blueprint at /client/session/start.
-    We delegate so the returned session_id matches the DB schema (typically int).
-    """
     try:
-        from api.routes.client import start_client_session as _start_client_session
-        return _start_client_session()
+        data = request.get_json(silent=True) or {}
+        token = data.get('token')
+        proposal_id = data.get('proposal_id')
+        if not token:
+            return {'detail': 'Access token required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            try:
+                invitation, err_body, err_code = _client_get_invitation_by_token(cursor, token)
+                if err_body:
+                    return err_body, err_code
+                invited_email = invitation.get('invited_email')
+            except Exception:
+                invited_email = None
+
+        session_id = secrets.token_urlsafe(12)
+        return {
+            'session_id': session_id,
+            'proposal_id': proposal_id,
+            'invited_email': invited_email,
+        }, 200
+
     except Exception as e:
-        # Never fail the UI for analytics.
         print(f"❌ Error starting client session: {e}")
-        traceback.print_exc()
-        data = request.get_json(silent=True) or {}
-        return {'message': 'ok', 'session_id': data.get('session_id')}, 200
-
-
-@app.post('/api/client/session/end')
-def client_end_session():
-    """
-    End a client session for analytics/time tracking.
-
-    NOTE: This endpoint exists because the Flutter client portal calls
-    /api/client/session/end. We keep this lightweight and resilient so it never
-    breaks the UI even if analytics tables are missing.
-    """
-    try:
-        data = request.get_json(silent=True) or {}
-        session_id = data.get('session_id')
-        if not session_id:
-            return {'detail': 'session_id required'}, 400
-
-        # Best-effort: delegate to blueprint implementation if available.
-        try:
-            from api.routes.client import end_client_session as _end_client_session
-            return _end_client_session()
-        except Exception:
-            # Never fail the UI for analytics.
-            return {'message': 'ok', 'session_id': session_id}, 200
-    except Exception as e:
-        print(f"❌ Error ending client session: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
@@ -4444,11 +4547,230 @@ def client_log_activity():
 @app.get("/api/client/proposals/<int:proposal_id>")
 def get_client_proposal_details(proposal_id):
     """Get detailed proposal information for client"""
-    # Delegate to the client portal blueprint implementation so
-    # identity verification + device-session OTP gating is enforced.
-    from api.routes.client import get_client_proposal_details as _gated_get_client_proposal_details
+    try:
+        token = request.args.get('token')
+        if not token:
+            return {'detail': 'Access token required'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    return _gated_get_client_proposal_details(proposal_id)
+            def _get_table_columns(table_name: str):
+                cursor.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = %s
+                    """,
+                    (table_name,),
+                )
+                cols = cursor.fetchall() or []
+                return [
+                    (c['column_name'] if isinstance(c, dict) else c[0])
+                    for c in cols
+                ]
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+            
+            # Verify token and get client email
+            inv_cols = _get_table_columns('collaboration_invitations')
+            inv_email_col = _pick_first(inv_cols, ['invited_email', 'invitee_email', 'email', 'client_email'])
+            expires_col = _pick_first(inv_cols, ['expires_at'])
+            token_col = _pick_first(inv_cols, ['access_token', 'token'])
+
+            if not inv_email_col:
+                return {'detail': 'Collaboration invitations schema missing email column'}, 500
+            if not token_col:
+                return {'detail': 'Collaboration invitations schema missing token column'}, 500
+
+            expires_select = f", {expires_col}" if expires_col else ", NULL::timestamp as expires_at"
+            cursor.execute(
+                f"""
+                SELECT {inv_email_col} AS invited_email{expires_select}
+                FROM collaboration_invitations
+                WHERE {token_col} = %s
+                """,
+                (token,),
+            )
+            
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+            
+            if invitation['expires_at'] and datetime.now() > invitation['expires_at']:
+                return {'detail': 'Access token has expired'}, 403
+            
+            prop_cols = _get_table_columns('proposals')
+            client_col = 'client' if 'client' in prop_cols else ('client_name' if 'client_name' in prop_cols else None)
+            client_select = f"p.{client_col}" if client_col else "NULL::text"
+            client_email_col = 'client_email' if 'client_email' in prop_cols else None
+            user_id_col = 'user_id' if 'user_id' in prop_cols else ('owner_id' if 'owner_id' in prop_cols else None)
+            user_id_select = f"p.{user_id_col}" if user_id_col else "NULL"
+
+            if not client_email_col:
+                return {'detail': 'Proposals schema missing client_email column'}, 500
+
+            def _get_column_data_type(table_name: str, column_name: str):
+                if not column_name:
+                    return None
+                cursor.execute(
+                    """
+                    SELECT data_type
+                    FROM information_schema.columns
+                    WHERE table_schema = 'public'
+                      AND table_name = %s
+                      AND column_name = %s
+                    """,
+                    (table_name, column_name),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                if isinstance(row, dict):
+                    return row.get('data_type')
+                return row[0]
+
+            if user_id_col == 'owner_id':
+                join_clause = "LEFT JOIN users u ON u.id = p.owner_id"
+            elif user_id_col == 'user_id':
+                user_id_type = (_get_column_data_type('proposals', 'user_id') or '').lower()
+                if user_id_type in ('integer', 'bigint', 'smallint'):
+                    join_clause = "LEFT JOIN users u ON u.id = p.user_id"
+                else:
+                    # In some schemas proposals.user_id stores the owner's username.
+                    join_clause = "LEFT JOIN users u ON u.username = p.user_id"
+            else:
+                join_clause = "LEFT JOIN users u ON 1=0"
+
+            # Get proposal details
+            cursor.execute(
+                f"""
+                SELECT p.id, p.title, p.content, p.status, p.created_at, p.updated_at,
+                       {client_select} AS client, p.{client_email_col} AS client_email, {user_id_select} AS user_id,
+                       u.full_name as owner_name, u.email as owner_email
+                FROM proposals p
+                {join_clause}
+                WHERE p.id = %s AND p.{client_email_col} = %s
+                """,
+                (proposal_id, invitation['invited_email']),
+            )
+            
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+            
+            # Get comments
+            cursor.execute("""
+                SELECT dc.id, dc.comment_text, dc.created_at, dc.created_by,
+                       u.full_name as created_by_name, u.email as created_by_email
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at DESC
+            """, (proposal_id,))
+            
+            comments = cursor.fetchall()
+            
+            # Get activity log (simplified - you can enhance this)
+            activity = [
+                {
+                    'action': 'Proposal Created',
+                    'description': f'Proposal was created by {proposal["owner_name"]}',
+                    'timestamp': proposal['created_at'].isoformat() if proposal['created_at'] else None
+                },
+                {
+                    'action': 'Sent to Client',
+                    'description': f'Proposal was sent to {(proposal.get("client") or proposal.get("client_name") or "the client")}',
+                    'timestamp': proposal['updated_at'].isoformat() if proposal['updated_at'] else None
+                }
+            ]
+
+            signature = None
+            try:
+                sig_cols = _get_table_columns('proposal_signatures')
+                if 'id' in sig_cols and 'proposal_id' in sig_cols:
+                    signed_url_col = (
+                        'signed_document_url'
+                        if 'signed_document_url' in sig_cols
+                        else ('signed_pdf_url' if 'signed_pdf_url' in sig_cols else None)
+                    )
+                    envelope_col = 'envelope_id' if 'envelope_id' in sig_cols else None
+                    status_col = 'status' if 'status' in sig_cols else None
+                    signing_url_col = 'signing_url' if 'signing_url' in sig_cols else None
+                    created_col = 'created_at' if 'created_at' in sig_cols else None
+                    signed_at_col = (
+                        'signed_at'
+                        if 'signed_at' in sig_cols
+                        else ('completed_at' if 'completed_at' in sig_cols else None)
+                    )
+
+                    select_bits = [
+                        'id',
+                        'proposal_id',
+                    ]
+                    if signed_url_col:
+                        select_bits.append(f"{signed_url_col} as signed_document_url")
+                    else:
+                        select_bits.append("NULL::text as signed_document_url")
+                    if envelope_col:
+                        select_bits.append(f"{envelope_col} as envelope_id")
+                    else:
+                        select_bits.append("NULL::text as envelope_id")
+                    if status_col:
+                        select_bits.append(f"{status_col} as status")
+                    else:
+                        select_bits.append("NULL::text as status")
+                    if signing_url_col:
+                        select_bits.append(f"{signing_url_col} as signing_url")
+                    else:
+                        select_bits.append("NULL::text as signing_url")
+                    if signed_at_col:
+                        select_bits.append(f"{signed_at_col} as signed_at")
+                    else:
+                        select_bits.append("NULL::timestamp as signed_at")
+                    if created_col:
+                        select_bits.append(f"{created_col} as created_at")
+                    else:
+                        select_bits.append("NOW() as created_at")
+
+                    cursor.execute(
+                        f"""
+                        SELECT {', '.join(select_bits)}
+                        FROM proposal_signatures
+                        WHERE proposal_id = %s
+                        ORDER BY COALESCE({signed_at_col or created_col or 'id'}, id) DESC
+                        LIMIT 1
+                        """,
+                        (proposal_id,),
+                    )
+                    sig_row = cursor.fetchone()
+                    if sig_row:
+                        signature = {
+                            'status': sig_row.get('status') or 'unknown',
+                            'envelope_id': sig_row.get('envelope_id'),
+                            'signing_url': sig_row.get('signing_url'),
+                            'signed_document_url': sig_row.get('signed_document_url'),
+                            'signed_at': sig_row.get('signed_at').isoformat() if sig_row.get('signed_at') else None,
+                        }
+            except Exception:
+                # If signature table/columns differ, don't break the client view.
+                signature = None
+            
+            return {
+                'proposal': dict(proposal),
+                'signature': signature,
+                'comments': [dict(c) for c in comments],
+                'activity': activity
+            }, 200
+            
+    except Exception as e:
+        print(f"❌ Error getting client proposal details: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
 @app.post("/api/client/proposals/<int:proposal_id>/comment")
 def add_client_comment(proposal_id):
@@ -4758,12 +5080,11 @@ def client_approve_proposal(proposal_id):
         return {'detail': str(e)}, 500
 
 
-@app.get("/api/client/proposals/<int:proposal_id>/get_signing_url")
 @app.post("/api/client/proposals/<int:proposal_id>/get_signing_url")
 def client_get_signing_url(proposal_id):
     try:
         data = request.get_json(silent=True) or {}
-        token = (data.get('token') if isinstance(data, dict) else None) or request.args.get('token')
+        token = data.get('token')
         if not token:
             return {'detail': 'Access token required'}, 400
 

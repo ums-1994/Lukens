@@ -7,6 +7,7 @@ import '../../api.dart';
 import '../../services/ai_analysis_service.dart';
 import '../../services/client_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
@@ -2038,6 +2039,57 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
+                                  // FEATURE 1: Generate button
+                                  TextButton.icon(
+                                    onPressed: () => _generateSectionContent(
+                                      moduleId,
+                                      module['name'] ?? 'Section',
+                                      controller,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.auto_awesome,
+                                      color: Color(0xFF9C27B0),
+                                    ),
+                                    label: Text(
+                                      'Generate',
+                                      style: PremiumTheme.bodyMedium.copyWith(
+                                        color: const Color(0xFF9C27B0),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // FEATURE 2: Improve button
+                                  TextButton.icon(
+                                    onPressed: controller.text
+                                            .trim()
+                                            .isEmpty
+                                        ? null
+                                        : () => _improveSectionContent(
+                                              moduleId,
+                                              module['name'] ?? 'Section',
+                                              controller,
+                                            ),
+                                    icon: Icon(
+                                      Icons.edit_note,
+                                      color: controller.text
+                                              .trim()
+                                              .isEmpty
+                                          ? Colors.grey
+                                          : PremiumTheme.teal,
+                                    ),
+                                    label: Text(
+                                      'Improve',
+                                      style:
+                                          PremiumTheme.bodyMedium.copyWith(
+                                        color: controller.text
+                                                .trim()
+                                                .isEmpty
+                                            ? Colors.grey
+                                            : PremiumTheme.teal,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
                                   TextButton.icon(
                                     onPressed: () =>
                                         _openContentLibraryAndInsert(moduleId),
@@ -3082,6 +3134,210 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         ),
       ),
     );
+  }
+
+  Future<void> _generateSectionContent(
+    String moduleId,
+    String sectionName,
+    TextEditingController controller,
+  ) async {
+    try {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✨ Generating content...'),
+          duration: Duration(minutes: 5),
+        ),
+      );
+
+      final token = AuthService.token;
+      if (token == null) throw Exception('Not authenticated');
+
+      final contextPayload = {
+        'proposal_title': _formData['proposalTitle'] ?? '',
+        'client_name': _formData['clientName'] ?? '',
+        'opportunity': _formData['opportunityName'] ?? '',
+        'project_type': _formData['projectType'] ?? '',
+      };
+
+      final result = await ApiService.generateAIContent(
+        token: token,
+        prompt:
+            'Generate content for the "$sectionName" section of a proposal about ${_formData['proposalTitle'] ?? ''}',
+        context: contextPayload,
+        sectionType: 'proposal_section',
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+
+      if (result == null || result['content'] == null) {
+        throw Exception('AI returned empty content');
+      }
+
+      controller.text = (result['content'] as String).trim();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Content generated'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  Future<void> _improveSectionContent(
+    String moduleId,
+    String sectionName,
+    TextEditingController controller,
+  ) async {
+    try {
+      if (controller.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please add content before improving'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Color(0xFF9C27B0),
+                ),
+              ),
+              SizedBox(height: 16),
+              Text('Improving content...'),
+            ],
+          ),
+        ),
+      );
+
+      final token = AuthService.token;
+      if (token == null) throw Exception('Not authenticated');
+
+      final result = await ApiService.improveContent(
+        token: token,
+        content: controller.text,
+        sectionType: 'proposal_section',
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // close loading dialog
+
+      if (result == null || result['improved_version'] == null) {
+        throw Exception('Failed to improve content');
+      }
+
+      final improvedText = result['improved_version'] as String;
+      final summary = result['summary'] as String? ?? '';
+
+      final approved = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Improved Content'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (summary.isNotEmpty) ...[
+                  const Text(
+                    'Changes:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    summary,
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  SizedBox(height: 16),
+                  Divider(),
+                  SizedBox(height: 16),
+                ],
+                const Text(
+                  'Improved Text:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    improvedText,
+                    style: const TextStyle(fontSize: 12, height: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF9C27B0),
+              ),
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      );
+
+      if (approved == true) {
+        controller.text = improvedText;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Content improved'),
+              backgroundColor: Color(0xFF2ECC71),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 
   Widget _buildTextField(

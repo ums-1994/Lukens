@@ -3163,11 +3163,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
       print('⚠️ Error saving comment to database: $e');
       if (mounted) {
+        final message = e.toString();
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not post comment. Try again.'),
+          SnackBar(
+            content: Text(
+              message.isNotEmpty
+                  ? message
+                  : 'Could not post comment. Try again.',
+            ),
             backgroundColor: Colors.red,
-            duration: Duration(seconds: 4),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -6075,17 +6080,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           const SizedBox(width: 24),
           // Price
-          Row(
-            children: [
-              Text(
-                '${_getCurrencySymbol()} ',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A1A),
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${_getCurrencySymbol()} ',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A1A),
+                  ),
                 ),
-              ),
-              SizedBox(
+                SizedBox(
                 width: 80,
                 child: isFinanceRole
                     ? Container(
@@ -6150,8 +6157,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           ),
                         ),
                       ),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 16),
           // Save status with version info

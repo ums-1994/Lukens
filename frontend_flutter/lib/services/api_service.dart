@@ -730,6 +730,7 @@ class ApiService {
     String sectionType = 'general',
   }) async {
     try {
+      // Security-safe path: call our own backend, which holds the HF key server-side.
       final response = await http.post(
         Uri.parse('$baseUrl/ai/generate'),
         headers: _getHeaders(token),
@@ -741,14 +742,40 @@ class ApiService {
       );
 
       if (response.statusCode == 200) {
-        return json.decode(response.body);
+        final Map<String, dynamic> data = json.decode(response.body);
+
+        // If talking directly to the HF Flask backend, it returns:
+        // { success: bool, generated_text: string, error?: string }
+        if (data.containsKey('success')) {
+          final success = data['success'] == true;
+          if (success) {
+            final generated = data['generated_text'] ?? data['content'] ?? '';
+            return {
+              'content': generated,
+              ...data,
+            };
+          } else {
+            final err = data['error']?.toString() ?? 'Unknown backend error';
+            print('Backend Error (HF Assistant): $err');
+            throw Exception(err);
+          }
+        }
+
+        // Legacy path: our own backend returns { content, section_type, ... }.
+        return data;
       }
-      print(
-          'Error generating AI content: ${response.statusCode} - ${response.body}');
-      return null;
+      String detail = 'Error generating AI content';
+      try {
+        final body = json.decode(response.body);
+        if (body is Map && body['detail'] != null) {
+          detail = body['detail'].toString();
+        }
+      } catch (_) {}
+      print('Error generating AI content: ${response.statusCode} - $detail');
+      throw Exception(detail);
     } catch (e) {
       print('Error generating AI content: $e');
-      return null;
+      rethrow;
     }
   }
 
@@ -861,12 +888,18 @@ class ApiService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
-      print(
-          'Error generating full proposal: ${response.statusCode} - ${response.body}');
-      return null;
+      String detail = 'Error generating full proposal';
+      try {
+        final body = json.decode(response.body);
+        if (body is Map && body['detail'] != null) {
+          detail = body['detail'].toString();
+        }
+      } catch (_) {}
+      print('Error generating full proposal: ${response.statusCode} - $detail');
+      throw Exception(detail);
     } catch (e) {
       print('Error generating full proposal: $e');
-      return null;
+      rethrow;
     }
   }
 }
