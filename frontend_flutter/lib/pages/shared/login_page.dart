@@ -8,6 +8,8 @@ import '../../config/app_constants.dart';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'google_verify_email_pending_page.dart';
+
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -99,6 +101,143 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     _parallaxController.dispose();
     _fadeInController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loginWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      final firebaseCredential =
+          await FirebaseService.signInWithGoogle();
+
+      if (firebaseCredential == null || firebaseCredential.user == null) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Google sign-in was cancelled or failed.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final firebaseIdToken = await firebaseCredential.user!.getIdToken();
+      if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to get Firebase ID token.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final response = await http.post(
+        Uri.parse('${AuthService.baseUrl}/api/firebase'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'id_token': firebaseIdToken}),
+      );
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        final error = json.decode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error['detail'] ?? 'Backend authentication failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final result = json.decode(response.body) as Map<String, dynamic>;
+
+      // User exists but not yet verified - must verify email first
+      if (result['verification_pending'] == true) {
+        final email = result['email'] as String? ?? '';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result['detail'] as String? ??
+                  'Please verify your email. Check your inbox for the link.',
+            ),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => GoogleVerifyEmailPendingPage(email: email),
+          ),
+        );
+        return;
+      }
+
+      final userProfile = result['user'] as Map<String, dynamic>?;
+      if (userProfile != null) {
+        final appState = context.read<AppState>();
+        appState.authToken = firebaseIdToken;
+        appState.currentUser = userProfile;
+        AuthService.setUserData(userProfile, firebaseIdToken);
+
+        final roleService = context.read<RoleService>();
+        await roleService.initializeRoleFromUser(userProfile);
+        await appState.init();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Signed in with Google successfully.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        final rawRole = userProfile['role']?.toString() ?? '';
+        final userRole = rawRole.toLowerCase().trim();
+        final roleKey = userRole.replaceAll('-', '_');
+        final isAdmin = roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
+        final isFinance = roleKey.startsWith('finance') ||
+            roleKey == 'financial_manager' ||
+            roleKey == 'financial manager';
+
+        String dashboardRoute;
+        if (isAdmin) {
+          dashboardRoute = '/approver_dashboard';
+        } else if (isFinance) {
+          dashboardRoute = '/finance_dashboard';
+        } else {
+          dashboardRoute = '/creator_dashboard';
+        }
+
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          dashboardRoute,
+          (route) => false,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to get user profile from backend.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google sign-in failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _login() async {
@@ -607,7 +746,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildSocialButton('assets/images/Google_Icon.png'),
+                _buildSocialButton(
+                  'assets/images/Google_Icon.png',
+                  onPressed: _isLoading ? null : _loginWithGoogle,
+                ),
                 const SizedBox(width: 16),
                 _buildSocialButton('assets/images/mslogo.png'),
                 const SizedBox(width: 16),
@@ -731,7 +873,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildSocialButton(String imagePath) {
+  Widget _buildSocialButton(String imagePath, {VoidCallback? onPressed}) {
     return Container(
       width: 48,
       height: 48,
@@ -753,9 +895,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             );
           },
         ),
-        onPressed: () {
-          // TODO: Social login
-        },
+        onPressed: onPressed,
       ),
     );
   }
