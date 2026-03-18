@@ -10454,14 +10454,79 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     if (id == null) return;
     final token = await _getAuthToken();
     if (token == null) return;
+
+    // Optimistic update: show reaction immediately
+    _applyReactionOptimistically(id, emoji);
+
     final result = await ApiService.toggleCommentReaction(
       token: token,
       commentId: id,
       emoji: emoji,
     );
+
     if (result != null && _savedProposalId != null && mounted) {
       await _loadCommentsFromDatabase(_savedProposalId!);
+    } else if (mounted) {
+      // API failed - revert optimistic update and notify user
+      _revertReactionOptimistically(id, emoji);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save reaction. Make sure the backend has been restarted.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
+  }
+
+  void _applyReactionOptimistically(int commentId, String emoji) {
+    setState(() {
+      for (var i = 0; i < _comments.length; i++) {
+        if (_comments[i]['id'] == commentId) {
+          final reactions = List<Map<String, dynamic>>.from(
+            (_comments[i]['reactions'] as List<dynamic>?)?.map((r) => Map<String, dynamic>.from(r as Map)) ?? [],
+          );
+          final existingIdx = reactions.indexWhere((r) => r['emoji'] == emoji);
+          final reactedByMe = existingIdx >= 0 && reactions[existingIdx]['reacted_by_me'] == true;
+
+          if (reactedByMe) {
+            // Remove our reaction
+            final count = ((reactions[existingIdx]['count'] as num?) ?? 1).toInt();
+            if (count <= 1) {
+              reactions.removeAt(existingIdx);
+            } else {
+              reactions[existingIdx] = {
+                ...reactions[existingIdx],
+                'count': count - 1,
+                'reacted_by_me': false,
+              };
+            }
+          } else if (existingIdx >= 0) {
+            // Add our reaction to existing emoji
+            final count = ((reactions[existingIdx]['count'] as num?) ?? 0).toInt();
+            reactions[existingIdx] = {
+              ...reactions[existingIdx],
+              'count': count + 1,
+              'reacted_by_me': true,
+            };
+          } else {
+            // New emoji
+            reactions.add({
+              'emoji': emoji,
+              'count': 1,
+              'user_ids': [],
+              'reactor_names': [],
+              'reacted_by_me': true,
+            });
+          }
+          _comments[i] = {..._comments[i], 'reactions': reactions};
+          break;
+        }
+      }
+    });
+  }
+
+  void _revertReactionOptimistically(int commentId, String emoji) {
+    _applyReactionOptimistically(commentId, emoji); // Toggle again to revert
   }
 
   void _showPreview() {
