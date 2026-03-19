@@ -119,7 +119,7 @@ def token_required(f):
                                 return f(username=cached_username, *args, **clean_kwargs)
                             else:
                                 print(f"[FIREBASE] ⚠️ Cached user_id {cached_user_id} for {email} not found in DB; invalidating cache")
-                                del USER_CACHE_BY_EMAIL[email]
+                                USER_CACHE_BY_EMAIL.pop(email, None)
 
                     with get_db_connection() as conn:
                         original_autocommit = conn.autocommit
@@ -157,86 +157,113 @@ def token_required(f):
                                 clean_kwargs['email'] = email
                             return f(username=username, *args, **clean_kwargs)
                         else:
-                            # Auto-create user for a valid Firebase token not yet in DB
-                            print(f"[FIREBASE] Valid token but user not found in database: {email}. Auto-creating user...")
+                            # Auto-create user for a valid Firebase token not yet in DB.
+                            # Use an advisory lock + re-check to avoid concurrent duplicate
+                            # auto-creates for the same email across parallel requests.
+                            cursor.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', (email,))
+                            cursor.execute(
+                                '''SELECT id, username
+                                   FROM users
+                                   WHERE email = %s
+                                   ORDER BY
+                                       CASE
+                                           WHEN role IN ('admin', 'ceo', 'approver') THEN 0
+                                           WHEN role LIKE 'finance%%' THEN 1
+                                           ELSE 2
+                                       END,
+                                       id DESC
+                                   LIMIT 1''',
+                                (email,)
+                            )
+                            existing_after_lock = cursor.fetchone()
 
-                            try:
-                                username = email.split('@')[0]
-                                base_username = username
-                                counter = 1
-                                while True:
-                                    cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                                    if cursor.fetchone() is None:
-                                        break
-                                    username = f"{base_username}{counter}"
-                                    counter += 1
-
-                                role = 'manager'
-                                dummy_password_hash = f"firebase:{uid}:{email}"
+                            if existing_after_lock:
+                                user_id = existing_after_lock[0]
+                                username = existing_after_lock[1]
+                                print(
+                                    f"[FIREBASE] ✅ Found existing user after lock for {email}: "
+                                    f"{username} (id: {user_id})"
+                                )
+                            else:
+                                print(f"[FIREBASE] Valid token but user not found in database: {email}. Auto-creating user...")
 
                                 try:
-                                    cursor.execute(
-                                        '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
-                                           VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                           RETURNING id, username''',
-                                        (username, email, dummy_password_hash, name, role, True, firebase_user.get('email_verified', False))
-                                    )
-                                    new_user = cursor.fetchone()
-                                    user_id = new_user[0]
-                                    username = new_user[1]
+                                    username = email.split('@')[0]
+                                    base_username = username
+                                    counter = 1
+                                    while True:
+                                        cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+                                        if cursor.fetchone() is None:
+                                            break
+                                        username = f"{base_username}{counter}"
+                                        counter += 1
+
+                                    role = 'manager'
+                                    dummy_password_hash = f"firebase:{uid}:{email}"
 
                                     try:
                                         cursor.execute(
-                                            '''UPDATE users SET firebase_uid = %s WHERE email = %s''',
-                                            (uid, email)
+                                            '''INSERT INTO users (username, email, password_hash, full_name, role, is_active, is_email_verified)
+                                               VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                               RETURNING id, username''',
+                                            (username, email, dummy_password_hash, name, role, True, firebase_user.get('email_verified', False))
                                         )
-                                    except Exception:
-                                        pass
+                                        new_user = cursor.fetchone()
+                                        user_id = new_user[0]
+                                        username = new_user[1]
 
-                                    try:
-                                        conn.commit()
-                                        print(f"[FIREBASE] ✅ Auto-created user committed: {username} (id: {user_id})")
-                                    except Exception as commit_error:
-                                        print(f"[FIREBASE] ERROR during commit: {commit_error}")
                                         try:
-                                            conn.rollback()
+                                            cursor.execute(
+                                                '''UPDATE users SET firebase_uid = %s WHERE email = %s''',
+                                                (uid, email)
+                                            )
+                                        except Exception:
+                                            pass
+
+                                        try:
+                                            conn.commit()
+                                            print(f"[FIREBASE] ✅ Auto-created user committed: {username} (id: {user_id})")
+                                        except Exception as commit_error:
+                                            print(f"[FIREBASE] ERROR during commit: {commit_error}")
+                                            try:
+                                                conn.rollback()
+                                            except:
+                                                pass
+                                            raise
+
+                                        # Verify user is readable with retries
+                                        import time
+                                        if _verify_user_readable(conn, user_id, max_retries=10):
+                                            print(f"[FIREBASE] ✅ User {user_id} verified readable after creation")
+                                        else:
+                                            print(f"[FIREBASE] ⚠️ WARNING: User {user_id} not readable after verification attempts, but proceeding with caution")
+                                        
+                                        # Close old cursor and create fresh one from the committed state
+                                        try:
+                                            cursor.close()
                                         except:
                                             pass
-                                        raise
+                                        cursor = conn.cursor()
+                                    except psycopg2.IntegrityError:
+                                        conn.rollback()
+                                        import time
+                                        for retry_attempt in range(3):
+                                            cursor.execute('SELECT id, username FROM users WHERE email = %s', (email,))
+                                            existing_user = cursor.fetchone()
+                                            if existing_user:
+                                                user_id = existing_user[0]
+                                                username = existing_user[1]
+                                                break
+                                            if retry_attempt < 2:
+                                                time.sleep(0.1)
 
-                                    # Verify user is readable with retries
-                                    import time
-                                    if _verify_user_readable(conn, user_id, max_retries=10):
-                                        print(f"[FIREBASE] ✅ User {user_id} verified readable after creation")
-                                    else:
-                                        print(f"[FIREBASE] ⚠️ WARNING: User {user_id} not readable after verification attempts, but proceeding with caution")
-                                    
-                                    # Close old cursor and create fresh one from the committed state
-                                    try:
-                                        cursor.close()
-                                    except:
-                                        pass
-                                    cursor = conn.cursor()
-                                except psycopg2.IntegrityError:
+                                        if not existing_user:
+                                            print(f"[FIREBASE] ERROR: IntegrityError but user still not found after retries!")
+                                            raise
+                                except Exception as e:
                                     conn.rollback()
-                                    import time
-                                    for retry_attempt in range(3):
-                                        cursor.execute('SELECT id, username FROM users WHERE email = %s', (email,))
-                                        existing_user = cursor.fetchone()
-                                        if existing_user:
-                                            user_id = existing_user[0]
-                                            username = existing_user[1]
-                                            break
-                                        if retry_attempt < 2:
-                                            time.sleep(0.1)
-
-                                    if not existing_user:
-                                        print(f"[FIREBASE] ERROR: IntegrityError but user still not found after retries!")
-                                        raise
-                            except Exception as e:
-                                conn.rollback()
-                                print(f"[FIREBASE] Error creating user: {e}")
-                                raise
+                                    print(f"[FIREBASE] Error creating user: {e}")
+                                    raise
 
                             import time
                             time.sleep(0.1)

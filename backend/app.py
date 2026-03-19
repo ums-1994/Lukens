@@ -803,6 +803,20 @@ def init_pg_schema():
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_mentions_user 
                          ON comment_mentions(mentioned_user_id, is_read, created_at DESC)''')
         
+        # Comment reactions table (emoji reactions like Google Docs)
+        cursor.execute('''CREATE TABLE IF NOT EXISTS comment_reactions (
+        id SERIAL PRIMARY KEY,
+        comment_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        emoji VARCHAR(20) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(comment_id, user_id, emoji),
+        FOREIGN KEY (comment_id) REFERENCES document_comments(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment 
+                         ON comment_reactions(comment_id)''')
+        
         # DocuSign signatures table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_signatures (
         id SERIAL PRIMARY KEY,

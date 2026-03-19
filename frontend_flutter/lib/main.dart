@@ -591,15 +591,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
             final userRole = rawRole.toLowerCase().trim();
             String dashboardRoute;
 
-            final isAdmin = userRole == 'admin' || userRole == 'ceo';
-            final isFinance = userRole == 'finance' ||
-                userRole == 'finance manager' ||
-                userRole == 'financial manager' ||
-                userRole == 'finance_manager' ||
-                userRole == 'financial_manager';
-            final isManager = userRole == 'manager' ||
-                userRole == 'creator' ||
-                userRole == 'user';
+            final roleKey = userRole.replaceAll('-', '_');
+            final isAdmin = roleKey == 'admin' ||
+                roleKey == 'ceo' ||
+                roleKey == 'approver';
+            final isFinance = roleKey.startsWith('finance') ||
+                roleKey == 'financial_manager' ||
+                roleKey == 'financial manager';
+            final isManager = roleKey == 'manager' ||
+                roleKey == 'creator' ||
+                roleKey == 'user';
 
             if (isAdmin) {
               dashboardRoute = '/approver_dashboard';
@@ -798,6 +799,24 @@ class _AuthWrapperState extends State<AuthWrapper> {
       return ClientOnboardingPage(token: onboardingToken);
     }
 
+    // Check for email verification URL (from Google sign-up verification link)
+    final isVerifyEmail = currentUrl.contains('verify-email') ||
+        uri.path.contains('verify-email') ||
+        hash.contains('verify-email');
+    String? verifyToken = uri.queryParameters['token'];
+    if ((verifyToken == null || verifyToken.isEmpty) && hash.contains('token=')) {
+      final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+      if (hashMatch != null) verifyToken = hashMatch.group(1);
+    }
+    if ((verifyToken == null || verifyToken.isEmpty) && currentUrl.contains('token=')) {
+      final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+      if (urlMatch != null) verifyToken = urlMatch.group(1);
+    }
+    if (isVerifyEmail && verifyToken != null && verifyToken.isNotEmpty) {
+      print('✅ Detected verify-email URL - showing EmailVerificationPage');
+      return EmailVerificationPage(token: verifyToken);
+    }
+
     // Check for client proposals URL (priority - must be before collaboration check)
     final isClientProposals = currentUrl.contains('/client/proposals') ||
         hash.contains('/client/proposals') ||
@@ -871,8 +890,34 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
     }
 
-    // Always show landing page first when app starts
-    // The landing page will handle navigation to login/dashboard based on auth status
+    // Route authenticated users directly to their dashboard.
+    // This prevents successful social sign-in from falling back to landing/login.
+    if (AuthService.isLoggedIn) {
+      final user = AuthService.currentUser ?? const <String, dynamic>{};
+      final rawRole = (user['role'] ?? '').toString().toLowerCase().trim();
+      final roleKey = rawRole.replaceAll('-', '_').replaceAll(' ', '_');
+
+      final isAdmin =
+          roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
+      final isFinance = roleKey.startsWith('finance') ||
+          roleKey == 'financial_manager' ||
+          roleKey == 'financialmanager';
+
+      if (isAdmin) {
+        print('✅ AuthWrapper: authenticated admin user - showing approver dashboard');
+        return const ApproverDashboardPage();
+      }
+
+      if (isFinance) {
+        print('✅ AuthWrapper: authenticated finance user - showing finance dashboard');
+        return const FinanceDashboardV2Page();
+      }
+
+      print('✅ AuthWrapper: authenticated creator/manager user - showing creator dashboard');
+      return const DashboardPage();
+    }
+
+    // Not authenticated: show landing/startup page.
     return const StartupPage();
   }
 }

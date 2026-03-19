@@ -146,198 +146,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-  Future<void> _requestChanges() async {
-    if (_savedProposalId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please save the proposal before requesting changes'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    final hasAnyComment = _comments.isNotEmpty;
-    if (!hasAnyComment) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please add a comment before requesting changes'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    final selectedTarget = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Request Changes'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Who do you want to request changes from?'),
-            const SizedBox(height: 16),
-            ListTile(
-              title: const Text('Manager'),
-              subtitle: const Text('For content and scope changes'),
-              leading: const Icon(Icons.person, color: Colors.blue),
-              onTap: () => Navigator.of(context).pop('manager'),
-            ),
-            ListTile(
-              title: const Text('Finance'),
-              subtitle: const Text('For financial and pricing changes'),
-              leading: const Icon(Icons.attach_money, color: Colors.green),
-              onTap: () => Navigator.of(context).pop('finance'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-
-    if (selectedTarget == null) return;
-
-    final changeDescriptionController = TextEditingController();
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          'Request Changes from ${selectedTarget == 'manager' ? 'Manager' : 'Finance'}',
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Are you sure you want to request changes from the ${selectedTarget == 'manager' ? 'Manager' : 'Finance Manager'}?',
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: changeDescriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Describe the changes needed',
-                hintText:
-                    'Please provide details about the required changes...',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor:
-                  selectedTarget == 'manager' ? Colors.blue : Colors.green,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Request Changes'),
-          ),
-        ],
-      ),
-    );
-
-    final changeDescription = changeDescriptionController.text.trim();
-    changeDescriptionController.dispose();
-
-    if (confirmed != true) return;
-
-    if (changeDescription.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please describe the changes needed'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    try {
-      final token = AuthService.token;
-      if (token == null) return;
-
-      final response = await http.post(
-        Uri.parse(
-          '${ApiService.baseUrl}/api/proposals/${_savedProposalId!}/request-changes',
-        ),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: json.encode({
-          'target': selectedTarget,
-          'comments': changeDescription,
-        }),
-      );
-
-      if (response.statusCode != 200) {
-        String detail = 'Failed to request changes';
-        try {
-          final decoded = json.decode(response.body);
-          if (decoded is Map && decoded['detail'] != null) {
-            detail = decoded['detail'].toString();
-          }
-        } catch (_) {}
-        throw Exception(detail);
-      }
-
-      final data = json.decode(response.body);
-
-      if (!mounted) return;
-      setState(() {
-        _proposalStatus = 'Changes Requested';
-      });
-
-      final manager =
-          (data is Map) ? data['manager'] as Map<String, dynamic>? : null;
-      final managerName = manager?['name']?.toString();
-      final managerEmail = manager?['email']?.toString();
-      String sentText;
-      if (managerName != null && managerEmail != null) {
-        sentText =
-            '✅ Changes requested and sent to $managerName <$managerEmail>';
-      } else if (managerName != null) {
-        sentText = '✅ Changes requested and sent to $managerName';
-      } else if (managerEmail != null) {
-        sentText = '✅ Changes requested and sent to $managerEmail';
-      } else {
-        sentText =
-            '✅ Changes requested from ${selectedTarget == 'manager' ? 'Manager' : 'Finance Manager'}';
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(sentText),
-          backgroundColor: const Color(0xFF2ECC71),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-
-      await _loadProposalFromDatabase(_savedProposalId!);
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to request changes: $e'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }
-  }
-
   void _scrollToCommentCard(int commentId) {
     if (!_commentsScrollController.hasClients) return;
 
@@ -672,7 +480,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   int? _lastSelectionHash;
   final Map<String, int?> _lastSelectionHashBySectionId = {};
   final Set<String> _selectionListenerAttachedSectionIds = {};
-  Timer? _selectionPollingTimer;
   OverlayEntry? _addCommentOverlay;
   Offset? _lastContentTapGlobalPosition;
   int? _pendingScrollToCommentId;
@@ -695,20 +502,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _threadOverlay?.remove();
     _threadOverlay = null;
     _activeThreadRootId = null;
-
-    if (!mounted) return;
-    _removeAddCommentOverlay();
-    setState(() {
-      _draftSectionIndex = null;
-      _draftBlockId = null;
-      _draftStartOffset = null;
-      _draftEndOffset = null;
-      _draftSelectedText = '';
-      _highlightedText = '';
-      _selectedSectionForComment = null;
-      _currentSelection = null;
-      _selectionSectionIndex = null;
-    });
   }
 
   void _showThreadOverlay(
@@ -725,15 +518,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     setState(() {
       _activeThreadRootId = rootCommentId;
+      _draftSectionIndex =
+          int.tryParse(root['section_index']?.toString() ?? '');
+      _draftBlockId = root['block_id']?.toString();
+      _draftStartOffset = int.tryParse(root['start_offset']?.toString() ?? '');
+      _draftEndOffset = int.tryParse(root['end_offset']?.toString() ?? '');
+      _draftSelectedText = root['highlighted_text']?.toString() ?? '';
     });
 
     _threadOverlay = OverlayEntry(
       builder: (context) {
         final screen = MediaQuery.of(context).size;
-        final commentsWidth = _showCommentsPanel ? 400.0 : 0.0;
-        final maxLeft =
-            (screen.width - commentsWidth - 360).clamp(8.0, screen.width);
-        final left = (globalPosition.dx + 12).clamp(8.0, maxLeft);
+        final left = (globalPosition.dx + 12).clamp(8.0, screen.width - 360);
         final top = (globalPosition.dy - 40).clamp(8.0, screen.height - 420);
 
         final replies = _comments
@@ -748,140 +544,127 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             return aTime.compareTo(bTime);
           });
 
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: _removeThreadOverlay,
-              ),
-            ),
-            Positioned(
-              left: left,
-              top: top,
-              child: Material(
-                color: Colors.transparent,
-                child: Container(
-                  width: 340,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade300),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.14),
-                        blurRadius: 18,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
+        return Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 340,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.14),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              root['commenter_name']?.toString() ?? 'User',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF1A1A1A),
-                              ),
-                            ),
+                      Expanded(
+                        child: Text(
+                          root['commenter_name']?.toString() ?? 'User',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A1A),
                           ),
-                          IconButton(
-                            onPressed: _removeThreadOverlay,
-                            icon: const Icon(Icons.close, size: 18),
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      if ((root['comment_text']?.toString() ?? '').isNotEmpty)
-                        Text(
-                          root['comment_text']?.toString() ?? '',
-                          style: const TextStyle(fontSize: 13, height: 1.35),
-                        ),
-                      if (replies.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxHeight: 180),
-                          child: SingleChildScrollView(
-                            child: Column(
-                              children: replies
-                                  .map(
-                                    (r) => Padding(
-                                      padding:
-                                          const EdgeInsets.only(bottom: 10),
-                                      child: Align(
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          '${r['commenter_name'] ?? 'User'}: ${r['comment_text'] ?? ''}',
-                                          style: const TextStyle(
-                                              fontSize: 12, height: 1.35),
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: _threadReplyController,
-                        focusNode: _threadReplyFocusNode,
-                        maxLines: 2,
-                        decoration: InputDecoration(
-                          hintText: 'Reply or add others with @',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(
-                                color: Color(0xFF00BCD4), width: 2),
-                          ),
-                          contentPadding: const EdgeInsets.all(10),
                         ),
                       ),
-                      const SizedBox(height: 10),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          ElevatedButton(
-                            onPressed: () async {
-                              if (_threadReplyController.text.trim().isEmpty)
-                                return;
-                              _commentController.text =
-                                  _threadReplyController.text;
-                              await _addComment(parentId: rootCommentId);
-                              _threadReplyController.clear();
-                              if (!mounted) return;
-                              await _loadCommentsFromDatabase(
-                                  _savedProposalId!);
-                              _threadOverlay?.markNeedsBuild();
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF00BCD4),
-                              foregroundColor: Colors.white,
-                            ),
-                            child: const Text('Reply'),
-                          ),
-                        ],
+                      IconButton(
+                        onPressed: _removeThreadOverlay,
+                        icon: const Icon(Icons.close, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  if ((root['comment_text']?.toString() ?? '').isNotEmpty)
+                    Text(
+                      root['comment_text']?.toString() ?? '',
+                      style: const TextStyle(fontSize: 13, height: 1.35),
+                    ),
+                  if (replies.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 180),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: replies
+                              .map(
+                                (r) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      '${r['commenter_name'] ?? 'User'}: ${r['comment_text'] ?? ''}',
+                                      style: const TextStyle(
+                                          fontSize: 12, height: 1.35),
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _threadReplyController,
+                    focusNode: _threadReplyFocusNode,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      hintText: 'Reply or add others with @',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                            color: Color(0xFF00BCD4), width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.all(10),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      ElevatedButton(
+                        onPressed: () async {
+                          if (_threadReplyController.text.trim().isEmpty)
+                            return;
+                          _commentController.text = _threadReplyController.text;
+                          await _addComment(parentId: rootCommentId);
+                          _threadReplyController.clear();
+                          if (!mounted) return;
+                          await _loadCommentsFromDatabase(_savedProposalId!);
+                          _threadOverlay?.markNeedsBuild();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00BCD4),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Reply'),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         );
       },
     );
@@ -899,15 +682,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final overlay = Overlay.maybeOf(context);
     if (overlay == null) return;
 
-    print('💬 Showing add-comment bubble at: $globalPosition');
-
     _addCommentOverlay = OverlayEntry(
       builder: (context) {
         final screenSize = MediaQuery.of(context).size;
-        final commentsWidth = _showCommentsPanel ? 400.0 : 0.0;
-        final maxLeft = (screenSize.width - commentsWidth - 160)
-            .clamp(8.0, screenSize.width);
-        final left = (globalPosition.dx + 8).clamp(8.0, maxLeft);
+        final left = (globalPosition.dx + 8).clamp(8.0, screenSize.width - 160);
         final top =
             (globalPosition.dy - 44).clamp(8.0, screenSize.height - 120);
 
@@ -1058,27 +836,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _commentFocusNode.addListener(_handleCommentFocusChange);
     _threadReplyController = TextEditingController();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _ensureSectionSelectionListeners();
-    });
-
-    _selectionPollingTimer?.cancel();
-    _selectionPollingTimer =
-        Timer.periodic(const Duration(milliseconds: 200), (timer) {
-      if (!mounted) return;
-      if (_sections.isEmpty) return;
-
-      final focusedIndex =
-          _sections.indexWhere((section) => section.contentFocus.hasFocus);
-      if (focusedIndex < 0) return;
-
-      final selection = _sections[focusedIndex].controller.selection;
-      if (!selection.isValid) return;
-
-      _onContentSelectionChanged(focusedIndex, selection, null);
-    });
-
     // Auto-show comments panel for collaborators
     if (widget.isCollaborator) {
       _showCommentsPanel = true;
@@ -1222,8 +979,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   void _onContentSelectionChanged(
       int sectionIndex, TextSelection selection, SelectionChangedCause? cause) {
-    print(
-        '📝 Selection changed: section=$sectionIndex base=${selection.baseOffset} extent=${selection.extentOffset} collapsed=${selection.isCollapsed}');
     if (selection.isCollapsed) {
       _selectionSnackDebounce?.cancel();
       _lastSelectionHash = null;
@@ -1341,14 +1096,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       // Load existing data if editing an existing proposal
       if (widget.proposalId != null) {
-        final rawId = widget.proposalId!.trim();
-        int? proposalId = int.tryParse(rawId);
-        if (proposalId == null) {
-          final match = RegExp(r'(\d+)').firstMatch(rawId);
-          if (match != null) {
-            proposalId = int.tryParse(match.group(1) ?? '');
-          }
-        }
+        final proposalId = int.tryParse(widget.proposalId!);
         if (proposalId != null) {
           _savedProposalId = proposalId;
           await _loadProposalFromDatabase(proposalId);
@@ -1739,28 +1487,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       Map<String, dynamic>? contentData;
       final dynamic rawContent = proposal['content'];
       if (rawContent != null &&
-          (!(rawContent is String) ||
-              (rawContent as String).trim().isNotEmpty)) {
+          (!(rawContent is String) || (rawContent as String).trim().isNotEmpty)) {
         try {
           contentData = rawContent is String
               ? Map<String, dynamic>.from(json.decode(rawContent) as Map)
-              : Map<String, dynamic>.from(
-                  rawContent is Map ? rawContent as Map : <String, dynamic>{});
+              : Map<String, dynamic>.from(rawContent is Map ? rawContent as Map : <String, dynamic>{});
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
         }
       }
       // Fallback: build from proposal.sections when content is missing (e.g. legacy or alternate save path)
-      if (contentData == null ||
-          (contentData['sections'] as List?)?.isEmpty == true) {
+      if (contentData == null || (contentData['sections'] as List?)?.isEmpty == true) {
         final dynamic rawSections = proposal['sections'];
         if (rawSections != null) {
           List<dynamic> sectionList;
           if (rawSections is List && rawSections.isNotEmpty) {
             sectionList = rawSections;
           } else if (rawSections is Map && (rawSections as Map).isNotEmpty) {
-            sectionList =
-                (rawSections as Map).entries.map<Map<String, dynamic>>((e) {
+            sectionList = (rawSections as Map).entries.map<Map<String, dynamic>>((e) {
               final v = e.value;
               return {
                 'title': e.key.toString(),
@@ -1785,9 +1529,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           final Map<String, dynamic> data = contentData!;
           setState(() {
             // Set title
-            _titleController.text =
-                (data['title'] ?? proposal['title'] ?? 'Untitled Document')
-                    .toString();
+            _titleController.text = (data['title'] ??
+                    proposal['title'] ??
+                    'Untitled Document')
+                .toString();
 
             // Clear existing sections
             for (var section in _sections) {
@@ -2077,6 +1822,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             'resolved_at': comment['resolved_at'],
             'resolver_name': comment['resolver_name'],
             'replies': comment['replies'] ?? [],
+            'reactions': comment['reactions'] ?? [],
           });
         }
       });
@@ -2258,8 +2004,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void dispose() {
     _autoSaveTimer?.cancel();
     _selectionSnackDebounce?.cancel();
-    _selectionPollingTimer?.cancel();
-    _selectionPollingTimer = null;
     _removeAddCommentOverlay();
     _removeThreadOverlay();
     _commentsScrollController.dispose();
@@ -3163,16 +2907,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
       print('⚠️ Error saving comment to database: $e');
       if (mounted) {
-        final message = e.toString();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              message.isNotEmpty
-                  ? message
-                  : 'Could not post comment. Try again.',
-            ),
+          const SnackBar(
+            content: Text('Could not post comment. Try again.'),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
+            duration: Duration(seconds: 4),
           ),
         );
       }
@@ -3602,8 +3341,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final parsed = _tryParseTimestamp(timestamp);
     if (parsed == null) return '';
     try {
-      // Normalise to local timezone so labels match South African time.
-      final DateTime dt = parsed.toLocal();
+      final DateTime dt = parsed;  // Already in local time, no conversion needed
       final now = DateTime.now();
 
       final timePart = DateFormat('HH:mm').format(dt);
@@ -3679,16 +3417,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _getStatusLabel(String status) {
     final s = status.toLowerCase().trim();
     if (s.contains('pending') && s.contains('ceo')) {
-      return 'Request for Change';
+      return 'Pending Approval';
     }
     switch (s) {
       case 'pending approval':
-        return 'Request for Change';
+        return 'Pending Approval';
       case 'sent to client':
         return 'Sent to Client';
       case 'approved':
         return 'Approved';
-      case 'rejected':
+      case 'signed':
         return 'Rejected';
       default:
         return status;
@@ -5178,7 +4916,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             if (!isReadOnly && !isCollaboratorMode)
                               _buildRightSidebar(),
                             // Comments panel (right-side, toggleable) - always show for collaborators
-                            if (_showCommentsPanel) _buildCommentsPanel(),
+                            if (_showCommentsPanel || isCollaboratorMode)
+                              _buildCommentsPanel(),
                           ],
                         ),
                       ),
@@ -5987,14 +5726,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Widget _buildTopHeader() {
     final isFinanceRole = context.watch<RoleService>().isFinance();
     final isManagerRole = context.watch<RoleService>().isCreator();
-    final canApprove = context.watch<RoleService>().canApproveProposals();
     final statusKey = (_proposalStatus ?? '').toString().toLowerCase().trim();
     final isDraftStatus = statusKey.isEmpty || statusKey == 'draft';
     final isPricingStatus = statusKey == 'pricing in progress';
     final isChangesRequested = statusKey == 'changes requested';
-    final isPendingApproval = statusKey == 'pending approval' ||
-        (statusKey.contains('pending') && statusKey.contains('approval'));
-    final canRequestChanges = canApprove && isPendingApproval;
 
     return Container(
       color: Colors.white,
@@ -6081,19 +5816,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           const SizedBox(width: 24),
           // Price
-          Flexible(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${_getCurrencySymbol()} ',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
-                  ),
+          Row(
+            children: [
+              Text(
+                '${_getCurrencySymbol()} ',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A1A),
                 ),
-                SizedBox(
+              ),
+              SizedBox(
                 width: 80,
                 child: isFinanceRole
                     ? Container(
@@ -6158,9 +5891,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           ),
                         ),
                       ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
           const SizedBox(width: 16),
           // Save status with version info
@@ -6258,18 +5990,6 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             onPressed: () {
               setState(() {
                 _showCommentsPanel = !_showCommentsPanel;
-
-                if (_showCommentsPanel) {
-                  _draftSectionIndex = null;
-                  _draftBlockId = null;
-                  _draftStartOffset = null;
-                  _draftEndOffset = null;
-                  _draftSelectedText = '';
-                  _highlightedText = '';
-                  _selectedSectionForComment = null;
-                  _currentSelection = null;
-                  _selectionSectionIndex = null;
-                }
               });
 
               // Load comments when panel is opened
@@ -6292,31 +6012,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           const SizedBox(width: 12),
           // Status Badge
           if (_proposalStatus != null && _proposalStatus != 'draft')
-            GestureDetector(
-              onTap: canRequestChanges ? _requestChanges : null,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _getStatusColor(_proposalStatus!),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(_getStatusIcon(_proposalStatus!),
-                        size: 14, color: Colors.white),
-                    const SizedBox(width: 6),
-                    Text(
-                      _getStatusLabel(_proposalStatus!),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: _getStatusColor(_proposalStatus!),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(_getStatusIcon(_proposalStatus!),
+                      size: 14, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Text(
+                    _getStatusLabel(_proposalStatus!),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           if (_proposalStatus != null && _proposalStatus != 'draft')
@@ -10100,18 +9816,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   onPressed: () {
                     setState(() {
                       _showCommentsPanel = false;
-                      _draftSectionIndex = null;
-                      _draftBlockId = null;
-                      _draftStartOffset = null;
-                      _draftEndOffset = null;
-                      _draftSelectedText = '';
-                      _highlightedText = '';
-                      _selectedSectionForComment = null;
-                      _currentSelection = null;
-                      _selectionSectionIndex = null;
                     });
-                    _removeAddCommentOverlay();
-                    _removeThreadOverlay();
                   },
                   icon: const Icon(Icons.close, color: Colors.white, size: 20),
                   padding: EdgeInsets.zero,
@@ -10652,6 +10357,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ],
             ),
 
+          // Emoji reactions (for all comments - root and replies)
+          _buildCommentReactions(comment),
+
           // Replies section
           if (replies.isNotEmpty && !isReply) ...[
             const SizedBox(height: 12),
@@ -10662,6 +10370,163 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ],
       ),
     );
+  }
+
+  static const List<String> _reactionEmojis = ['👍', '👎', '👀', '❤️', '😄', '😕', '🎉'];
+
+  Widget _buildCommentReactions(Map<String, dynamic> comment) {
+    final reactions = (comment['reactions'] as List<dynamic>?) ?? [];
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          // Display existing reactions
+          ...reactions.map<Widget>((r) {
+            final emoji = r['emoji']?.toString() ?? '';
+            final count = (r['count'] as num?)?.toInt() ?? 0;
+            final reactedByMe = r['reacted_by_me'] == true;
+            if (emoji.isEmpty || count == 0) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: InkWell(
+                onTap: () => _toggleReaction(comment['id'], emoji),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: reactedByMe
+                        ? const Color(0xFF00BCD4).withOpacity(0.2)
+                        : Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                    border: reactedByMe
+                        ? Border.all(color: const Color(0xFF00BCD4), width: 1)
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(emoji, style: const TextStyle(fontSize: 14)),
+                      if (count > 1) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          count.toString(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+          // Add reaction button
+          PopupMenuButton<String>(
+            padding: EdgeInsets.zero,
+            offset: const Offset(0, -120),
+            icon: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Icon(Icons.add_reaction_outlined, size: 18, color: Colors.grey[600]),
+            ),
+            onSelected: (emoji) => _toggleReaction(comment['id'], emoji),
+            itemBuilder: (context) => _reactionEmojis
+                .map((emoji) => PopupMenuItem<String>(
+                      value: emoji,
+                      child: Text(emoji, style: const TextStyle(fontSize: 20)),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleReaction(dynamic commentId, String emoji) async {
+    final id = commentId is int ? commentId : int.tryParse(commentId?.toString() ?? '');
+    if (id == null) return;
+    final token = await _getAuthToken();
+    if (token == null) return;
+
+    // Optimistic update: show reaction immediately
+    _applyReactionOptimistically(id, emoji);
+
+    final result = await ApiService.toggleCommentReaction(
+      token: token,
+      commentId: id,
+      emoji: emoji,
+    );
+
+    if (result != null && _savedProposalId != null && mounted) {
+      await _loadCommentsFromDatabase(_savedProposalId!);
+    } else if (mounted) {
+      // API failed - revert optimistic update and notify user
+      _revertReactionOptimistically(id, emoji);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save reaction. Make sure the backend has been restarted.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  void _applyReactionOptimistically(int commentId, String emoji) {
+    setState(() {
+      for (var i = 0; i < _comments.length; i++) {
+        if (_comments[i]['id'] == commentId) {
+          final reactions = List<Map<String, dynamic>>.from(
+            (_comments[i]['reactions'] as List<dynamic>?)?.map((r) => Map<String, dynamic>.from(r as Map)) ?? [],
+          );
+          final existingIdx = reactions.indexWhere((r) => r['emoji'] == emoji);
+          final reactedByMe = existingIdx >= 0 && reactions[existingIdx]['reacted_by_me'] == true;
+
+          if (reactedByMe) {
+            // Remove our reaction
+            final count = ((reactions[existingIdx]['count'] as num?) ?? 1).toInt();
+            if (count <= 1) {
+              reactions.removeAt(existingIdx);
+            } else {
+              reactions[existingIdx] = {
+                ...reactions[existingIdx],
+                'count': count - 1,
+                'reacted_by_me': false,
+              };
+            }
+          } else if (existingIdx >= 0) {
+            // Add our reaction to existing emoji
+            final count = ((reactions[existingIdx]['count'] as num?) ?? 0).toInt();
+            reactions[existingIdx] = {
+              ...reactions[existingIdx],
+              'count': count + 1,
+              'reacted_by_me': true,
+            };
+          } else {
+            // New emoji
+            reactions.add({
+              'emoji': emoji,
+              'count': 1,
+              'user_ids': [],
+              'reactor_names': [],
+              'reacted_by_me': true,
+            });
+          }
+          _comments[i] = {..._comments[i], 'reactions': reactions};
+          break;
+        }
+      }
+    });
+  }
+
+  void _revertReactionOptimistically(int commentId, String emoji) {
+    _applyReactionOptimistically(commentId, emoji); // Toggle again to revert
   }
 
   void _showPreview() {

@@ -53,6 +53,7 @@ class _DashboardPageState extends State<DashboardPage>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Ensure AppState has the token before refreshing
       final app = context.read<AppState>();
+      app.setCurrentNavLabel('Dashboard');
       if (app.authToken == null && AuthService.token != null) {
         print('Syncing token to AppState...');
         app.authToken = AuthService.token;
@@ -688,14 +689,12 @@ class _DashboardPageState extends State<DashboardPage>
                     role == 'manager' || role == 'creator' ||
                     role == 'financial manager';
                 return AppSideNav(
-                  isCollapsed: _isSidebarCollapsed,
-                  currentLabel: _currentNavLabel,
+                  isCollapsed: app.isSidebarCollapsed,
+                  currentLabel: app.currentNavLabel,
                   isAdmin: isAdmin,
-                  onToggle: () => setState(
-                    () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                  ),
+                  onToggle: app.toggleSidebar,
                   onSelect: (label) {
-                    setState(() => _currentNavLabel = label);
+                    app.setCurrentNavLabel(label);
                     _navigateToPage(context, label);
                   },
                 );

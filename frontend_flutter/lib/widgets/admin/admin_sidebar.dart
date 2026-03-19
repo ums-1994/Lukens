@@ -80,28 +80,13 @@ class AdminSidebar extends StatelessWidget {
                       ),
                     ),
                     child: Row(
-                      mainAxisAlignment: effectiveCollapsed
-                          ? MainAxisAlignment.center
-                          : MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        if (!effectiveCollapsed)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'Navigation',
-                              style: TextStyle(color: Colors.white, fontSize: 12),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: effectiveCollapsed ? 0 : 8),
-                          child: Icon(
-                            effectiveCollapsed
-                                ? Icons.keyboard_arrow_right
-                                : Icons.keyboard_arrow_left,
-                            color: Colors.white,
-                          ),
+                        Icon(
+                          effectiveCollapsed
+                              ? Icons.keyboard_arrow_right
+                              : Icons.keyboard_arrow_left,
+                          color: Colors.white,
                         ),
                       ],
                     ),
