@@ -40,6 +40,16 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   final ScrollController _scrollController = ScrollController();
   String _currentTab = 'dashboard'; // dashboard, proposals, clients
 
+  int _selectedYear = DateTime.now().year;
+  Future<Map<String, dynamic>>? _financeSummaryFuture;
+  Future<List<Map<String, dynamic>>>? _monthlyForecastFuture;
+  Future<List<Map<String, dynamic>>>? _funnelFuture;
+  Future<List<Map<String, dynamic>>>? _growthFuture;
+  Future<List<Map<String, dynamic>>>? _topClientsFuture;
+  Future<List<Map<String, dynamic>>>? _recentSignedFuture;
+  Future<List<Map<String, dynamic>>>? _agingFuture;
+  Future<List<Map<String, dynamic>>>? _alertsFuture;
+
   bool _auditLoading = false;
   List<Map<String, dynamic>> _auditItems = [];
   DateTime? _auditFrom;
@@ -68,6 +78,16 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+
+    // Ensure forecast is loaded once we have an auth token in context.
+    _monthlyForecastFuture ??= _fetchMonthlyForecast(year: _selectedYear);
+    _financeSummaryFuture ??= _fetchFinanceSummary(year: _selectedYear);
+    _funnelFuture ??= _fetchFunnel(year: _selectedYear);
+    _growthFuture ??= _fetchGrowth(year: _selectedYear);
+    _topClientsFuture ??= _fetchTopClients(year: _selectedYear);
+    _recentSignedFuture ??= _fetchRecentSigned(year: _selectedYear);
+    _agingFuture ??= _fetchAging(year: _selectedYear);
+    _alertsFuture ??= _fetchAlerts(year: _selectedYear);
 
     if (_handledInitialOpen) return;
     _handledInitialOpen = true;
@@ -136,6 +156,1070 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     _auditEntityTypeController.dispose();
     _auditActionTypeController.dispose();
     super.dispose();
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchMonthlyForecast(
+      {required int year}) async {
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+    if (token == null) return [];
+
+    final uri = Uri.parse('${baseUrl}/api/finance/forecast/monthly')
+        .replace(queryParameters: {'year': year.toString()});
+
+    final resp = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      debugPrint('Monthly forecast error: ${resp.statusCode} ${resp.body}');
+      return [];
+    }
+
+    final decoded = jsonDecode(resp.body);
+    final itemsAny = (decoded is Map) ? decoded['items'] : null;
+    if (itemsAny is! List) return [];
+
+    final out = <Map<String, dynamic>>[];
+    for (final r in itemsAny) {
+      if (r is Map<String, dynamic>) {
+        out.add(r);
+      } else if (r is Map) {
+        out.add(r.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    }
+    return out;
+  }
+
+  Future<Map<String, dynamic>> _fetchFinanceSummary({required int year}) async {
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+    if (token == null) return {};
+
+    final uri = Uri.parse('${baseUrl}/api/finance/summary')
+        .replace(queryParameters: {'year': year.toString()});
+
+    final resp = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      debugPrint('Finance summary error: ${resp.statusCode} ${resp.body}');
+      return {};
+    }
+
+    final decoded = jsonDecode(resp.body);
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) {
+      return decoded.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return {};
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchListEndpoint(
+    String path, {
+    required int year,
+    Map<String, String>? query,
+    String itemsKey = 'items',
+  }) async {
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+    if (token == null) return [];
+
+    final uri = Uri.parse('${baseUrl}$path').replace(
+      queryParameters: {
+        'year': year.toString(),
+        ...?query,
+      },
+    );
+
+    final resp = await http.get(
+      uri,
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      },
+    );
+
+    if (resp.statusCode != 200) {
+      debugPrint(
+          'Finance endpoint error $path: ${resp.statusCode} ${resp.body}');
+      return [];
+    }
+
+    final decoded = jsonDecode(resp.body);
+    final itemsAny = (decoded is Map) ? decoded[itemsKey] : null;
+    if (itemsAny is! List) return [];
+
+    final out = <Map<String, dynamic>>[];
+    for (final r in itemsAny) {
+      if (r is Map<String, dynamic>) {
+        out.add(r);
+      } else if (r is Map) {
+        out.add(r.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    }
+    return out;
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchFunnel({required int year}) async {
+    return _fetchListEndpoint('/api/finance/funnel', year: year);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchGrowth({required int year}) async {
+    return _fetchListEndpoint('/api/finance/revenue-growth', year: year);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchTopClients(
+      {required int year}) async {
+    return _fetchListEndpoint('/api/finance/top-clients',
+        year: year, query: {'limit': '10'});
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchRecentSigned(
+      {required int year}) async {
+    return _fetchListEndpoint('/api/finance/recent-signed',
+        year: year, query: {'limit': '10'});
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAging({required int year}) async {
+    return _fetchListEndpoint('/api/finance/deal-aging',
+        year: year, query: {'threshold_days': '30'});
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAlerts({required int year}) async {
+    return _fetchListEndpoint('/api/finance/alerts', year: year);
+  }
+
+  Widget _buildYearSelector() {
+    final nowYear = DateTime.now().year;
+    final years = List<int>.generate(5, (i) => nowYear - 2 + i);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white.withOpacity(0.08)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<int>(
+          value: _selectedYear,
+          dropdownColor: const Color(0xFF0F0F0F),
+          iconEnabledColor: Colors.white70,
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+          items: years
+              .map(
+                (y) => DropdownMenuItem<int>(
+                  value: y,
+                  child: Text(y.toString()),
+                ),
+              )
+              .toList(),
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() {
+              _selectedYear = v;
+              _monthlyForecastFuture =
+                  _fetchMonthlyForecast(year: _selectedYear);
+              _financeSummaryFuture = _fetchFinanceSummary(year: _selectedYear);
+              _funnelFuture = _fetchFunnel(year: _selectedYear);
+              _growthFuture = _fetchGrowth(year: _selectedYear);
+              _topClientsFuture = _fetchTopClients(year: _selectedYear);
+              _recentSignedFuture = _fetchRecentSigned(year: _selectedYear);
+              _agingFuture = _fetchAging(year: _selectedYear);
+              _alertsFuture = _fetchAlerts(year: _selectedYear);
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKpiCard({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Container(
+      height: 74,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: PremiumTheme.darkBg2.withOpacity(0.9),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            height: 34,
+            width: 34,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.16),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  label,
+                  style:
+                      PremiumTheme.labelMedium.copyWith(color: Colors.white60),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  value,
+                  style: PremiumTheme.titleMedium
+                      .copyWith(fontWeight: FontWeight.w800),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFinanceKpis() {
+    final future =
+        _financeSummaryFuture ?? _fetchFinanceSummary(year: _selectedYear);
+    return FutureBuilder<Map<String, dynamic>>(
+      future: future,
+      builder: (context, snapshot) {
+        final data = snapshot.data ?? {};
+        final loading = snapshot.connectionState == ConnectionState.waiting;
+
+        final pipeline = (data['pipeline_value'] is num)
+            ? (data['pipeline_value'] as num).toDouble()
+            : double.tryParse(data['pipeline_value']?.toString() ?? '') ?? 0.0;
+        final expected = (data['expected_revenue'] is num)
+            ? (data['expected_revenue'] as num).toDouble()
+            : double.tryParse(data['expected_revenue']?.toString() ?? '') ??
+                0.0;
+        final signed = (data['signed_revenue'] is num)
+            ? (data['signed_revenue'] as num).toDouble()
+            : double.tryParse(data['signed_revenue']?.toString() ?? '') ?? 0.0;
+        final winRate = (data['win_rate'] is num)
+            ? (data['win_rate'] as num).toDouble()
+            : double.tryParse(data['win_rate']?.toString() ?? '') ?? 0.0;
+        final avgDeal = (data['average_deal_size'] is num)
+            ? (data['average_deal_size'] as num).toDouble()
+            : double.tryParse(data['average_deal_size']?.toString() ?? '') ??
+                0.0;
+
+        final cards = [
+          _buildKpiCard(
+            label: 'Total Pipeline Value',
+            value: loading ? '--' : _formatCurrency(pipeline),
+            icon: Icons.stacked_line_chart,
+            color: PremiumTheme.info,
+          ),
+          _buildKpiCard(
+            label: 'Expected Revenue',
+            value: loading ? '--' : _formatCurrency(expected),
+            icon: Icons.auto_graph,
+            color: PremiumTheme.teal,
+          ),
+          _buildKpiCard(
+            label: 'Signed Revenue',
+            value: loading ? '--' : _formatCurrency(signed),
+            icon: Icons.verified,
+            color: const Color(0xFF34A853),
+          ),
+          _buildKpiCard(
+            label: 'Win Rate',
+            value: loading ? '--' : '${(winRate * 100).toStringAsFixed(1)}%',
+            icon: Icons.trending_up,
+            color: PremiumTheme.purple,
+          ),
+          _buildKpiCard(
+            label: 'Average Deal Size',
+            value: loading ? '--' : _formatCurrency(avgDeal),
+            icon: Icons.payments,
+            color: Colors.orange,
+          ),
+        ];
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            int columns;
+            if (w >= 1300) {
+              columns = 5;
+            } else if (w >= 980) {
+              columns = 5;
+            } else if (w >= 760) {
+              columns = 3;
+            } else {
+              columns = 2;
+            }
+
+            final spacing = 12.0;
+            final cardWidth =
+                ((w - (columns - 1) * spacing) / columns).clamp(160.0, 420.0);
+
+            return Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: [
+                for (final c in cards)
+                  SizedBox(
+                    width: cardWidth,
+                    child: c,
+                  ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPanel({
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        color: PremiumTheme.darkBg2.withOpacity(0.9),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: PremiumTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(height: 240, child: child),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFunnelChart() {
+    final future = _funnelFuture ?? _fetchFunnel(year: _selectedYear);
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: CircularProgressIndicator(
+              valueColor:
+                  AlwaysStoppedAnimation<Color>(Colors.white.withOpacity(0.7)),
+            ),
+          );
+        }
+        final items = snapshot.data ?? [];
+        final stages = <String>[];
+        final values = <double>[];
+        for (final r in items) {
+          final s = (r['stage'] ?? '').toString();
+          if (s.isEmpty) continue;
+          stages.add(s);
+          values.add((r['value'] is num)
+              ? (r['value'] as num).toDouble()
+              : double.tryParse(r['value']?.toString() ?? '') ?? 0.0);
+        }
+        if (stages.isEmpty) {
+          return Center(
+            child: Text(
+              'No data',
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+            ),
+          );
+        }
+
+        final maxY = (values.fold<double>(0, (a, b) => a > b ? a : b))
+            .clamp(1, double.infinity);
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withOpacity(0.06)),
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: BarChart(
+            BarChartData(
+              maxY: maxY * 1.1,
+              minY: 0,
+              alignment: BarChartAlignment.spaceAround,
+              groupsSpace: 18,
+              barTouchData: BarTouchData(
+                enabled: true,
+                touchTooltipData: BarTouchTooltipData(
+                  tooltipPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  tooltipMargin: 12,
+                  getTooltipColor: (group) => Colors.white.withOpacity(0.92),
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                    final label = groupIndex >= 0 && groupIndex < stages.length
+                        ? stages[groupIndex]
+                        : '';
+                    return BarTooltipItem(
+                      '$label\nvalue : ${_formatCurrency(rod.toY)}',
+                      PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: Colors.white.withOpacity(0.08),
+                  strokeWidth: 1,
+                ),
+              ),
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                topTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 42,
+                    getTitlesWidget: (value, meta) {
+                      if (value == 0) {
+                        return Text(
+                          'R0',
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        );
+                      }
+                      if (value == meta.max) {
+                        return Text(
+                          _formatCurrency(value),
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 34,
+                    getTitlesWidget: (value, meta) {
+                      final i = value.toInt();
+                      if (i < 0 || i >= stages.length)
+                        return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          stages[i],
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              barGroups: List.generate(stages.length, (i) {
+                return BarChartGroupData(
+                  x: i,
+                  barRods: [
+                    BarChartRodData(
+                      toY: values[i],
+                      color: PremiumTheme.teal,
+                      width: 18,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ],
+                );
+              }),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSignedRevenueGrowthChart() {
+    final future = _growthFuture ?? _fetchGrowth(year: _selectedYear);
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: CircularProgressIndicator(
+              valueColor:
+                  AlwaysStoppedAnimation<Color>(Colors.white.withOpacity(0.7)),
+            ),
+          );
+        }
+        final items = snapshot.data ?? [];
+        final months = <String>[];
+        final values = <double>[];
+        for (final r in items) {
+          final m = (r['month'] ?? '').toString();
+          if (m.length < 7) continue;
+          months.add(m);
+          values.add((r['signed_revenue'] is num)
+              ? (r['signed_revenue'] as num).toDouble()
+              : double.tryParse(r['signed_revenue']?.toString() ?? '') ?? 0.0);
+        }
+        if (months.isEmpty) {
+          return Center(
+            child: Text(
+              'No data',
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+            ),
+          );
+        }
+
+        final displayCount = months.length >= 6 ? 6 : months.length;
+        final months6 = months.sublist(months.length - displayCount);
+        final values6 = values.sublist(values.length - displayCount);
+
+        double maxY = 0;
+        for (final v in values6) {
+          if (v > maxY) maxY = v;
+        }
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withOpacity(0.06)),
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+          child: LineChart(
+            LineChartData(
+              minX: 0,
+              maxX: (displayCount - 1).toDouble(),
+              minY: 0,
+              maxY: (maxY <= 0 ? 1 : maxY) * 1.1,
+              lineTouchData: LineTouchData(
+                enabled: true,
+                handleBuiltInTouches: true,
+                touchTooltipData: LineTouchTooltipData(
+                  tooltipMargin: 12,
+                  tooltipPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  getTooltipColor: (touchedSpot) =>
+                      Colors.white.withOpacity(0.96),
+                  getTooltipItems: (touchedSpots) {
+                    if (touchedSpots.isEmpty) return [];
+                    final idx =
+                        touchedSpots.first.x.round().clamp(0, displayCount - 1);
+                    final monthKey = months6[idx];
+                    DateTime? parsed;
+                    try {
+                      final parts = monthKey.split('-');
+                      parsed =
+                          DateTime(int.parse(parts[0]), int.parse(parts[1]), 1);
+                    } catch (_) {}
+                    final monthLabel = parsed != null
+                        ? DateFormat('MMM').format(parsed)
+                        : monthKey;
+                    final val = values6[idx];
+                    final headerStyle = PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w700,
+                    );
+                    final bodyStyle = PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w600,
+                    );
+                    return [
+                      LineTooltipItem(
+                        '$monthLabel\n',
+                        headerStyle,
+                        children: [
+                          TextSpan(
+                            text: 'Signed : ${_formatCurrency(val)}',
+                            style: bodyStyle.copyWith(color: PremiumTheme.info),
+                          ),
+                        ],
+                      )
+                    ];
+                  },
+                ),
+              ),
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: Colors.white.withOpacity(0.08),
+                  strokeWidth: 1,
+                ),
+              ),
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                topTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 42,
+                    getTitlesWidget: (value, meta) {
+                      if (value == 0) {
+                        return Text(
+                          'R0',
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        );
+                      }
+                      if (value == meta.max) {
+                        return Text(
+                          _formatCurrency(value),
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: 1,
+                    getTitlesWidget: (value, meta) {
+                      final i = value.toInt();
+                      if (i < 0 || i >= months6.length)
+                        return const SizedBox.shrink();
+                      DateTime? parsed;
+                      try {
+                        final parts = months6[i].split('-');
+                        parsed = DateTime(
+                            int.parse(parts[0]), int.parse(parts[1]), 1);
+                      } catch (_) {}
+                      final label = parsed != null
+                          ? DateFormat('MMM').format(parsed)
+                          : months6[i];
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          label,
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              lineBarsData: [
+                LineChartBarData(
+                  spots: List.generate(
+                      displayCount, (i) => FlSpot(i.toDouble(), values6[i])),
+                  isCurved: true,
+                  color: PremiumTheme.info,
+                  barWidth: 3,
+                  dotData: const FlDotData(show: false),
+                  belowBarData: BarAreaData(
+                    show: true,
+                    color: PremiumTheme.info.withOpacity(0.10),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildChartsRow() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 1100;
+        final left = _buildPanel(
+          title: 'Pipeline Funnel Chart',
+          subtitle: 'Proposal value by stage',
+          child: _buildFunnelChart(),
+        );
+        final mid = _buildPanel(
+          title: 'Revenue Forecast Chart',
+          subtitle: 'Forecasted revenue by month',
+          child: _buildRevenueForecastChart(),
+        );
+        final right = _buildPanel(
+          title: 'Signed Revenue Growth',
+          subtitle: 'Signed revenue trend',
+          child: _buildSignedRevenueGrowthChart(),
+        );
+
+        if (isNarrow) {
+          return Column(
+            children: [
+              left,
+              const SizedBox(height: 12),
+              mid,
+              const SizedBox(height: 12),
+              right,
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: left),
+            const SizedBox(width: 12),
+            Expanded(child: mid),
+            const SizedBox(width: 12),
+            Expanded(child: right),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSimpleListPanel({
+    required String title,
+    required String subtitle,
+    required Widget child,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        color: PremiumTheme.darkBg2.withOpacity(0.9),
+        border: Border.all(color: Colors.white.withOpacity(0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: PremiumTheme.titleMedium),
+          const SizedBox(height: 6),
+          Text(subtitle,
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70)),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopClientsPanel() {
+    final future = _topClientsFuture ?? _fetchTopClients(year: _selectedYear);
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            height: 220,
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.7)),
+              ),
+            ),
+          );
+        }
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return SizedBox(
+            height: 80,
+            child: Center(
+              child: Text('No data',
+                  style:
+                      PremiumTheme.bodyMedium.copyWith(color: Colors.white60)),
+            ),
+          );
+        }
+
+        return Column(
+          children: [
+            for (int i = 0; i < items.length; i++) ...[
+              Row(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    child: Text(
+                      '#${i + 1}',
+                      style: PremiumTheme.labelMedium
+                          .copyWith(color: Colors.white60),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      (items[i]['client'] ?? '').toString(),
+                      style:
+                          PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _formatCurrency((items[i]['revenue'] is num)
+                        ? (items[i]['revenue'] as num).toDouble()
+                        : double.tryParse(
+                                items[i]['revenue']?.toString() ?? '') ??
+                            0.0),
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              if (i != items.length - 1)
+                Divider(color: Colors.white.withOpacity(0.06), height: 14),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildRecentSignedPanel() {
+    final future =
+        _recentSignedFuture ?? _fetchRecentSigned(year: _selectedYear);
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            height: 220,
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.7)),
+              ),
+            ),
+          );
+        }
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return SizedBox(
+            height: 80,
+            child: Center(
+              child: Text('No data',
+                  style:
+                      PremiumTheme.bodyMedium.copyWith(color: Colors.white60)),
+            ),
+          );
+        }
+
+        return Column(
+          children: [
+            for (int i = 0; i < items.length; i++) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (items[i]['proposal'] ?? '').toString(),
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          (items[i]['client'] ?? '').toString(),
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _formatCurrency((items[i]['amount'] is num)
+                        ? (items[i]['amount'] as num).toDouble()
+                        : double.tryParse(
+                                items[i]['amount']?.toString() ?? '') ??
+                            0.0),
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              if (i != items.length - 1)
+                Divider(color: Colors.white.withOpacity(0.06), height: 14),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildAgingPanel() {
+    final future = _agingFuture ?? _fetchAging(year: _selectedYear);
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            height: 220,
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.7)),
+              ),
+            ),
+          );
+        }
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return SizedBox(
+            height: 80,
+            child: Center(
+              child: Text('No stalled deals > 30 days',
+                  style:
+                      PremiumTheme.bodyMedium.copyWith(color: Colors.white60)),
+            ),
+          );
+        }
+
+        final shown = items.take(8).toList();
+        return Column(
+          children: [
+            for (int i = 0; i < shown.length; i++) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      (shown[i]['proposal'] ?? '').toString(),
+                      style:
+                          PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    '${shown[i]['days_in_stage'] ?? ''}d',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.orange,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              if (i != shown.length - 1)
+                Divider(color: Colors.white.withOpacity(0.06), height: 14),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Color _alertColor(String severity) {
+    final s = severity.toLowerCase();
+    if (s == 'warning') return Colors.orange;
+    if (s == 'critical') return Colors.redAccent;
+    return PremiumTheme.info;
+  }
+
+  Widget _buildAlertsPanel() {
+    final future = _alertsFuture ?? _fetchAlerts(year: _selectedYear);
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            height: 220,
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.7)),
+              ),
+            ),
+          );
+        }
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return SizedBox(
+            height: 80,
+            child: Center(
+              child: Text('No alerts',
+                  style:
+                      PremiumTheme.bodyMedium.copyWith(color: Colors.white60)),
+            ),
+          );
+        }
+
+        final shown = items.take(10).toList();
+        return Column(
+          children: [
+            for (int i = 0; i < shown.length; i++) ...[
+              Row(
+                children: [
+                  Container(
+                    height: 10,
+                    width: 10,
+                    decoration: BoxDecoration(
+                      color: _alertColor(
+                          (shown[i]['severity'] ?? 'info').toString()),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      (shown[i]['type'] ?? '').toString().replaceAll('_', ' '),
+                      style:
+                          PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    (shown[i]['client'] ?? '').toString(),
+                    style: PremiumTheme.labelMedium
+                        .copyWith(color: Colors.white60),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+              if (i != shown.length - 1)
+                Divider(color: Colors.white.withOpacity(0.06), height: 14),
+            ],
+          ],
+        );
+      },
+    );
   }
 
   bool _canAccessAudit(AppState app) {
@@ -1191,15 +2275,59 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                                     if (_currentTab == 'dashboard') ...[
                                       _buildDashboardTitle(),
                                       const SizedBox(height: 16),
-                                      _buildSummaryRow(
-                                        proposals: dashboardProposals,
-                                        pendingCount: pricingCount,
-                                        approvedCount: approvedCount,
-                                        sentToClientCount: sentToClientCount,
-                                        totalAmount: totalAmount,
-                                      ),
+                                      _buildFinanceKpis(),
                                       const SizedBox(height: 16),
-                                      _buildDashboardPanels(),
+                                      _buildChartsRow(),
+                                      const SizedBox(height: 12),
+                                      LayoutBuilder(
+                                        builder: (context, constraints) {
+                                          final isNarrow =
+                                              constraints.maxWidth < 1100;
+                                          final left = _buildSimpleListPanel(
+                                            title: 'Top Clients by Revenue',
+                                            subtitle: 'Highest revenue clients',
+                                            child: _buildTopClientsPanel(),
+                                          );
+                                          final mid = _buildSimpleListPanel(
+                                            title: 'Recent Signed Deals',
+                                            subtitle: 'Latest signed proposals',
+                                            child: _buildRecentSignedPanel(),
+                                          );
+                                          final right = _buildSimpleListPanel(
+                                            title: 'Pipeline Aging Report',
+                                            subtitle: 'Deals stuck > 30 days',
+                                            child: _buildAgingPanel(),
+                                          );
+
+                                          if (isNarrow) {
+                                            return Column(
+                                              children: [
+                                                left,
+                                                const SizedBox(height: 12),
+                                                mid,
+                                                const SizedBox(height: 12),
+                                                right,
+                                              ],
+                                            );
+                                          }
+
+                                          return Row(
+                                            children: [
+                                              Expanded(child: left),
+                                              const SizedBox(width: 12),
+                                              Expanded(child: mid),
+                                              const SizedBox(width: 12),
+                                              Expanded(child: right),
+                                            ],
+                                          );
+                                        },
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildSimpleListPanel(
+                                        title: 'Financial Alerts',
+                                        subtitle: 'Deals requiring attention',
+                                        child: _buildAlertsPanel(),
+                                      ),
                                       const SizedBox(height: 12),
                                       _buildRequiresAttention(
                                           requiresAttention),
@@ -1495,204 +2623,254 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   }
 
   Widget _buildRevenueForecastChart() {
-    final app = context.read<AppState>();
-    final proposals = app.proposals
-        .whereType<Map>()
-        .map((raw) => raw is Map<String, dynamic>
-            ? raw
-            : raw.map((k, v) => MapEntry(k.toString(), v)))
-        .toList();
+    final future =
+        _monthlyForecastFuture ?? _fetchMonthlyForecast(year: _selectedYear);
 
-    double pipelineValue = 0;
-    for (final p in proposals) {
-      pipelineValue += _extractAmount(p);
-    }
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        final loading = snapshot.connectionState == ConnectionState.waiting;
+        final items = snapshot.data ?? [];
 
-    final now = DateTime.now();
-    final months = List.generate(6, (i) {
-      final d = DateTime(now.year, now.month - (5 - i), 1);
-      return DateFormat('MMM').format(d);
-    });
+        final months = <String>[];
+        final projected = <double>[];
 
-    final base = pipelineValue <= 0 ? 1000000.0 : pipelineValue;
-    final projected = List.generate(6, (i) => base * (0.55 + i * 0.09));
-    final actual = List.generate(
-      6,
-      (i) => base * (0.52 + i * 0.085) * (i < 4 ? 1.0 : 0.92),
-    );
+        for (final r in items) {
+          final month = (r['month'] ?? '').toString();
+          if (month.length < 7) continue;
+          months.add(month);
+          projected.add((r['forecast_revenue'] is num)
+              ? (r['forecast_revenue'] as num).toDouble()
+              : double.tryParse(r['forecast_revenue']?.toString() ?? '') ??
+                  0.0);
+        }
 
-    double maxY = 0;
-    for (final v in [...projected, ...actual]) {
-      if (v > maxY) maxY = v;
-    }
+        // If no data, create a stable empty chart.
+        if (months.isEmpty) {
+          for (int m = 1; m <= 12; m++) {
+            months.add(
+                '${_selectedYear.toString().padLeft(4, '0')}-${m.toString().padLeft(2, '0')}');
+            projected.add(0.0);
+          }
+        }
 
-    String fmt(double v) {
-      if (v >= 1000000) return 'R${(v / 1000000).toStringAsFixed(1)}M';
-      if (v >= 1000) return 'R${(v / 1000).toStringAsFixed(0)}K';
-      return 'R${v.toStringAsFixed(0)}';
-    }
+        final now = DateTime.now();
+        int startIndex = 0;
+        if (_selectedYear == now.year) {
+          // Show from the current month forward when viewing the current year.
+          startIndex =
+              (now.month - 1).clamp(0, months.isEmpty ? 0 : months.length - 1);
+        }
+        if (startIndex >= months.length) {
+          startIndex = 0;
+        }
+        final remaining = months.length - startIndex;
+        final displayCount = remaining >= 6 ? 6 : remaining;
+        final months6 = months.sublist(startIndex, startIndex + displayCount);
+        final projected6 =
+            projected.sublist(startIndex, startIndex + displayCount);
 
-    final teal = PremiumTheme.teal;
-    final blue = PremiumTheme.info;
+        double maxY = 0;
+        for (final v in projected6) {
+          if (v > maxY) maxY = v;
+        }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
-      ),
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-      child: LineChart(
-        LineChartData(
-          minX: 0,
-          maxX: 5,
-          minY: 0,
-          maxY: maxY * 1.1,
-          lineTouchData: LineTouchData(
-            enabled: true,
-            handleBuiltInTouches: true,
-            touchTooltipData: LineTouchTooltipData(
-              tooltipMargin: 12,
-              tooltipPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              getTooltipColor: (touchedSpot) => Colors.white.withOpacity(0.96),
-              getTooltipItems: (touchedSpots) {
-                if (touchedSpots.isEmpty) return [];
+        String fmt(double v) {
+          if (v >= 1000000) return 'R${(v / 1000000).toStringAsFixed(1)}M';
+          if (v >= 1000) return 'R${(v / 1000).toStringAsFixed(0)}K';
+          return 'R${v.toStringAsFixed(0)}';
+        }
 
-                final idx = touchedSpots.first.x.round().clamp(0, 5);
-                final month =
-                    idx >= 0 && idx < months.length ? months[idx] : '';
-                final proj = projected[idx];
-                final act = actual[idx];
+        final teal = PremiumTheme.teal;
 
-                final headerStyle = PremiumTheme.bodyMedium.copyWith(
-                  color: Colors.black87,
-                  fontWeight: FontWeight.w700,
-                );
-                final bodyStyle = PremiumTheme.bodyMedium.copyWith(
-                  color: Colors.black87,
-                  fontWeight: FontWeight.w600,
-                );
-
-                return List.generate(touchedSpots.length, (i) {
-                  final spot = touchedSpots[i];
-                  if (spot.barIndex != 0) {
-                    return const LineTooltipItem('', TextStyle());
-                  }
-
-                  return LineTooltipItem(
-                    '$month\n',
-                    headerStyle,
-                    children: [
-                      TextSpan(
-                        text: 'Projected : ${_formatCurrency(proj)}\n',
-                        style: bodyStyle.copyWith(color: teal),
-                      ),
-                      TextSpan(
-                        text: 'Actual : ${_formatCurrency(act)}',
-                        style: bodyStyle.copyWith(color: blue),
-                      ),
-                    ],
-                  );
-                });
-              },
+        return Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Year',
+                  style:
+                      PremiumTheme.labelMedium.copyWith(color: Colors.white60),
+                ),
+                _buildYearSelector(),
+              ],
             ),
-          ),
-          gridData: FlGridData(
-            show: true,
-            drawVerticalLine: false,
-            getDrawingHorizontalLine: (value) => FlLine(
-              color: Colors.white.withOpacity(0.08),
-              strokeWidth: 1,
-            ),
-          ),
-          borderData: FlBorderData(show: false),
-          titlesData: FlTitlesData(
-            topTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles:
-                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            leftTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                reservedSize: 42,
-                getTitlesWidget: (value, meta) {
-                  if (value == 0) {
-                    return Text(
-                      'R0',
-                      style: PremiumTheme.labelMedium.copyWith(
-                        color: Colors.white60,
-                        fontSize: 10,
+            const SizedBox(height: 10),
+            if (loading)
+              Expanded(
+                child: Center(
+                  child: CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                        Colors.white.withOpacity(0.7)),
+                  ),
+                ),
+              )
+            else
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.03),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.white.withOpacity(0.06)),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                  child: LineChart(
+                    LineChartData(
+                      minX: 0,
+                      maxX: (displayCount - 1).toDouble(),
+                      minY: 0,
+                      maxY: (maxY <= 0 ? 1 : maxY) * 1.1,
+                      lineTouchData: LineTouchData(
+                        enabled: true,
+                        handleBuiltInTouches: true,
+                        touchTooltipData: LineTouchTooltipData(
+                          tooltipMargin: 12,
+                          tooltipPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          getTooltipColor: (touchedSpot) =>
+                              Colors.white.withOpacity(0.96),
+                          getTooltipItems: (touchedSpots) {
+                            if (touchedSpots.isEmpty) return [];
+                            final idx = touchedSpots.first.x
+                                .round()
+                                .clamp(0, displayCount - 1);
+                            final monthKey = months6[idx];
+                            DateTime? parsed;
+                            try {
+                              final parts = monthKey.split('-');
+                              parsed = DateTime(
+                                  int.parse(parts[0]), int.parse(parts[1]), 1);
+                            } catch (_) {}
+                            final monthLabel = parsed != null
+                                ? DateFormat('MMM').format(parsed)
+                                : monthKey;
+                            final proj = projected6[idx];
+                            final headerStyle =
+                                PremiumTheme.bodyMedium.copyWith(
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w700,
+                            );
+                            final bodyStyle = PremiumTheme.bodyMedium.copyWith(
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w600,
+                            );
+
+                            return List.generate(touchedSpots.length, (i) {
+                              final spot = touchedSpots[i];
+                              if (spot.barIndex != 0) {
+                                return const LineTooltipItem('', TextStyle());
+                              }
+                              return LineTooltipItem(
+                                '$monthLabel\n',
+                                headerStyle,
+                                children: [
+                                  TextSpan(
+                                    text: 'Forecast : ${_formatCurrency(proj)}',
+                                    style: bodyStyle.copyWith(color: teal),
+                                  ),
+                                ],
+                              );
+                            });
+                          },
+                        ),
                       ),
-                    );
-                  }
-                  if (value == meta.max) {
-                    return Text(
-                      fmt(value),
-                      style: PremiumTheme.labelMedium.copyWith(
-                        color: Colors.white60,
-                        fontSize: 10,
+                      gridData: FlGridData(
+                        show: true,
+                        drawVerticalLine: false,
+                        getDrawingHorizontalLine: (value) => FlLine(
+                          color: Colors.white.withOpacity(0.08),
+                          strokeWidth: 1,
+                        ),
                       ),
-                    );
-                  }
-                  return const SizedBox.shrink();
-                },
-              ),
-            ),
-            bottomTitles: AxisTitles(
-              sideTitles: SideTitles(
-                showTitles: true,
-                interval: 1,
-                getTitlesWidget: (value, meta) {
-                  final i = value.toInt();
-                  if (i < 0 || i >= months.length)
-                    return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: Text(
-                      months[i],
-                      style: PremiumTheme.labelMedium.copyWith(
-                        color: Colors.white60,
-                        fontSize: 10,
+                      borderData: FlBorderData(show: false),
+                      titlesData: FlTitlesData(
+                        topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false)),
+                        leftTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            reservedSize: 42,
+                            getTitlesWidget: (value, meta) {
+                              if (value == 0) {
+                                return Text(
+                                  'R0',
+                                  style: PremiumTheme.labelMedium.copyWith(
+                                    color: Colors.white60,
+                                    fontSize: 10,
+                                  ),
+                                );
+                              }
+                              if (value == meta.max) {
+                                return Text(
+                                  fmt(value),
+                                  style: PremiumTheme.labelMedium.copyWith(
+                                    color: Colors.white60,
+                                    fontSize: 10,
+                                  ),
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ),
+                        bottomTitles: AxisTitles(
+                          sideTitles: SideTitles(
+                            showTitles: true,
+                            interval: 1,
+                            getTitlesWidget: (value, meta) {
+                              final i = value.toInt();
+                              if (i < 0 || i >= months6.length) {
+                                return const SizedBox.shrink();
+                              }
+                              DateTime? parsed;
+                              try {
+                                final parts = months6[i].split('-');
+                                parsed = DateTime(int.parse(parts[0]),
+                                    int.parse(parts[1]), 1);
+                              } catch (_) {}
+                              final label = parsed != null
+                                  ? DateFormat('MMM').format(parsed)
+                                  : months6[i];
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 6),
+                                child: Text(
+                                  label,
+                                  style: PremiumTheme.labelMedium.copyWith(
+                                    color: Colors.white60,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       ),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: List.generate(
+                            displayCount,
+                            (i) => FlSpot(i.toDouble(), projected6[i]),
+                          ),
+                          isCurved: true,
+                          color: teal,
+                          barWidth: 3,
+                          dotData: const FlDotData(show: false),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            color: teal.withOpacity(0.12),
+                          ),
+                        ),
+                      ],
                     ),
-                  );
-                },
+                  ),
+                ),
               ),
-            ),
-          ),
-          lineBarsData: [
-            LineChartBarData(
-              spots: List.generate(
-                6,
-                (i) => FlSpot(i.toDouble(), projected[i]),
-              ),
-              isCurved: true,
-              color: teal,
-              barWidth: 3,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: teal.withOpacity(0.12),
-              ),
-            ),
-            LineChartBarData(
-              spots: List.generate(
-                6,
-                (i) => FlSpot(i.toDouble(), actual[i]),
-              ),
-              isCurved: true,
-              color: blue,
-              barWidth: 3,
-              dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(
-                show: true,
-                color: blue.withOpacity(0.08),
-              ),
-            ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 

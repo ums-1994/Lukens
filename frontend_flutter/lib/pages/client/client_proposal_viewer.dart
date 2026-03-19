@@ -61,7 +61,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     final headers = <String, String>{};
     try {
       // Align with ClientDashboardHome keys
-      final deviceId = web.window.localStorage['lukens_client_device_id']?.trim();
+      final deviceId =
+          web.window.localStorage['lukens_client_device_id']?.trim();
       if (deviceId != null && deviceId.isNotEmpty) {
         headers['X-Client-Device-Id'] = deviceId;
       }
@@ -525,7 +526,8 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     });
 
     try {
-      final extraHeaders = kIsWeb ? _clientDeviceHeaders() : const <String, String>{};
+      final extraHeaders =
+          kIsWeb ? _clientDeviceHeaders() : const <String, String>{};
       final response = await http
           .get(
             Uri.parse(
@@ -536,18 +538,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('📄 Proposal data received: ${data['proposal']?['title']}');
         final content = data['proposal']?['content'];
-        print('📄 Content type: ${content?.runtimeType}');
         if (content != null) {
-          final contentStr = content.toString();
-          final preview = contentStr.length > 100
-              ? contentStr.substring(0, 100)
-              : contentStr;
-          print('📄 Content value: $preview');
-        } else {
-          print('📄 Content is null or empty');
-        }
+          content.toString();
+        } else {}
         final parsedSections = _parseSectionsFromContent(content);
 
         setState(() {
@@ -559,9 +553,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           _signatureStatus = _signatureData?['status']?.toString();
 
           // Debug logging for signature data
-          print('📝 Signature data: ${_signatureData?.toString()}');
-          print('📝 Signing URL: $_signingUrl');
-          print('📝 Signature Status: $_signatureStatus');
 
           _comments = (data['comments'] as List?)
                   ?.map((c) => Map<String, dynamic>.from(c))
@@ -576,8 +567,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         await _loadPdfPreview();
       } else {
         final errorBody = response.body;
-        print('❌ Error loading proposal: ${response.statusCode}');
-        print('❌ Error body: $errorBody');
         try {
           final error = jsonDecode(errorBody);
           setState(() {
@@ -993,12 +982,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     final isSigned = signatureStatus.contains('completed');
     final isDeclined = signatureStatus.contains('declined');
     final hasSigningUrl = _signingUrl != null && _signingUrl!.isNotEmpty;
-
-    // Debug logging
-    print(
-        '🔍 Action Bar - isSigned: $isSigned, isDeclined: $isDeclined, hasSigningUrl: $hasSigningUrl');
-    print(
-        '🔍 Action Bar - signatureStatus: $_signatureStatus, signingUrl: $_signingUrl');
     final statusColor = isSigned
         ? Colors.green
         : isDeclined
@@ -1059,39 +1042,23 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
             const SizedBox(width: 12),
             ElevatedButton.icon(
               onPressed: () {
-                print('🔐 ========== SIGN PROPOSAL BUTTON CLICKED ==========');
-                print(
-                    '🔐 Current URL before click: ${web.window.location.href}');
-                print(
-                    '🔐 Signing URL: ${_signingUrl?.substring(0, _signingUrl!.length > 80 ? 80 : _signingUrl!.length)}...');
-
                 _logEvent('sign', metadata: {'action': 'sign_button_clicked'});
 
                 if (_signingUrl == null || _signingUrl!.isEmpty) {
-                  print('⚠️ No signing URL available');
                   _openSigningModal();
                   return;
                 }
 
                 // Open DocuSign in the same tab (redirect mode - works on HTTP)
-                print('🔐 Opening DocuSign in same tab (redirect mode)...');
                 final url = _signingUrl!;
 
                 try {
-                  print(
-                      '🔐 Navigating to DocuSign URL: ${url.substring(0, url.length > 100 ? 100 : url.length)}...');
-
                   // Use replace() to navigate to external URL (bypasses Flutter routing)
                   // This prevents Flutter from intercepting the external DocuSign URL
                   web.window.location.replace(url);
-                  print(
-                      '✅ Navigation initiated to DocuSign using location.replace()');
-
                   // Note: We don't show a SnackBar here because the page will navigate immediately
                   // The navigation happens synchronously, so any mounted check would be unreliable
-                } catch (e, stackTrace) {
-                  print('❌ Error opening DocuSign: $e');
-                  print('❌ Stack trace: $stackTrace');
+                } catch (e) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
@@ -1137,13 +1104,10 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   }
 
   Future<void> _openSigningModal() async {
-    print('🔐 Opening signing modal...');
-    print('🔐 Current signing URL: $_signingUrl');
     _logEvent('sign', metadata: {'action': 'signing_modal_opened'});
 
     // If no signing URL, try to get/create one
     if (_signingUrl == null || _signingUrl!.isEmpty) {
-      print('⚠️ No signing URL, creating one...');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1218,26 +1182,20 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
     // Use redirect mode - navigate to DocuSign in the same tab (works on HTTP)
     final urlToOpen = _signingUrl!;
-    print(
-        '🔐 Opening DocuSign URL (redirect mode): ${urlToOpen.substring(0, urlToOpen.length > 100 ? 100 : urlToOpen.length)}...');
 
     try {
       if (kIsWeb) {
         // Navigate to DocuSign in the same tab (redirect mode)
         // Use replace() to navigate to external URL (bypasses Flutter routing)
-        print('🔐 Navigating to DocuSign in same tab...');
         web.window.location.replace(urlToOpen);
-        print('✅ Navigation initiated to DocuSign using location.replace()');
       } else {
         // For mobile, use external launcher
         await launchUrlString(
           urlToOpen,
           mode: LaunchMode.externalApplication,
         );
-        print('✅ Opened DocuSign via launcher');
       }
     } catch (e) {
-      print('❌ Error opening DocuSign: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

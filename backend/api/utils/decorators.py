@@ -352,8 +352,9 @@ def finance_required(f):
         if not result:
             return {'detail': 'User not found'}, 403
 
-        role = result[0].lower()
-        if role not in ['finance', 'admin', 'ceo']:
+        role = (result[0] or '').strip().lower()
+        is_finance = role.startswith('finance') or role in ['finance_manager', 'finance']
+        if role not in ['admin', 'ceo'] and not is_finance:
             return {'detail': 'Finance access required'}, 403
 
         return f(username=username, *args, **kwargs)

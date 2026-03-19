@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../config/app_constants.dart';
 import '../../theme/premium_theme.dart';
 
 class FinanceSidebar extends StatelessWidget {
@@ -133,6 +134,33 @@ class FinanceSidebar extends StatelessWidget {
                 accent: _accent,
                 base: _base,
               ),
+              if (!effectiveCollapsed) ...[
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1F2E),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: const Color(0xFF2C3E50),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      AppConstants.fullVersion,
+                      style: const TextStyle(
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 20),
             ],
           );
