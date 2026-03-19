@@ -424,6 +424,7 @@ def get_document_comments(username=None, user_id=None, proposal_id=None):
             'resolved_count': 0,
         }, 200
 
+@bp.post("/comments/<int:comment_id>/reactions")
 @bp.post("/api/comments/<int:comment_id>/reactions")
 @token_required
 def toggle_comment_reaction(username=None, user_id=None, comment_id=None):
