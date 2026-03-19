@@ -890,34 +890,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
     }
 
-    // Route authenticated users directly to their dashboard.
-    // This prevents successful social sign-in from falling back to landing/login.
-    if (AuthService.isLoggedIn) {
-      final user = AuthService.currentUser ?? const <String, dynamic>{};
-      final rawRole = (user['role'] ?? '').toString().toLowerCase().trim();
-      final roleKey = rawRole.replaceAll('-', '_').replaceAll(' ', '_');
-
-      final isAdmin =
-          roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
-      final isFinance = roleKey.startsWith('finance') ||
-          roleKey == 'financial_manager' ||
-          roleKey == 'financialmanager';
-
-      if (isAdmin) {
-        print('✅ AuthWrapper: authenticated admin user - showing approver dashboard');
-        return const ApproverDashboardPage();
-      }
-
-      if (isFinance) {
-        print('✅ AuthWrapper: authenticated finance user - showing finance dashboard');
-        return const FinanceDashboardV2Page();
-      }
-
-      print('✅ AuthWrapper: authenticated creator/manager user - showing creator dashboard');
-      return const DashboardPage();
-    }
-
-    // Not authenticated: show landing/startup page.
+    // Show landing/startup page first (even with an existing session)
+    // so users can explicitly choose where to go.
     return const StartupPage();
   }
 }

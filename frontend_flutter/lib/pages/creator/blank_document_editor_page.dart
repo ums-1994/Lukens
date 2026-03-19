@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
@@ -25,6 +26,7 @@ import '../../document_editor/models/document_section.dart';
 import '../../document_editor/models/inline_image.dart';
 import '../../document_editor/models/document_table.dart';
 import '../../document_editor/models/positioned_pricing_table.dart';
+import '../../document_editor/models/document_format_models.dart';
 // Block-based section widget
 import '../../document_editor/widgets/section_widget.dart';
 import '../../document_editor/controllers/highlighting_text_controller.dart';
@@ -441,12 +443,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Formatting state
   String _selectedTextStyle = 'Normal Text';
-  String _selectedFont = 'Plus Jakarta Sans';
-  String _selectedFontSize = '12px';
+  String _selectedFont = 'Arial';
+  String _selectedFontSize = '12';
   String _selectedAlignment = 'left';
+  String _selectedLineSpacing = '1.0';
   bool _isBold = false;
   bool _isItalic = false;
   bool _isUnderlined = false;
+  bool _isStrikethrough = false;
 
   // Sidebar state
   bool _isSidebarCollapsed = false;
@@ -650,7 +654,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           await _addComment(parentId: rootCommentId);
                           _threadReplyController.clear();
                           if (!mounted) return;
-                          await _loadCommentsFromDatabase(_savedProposalId!);
+                          unawaited(_loadCommentsFromDatabase(_savedProposalId!));
                           _threadOverlay?.markNeedsBuild();
                         },
                         style: ElevatedButton.styleFrom(
@@ -857,8 +861,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         section.titleFocus.addListener(() => setState(() {}));
 
         // Add auto-save listeners
-        section.controller.addListener(_onContentChanged);
-        section.titleController.addListener(_onContentChanged);
+        _attachSectionListeners(section);
       });
 
       _selectedSectionIndex = 0; // Select first section
@@ -1537,6 +1540,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             // Clear existing sections
             for (var section in _sections) {
               section.controller.dispose();
+              section.richController.dispose();
               section.titleController.dispose();
               section.contentFocus.dispose();
               section.titleFocus.dispose();
@@ -1555,12 +1559,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     sectionTypeNormalized == 'cover';
                 final String? sectionId =
                     sectionData is Map ? (sectionData['id']?.toString()) : null;
+                final dynamic richDelta = sectionData['richContentDelta'];
                 final newSection = DocumentSection(
                   id: sectionId,
                   title: (sectionData['title'] ??
                           (isCover ? '' : 'Untitled Section'))
                       .toString(),
                   content: sectionData['content'] ?? '',
+                  richDeltaJson: richDelta == null ? null : jsonEncode(richDelta),
+                  lineSpacing: (sectionData['lineSpacing'] ?? '1.0').toString(),
+                  paragraphAlignment:
+                      (sectionData['paragraphAlignment'] ?? 'left').toString(),
+                  richParagraphs:
+                      (sectionData['richParagraphs'] as List<dynamic>?)
+                              ?.map((p) => Map<String, dynamic>.from(p as Map))
+                              .toList() ??
+                          [],
                   backgroundColor: sectionData['backgroundColor'] != null
                       ? Color(sectionData['backgroundColor'] as int)
                       : Colors.white,
@@ -1616,8 +1630,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 _sections.add(newSection);
 
                 // Add listeners
-                newSection.controller.addListener(_onContentChanged);
-                newSection.titleController.addListener(_onContentChanged);
+                _attachSectionListeners(newSection);
 
                 // Add focus listeners for UI updates
                 newSection.contentFocus.addListener(() => setState(() {}));
@@ -1630,8 +1643,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 content: '',
               );
               _sections.add(defaultSection);
-              defaultSection.controller.addListener(_onContentChanged);
-              defaultSection.titleController.addListener(_onContentChanged);
+              _attachSectionListeners(defaultSection);
 
               // Add focus listeners for UI updates
               defaultSection.contentFocus.addListener(() => setState(() {}));
@@ -1668,6 +1680,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           setState(() {
             for (var section in _sections) {
               section.controller.dispose();
+              section.richController.dispose();
               section.titleController.dispose();
               section.contentFocus.dispose();
               section.titleFocus.dispose();
@@ -1679,8 +1692,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               content: fallbackText,
             );
             _sections.add(fallbackSection);
-            fallbackSection.controller.addListener(_onContentChanged);
-            fallbackSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(fallbackSection);
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
@@ -1694,8 +1706,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               content: '',
             );
             _sections.add(fallbackSection);
-            fallbackSection.controller.addListener(_onContentChanged);
-            fallbackSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(fallbackSection);
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
@@ -1834,11 +1845,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _applyInlineHighlights();
 
       if (mounted) {
-        try {
-          await context.read<AppState>().fetchNotifications();
-        } catch (e) {
-          print('⚠️ Error refreshing notifications: $e');
-        }
+        unawaited(() async {
+          try {
+            await context.read<AppState>().fetchNotifications();
+          } catch (e) {
+            print('⚠️ Error refreshing notifications: $e');
+          }
+        }());
       }
     } catch (e) {
       if (e.toString().contains('unauthorized')) {
@@ -2018,6 +2031,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _mentionDebounce?.cancel();
     for (var section in _sections) {
       section.controller.dispose();
+      section.richController.dispose();
       section.titleController.dispose();
       section.contentFocus.dispose();
       section.titleFocus.dispose();
@@ -2034,8 +2048,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _sections.insert(afterIndex + 1, newSection);
 
       // Add listeners to new section
-      newSection.controller.addListener(_onContentChanged);
-      newSection.titleController.addListener(_onContentChanged);
+      _attachSectionListeners(newSection);
 
       // Add focus listeners for UI updates
       newSection.contentFocus.addListener(() => setState(() {}));
@@ -2845,15 +2858,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _pendingScrollToCommentId = createdId;
         }
 
+        final shouldOptimisticallyInsertRoot = parentId == null &&
+            (_commentFilterStatus == 'all' || _commentFilterStatus == 'open');
+
         setState(() {
           _showCommentsPanel = true;
-        });
+          if (shouldOptimisticallyInsertRoot) {
+            _comments.insert(0, {
+            'id': savedComment['id'] ?? DateTime.now().millisecondsSinceEpoch,
+            'parent_id': parentId,
+            'block_type': 'text',
+            'block_id': blockId,
+            'commenter_name': commenterName,
+            'created_by': savedComment['created_by'],
+            'comment_text': commentText,
+            'section_index': _selectedSectionForComment,
+            'section_name': sectionName,
+            'highlighted_text': (_draftSelectedText.isNotEmpty
+                        ? _draftSelectedText
+                        : _highlightedText)
+                    .isNotEmpty
+                ? (_draftSelectedText.isNotEmpty
+                    ? _draftSelectedText
+                    : _highlightedText)
+                : null,
+            'start_offset': startOffset,
+            'end_offset': endOffset,
+            'timestamp':
+                savedComment['created_at'] ?? DateTime.now().toIso8601String(),
+            'status': 'open',
+            'resolved_by': null,
+            'resolved_at': null,
+            'resolver_name': null,
+            'replies': <dynamic>[],
+            'reactions': <dynamic>[],
+            });
+          }
 
-        // Reload comments from database to get updated structure
-        await _loadCommentsFromDatabase(_savedProposalId!);
-
-        // Clear form fields
-        setState(() {
+          // Clear form fields immediately for a snappy UX.
           _commentController.clear();
           _highlightedText = '';
           _selectedSectionForComment = null;
@@ -2863,6 +2905,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _draftEndOffset = null;
           _draftSelectedText = '';
         });
+
+        // Reconcile in background after a short delay to avoid
+        // "appear then disappear" flicker from immediate eventual-consistency reads.
+        unawaited(Future<void>.delayed(const Duration(milliseconds: 900), () {
+          return _loadCommentsFromDatabase(_savedProposalId!);
+        }));
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -2882,11 +2930,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             _pendingScrollToCommentId = null;
           });
 
-          try {
-            await context.read<AppState>().fetchNotifications();
-          } catch (e) {
-            print('⚠️ Error refreshing notifications after comment: $e');
-          }
+          unawaited(() async {
+            try {
+              await context.read<AppState>().fetchNotifications();
+            } catch (e) {
+              print('⚠️ Error refreshing notifications after comment: $e');
+            }
+          }());
         }
       } else {
         throw Exception('Failed to save comment');
@@ -3309,9 +3359,41 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
     }
 
+    // If no timezone suffix exists, treat it as UTC from backend/storage.
+    final hasExplicitTimezone =
+        normalized.endsWith('Z') ||
+        RegExp(r'[+\-]\d{2}:\d{2}$').hasMatch(normalized);
+    if (!hasExplicitTimezone) {
+      final naiveMatch = RegExp(
+        r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?$',
+      ).firstMatch(normalized);
+      if (naiveMatch != null) {
+        final year = int.parse(naiveMatch.group(1)!);
+        final month = int.parse(naiveMatch.group(2)!);
+        final day = int.parse(naiveMatch.group(3)!);
+        final hour = int.parse(naiveMatch.group(4)!);
+        final minute = int.parse(naiveMatch.group(5)!);
+        final second = int.tryParse(naiveMatch.group(6) ?? '0') ?? 0;
+        final fracRaw = naiveMatch.group(7) ?? '0';
+        final fracPadded = (fracRaw + '000000').substring(0, 6);
+        final microseconds = int.tryParse(fracPadded) ?? 0;
+        final millisecond = microseconds ~/ 1000;
+        final microsecond = microseconds % 1000;
+        return DateTime.utc(
+          year,
+          month,
+          day,
+          hour,
+          minute,
+          second,
+          millisecond,
+          microsecond,
+        );
+      }
+    }
+
     final dt = DateTime.tryParse(normalized);
     if (dt != null) {
-      // Naive timestamps are already in local time (UTC+2) - do not convert to UTC
       return dt;
     }
 
@@ -3337,12 +3419,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return null;
   }
 
+  DateTime _toSast(DateTime dt) {
+    // South Africa Standard Time is UTC+2 year-round.
+    return dt.toUtc().add(const Duration(hours: 2));
+  }
+
   String _formatTimestamp(dynamic timestamp) {
     final parsed = _tryParseTimestamp(timestamp);
     if (parsed == null) return '';
     try {
-      final DateTime dt = parsed;  // Already in local time, no conversion needed
-      final now = DateTime.now();
+      final DateTime dt = _toSast(parsed);
+      final now = _toSast(DateTime.now());
 
       final timePart = DateFormat('HH:mm').format(dt);
       final isSameDate =
@@ -3830,55 +3917,61 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   // Auto-save and versioning methods
+  void _attachSectionListeners(DocumentSection section) {
+    section.richController.onSelectionChanged = (selection) {
+      if (!mounted) return;
+      final sectionIndex = _sections.indexOf(section);
+      if (sectionIndex < 0) return;
+      // Only respond when the editor has focus; avoids interfering with
+      // scroll/tap selection events elsewhere in the widget tree.
+      if (!section.contentFocus.hasFocus) return;
+      _onContentSelectionChanged(sectionIndex, selection, null);
+    };
+
+    section.controller.addListener(() {
+      // Keep rich document in sync when legacy plain-text flows update the controller.
+      section.syncRichFromPlainText();
+      _onContentChanged();
+    });
+    section.richController.addListener(() {
+      // Keep plain-text paths (comments/offset tooling) functional.
+      section.syncPlainTextFromRich();
+      _onContentChanged();
+      if (section.contentFocus.hasFocus) {
+        _syncToolbarStateFromRichSelection();
+      }
+    });
+    section.titleController.addListener(_onContentChanged);
+  }
+
   void _setupAutoSaveListeners() {
     // Listen to title changes
     _titleController.addListener(_onContentChanged);
 
     // Listen to all section changes
     for (var section in _sections) {
-      section.controller.addListener(_onContentChanged);
-      section.titleController.addListener(_onContentChanged);
+      _attachSectionListeners(section);
     }
   }
 
   void _ensureSectionSelectionListeners() {
-    for (final section in _sections) {
-      void onControllerChanged() {
-        final selection = section.controller.selection;
-        if (!selection.isValid) return;
-
-        final sectionIndex = _sections.indexOf(section);
-        if (sectionIndex < 0) return;
-
-        final base = selection.baseOffset;
-        final extent = selection.extentOffset;
-        final start = base < extent ? base : extent;
-        final end = base < extent ? extent : base;
-        final selectionHash = Object.hash(start, end, selection.isCollapsed);
-
-        final lastHash = _lastSelectionHashBySectionId[section.id];
-        if (lastHash == selectionHash) return;
-        _lastSelectionHashBySectionId[section.id] = selectionHash;
-
-        _onContentSelectionChanged(sectionIndex, selection, null);
-      }
-
-      if (_selectionListenerAttachedSectionIds.contains(section.id)) {
-        continue;
-      }
-
-      _selectionListenerAttachedSectionIds.add(section.id);
-      _lastSelectionHashBySectionId.putIfAbsent(section.id, () => null);
-      section.controller.addListener(onControllerChanged);
-    }
+    // Legacy selection wiring (plain TextField selection -> comments overlay).
+    // The live canvas is now Quill-based; selection events must come from
+    // `section.richController.onSelectionChanged`.
   }
 
   void _onContentChanged() {
+    if (_selectedSectionIndex >= 0 &&
+        _selectedSectionIndex < _sections.length &&
+        _sections[_selectedSectionIndex].contentFocus.hasFocus) {
+      _syncToolbarStateFromRichSelection();
+    }
     setState(() {
       _hasUnsavedChanges = true;
     });
 
-    _ensureSectionSelectionListeners();
+    // Selection handling is driven by Quill selection events (see
+    // `_attachSectionListeners`). No need to attach legacy listeners.
 
     // Cancel existing timer
     _autoSaveTimer?.cancel();
@@ -3900,6 +3993,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'id': section.id,
                 'title': section.titleController.text,
                 'content': section.controller.text,
+                'richContentDelta': section.exportRichDelta(),
+                'lineSpacing': section.lineSpacing,
+                'paragraphAlignment': section.paragraphAlignment,
+                'richParagraphs': paragraphsFromQuillDelta(
+                  section.exportRichDelta(),
+                  defaultFontFamily: _selectedFont,
+                  defaultFontSize:
+                      double.tryParse(_selectedFontSize) ?? 12.0,
+                  defaultAlignment: section.paragraphAlignment,
+                  defaultLineSpacing: section.lineSpacing,
+                )
+                    .map((p) => p.toJson())
+                    .toList(),
                 'backgroundColor': section.backgroundColor.value,
                 'backgroundImageUrl': section.backgroundImageUrl,
                 'sectionType': section.sectionType,
@@ -4052,6 +4158,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final content = _serializeDocumentContent();
     final isFinanceRole = context.read<RoleService>().isFinance();
     final computedBudget = _computePricingTotal();
+    final clientName = _clientNameController.text.trim().isEmpty
+        ? 'Unknown Client'
+        : _clientNameController.text.trim();
 
     try {
       if (_savedProposalId == null) {
@@ -4061,9 +4170,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           token: token,
           title: title,
           content: content,
-          clientName: _clientNameController.text.trim().isEmpty
-              ? null
-              : _clientNameController.text.trim(),
+          clientName: clientName,
           clientEmail: _clientEmailController.text.trim().isEmpty
               ? null
               : _clientEmailController.text.trim(),
@@ -4100,9 +4207,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           id: _savedProposalId!,
           title: title,
           content: content,
-          clientName: _clientNameController.text.trim().isEmpty
-              ? null
-              : _clientNameController.text.trim(),
+          clientName: clientName,
           clientEmail: _clientEmailController.text.trim().isEmpty
               ? null
               : _clientEmailController.text.trim(),
@@ -4194,6 +4299,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // Clear existing sections
     for (var section in _sections) {
       section.controller.dispose();
+      section.richController.dispose();
       section.titleController.dispose();
       section.contentFocus.dispose();
       section.titleFocus.dispose();
@@ -4258,7 +4364,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Setup listeners for new sections
     for (var section in _sections) {
-      section.controller.addListener(_onContentChanged);
+      _attachSectionListeners(section);
       section.titleController.addListener(_onContentChanged);
 
       // Add focus listeners for UI updates
@@ -4517,6 +4623,126 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  QuillController? _activeRichController() {
+    if (_sections.isEmpty) return null;
+    if (_selectedSectionIndex < 0 || _selectedSectionIndex >= _sections.length) {
+      return null;
+    }
+    return _sections[_selectedSectionIndex].richController;
+  }
+
+  Attribute<String?> _alignmentToAttribute(String value) {
+    switch (value) {
+      case 'center':
+        return Attribute.centerAlignment;
+      case 'right':
+        return Attribute.rightAlignment;
+      case 'justify':
+        return Attribute.justifyAlignment;
+      case 'left':
+      default:
+        return Attribute.leftAlignment;
+    }
+  }
+
+  Attribute<double?> _lineSpacingToAttribute(String value) {
+    switch (value) {
+      case '1.5':
+        return LineHeightAttribute.lineHeightOneAndHalf;
+      case '2.0':
+        return LineHeightAttribute.lineHeightDouble;
+      case '1.0':
+      default:
+        return LineHeightAttribute.lineHeightNormal;
+    }
+  }
+
+  void _syncToolbarStateFromRichSelection() {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    final attrs = controller.getSelectionStyle().attributes;
+    setState(() {
+      _isBold = attrs.containsKey(Attribute.bold.key);
+      _isItalic = attrs.containsKey(Attribute.italic.key);
+      _isUnderlined = attrs.containsKey(Attribute.underline.key);
+      _isStrikethrough = attrs.containsKey(Attribute.strikeThrough.key);
+      _selectedAlignment =
+          (attrs[Attribute.align.key]?.value?.toString() ?? 'left');
+      final lineHeightRaw = attrs[Attribute.lineHeight.key]?.value;
+      if (lineHeightRaw == 1.5) {
+        _selectedLineSpacing = '1.5';
+      } else if (lineHeightRaw == 2 || lineHeightRaw == 2.0) {
+        _selectedLineSpacing = '2.0';
+      } else {
+        _selectedLineSpacing = '1.0';
+      }
+      final font = attrs[Attribute.font.key]?.value?.toString();
+      if (font != null && font.trim().isNotEmpty) {
+        _selectedFont = font;
+      }
+      final size = attrs[Attribute.size.key]?.value?.toString();
+      if (size != null && size.trim().isNotEmpty) {
+        _selectedFontSize = size;
+      }
+    });
+  }
+
+  void _applyInlineAttribute(Attribute attribute) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    controller.formatSelection(attribute);
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _toggleInlineAttribute(Attribute toggleAttr) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    final attrs = controller.getSelectionStyle().attributes;
+    final enabled = attrs.containsKey(toggleAttr.key);
+    controller.formatSelection(Attribute.clone(toggleAttr, enabled ? null : true));
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _applyParagraphAlignment(String value) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _selectedAlignment = value;
+    controller.formatSelection(_alignmentToAttribute(value));
+    if (_selectedSectionIndex >= 0 && _selectedSectionIndex < _sections.length) {
+      _sections[_selectedSectionIndex].paragraphAlignment = value;
+    }
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _applyLineSpacing(String value) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _selectedLineSpacing = value;
+    controller.formatSelection(_lineSpacingToAttribute(value));
+    if (_selectedSectionIndex >= 0 && _selectedSectionIndex < _sections.length) {
+      _sections[_selectedSectionIndex].lineSpacing = value;
+    }
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _toggleList(String type) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    final attrs = controller.getSelectionStyle().attributes;
+    final currentList = attrs[Attribute.list.key]?.value?.toString();
+    if (currentList == type) {
+      controller.formatSelection(Attribute.clone(Attribute.list, null));
+    } else {
+      controller.formatSelection(type == 'ordered' ? Attribute.ol : Attribute.ul);
+    }
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
   // Get font family name
   String _getFontFamily() {
     return _selectedFont;
@@ -4530,32 +4756,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Get content text style with all formatting applied
   TextStyle _getContentTextStyle() {
-    double fontSize = _getFontSize();
-
-    // Adjust font size based on text style
-    if (_selectedTextStyle == 'Heading 1') {
-      fontSize = 24.0;
-    } else if (_selectedTextStyle == 'Heading 2') {
-      fontSize = 20.0;
-    } else if (_selectedTextStyle == 'Heading 3') {
-      fontSize = 16.0;
-    } else if (_selectedTextStyle == 'Title') {
-      fontSize = 28.0;
-    }
-
     return TextStyle(
-      fontSize: fontSize,
-      fontFamily: _getFontFamily(),
-      fontWeight: _isBold ||
-              _selectedTextStyle.contains('Heading') ||
-              _selectedTextStyle == 'Title'
-          ? FontWeight.w700
-          : FontWeight.normal,
-      fontStyle: _isItalic ? FontStyle.italic : FontStyle.normal,
-      decoration:
-          _isUnderlined ? TextDecoration.underline : TextDecoration.none,
+      // Keep paragraph baseline neutral so per-span Quill formatting
+      // (font family/size/bold/italic/underline/strike) stays visible.
+      fontSize: 13,
+      fontFamily: 'Arial',
+      fontWeight: FontWeight.normal,
+      fontStyle: FontStyle.normal,
+      decoration: TextDecoration.none,
       color: const Color(0xFF1A1A1A),
-      height: 1.8,
+      height: 1.6,
       letterSpacing: 0.2,
     );
   }
@@ -6167,7 +6377,173 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildToolbar() {
-    return const SizedBox.shrink();
+    final canEdit = !widget.readOnly;
+    if (!canEdit) return const SizedBox.shrink();
+
+    // Single toolbar instance bound to the active section (selectedSectionIndex).
+    // Formatting actions apply to current Quill selection/cursor.
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey[200]!, width: 1),
+        ),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Inline formatting
+            IconButton(
+              icon: Icon(Icons.format_bold,
+                  color: _isBold ? const Color(0xFF00BCD4) : null),
+              onPressed: () => _toggleInlineAttribute(Attribute.bold),
+              tooltip: 'Bold',
+              iconSize: 24,
+            ),
+            IconButton(
+              icon: Icon(Icons.format_italic,
+                  color: _isItalic ? const Color(0xFF00BCD4) : null),
+              onPressed: () => _toggleInlineAttribute(Attribute.italic),
+              tooltip: 'Italic',
+              iconSize: 24,
+            ),
+            IconButton(
+              icon: Icon(Icons.format_underlined,
+                  color: _isUnderlined ? const Color(0xFF00BCD4) : null),
+              onPressed: () => _toggleInlineAttribute(Attribute.underline),
+              tooltip: 'Underline',
+              iconSize: 24,
+            ),
+            IconButton(
+              icon: Icon(Icons.format_strikethrough,
+                  color: _isStrikethrough ? const Color(0xFF00BCD4) : null),
+              onPressed: () => _toggleInlineAttribute(Attribute.strikeThrough),
+              tooltip: 'Strikethrough',
+              iconSize: 24,
+            ),
+            const SizedBox(width: 12),
+            // Font family
+            DropdownButton<String>(
+              value: _selectedFont,
+              underline: const SizedBox(),
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _selectedFont = v);
+                _applyInlineAttribute(Attribute.fromKeyValue('font', v)!);
+              },
+              items: const [
+                'Arial',
+                'Times New Roman',
+                'Georgia',
+                'Calibri',
+                'Verdana',
+              ].map((font) {
+                return DropdownMenuItem(
+                  value: font,
+                  child: Text(font, style: const TextStyle(fontSize: 14)),
+                );
+              }).toList(),
+            ),
+            const SizedBox(width: 12),
+            // Font size
+            DropdownButton<String>(
+              value: _selectedFontSize,
+              underline: const SizedBox(),
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _selectedFontSize = v);
+                _applyInlineAttribute(Attribute.fromKeyValue('size', v)!);
+              },
+              items: const ['10', '12', '14', '16', '18', '24'].map((size) {
+                return DropdownMenuItem(
+                  value: size,
+                  child: Text(size, style: const TextStyle(fontSize: 14)),
+                );
+              }).toList(),
+            ),
+            const SizedBox(width: 18),
+
+            // Paragraph alignment
+            IconButton(
+              icon: Icon(Icons.format_align_left,
+                  color: _selectedAlignment == 'left'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () => _applyParagraphAlignment('left'),
+              tooltip: 'Align Left',
+              iconSize: 24,
+            ),
+            IconButton(
+              icon: Icon(Icons.format_align_center,
+                  color: _selectedAlignment == 'center'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () => _applyParagraphAlignment('center'),
+              tooltip: 'Align Center',
+              iconSize: 24,
+            ),
+            IconButton(
+              icon: Icon(Icons.format_align_right,
+                  color: _selectedAlignment == 'right'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () => _applyParagraphAlignment('right'),
+              tooltip: 'Align Right',
+              iconSize: 24,
+            ),
+            IconButton(
+              icon: Icon(Icons.format_align_justify,
+                  color: _selectedAlignment == 'justify'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () => _applyParagraphAlignment('justify'),
+              tooltip: 'Justify',
+              iconSize: 24,
+            ),
+            const SizedBox(width: 12),
+
+            // Line spacing
+            DropdownButton<String>(
+              value: _selectedLineSpacing,
+              underline: const SizedBox(),
+              onChanged: (v) {
+                if (v == null) return;
+                _applyLineSpacing(v);
+              },
+              items: const ['1.0', '1.5', '2.0'].map((v) {
+                final label = v == '1.0'
+                    ? 'Single'
+                    : (v == '1.5' ? '1.5' : 'Double');
+                return DropdownMenuItem(
+                  value: v,
+                  child: Text(label, style: const TextStyle(fontSize: 14)),
+                );
+              }).toList(),
+            ),
+            const SizedBox(width: 12),
+
+            // Lists
+            IconButton(
+              icon: Icon(Icons.format_list_bulleted),
+              onPressed: () => _toggleList('bullet'),
+              tooltip: 'Bullet List',
+              iconSize: 24,
+            ),
+            IconButton(
+              icon: Icon(Icons.format_list_numbered),
+              onPressed: () => _toggleList('ordered'),
+              tooltip: 'Numbered List',
+              iconSize: 24,
+            ),
+          ],
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSmallDropdown(
@@ -6606,8 +6982,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 _selectedSectionIndex = _sections.length - 1;
 
                 // Add listeners to new section
-                newSection.controller.addListener(_onContentChanged);
-                newSection.titleController.addListener(_onContentChanged);
+                _attachSectionListeners(newSection);
 
                 // Add focus listeners for UI updates
                 newSection.contentFocus.addListener(() => setState(() {}));
@@ -7538,25 +7913,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     width: 1,
                   ),
                 ),
-                child: TextField(
+                child: QuillEditor.basic(
+                  controller: section.richController,
                   focusNode: section.contentFocus,
-                  controller: section.controller,
-                  enabled: true,
-                  maxLines: null,
-                  textAlign: _getTextAlignment(),
-                  textAlignVertical: TextAlignVertical.top,
-                  style: _getContentTextStyle(),
-                  decoration: InputDecoration(
-                    hintText:
+                  config: QuillEditorConfig(
+                    placeholder:
                         'Click here to start typing or insert content from library...',
-                    hintStyle: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[400],
+                    customStyles: DefaultStyles(
+                      paragraph: DefaultTextBlockStyle(
+                        _getContentTextStyle(),
+                        const HorizontalSpacing(0, 0),
+                        const VerticalSpacing(0, 0),
+                        const VerticalSpacing(0, 0),
+                        null,
+                      ),
                     ),
-                    border: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    isDense: true,
                   ),
                 ),
               ),
@@ -8494,31 +8865,31 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         const SizedBox(height: 8),
         // Font dropdown
         _buildSmallDropdown(_selectedFont, [
-          'Plus Jakarta Sans',
           'Arial',
           'Times New Roman',
           'Georgia',
-          'Courier New'
+          'Calibri',
+          'Verdana'
         ], (value) {
           setState(() {
             _selectedFont = value!;
           });
+          _applyInlineAttribute(Attribute.fromKeyValue('font', _selectedFont)!);
         }),
         const SizedBox(height: 8),
         // Font size dropdown
         _buildSmallDropdown(_selectedFontSize, [
-          '10px',
-          '12px',
-          '14px',
-          '16px',
-          '18px',
-          '20px',
-          '24px',
-          '28px'
+          '10',
+          '12',
+          '14',
+          '16',
+          '18',
+          '24'
         ], (value) {
           setState(() {
             _selectedFontSize = value!;
           });
+          _applyInlineAttribute(Attribute.fromKeyValue('size', _selectedFontSize)!);
         }),
         const SizedBox(height: 12),
         // Alignment
@@ -8531,9 +8902,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ? const Color(0xFF00BCD4)
                       : null),
               onPressed: () {
-                setState(() {
-                  _selectedAlignment = 'left';
-                });
+                _applyParagraphAlignment('left');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8545,9 +8914,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ? const Color(0xFF00BCD4)
                       : null),
               onPressed: () {
-                setState(() {
-                  _selectedAlignment = 'center';
-                });
+                _applyParagraphAlignment('center');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8559,16 +8926,30 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ? const Color(0xFF00BCD4)
                       : null),
               onPressed: () {
-                setState(() {
-                  _selectedAlignment = 'right';
-                });
+                _applyParagraphAlignment('right');
               },
               iconSize: 20,
               splashRadius: 20,
               tooltip: 'Align Right',
             ),
+            IconButton(
+              icon: Icon(Icons.format_align_justify,
+                  color: _selectedAlignment == 'justify'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () => _applyParagraphAlignment('justify'),
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Justify',
+            ),
           ],
         ),
+        const SizedBox(height: 8),
+        _buildSmallDropdown(_selectedLineSpacing, const ['1.0', '1.5', '2.0'],
+            (value) {
+          if (value == null) return;
+          _applyLineSpacing(value);
+        }),
         const SizedBox(height: 12),
         const Text(
           'Text Formatting',
@@ -8585,9 +8966,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               icon: Icon(Icons.format_bold,
                   color: _isBold ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                setState(() {
-                  _isBold = !_isBold;
-                });
+                _toggleInlineAttribute(Attribute.bold);
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8597,9 +8976,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               icon: Icon(Icons.format_italic,
                   color: _isItalic ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                setState(() {
-                  _isItalic = !_isItalic;
-                });
+                _toggleInlineAttribute(Attribute.italic);
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8609,43 +8986,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               icon: Icon(Icons.format_underlined,
                   color: _isUnderlined ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                setState(() {
-                  _isUnderlined = !_isUnderlined;
-                });
+                _toggleInlineAttribute(Attribute.underline);
               },
               iconSize: 20,
               splashRadius: 20,
               tooltip: 'Underline',
             ),
             IconButton(
-              icon: const Icon(Icons.format_color_text),
+              icon: Icon(Icons.format_strikethrough,
+                  color: _isStrikethrough ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Text color picker - Feature coming soon'),
-                    backgroundColor: Color(0xFF00BCD4),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
+                _toggleInlineAttribute(Attribute.strikeThrough);
               },
               iconSize: 20,
               splashRadius: 20,
-              tooltip: 'Text Color',
-            ),
-            IconButton(
-              icon: const Icon(Icons.link),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Insert link - Feature coming soon'),
-                    backgroundColor: Color(0xFF00BCD4),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
-              iconSize: 20,
-              splashRadius: 20,
-              tooltip: 'Link',
+              tooltip: 'Strikethrough',
             ),
           ],
         ),
@@ -8655,15 +9010,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             IconButton(
               icon: const Icon(Icons.format_list_bulleted),
               onPressed: () {
-                if (_sections.isNotEmpty &&
-                    _selectedSectionIndex < _sections.length) {
-                  setState(() {
-                    final section = _sections[_selectedSectionIndex];
-                    final currentText = section.controller.text;
-                    section.controller.text =
-                        currentText + '\n• Item 1\n• Item 2\n• Item 3';
-                  });
-                }
+                _toggleList('bullet');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8672,15 +9019,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             IconButton(
               icon: const Icon(Icons.format_list_numbered),
               onPressed: () {
-                if (_sections.isNotEmpty &&
-                    _selectedSectionIndex < _sections.length) {
-                  setState(() {
-                    final section = _sections[_selectedSectionIndex];
-                    final currentText = section.controller.text;
-                    section.controller.text =
-                        currentText + '\n1. Item 1\n2. Item 2\n3. Item 3';
-                  });
-                }
+                _toggleList('ordered');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -10465,7 +10804,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
 
     if (result != null && _savedProposalId != null && mounted) {
-      await _loadCommentsFromDatabase(_savedProposalId!);
+      // Keep reaction updates instant; sync server state in background.
+      unawaited(_loadCommentsFromDatabase(_savedProposalId!));
     } else if (mounted) {
       // API failed - revert optimistic update and notify user
       _revertReactionOptimistically(id, emoji);
@@ -10825,6 +11165,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         if (mode == 'full' && sections != null) {
           for (var section in _sections) {
             section.controller.dispose();
+              section.richController.dispose();
             section.titleController.dispose();
             section.contentFocus.dispose();
             section.titleFocus.dispose();
@@ -10837,8 +11178,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               content: body,
             );
             _sections.add(newSection);
-            newSection.controller.addListener(_onContentChanged);
-            newSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(newSection);
             newSection.contentFocus.addListener(() => setState(() {}));
             newSection.titleFocus.addListener(() => setState(() {}));
           });
@@ -10853,8 +11193,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               content: '',
             );
             _sections.add(newSection);
-            newSection.controller.addListener(_onContentChanged);
-            newSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(newSection);
             newSection.contentFocus.addListener(() => setState(() {}));
             newSection.titleFocus.addListener(() => setState(() {}));
             _selectedSectionIndex = 0;
