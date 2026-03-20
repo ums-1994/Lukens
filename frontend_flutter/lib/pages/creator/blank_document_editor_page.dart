@@ -73,6 +73,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _selectedPanel = 'templates'; // templates, build, upload, signature
   int _selectedSectionIndex =
       0; // Track which section is selected for content insertion
+  /// Avoid registering Quill/listener hooks twice for the same section (e.g. AI init + auto-save setup).
+  final Set<String> _sectionRichListenersAttached = {};
   String _selectedCurrency = 'Rand (ZAR)';
 
   Widget _buildPositionedPricingTable(
@@ -1546,6 +1548,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               section.titleFocus.dispose();
             }
             _sections.clear();
+            _sectionRichListenersAttached.clear();
 
             // Load sections from content
             final List<dynamic> savedSections = data['sections'] ?? [];
@@ -1686,6 +1689,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               section.titleFocus.dispose();
             }
             _sections.clear();
+            _sectionRichListenersAttached.clear();
 
             final fallbackSection = DocumentSection(
               title: 'Content',
@@ -3918,6 +3922,23 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Auto-save and versioning methods
   void _attachSectionListeners(DocumentSection section) {
+    if (_sectionRichListenersAttached.contains(section.id)) {
+      return;
+    }
+    _sectionRichListenersAttached.add(section.id);
+
+    // When the user focuses Quill directly, the outer SectionWidget onTap may not run;
+    // keep toolbar + _activeRichController() aligned with the section being edited.
+    section.contentFocus.addListener(() {
+      if (!section.contentFocus.hasFocus || !mounted) return;
+      final sectionIndex = _sections.indexOf(section);
+      if (sectionIndex < 0) return;
+      setState(() {
+        _selectedSectionIndex = sectionIndex;
+      });
+      _syncToolbarStateFromRichSelection();
+    });
+
     section.richController.onSelectionChanged = (selection) {
       if (!mounted) return;
       final sectionIndex = _sections.indexOf(section);
@@ -4305,6 +4326,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       section.titleFocus.dispose();
     }
     _sections.clear();
+    _sectionRichListenersAttached.clear();
 
     // Restore sections
     final List<dynamic> savedSections = version['sections'] ?? [];
@@ -4631,6 +4653,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return _sections[_selectedSectionIndex].richController;
   }
 
+  /// Toolbar buttons can steal focus from Quill; put focus back before formatting.
+  void _ensureToolbarTargetEditorFocused() {
+    if (_selectedSectionIndex < 0 || _selectedSectionIndex >= _sections.length) {
+      return;
+    }
+    _sections[_selectedSectionIndex].contentFocus.requestFocus();
+  }
+
+  Attribute? _attributeForFont(String v) =>
+      Attribute.fromKeyValue(Attribute.font.key, v) ??
+      Attribute.clone(Attribute.font, v);
+
+  Attribute? _attributeForSize(String v) =>
+      Attribute.fromKeyValue(Attribute.size.key, v) ??
+      Attribute.clone(Attribute.size, v);
+
   Attribute<String?> _alignmentToAttribute(String value) {
     switch (value) {
       case 'center':
@@ -4690,6 +4728,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void _applyInlineAttribute(Attribute attribute) {
     final controller = _activeRichController();
     if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
     controller.formatSelection(attribute);
     _syncToolbarStateFromRichSelection();
     _onContentChanged();
@@ -4698,6 +4737,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void _toggleInlineAttribute(Attribute toggleAttr) {
     final controller = _activeRichController();
     if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
     final attrs = controller.getSelectionStyle().attributes;
     final enabled = attrs.containsKey(toggleAttr.key);
     controller.formatSelection(Attribute.clone(toggleAttr, enabled ? null : true));
@@ -4708,6 +4748,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void _applyParagraphAlignment(String value) {
     final controller = _activeRichController();
     if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
     _selectedAlignment = value;
     controller.formatSelection(_alignmentToAttribute(value));
     if (_selectedSectionIndex >= 0 && _selectedSectionIndex < _sections.length) {
@@ -4720,6 +4761,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void _applyLineSpacing(String value) {
     final controller = _activeRichController();
     if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
     _selectedLineSpacing = value;
     controller.formatSelection(_lineSpacingToAttribute(value));
     if (_selectedSectionIndex >= 0 && _selectedSectionIndex < _sections.length) {
@@ -4732,6 +4774,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   void _toggleList(String type) {
     final controller = _activeRichController();
     if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
     final attrs = controller.getSelectionStyle().attributes;
     final currentList = attrs[Attribute.list.key]?.value?.toString();
     if (currentList == type) {
@@ -6380,166 +6423,192 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final canEdit = !widget.readOnly;
     if (!canEdit) return const SizedBox.shrink();
 
+    // ~50% larger controls; shifted slightly left vs centered row.
+    const double kToolbarScale = 1.5;
+    final double iconSz = 24 * kToolbarScale;
+    final double ddFont = 14 * kToolbarScale;
+    final double gapSm = 12 * kToolbarScale;
+    final double gapMd = 18 * kToolbarScale;
+
     // Single toolbar instance bound to the active section (selectedSectionIndex).
     // Formatting actions apply to current Quill selection/cursor.
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      padding: EdgeInsets.only(
+        left: 8 * kToolbarScale,
+        right: 24 * kToolbarScale,
+        top: 16 * kToolbarScale,
+        bottom: 16 * kToolbarScale,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
           bottom: BorderSide(color: Colors.grey[200]!, width: 1),
         ),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Center(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Inline formatting
-            IconButton(
-              icon: Icon(Icons.format_bold,
-                  color: _isBold ? const Color(0xFF00BCD4) : null),
-              onPressed: () => _toggleInlineAttribute(Attribute.bold),
-              tooltip: 'Bold',
-              iconSize: 24,
-            ),
-            IconButton(
-              icon: Icon(Icons.format_italic,
-                  color: _isItalic ? const Color(0xFF00BCD4) : null),
-              onPressed: () => _toggleInlineAttribute(Attribute.italic),
-              tooltip: 'Italic',
-              iconSize: 24,
-            ),
-            IconButton(
-              icon: Icon(Icons.format_underlined,
-                  color: _isUnderlined ? const Color(0xFF00BCD4) : null),
-              onPressed: () => _toggleInlineAttribute(Attribute.underline),
-              tooltip: 'Underline',
-              iconSize: 24,
-            ),
-            IconButton(
-              icon: Icon(Icons.format_strikethrough,
-                  color: _isStrikethrough ? const Color(0xFF00BCD4) : null),
-              onPressed: () => _toggleInlineAttribute(Attribute.strikeThrough),
-              tooltip: 'Strikethrough',
-              iconSize: 24,
-            ),
-            const SizedBox(width: 12),
-            // Font family
-            DropdownButton<String>(
-              value: _selectedFont,
-              underline: const SizedBox(),
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() => _selectedFont = v);
-                _applyInlineAttribute(Attribute.fromKeyValue('font', v)!);
-              },
-              items: const [
-                'Arial',
-                'Times New Roman',
-                'Georgia',
-                'Calibri',
-                'Verdana',
-              ].map((font) {
-                return DropdownMenuItem(
-                  value: font,
-                  child: Text(font, style: const TextStyle(fontSize: 14)),
-                );
-              }).toList(),
-            ),
-            const SizedBox(width: 12),
-            // Font size
-            DropdownButton<String>(
-              value: _selectedFontSize,
-              underline: const SizedBox(),
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() => _selectedFontSize = v);
-                _applyInlineAttribute(Attribute.fromKeyValue('size', v)!);
-              },
-              items: const ['10', '12', '14', '16', '18', '24'].map((size) {
-                return DropdownMenuItem(
-                  value: size,
-                  child: Text(size, style: const TextStyle(fontSize: 14)),
-                );
-              }).toList(),
-            ),
-            const SizedBox(width: 18),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        descendantsAreFocusable: false,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Inline formatting
+                IconButton(
+                  icon: Icon(Icons.format_bold,
+                      color: _isBold ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.bold),
+                  tooltip: 'Bold',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_italic,
+                      color: _isItalic ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.italic),
+                  tooltip: 'Italic',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_underlined,
+                      color: _isUnderlined ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.underline),
+                  tooltip: 'Underline',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_strikethrough,
+                      color: _isStrikethrough ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.strikeThrough),
+                  tooltip: 'Strikethrough',
+                  iconSize: iconSz,
+                ),
+                SizedBox(width: gapSm),
+                // Font family
+                DropdownButton<String>(
+                  value: _selectedFont,
+                  underline: const SizedBox(),
+                  style: TextStyle(fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    final attr = _attributeForFont(v);
+                    if (attr == null) return;
+                    setState(() => _selectedFont = v);
+                    _applyInlineAttribute(attr);
+                  },
+                  items: const [
+                    'Arial',
+                    'Times New Roman',
+                    'Georgia',
+                    'Calibri',
+                    'Verdana',
+                  ].map((font) {
+                    return DropdownMenuItem(
+                      value: font,
+                      child: Text(font, style: TextStyle(fontSize: ddFont)),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(width: gapSm),
+                // Font size
+                DropdownButton<String>(
+                  value: _selectedFontSize,
+                  underline: const SizedBox(),
+                  style: TextStyle(fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    final attr = _attributeForSize(v);
+                    if (attr == null) return;
+                    setState(() => _selectedFontSize = v);
+                    _applyInlineAttribute(attr);
+                  },
+                  items: const ['10', '12', '14', '16', '18', '24'].map((size) {
+                    return DropdownMenuItem(
+                      value: size,
+                      child: Text(size, style: TextStyle(fontSize: ddFont)),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(width: gapMd),
 
-            // Paragraph alignment
-            IconButton(
-              icon: Icon(Icons.format_align_left,
-                  color: _selectedAlignment == 'left'
-                      ? const Color(0xFF00BCD4)
-                      : null),
-              onPressed: () => _applyParagraphAlignment('left'),
-              tooltip: 'Align Left',
-              iconSize: 24,
-            ),
-            IconButton(
-              icon: Icon(Icons.format_align_center,
-                  color: _selectedAlignment == 'center'
-                      ? const Color(0xFF00BCD4)
-                      : null),
-              onPressed: () => _applyParagraphAlignment('center'),
-              tooltip: 'Align Center',
-              iconSize: 24,
-            ),
-            IconButton(
-              icon: Icon(Icons.format_align_right,
-                  color: _selectedAlignment == 'right'
-                      ? const Color(0xFF00BCD4)
-                      : null),
-              onPressed: () => _applyParagraphAlignment('right'),
-              tooltip: 'Align Right',
-              iconSize: 24,
-            ),
-            IconButton(
-              icon: Icon(Icons.format_align_justify,
-                  color: _selectedAlignment == 'justify'
-                      ? const Color(0xFF00BCD4)
-                      : null),
-              onPressed: () => _applyParagraphAlignment('justify'),
-              tooltip: 'Justify',
-              iconSize: 24,
-            ),
-            const SizedBox(width: 12),
+                // Paragraph alignment
+                IconButton(
+                  icon: Icon(Icons.format_align_left,
+                      color: _selectedAlignment == 'left'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('left'),
+                  tooltip: 'Align Left',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_align_center,
+                      color: _selectedAlignment == 'center'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('center'),
+                  tooltip: 'Align Center',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_align_right,
+                      color: _selectedAlignment == 'right'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('right'),
+                  tooltip: 'Align Right',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_align_justify,
+                      color: _selectedAlignment == 'justify'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('justify'),
+                  tooltip: 'Justify',
+                  iconSize: iconSz,
+                ),
+                SizedBox(width: gapSm),
 
-            // Line spacing
-            DropdownButton<String>(
-              value: _selectedLineSpacing,
-              underline: const SizedBox(),
-              onChanged: (v) {
-                if (v == null) return;
-                _applyLineSpacing(v);
-              },
-              items: const ['1.0', '1.5', '2.0'].map((v) {
-                final label = v == '1.0'
-                    ? 'Single'
-                    : (v == '1.5' ? '1.5' : 'Double');
-                return DropdownMenuItem(
-                  value: v,
-                  child: Text(label, style: const TextStyle(fontSize: 14)),
-                );
-              }).toList(),
-            ),
-            const SizedBox(width: 12),
+                // Line spacing
+                DropdownButton<String>(
+                  value: _selectedLineSpacing,
+                  underline: const SizedBox(),
+                  style: TextStyle(fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    _applyLineSpacing(v);
+                  },
+                  items: const ['1.0', '1.5', '2.0'].map((v) {
+                    final label = v == '1.0'
+                        ? 'Single'
+                        : (v == '1.5' ? '1.5' : 'Double');
+                    return DropdownMenuItem(
+                      value: v,
+                      child: Text(label, style: TextStyle(fontSize: ddFont)),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(width: gapSm),
 
-            // Lists
-            IconButton(
-              icon: Icon(Icons.format_list_bulleted),
-              onPressed: () => _toggleList('bullet'),
-              tooltip: 'Bullet List',
-              iconSize: 24,
+                // Lists
+                IconButton(
+                  icon: Icon(Icons.format_list_bulleted),
+                  onPressed: () => _toggleList('bullet'),
+                  tooltip: 'Bullet List',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_list_numbered),
+                  onPressed: () => _toggleList('ordered'),
+                  tooltip: 'Numbered List',
+                  iconSize: iconSz,
+                ),
+              ],
             ),
-            IconButton(
-              icon: Icon(Icons.format_list_numbered),
-              onPressed: () => _toggleList('ordered'),
-              tooltip: 'Numbered List',
-              iconSize: 24,
-            ),
-          ],
           ),
         ),
       ),
@@ -8874,7 +8943,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           setState(() {
             _selectedFont = value!;
           });
-          _applyInlineAttribute(Attribute.fromKeyValue('font', _selectedFont)!);
+          final attr = _attributeForFont(_selectedFont);
+          if (attr != null) _applyInlineAttribute(attr);
         }),
         const SizedBox(height: 8),
         // Font size dropdown
@@ -8889,7 +8959,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           setState(() {
             _selectedFontSize = value!;
           });
-          _applyInlineAttribute(Attribute.fromKeyValue('size', _selectedFontSize)!);
+          final attr = _attributeForSize(_selectedFontSize);
+          if (attr != null) _applyInlineAttribute(attr);
         }),
         const SizedBox(height: 12),
         // Alignment
@@ -11171,6 +11242,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             section.titleFocus.dispose();
           }
           _sections.clear();
+          _sectionRichListenersAttached.clear();
 
           sections.forEach((title, body) {
             final newSection = DocumentSection(
