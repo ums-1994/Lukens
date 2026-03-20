@@ -19,7 +19,11 @@ load_dotenv()  # allow override from cwd
 
 def _getenv(name: str, default: str = "") -> str:
     v = os.getenv(name) or default
-    return (v or "").strip()
+    v = (v or "").strip()
+    # .env mistakes: AI_ASSISTANT_API_KEY="foo" sometimes leaves quotes depending on editor
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'":
+        v = v[1:-1].strip()
+    return v
 
 # Support both naming conventions: AI_ASSISTANT_HF_* (your .env) and legacy names
 _def_base = _getenv("AI_ASSISTANT_HF_URL") or _getenv("HF_AI_ASSISTANT_BASE_URL") or "https://lorde01v-ai-content-v2.hf.space"
@@ -76,6 +80,15 @@ class HFAIAssistantService:
                 if response.status_code == 401:
                     err = self._parse_error(response, "Authentication failed: Invalid or missing API key.")
                     raise HFAIAssistantError(err, status_code=401)
+                # 403: public Space can still return this from *your* app (wrong API key) or HF edge
+                if response.status_code == 403:
+                    body_preview = (response.text or "")[:800]
+                    print(f"DEBUG: HF Assistant 403 response body: {body_preview!r}")
+                    err = self._parse_error(
+                        response,
+                        "Forbidden (403). Check API key matches Space secret, or response body above.",
+                    )
+                    raise HFAIAssistantError(err, status_code=403)
                 # 400: guardrails or bad request – do not retry
                 if response.status_code == 400:
                     err, reasons = self._parse_400(response)
@@ -157,7 +170,11 @@ class HFAIAssistantService:
             else:
                 masked = "<EMPTY>"
             print(f"DEBUG: HF Assistant Target URL: {self.base_url}/generate-section")
-            print(f"DEBUG: HF Assistant Auth Header: {masked} (len={len(auth)})")
+            # len(auth) is whole header; api_key len matters for HF private-Space vs custom-key confusion
+            print(
+                f"DEBUG: HF Assistant Auth: {masked} "
+                f"(header_len={len(auth)}, api_key_len={len(self.api_key)})"
+            )
         except Exception as log_err:
             print(f"DEBUG: Failed to log HF Assistant headers: {log_err}")
 

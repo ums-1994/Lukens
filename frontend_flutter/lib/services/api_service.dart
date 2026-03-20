@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
+import 'ai_assistant_api.dart';
+
 class ApiService {
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
@@ -753,49 +755,30 @@ class ApiService {
     String sectionType = 'general',
   }) async {
     try {
-      // Security-safe path: call our own backend, which holds the HF key server-side.
-      final response = await http.post(
-        Uri.parse('$baseUrl/ai/generate'),
-        headers: _getHeaders(token),
-        body: json.encode({
-          'prompt': prompt,
-          'context': context ?? {},
-          'section_type': sectionType,
-        }),
+      // New minimal proxy path: backend forwards to HF Space using server-side env vars.
+      // HF expects: { section_name, proposal_text }
+      final String proposalText = [
+        prompt.trim(),
+        if (context != null && context.isNotEmpty)
+          '\n\nContext (JSON):\n${json.encode(context)}',
+      ].where((s) => s.trim().isNotEmpty).join('');
+
+      final data = await AiAssistantApi.generateSection(
+        token: token,
+        sectionName: sectionType,
+        proposalText: proposalText,
       );
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = json.decode(response.body);
-
-        // If talking directly to the HF Flask backend, it returns:
-        // { success: bool, generated_text: string, error?: string }
-        if (data.containsKey('success')) {
-          final success = data['success'] == true;
-          if (success) {
-            final generated = data['generated_text'] ?? data['content'] ?? '';
-            return {
-              'content': generated,
-              ...data,
-            };
-          } else {
-            final err = data['error']?.toString() ?? 'Unknown backend error';
-            print('Backend Error (HF Assistant): $err');
-            throw Exception(err);
-          }
-        }
-
-        // Legacy path: our own backend returns { content, section_type, ... }.
-        return data;
-      }
-      String detail = 'Error generating AI content';
-      try {
-        final body = json.decode(response.body);
-        if (body is Map && body['detail'] != null) {
-          detail = body['detail'].toString();
-        }
-      } catch (_) {}
-      print('Error generating AI content: ${response.statusCode} - $detail');
-      throw Exception(detail);
+      // Upstream should return { generated_text: ... } (or similar). Normalize to {content: ...}
+      final generated = (data['generated_text'] ??
+              data['content'] ??
+              data['result'] ??
+              '')
+          .toString();
+      return {
+        ...data,
+        'content': generated,
+      };
     } catch (e) {
       print('Error generating AI content: $e');
       rethrow;
@@ -808,21 +791,21 @@ class ApiService {
     String sectionType = 'general',
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/ai/improve'),
-        headers: _getHeaders(token),
-        body: json.encode({
-          'content': content,
-          'section_type': sectionType,
-        }),
+      // HF expects: { area_name, proposal_text }
+      final data = await AiAssistantApi.improveArea(
+        token: token,
+        areaName: sectionType,
+        proposalText: content,
       );
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      print(
-          'Error improving content: ${response.statusCode} - ${response.body}');
-      return null;
+      // Normalize to the shape existing UI expects
+      final improved =
+          (data['generated_text'] ?? data['improved_version'] ?? data['content'])
+              ?.toString();
+      return {
+        ...data,
+        if (improved != null) 'improved_version': improved,
+      };
     } catch (e) {
       print('Error improving content: $e');
       return null;
