@@ -79,6 +79,23 @@ except ImportError:
 # Load environment variables
 load_dotenv(dotenv_path=Path(__file__).resolve().with_name('.env'), override=True)
 
+def _mask_env_secret(value: str) -> str:
+    token = (value or "").strip()
+    if not token:
+        return "<EMPTY>"
+    if len(token) <= 8:
+        return "*" * len(token)
+    return f"{token[:4]}...{token[-4:]}"
+
+_ai_base_url = (os.getenv("AI_ASSISTANT_HF_URL") or "").strip()
+_ai_api_key = (os.getenv("AI_ASSISTANT_API_KEY") or "").strip()
+print(
+    "[Startup] AI Assistant config "
+    f"base_url={_ai_base_url or '<EMPTY>'} "
+    f"api_key={_mask_env_secret(_ai_api_key)} "
+    f"has_key={bool(_ai_api_key)}"
+)
+
 app = Flask(__name__)
 
 # Flask-Cors origin matching is strict unless you provide regex objects.
@@ -90,9 +107,11 @@ _cors_origins = [
     # Allow Flutter web dev server ports (e.g. http://localhost:56886)
     re.compile(r"^http://localhost(:\d+)?$"),
     re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
-    # Common local dev ports
+    # Common local dev ports (explicit so CORS is always sent even on 5xx)
     "http://localhost:5173",
     "http://localhost:5000",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
     "http://localhost:8081",
     "http://localhost:50478",  # Add your specific port
 ]
@@ -113,7 +132,7 @@ CORS(
     app,
     origins=_cors_origins,
     supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "X-AI-Request-ID"],
     methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
     expose_headers=["Content-Type", "Authorization"],
 )
@@ -133,6 +152,7 @@ from api.routes.risk_gate import bp as risk_gate_bp
 from api.routes.finance_export import bp as finance_export_bp
 from api.routes.finance_audit import bp as finance_audit_bp
 from api.routes.finance_analytics import bp as finance_analytics_bp
+from api.routes.ai_assistant_proxy import bp as ai_assistant_proxy_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -148,6 +168,7 @@ app.register_blueprint(risk_gate_bp)
 app.register_blueprint(finance_export_bp, url_prefix='/api')
 app.register_blueprint(finance_audit_bp, url_prefix='/api')
 app.register_blueprint(finance_analytics_bp, url_prefix='/api')
+app.register_blueprint(ai_assistant_proxy_bp, url_prefix='/api')
 
 
 @app.route("/", methods=["GET", "HEAD"])
@@ -171,7 +192,7 @@ def handle_options_preflight(remaining=None):
     if origin:
         resp.headers['Access-Control-Allow-Origin'] = origin
     resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
-    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
+    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID'
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
     return resp
 
@@ -3086,8 +3107,14 @@ def ai_generate_content(username=None):
         body = {"detail": str(e)}
         if getattr(e, "reasons", None):
             body["reasons"] = e.reasons
-        status = 401 if getattr(e, "status_code", None) == 401 else 400
-        return body, status
+        upstream_status = getattr(e, "status_code", None)
+        if isinstance(upstream_status, int):
+            body["upstream_status"] = upstream_status
+            if 500 <= upstream_status <= 599:
+                # Upstream service failure: surface as gateway/service unavailable to frontend
+                return body, 503
+            return body, upstream_status
+        return body, 502
     except Exception as e:
         print(f"❌ Error generating AI content: {e}")
         detail = str(e)
@@ -3144,8 +3171,13 @@ def ai_improve_content(username=None):
         body = {"detail": str(e), "blocked": bool(getattr(e, "reasons", None))}
         if getattr(e, "reasons", None):
             body["reasons"] = e.reasons
-        status = 401 if getattr(e, "status_code", None) == 401 else 400
-        return body, status
+        upstream_status = getattr(e, "status_code", None)
+        if isinstance(upstream_status, int):
+            body["upstream_status"] = upstream_status
+            if 500 <= upstream_status <= 599:
+                return body, 503
+            return body, upstream_status
+        return body, 502
     except Exception as e:
         print(f"❌ Error improving content: {e}")
         detail = str(e)

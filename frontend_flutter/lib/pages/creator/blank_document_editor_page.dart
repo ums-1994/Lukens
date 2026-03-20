@@ -15,6 +15,7 @@ import '../../services/api_service.dart';
 import '../../services/client_service.dart';
 import '../../services/asset_service.dart';
 import '../../services/role_service.dart';
+import '../../services/ai_assistant_api.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
@@ -6069,83 +6070,84 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           const SizedBox(width: 24),
           // Price
-          Row(
-            children: [
-              Text(
-                '${_getCurrencySymbol()} ',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A1A),
+          Flexible(
+            child: Row(
+              children: [
+                Text(
+                  '${_getCurrencySymbol()} ',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A1A),
+                  ),
                 ),
-              ),
-              SizedBox(
-                width: 80,
-                child: isFinanceRole
-                    ? Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                            color: Colors.grey[300]!,
-                            width: 1,
+                Flexible(
+                  child: isFinanceRole
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
                           ),
-                        ),
-                        child: Text(
-                          _computePricingTotal().toStringAsFixed(2),
-                          textAlign: TextAlign.left,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: Colors.grey[300]!,
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            _computePricingTotal().toStringAsFixed(2),
+                            textAlign: TextAlign.left,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        )
+                      : TextField(
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          onChanged: (value) {
+                            // Price value input - ready for future use
+                            setState(() {});
+                          },
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF1A1A1A),
                           ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      )
-                    : TextField(
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        onChanged: (value) {
-                          // Price value input - ready for future use
-                          setState(() {});
-                        },
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                        decoration: InputDecoration(
-                          hintText: '0.00',
-                          hintStyle: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[400],
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide: BorderSide(
-                              color: Colors.grey[300]!,
-                              width: 1,
+                          decoration: InputDecoration(
+                            hintText: '0.00',
+                            hintStyle: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[400],
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: BorderSide(
+                                color: Colors.grey[300]!,
+                                width: 1,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF00BCD4),
+                                width: 1,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
                             ),
                           ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF00BCD4),
-                              width: 1,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 8,
-                          ),
                         ),
-                      ),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 16),
           // Save status with version info
@@ -11300,6 +11302,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     showDialog(
       context: context,
       builder: (BuildContext context) {
+        bool dialogOpen = true;
+        bool cancelled = false;
+        String progressLabel = '';
+        int selectedMaxTokens = 192; // default, allow 256
+
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return Dialog(
@@ -11340,7 +11347,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             ),
                             const Spacer(),
                             IconButton(
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: () {
+                                dialogOpen = false;
+                                cancelled = true;
+                                Navigator.pop(context);
+                              },
                               icon: const Icon(Icons.close),
                             ),
                           ],
@@ -11523,6 +11534,35 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         ),
 
                         const SizedBox(height: 20),
+
+                        // Token budget (kept small for speed; default 192 with optional 256)
+                        Row(
+                          children: [
+                            Text(
+                              'Max tokens',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            DropdownButton<int>(
+                              value: selectedMaxTokens,
+                              items: const [
+                                DropdownMenuItem(value: 192, child: Text('192')),
+                                DropdownMenuItem(value: 256, child: Text('256')),
+                              ],
+                              onChanged: isGenerating
+                                  ? null
+                                  : (v) {
+                                      if (v == null) return;
+                                      setDialogState(() => selectedMaxTokens = v);
+                                    },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
 
                         // Section type selector (only for single section generation)
                         if (selectedAction == 'generate') ...[
@@ -11785,6 +11825,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               onPressed: isGenerating
                                   ? null
                                   : () {
+                                      dialogOpen = false;
+                                      cancelled = true;
                                       resetGeneratedState();
                                       Navigator.pop(context);
                                     },
@@ -11815,6 +11857,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                       setDialogState(() {
                                         isGenerating = true;
                                         resetGeneratedState();
+                                        progressLabel = '';
                                       });
 
                                       try {
@@ -11825,117 +11868,156 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         }
 
                                         if (selectedAction == 'generate') {
-                                          final result = await ApiService
-                                              .generateAIContent(
+                                          // SECTION: generate ONLY for selected section using its title as section_name.
+                                          final selectedSection =
+                                              (_sections.isNotEmpty &&
+                                                      _selectedSectionIndex <
+                                                          _sections.length)
+                                                  ? _sections[_selectedSectionIndex]
+                                                  : null;
+                                          final sectionTitle = (selectedSection
+                                                      ?.titleController
+                                                      .text
+                                                      .trim()
+                                                      .isNotEmpty ==
+                                                  true)
+                                              ? selectedSection!
+                                                  .titleController.text
+                                                  .trim()
+                                              : 'Untitled Section';
+
+                                          final existing =
+                                              selectedSection?.controller.text ??
+                                                  '';
+                                          final proposalText = [
+                                            'User request:\n${promptController.text.trim()}',
+                                            if (existing.trim().isNotEmpty)
+                                              '\n\nExisting section text:\n${existing.trim()}',
+                                          ].join('');
+
+                                          final result =
+                                              await AiAssistantApi.generateSection(
                                             token: token,
-                                            prompt: promptController.text,
-                                            context: {
-                                              'document_title':
-                                                  _titleController.text,
-                                              'current_section':
-                                                  _selectedSectionIndex,
-                                            },
-                                            sectionType: selectedSectionType,
+                                            sectionName: sectionTitle,
+                                            proposalText: proposalText,
+                                            maxTokens: selectedMaxTokens,
                                           );
 
-                                          if (result != null &&
-                                              result['content'] != null) {
-                                            final generatedText =
-                                                (result['content'] as String)
-                                                    .trim();
-                                            if (generatedText.isEmpty) {
-                                              throw Exception(
-                                                  'AI returned an empty draft.');
-                                            }
-                                            setDialogState(() {
-                                              generatedController?.dispose();
-                                              generatedController =
-                                                  TextEditingController(
-                                                      text: generatedText);
-                                              if (generatedSectionControllers !=
-                                                  null) {
-                                                for (final controller
-                                                    in generatedSectionControllers!
-                                                        .values) {
-                                                  controller.dispose();
-                                                }
-                                              }
-                                              generatedSectionControllers =
-                                                  null;
-                                              generationMode = 'section';
-                                            });
-                                            ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                    'Draft ready. Review and edit below before inserting.'),
-                                                backgroundColor:
-                                                    Color(0xFF00BCD4),
-                                              ),
-                                            );
-                                          } else {
+                                          final generatedText =
+                                              (result['generated_text'] ??
+                                                      result['content'] ??
+                                                      result['result'] ??
+                                                      '')
+                                                  .toString()
+                                                  .trim();
+                                          if (generatedText.isEmpty) {
                                             throw Exception(
-                                                'Failed to generate content.');
+                                                'AI returned an empty draft.');
                                           }
+
+                                          // After await: ensure dialog still active
+                                          if (!mounted || !dialogOpen) return;
+
+                                          // Replace content in ONLY the selected section immediately.
+                                          setState(() {
+                                            if (selectedSection != null) {
+                                              selectedSection.controller.text =
+                                                  generatedText;
+                                              _hasUnsavedChanges = true;
+                                            }
+                                          });
+
+                                          // Keep preview available
+                                          setDialogState(() {
+                                            generatedController?.dispose();
+                                            generatedController =
+                                                TextEditingController(
+                                                    text: generatedText);
+                                            generatedSectionControllers = null;
+                                            generationMode = 'section';
+                                          });
                                         } else if (selectedAction ==
                                             'full_proposal') {
-                                          final result = await ApiService
-                                              .generateFullProposal(
-                                            token: token,
-                                            prompt: promptController.text,
-                                            context: {
-                                              'document_title':
-                                                  _titleController.text,
-                                            },
-                                          );
-
-                                          if (result != null &&
-                                              result['sections'] is Map) {
-                                            final Map<String, dynamic>
-                                                generatedSections =
-                                                Map<String, dynamic>.from(
-                                                    result['sections'] as Map<
-                                                        dynamic, dynamic>);
-                                            if (generatedSections.isEmpty) {
-                                              throw Exception(
-                                                  'AI did not return any sections.');
-                                            }
-                                            setDialogState(() {
-                                              generatedController?.dispose();
-                                              generatedController = null;
-                                              if (generatedSectionControllers !=
-                                                  null) {
-                                                for (final controller
-                                                    in generatedSectionControllers!
-                                                        .values) {
-                                                  controller.dispose();
-                                                }
-                                              }
-                                              generatedSectionControllers = {};
-                                              generatedSections
-                                                  .forEach((title, content) {
-                                                generatedSectionControllers![
-                                                        title] =
-                                                    TextEditingController(
-                                                        text: (content ?? '')
-                                                            .toString()
-                                                            .trim());
-                                              });
-                                              generationMode = 'full';
-                                            });
-                                            ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                    'Draft proposal ready with ${generatedSections.length} sections. Review below.'),
-                                                backgroundColor:
-                                                    const Color(0xFF00BCD4),
-                                              ),
-                                            );
-                                          } else {
+                                          // FULL PROPOSAL: generate for ALL sections (sequential), progress + cancel.
+                                          final sectionsSnapshot = _sections
+                                              .where((s) =>
+                                                  s.sectionType
+                                                      .trim()
+                                                      .toLowerCase() ==
+                                                  'content')
+                                              .toList();
+                                          if (sectionsSnapshot.isEmpty) {
                                             throw Exception(
-                                                'Failed to generate full proposal.');
+                                                'No content sections found to generate.');
                                           }
+
+                                          for (var i = 0;
+                                              i < sectionsSnapshot.length;
+                                              i++) {
+                                            if (!mounted || !dialogOpen) return;
+                                            if (cancelled) return;
+
+                                            final s = sectionsSnapshot[i];
+                                            final title =
+                                                (s.titleController.text.trim().isNotEmpty)
+                                                    ? s.titleController.text
+                                                        .trim()
+                                                    : 'Untitled Section';
+
+                                            setDialogState(() {
+                                              progressLabel =
+                                                  'Generating ${i + 1}/${sectionsSnapshot.length}: $title';
+                                            });
+
+                                            final existing = s.controller.text;
+                                            final proposalText = [
+                                              'User request:\n${promptController.text.trim()}',
+                                              if (_titleController.text.trim().isNotEmpty)
+                                                '\n\nDocument title: ${_titleController.text.trim()}',
+                                              if (existing.trim().isNotEmpty)
+                                                '\n\nExisting section text:\n${existing.trim()}',
+                                            ].join('');
+                                            if (proposalText.trim().isEmpty) {
+                                              continue;
+                                            }
+
+                                            final r =
+                                                await AiAssistantApi.generateSection(
+                                              token: token,
+                                              sectionName: title,
+                                              proposalText: proposalText,
+                                              maxTokens: 192,
+                                            );
+
+                                            final gen =
+                                                (r['generated_text'] ??
+                                                        r['content'] ??
+                                                        r['result'] ??
+                                                        '')
+                                                    .toString()
+                                                    .trim();
+                                            if (gen.isEmpty) {
+                                              throw Exception(
+                                                  'AI returned empty content for "$title".');
+                                            }
+
+                                            if (!mounted || !dialogOpen) return;
+                                            if (cancelled) return;
+
+                                            setState(() {
+                                              s.controller.text = gen;
+                                              _hasUnsavedChanges = true;
+                                            });
+                                          }
+
+                                          if (!mounted || !dialogOpen) return;
+                                          setDialogState(() {
+                                            progressLabel = '';
+                                            generatedController?.dispose();
+                                            generatedController = null;
+                                            generatedSectionControllers = null;
+                                            generationMode = 'full';
+                                          });
                                         } else {
                                           if (_selectedSectionIndex >=
                                               _sections.length) {
@@ -11952,104 +12034,96 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                 'Current section is empty. Nothing to improve.');
                                           }
 
+                                          final selectedSection =
+                                              _sections[_selectedSectionIndex];
+                                          final areaName = (selectedSection
+                                                      .titleController.text
+                                                      .trim()
+                                                      .isNotEmpty)
+                                              ? selectedSection
+                                                  .titleController.text
+                                                  .trim()
+                                              : 'General';
+
+                                          // If user typed instructions in the box, include them as a prefix (but preserve the exact target text).
+                                          final instructions =
+                                              promptController.text.trim();
+                                          final improveInput = instructions.isEmpty
+                                              ? currentContent
+                                              : 'Instructions:\n$instructions\n\nText:\n$currentContent';
+
                                           final result =
-                                              await ApiService.improveContent(
+                                              await AiAssistantApi.improveArea(
                                             token: token,
-                                            content: currentContent,
-                                            sectionType: selectedSectionType,
+                                            areaName: areaName,
+                                            proposalText: improveInput,
+                                            maxTokens: selectedMaxTokens,
                                           );
 
-                                          if (result != null &&
-                                              result['improved_version'] !=
-                                                  null) {
-                                            final improvedText =
-                                                (result['improved_version']
-                                                        as String)
-                                                    .trim();
-                                            if (improvedText.isEmpty) {
-                                              throw Exception(
-                                                  'AI returned an empty improvement.');
-                                            }
-
-                                            setDialogState(() {
-                                              generatedController?.dispose();
-                                              generatedController =
-                                                  TextEditingController(
-                                                      text: improvedText);
-                                              if (generatedSectionControllers !=
-                                                  null) {
-                                                for (final controller
-                                                    in generatedSectionControllers!
-                                                        .values) {
-                                                  controller.dispose();
-                                                }
-                                              }
-                                              generatedSectionControllers =
-                                                  null;
-                                              generationMode = 'improve';
-                                            });
-
-                                            if (result['summary'] != null) {
-                                              ScaffoldMessenger.of(rootContext)
-                                                  .showSnackBar(
-                                                SnackBar(
-                                                  content: Column(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      const Text(
-                                                        'Improvements ready. Review below.',
-                                                        style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                      Text(result['summary']
-                                                          as String),
-                                                    ],
-                                                  ),
-                                                  backgroundColor:
-                                                      const Color(0xFF00BCD4),
-                                                  duration: const Duration(
-                                                      seconds: 4),
-                                                ),
-                                              );
-                                            } else {
-                                              ScaffoldMessenger.of(rootContext)
-                                                  .showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                      'Improvements ready. Review and edit below before applying.'),
-                                                  backgroundColor:
-                                                      Color(0xFF00BCD4),
-                                                ),
-                                              );
-                                            }
-                                          } else {
+                                          final improvedText =
+                                              (result['generated_text'] ??
+                                                      result['improved_version'] ??
+                                                      result['content'] ??
+                                                      result['result'] ??
+                                                      '')
+                                                  .toString()
+                                                  .trim();
+                                          if (improvedText.isEmpty) {
                                             throw Exception(
-                                                'Failed to improve content.');
+                                                'AI returned an empty improvement.');
                                           }
-                                        }
-                                      } catch (e) {
-                                        if (mounted) {
+
+                                          if (!mounted || !dialogOpen) return;
+
+                                          setDialogState(() {
+                                            generatedController?.dispose();
+                                            generatedController =
+                                                TextEditingController(
+                                                    text: improvedText);
+                                            generatedSectionControllers = null;
+                                            generationMode = 'improve';
+                                          });
+
                                           ScaffoldMessenger.of(rootContext)
                                               .showSnackBar(
-                                            SnackBar(
+                                            const SnackBar(
                                               content: Text(
-                                                  'Error: ${e.toString()}'),
-                                              backgroundColor: Colors.red,
+                                                  'Improvements ready. Review and edit below before applying.'),
+                                              backgroundColor:
+                                                  Color(0xFF00BCD4),
                                             ),
                                           );
                                         }
-                                      } finally {
-                                        if (mounted) {
-                                          setDialogState(() {
-                                            isGenerating = false;
-                                          });
+                                      } catch (e) {
+                                        if (!mounted || !dialogOpen) return;
+                                        final raw = e.toString();
+                                        String friendly;
+                                        if (raw.contains('504') ||
+                                            raw.contains('Gateway') ||
+                                            raw.contains('Timeout')) {
+                                          friendly =
+                                              'AI Assistant is taking longer than expected. Please retry.';
+                                        } else if (raw.contains('500') ||
+                                            raw.contains('Internal Server Error') ||
+                                            raw.contains('server error')) {
+                                          friendly =
+                                              'AI service error. Please try again in a moment.';
+                                        } else {
+                                          friendly = raw;
                                         }
+                                        ScaffoldMessenger.of(rootContext)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text('Error: $friendly'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      } finally {
+                                        if (!mounted || !dialogOpen) return;
+                                        setDialogState(() {
+                                          isGenerating = false;
+                                          progressLabel = '';
+                                        });
                                       }
                                     },
                               icon: isGenerating
@@ -12082,6 +12156,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             ),
                           ],
                         ),
+                        if (isGenerating && progressLabel.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            progressLabel,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF555555),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
