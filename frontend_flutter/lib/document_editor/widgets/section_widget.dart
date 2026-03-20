@@ -235,9 +235,9 @@ class SectionWidget extends StatelessWidget {
                             customStyles: DefaultStyles(
                               paragraph: DefaultTextBlockStyle(
                                 getContentTextStyle(),
-                                const HorizontalSpacing(0, 0),
-                                const VerticalSpacing(0, 0),
-                                const VerticalSpacing(0, 0),
+                                HorizontalSpacing.zero,
+                                VerticalSpacing.zero,
+                                VerticalSpacing.zero,
                                 null,
                               ),
                             ),
