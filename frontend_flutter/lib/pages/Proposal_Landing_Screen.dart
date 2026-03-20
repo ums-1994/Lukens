@@ -4,8 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
 import '../../services/auth_service.dart';
 import '../../services/role_service.dart';
-import '../../app_state.dart';
-// import '../../api.dart'; // Commented out to avoid AppState conflict
+import '../../api.dart';
 
 // The main entry point for the Flutter application.
 // void main() {
