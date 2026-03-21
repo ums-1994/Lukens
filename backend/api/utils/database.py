@@ -167,10 +167,11 @@ def release_pg_conn(conn):
         if conn:
             # Check if connection is still valid and reset its state before returning to pool
             try:
-                # Check if connection is in a transaction and rollback if needed
-                import psycopg2.extensions
-                if conn.status == psycopg2.extensions.STATUS_IN_TRANSACTION:
+                # Always rollback unconditionally - clears aborted transactions and is safe when idle
+                try:
                     conn.rollback()
+                except Exception:
+                    pass  # If rollback fails, connection may be corrupted; we'll close it below
                 
                 # Reset autocommit to default state (False)
                 conn.autocommit = False
@@ -885,8 +886,22 @@ def init_pg_schema():
         FOREIGN KEY (mentioned_by_user_id) REFERENCES users(id)
         )''')
 
-        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_mentions_user 
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_mentions_user
                          ON comment_mentions(mentioned_user_id, is_read, created_at DESC)''')
+
+        # Comment reactions table (emoji reactions like Google Docs)
+        cursor.execute('''CREATE TABLE IF NOT EXISTS comment_reactions (
+        id SERIAL PRIMARY KEY,
+        comment_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        emoji VARCHAR(20) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(comment_id, user_id, emoji),
+        FOREIGN KEY (comment_id) REFERENCES document_comments(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment
+                         ON comment_reactions(comment_id)''')
 
         # DocuSign signatures table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_signatures (

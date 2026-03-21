@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import '../models/document_section.dart';
 import '../models/document_table.dart';
 import '../models/inline_image.dart';
@@ -186,6 +187,24 @@ class SectionWidget extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.all(8),
                 child: Listener(
+                  onPointerDown: (event) {
+                    if (onContentTapUp == null) return;
+                    onContentTapUp!(
+                      TapUpDetails(
+                        globalPosition: event.position,
+                        kind: event.kind,
+                      ),
+                    );
+                  },
+                  onPointerMove: (event) {
+                    if (onContentTapUp == null) return;
+                    onContentTapUp!(
+                      TapUpDetails(
+                        globalPosition: event.position,
+                        kind: event.kind,
+                      ),
+                    );
+                  },
                   onPointerUp: (event) {
                     if (onContentTapUp == null) return;
                     onContentTapUp!(
@@ -196,28 +215,35 @@ class SectionWidget extends StatelessWidget {
                     );
                   },
                   behavior: HitTestBehavior.deferToChild,
-                  child: TextField(
-                    focusNode: section.contentFocus,
-                    controller: section.controller,
-                    maxLines: null,
-                    minLines: 15,
-                    enabled: !readOnly,
-                    style: getContentTextStyle(),
-                    textAlign: getTextAlignment(),
-                    textAlignVertical: TextAlignVertical.top,
-                    decoration: InputDecoration(
-                      hintText:
-                          readOnly ? '' : 'Start writing your content here...',
-                      hintStyle: const TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFFBDC3C7),
-                      ),
-                      border: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    onTap: () {
-                      onContentTap?.call();
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Stack children don't get forced width; Quill must have
+                      // a definite horizontal bound to avoid vertical glyph wrapping.
+                      final width = constraints.maxWidth.isFinite
+                          ? constraints.maxWidth
+                          : double.infinity;
+                      section.richController.readOnly = readOnly;
+                      return SizedBox(
+                        width: width,
+                        child: QuillEditor.basic(
+                          controller: section.richController,
+                          focusNode: section.contentFocus,
+                          config: QuillEditorConfig(
+                            placeholder: readOnly
+                                ? ''
+                                : 'Start writing your content here...',
+                            customStyles: DefaultStyles(
+                              paragraph: DefaultTextBlockStyle(
+                                getContentTextStyle(),
+                                HorizontalSpacing.zero,
+                                VerticalSpacing.zero,
+                                VerticalSpacing.zero,
+                                null,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
                     },
                   ),
                 ),

@@ -10,10 +10,12 @@ import 'dart:js_interop';
 import 'dart:math' as math;
 import 'dart:ui';
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
+import 'package:web/web.dart' as web;
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
@@ -3091,13 +3093,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -3180,6 +3179,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         ),
       );
     }
+
+    return const SizedBox.shrink();
+  }
 
   Widget _buildGlassMetricCard(
     String title,

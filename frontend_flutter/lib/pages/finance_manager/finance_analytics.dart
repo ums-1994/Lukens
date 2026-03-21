@@ -26,9 +26,7 @@ class FinanceAnalyticsPage extends StatefulWidget {
 }
 
 class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
-  bool _isSidebarCollapsed = false;
   final ScrollController _scrollController = ScrollController();
-  String _currentTab = 'analytics';
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
 
@@ -929,6 +927,7 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final isSidebarCollapsed = app.isFinanceSidebarCollapsed;
     final proposals = _financeProposals(app);
     final showAudit = _canAccessAudit(app);
     final pendingBadge = proposals
@@ -1046,15 +1045,11 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
               child: Row(
                 children: [
                   FinanceSidebar(
-                    isCollapsed: _isSidebarCollapsed,
+                    isCollapsed: isSidebarCollapsed,
                     currentPage: 'Analytics',
                     showAudit: showAudit,
                     pendingBadge: pendingBadge > 0 ? pendingBadge : null,
-                    onToggle: () {
-                      setState(() {
-                        _isSidebarCollapsed = !_isSidebarCollapsed;
-                      });
-                    },
+                    onToggle: app.toggleFinanceSidebar,
                     onSelect: (label) {
                       if (label == 'Dashboard' || label == 'Proposals') {
                         Navigator.pushNamed(context, '/finance_dashboard');

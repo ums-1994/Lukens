@@ -143,11 +143,11 @@ class ContentLibraryService {
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
 
-        // Backend returns {'content': [array]} format
-        final List<dynamic> data =
-            responseData is Map && responseData.containsKey('content')
-                ? responseData['content']
-                : (responseData is List ? responseData : []);
+        // Backend may return {'content': [array]} or {'covers': [array]} for consistency
+        final raw = responseData is Map
+            ? (responseData['content'] ?? responseData['covers'])
+            : responseData;
+        final List<dynamic> data = raw is List ? raw : [];
 
         return data
             .map((item) => {

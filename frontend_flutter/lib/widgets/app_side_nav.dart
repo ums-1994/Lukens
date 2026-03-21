@@ -20,18 +20,18 @@ class AppSideNav extends StatefulWidget {
   final bool isAdmin;
 
   // 🎨 Core Sidebar Colors
-  static const Color backgroundColor = Color(0xFF1F2840);    // Dark blue-gray
-  static const Color hoverColor = Color(0xFF2A3652);        // Lighter blue-gray  
-  static const Color activeColor = Color(0xFFC10D00);        // Red-orange accent
-  static const Color textPrimary = Colors.white;               // White text
-  static const Color textSecondary = Colors.white70;           // 70% white
-  static const Color textMuted = Colors.white54;              // 54% white
+  static const Color backgroundColor = Color(0xFF1F2840); // Dark blue-gray
+  static const Color hoverColor = Color(0xFF2A3652); // Lighter blue-gray
+  static const Color activeColor = Color(0xFFC10D00); // Red-orange accent
+  static const Color textPrimary = Colors.white; // White text
+  static const Color textSecondary = Colors.white70; // 70% white
+  static const Color textMuted = Colors.white54; // 54% white
 
   // 📐 Layout Dimensions
-  static const double collapsedWidth = 72.0;  // Collapsed: 72px
-  static const double expandedWidth = 280.0;   // Expanded: 280px
-  static const double itemHeight = 44.0;      // Each nav item height
-  static const double headerHeight = 64.0;    // Fixed header height
+  static const double collapsedWidth = 72.0; // Collapsed: 72px
+  static const double expandedWidth = 280.0; // Expanded: 280px
+  static const double itemHeight = 44.0; // Each nav item height
+  static const double headerHeight = 64.0; // Fixed header height
 
   static const List<Map<String, String>> _items = [
     {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
@@ -100,28 +100,13 @@ class _AppSideNavState extends State<AppSideNav> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
-                      mainAxisAlignment: widget.isCollapsed
-                          ? MainAxisAlignment.center
-                          : MainAxisAlignment.spaceBetween,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        if (!widget.isCollapsed)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'Navigation',
-                              style:
-                                  TextStyle(color: Colors.white, fontSize: 12),
-                            ),
-                          ),
-                        Padding(
-                          padding: EdgeInsets.symmetric(
-                              horizontal: widget.isCollapsed ? 0 : 8),
-                          child: Icon(
-                            widget.isCollapsed
-                                ? Icons.keyboard_arrow_right
-                                : Icons.keyboard_arrow_left,
-                            color: Colors.white,
-                          ),
+                        Icon(
+                          widget.isCollapsed
+                              ? Icons.keyboard_arrow_right
+                              : Icons.keyboard_arrow_left,
+                          color: Colors.white,
                         ),
                       ],
                     ),
@@ -129,24 +114,24 @@ class _AppSideNavState extends State<AppSideNav> {
                 ),
               ),
 
-          const SizedBox(height: 8),
+              const SizedBox(height: 8),
 
-          // Navigation Items
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                children: [
-                  for (final item in AppSideNav._items)
-                    if (!_shouldHideItemForAdmin(item['label']!))
-                      _buildNavItem(
-                        label: item['label']!,
-                        assetPath: item['icon']!,
-                        effectiveCollapsed: effectiveCollapsed,
-                      ),
-                ],
+              // Navigation Items
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (final item in AppSideNav._items)
+                        if (!_shouldHideItemForAdmin(item['label']!))
+                          _buildNavItem(
+                            label: item['label']!,
+                            assetPath: item['icon']!,
+                            effectiveCollapsed: effectiveCollapsed,
+                          ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-          ),
 
               // Bottom section - Logout
               Padding(
@@ -197,8 +182,6 @@ class _AppSideNavState extends State<AppSideNav> {
   }
 
   bool _shouldHideItemForAdmin(String label) {
-    // Hide analytics entry for non-admin users by default.
-    if (!widget.isAdmin && label.toLowerCase().contains('analytics')) return true;
     return false;
   }
 

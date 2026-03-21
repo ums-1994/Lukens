@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/content_library_service.dart';
@@ -36,9 +37,17 @@ class _ContentLibrarySelectionDialogState
   List<Map<String, dynamic>> _modules = [];
   bool _loading = true;
   String _search = '';
+  Timer? _loadTimeout;
 
   String _normalizeName(String value) {
     return value.trim().toLowerCase().replaceAll(RegExp(r'[_\-\s]+'), '');
+  }
+
+  /// Alias so "cover" and "covers" match (frontend/backend naming consistency).
+  String _coverCoversAlias(String normalized) {
+    if (normalized == 'cover') return 'covers';
+    if (normalized == 'covers') return 'cover';
+    return normalized;
   }
 
   bool _isFolder(dynamic value) {
@@ -73,6 +82,22 @@ class _ContentLibrarySelectionDialogState
   void initState() {
     super.initState();
     _load();
+    _loadTimeout = Timer(const Duration(seconds: 15), () {
+      if (!mounted) return;
+      if (_loading) {
+        print(
+            '⚠️ Content library load timed out after 15 seconds. Showing empty state.');
+        setState(() {
+          _loading = false;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _loadTimeout?.cancel();
+    super.dispose();
   }
 
   String? _getToken() {
@@ -141,7 +166,9 @@ class _ContentLibrarySelectionDialogState
         final isFolder = _isFolder(m['is_folder']);
         final label = _normalizeName((m['label'] ?? '').toString());
         final key = _normalizeName((m['key'] ?? '').toString());
-        if (isFolder && (label == target || key == target)) {
+        final labelMatches = label == target || key == target ||
+            label == _coverCoversAlias(target) || key == _coverCoversAlias(target);
+        if (isFolder && labelMatches) {
           parentFolderId = _asInt(m['id']);
           break;
         }

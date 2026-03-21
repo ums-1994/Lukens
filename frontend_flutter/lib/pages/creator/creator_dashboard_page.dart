@@ -15,6 +15,7 @@ import '../../theme/premium_theme.dart';
 import '../../theme/app_colors.dart';
 import '../shared/proposal_insights_modal.dart';
 import '../../widgets/app_side_nav.dart';
+import 'widgets/completion_rates_widget.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -52,6 +53,7 @@ class _DashboardPageState extends State<DashboardPage>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Ensure AppState has the token before refreshing
       final app = context.read<AppState>();
+      app.setCurrentNavLabel('Dashboard');
       if (app.authToken == null && AuthService.token != null) {
         print('Syncing token to AppState...');
         app.authToken = AuthService.token;
@@ -683,16 +685,16 @@ class _DashboardPageState extends State<DashboardPage>
                     .toString()
                     .toLowerCase()
                     .trim();
-                final isAdmin = role == 'admin' || role == 'ceo';
+                final isAdmin = role == 'admin' || role == 'ceo' ||
+                    role == 'manager' || role == 'creator' ||
+                    role == 'financial manager';
                 return AppSideNav(
-                  isCollapsed: _isSidebarCollapsed,
-                  currentLabel: _currentNavLabel,
+                  isCollapsed: app.isSidebarCollapsed,
+                  currentLabel: app.currentNavLabel,
                   isAdmin: isAdmin,
-                  onToggle: () => setState(
-                    () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                  ),
+                  onToggle: app.toggleSidebar,
                   onSelect: (label) {
-                    setState(() => _currentNavLabel = label);
+                    app.setCurrentNavLabel(label);
                     _navigateToPage(context, label);
                   },
                 );
@@ -2525,6 +2527,18 @@ class _DashboardPageState extends State<DashboardPage>
           _buildRecentProposals(app.proposals),
         ),
       ],
+    );
+  }
+
+  void _openProposalFromWidget(int proposalId, String status) {
+    final editableStatuses = {'draft', 'changes requested'};
+    final isEditable = editableStatuses.contains(status.toLowerCase());
+    Navigator.of(context).pushNamed(
+      '/blank-document',
+      arguments: {
+        'proposalId': proposalId,
+        'readOnly': !isEditable,
+      },
     );
   }
 

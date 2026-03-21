@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math' as math;
 import 'login_page.dart';
+import 'google_verify_email_pending_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -212,10 +213,32 @@ class _RegisterPageState extends State<RegisterPage>
       }
 
       final result = json.decode(response.body) as Map<String, dynamic>;
-      final userProfile = result['user'] as Map<String, dynamic>?;
 
       if (!mounted) return;
       setState(() => _isLoading = false);
+
+      // Google sign-up requires email verification before full auth
+      if (result['verification_pending'] == true) {
+        final email = result['email'] as String? ?? '';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result['detail'] as String? ??
+                  'Please check your email and click the verification link.',
+            ),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => GoogleVerifyEmailPendingPage(email: email),
+          ),
+        );
+        return;
+      }
+
+      final userProfile = result['user'] as Map<String, dynamic>?;
 
       if (userProfile != null) {
         final appState = context.read<AppState>();

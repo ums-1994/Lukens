@@ -27,8 +27,12 @@ except ImportError:
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
-from api.utils.ai_safety import AISafetyError
+from api.utils.ai_safety import enforce_safe_for_external_ai, AISafetyError
 from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
+try:
+    from hf_ai_assistant_service import HFAIAssistantError
+except ImportError:
+    HFAIAssistantError = type("HFAIAssistantError", (Exception,), {})
 
 from api.routes.client import _encode_identity_hash
 
@@ -528,6 +532,20 @@ def get_content():
         import traceback
         traceback.print_exc()
         return {'detail': str(e)}, 500
+
+
+@bp.get("/proposals/completion-rates")
+@token_required
+def proposals_completion_rates(username=None, user_id=None, email=None):
+    """
+    Backwards-compatible alias for the completion-rates analytics endpoint.
+    The Flutter completion-rates widget calls /api/proposals/completion-rates,
+    while the newer analytics page uses /api/analytics/completion-rates.
+    Delegate to the shared implementation in the pipeline blueprint so both
+    creator and admin views see consistent data.
+    """
+    from api.routes.pipeline import completion_rates as _completion_rates
+    return _completion_rates(username=username, user_id=user_id, email=email)
 
 @bp.post("/content")
 def create_content():
@@ -1712,56 +1730,60 @@ def ai_generate_content(username=None):
     """Generate proposal content using AI"""
     import time
     start_time = time.time()
-    
+
     try:
         data = request.get_json()
-        prompt = data.get('prompt', '')
-        context = data.get('context', {})
-        section_type = data.get('section_type', 'general')
-        
+        prompt = data.get("prompt", "")
+        context = data.get("context", {})
+        section_type = data.get("section_type", "general")
+
         if not prompt:
-            return {'detail': 'Prompt is required'}, 400
-        
+            return {"detail": "Prompt is required"}, 400
+
+        # Enforce AI safety guardrails
+        safe_prompt = enforce_safe_for_external_ai(prompt)
+        safe_context = enforce_safe_for_external_ai(context) if isinstance(context, dict) else {}
+
         # Import AI service
         from ai_service import ai_service
-        
-        # Create enhanced prompt with context
+
+        # Create enhanced prompt with sanitized context
         full_context = {
-            'user_request': prompt,
-            'section_type': section_type,
-            **context
+            "user_request": safe_prompt,
+            "section_type": section_type,
+            **(safe_context if isinstance(safe_context, dict) else {})
         }
-        
+
         # Generate content
         generated_content = ai_service.generate_proposal_section(section_type, full_context)
-        
+
         # Track AI usage
         response_time_ms = int((time.time() - start_time) * 1000)
         try:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO ai_usage (username, endpoint, prompt_text, section_type, 
+                    INSERT INTO ai_usage (username, endpoint, prompt_text, section_type,
                                          response_tokens, response_time_ms)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id
-                """, (username, 'generate', prompt[:500], section_type, 
+                """, (username, "generate", prompt[:500], section_type,
                       len(generated_content.split()), response_time_ms))
                 conn.commit()
                 print(f"📊 AI usage tracked for {username}")
         except Exception as track_error:
             print(f"⚠️ Failed to track AI usage: {track_error}")
-        
+
         return {
-            'content': generated_content,
-            'section_type': section_type
+            "content": generated_content,
+            "section_type": section_type
         }, 200
-        
+
     except AISafetyError as e:
         return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error generating AI content: {e}")
-        return {'detail': str(e)}, 500
+        return {"detail": str(e)}, 500
 
 @bp.post("/ai/improve")
 @token_required
@@ -1781,7 +1803,7 @@ def ai_improve_content(username=None):
         # Import AI service
         from ai_service import ai_service
         
-        # Get improvement suggestions
+        # Get improvement suggestions (always returns improved_version + summary)
         result = ai_service.improve_content(content, section_type)
         
         # Track AI usage
@@ -1800,11 +1822,24 @@ def ai_improve_content(username=None):
                 print(f"📊 AI improve tracked for {username}")
         except Exception as track_error:
             print(f"⚠️ Failed to track AI usage: {track_error}")
-        
-        return result, 200
+
+        # Respond with a minimal, well-defined payload for the frontend.
+        return {
+            "improved_version": result.get("improved_version", content),
+            "summary": result.get("summary", ""),
+            # Keep the full analysis available if frontend wants it.
+            "analysis": {k: v for k, v in result.items() if k not in ("improved_version", "summary")},
+        }, 200
         
     except AISafetyError as e:
         return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
+    except HFAIAssistantError as e:
+        print(f"❌ HF AI Assistant error: {e}")
+        body = {"detail": str(e), "blocked": bool(getattr(e, "reasons", None))}
+        if getattr(e, "reasons", None):
+            body["reasons"] = e.reasons
+        status = 401 if getattr(e, "status_code", None) == 401 else 400
+        return body, status
     except Exception as e:
         print(f"❌ Error improving content: {e}")
         return {
@@ -2025,7 +2060,7 @@ def get_proposal_analytics(username=None, proposal_id=None):
             
             # Verify proposal exists and user has access
             cursor.execute("""
-                SELECT id, title, status, client, '' as client_email
+                SELECT id, title, status, client_id
                 FROM proposals 
                 WHERE id = %s OR id::text = %s
             """, (proposal_id, str(proposal_id)))

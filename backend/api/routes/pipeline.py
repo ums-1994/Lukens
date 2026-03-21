@@ -2,6 +2,11 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime
 from api.utils.database import _pg_conn, release_pg_conn
 from api.utils.decorators import token_required
+from api.utils.readiness import (
+    score_proposal as _score_proposal,
+    missing_section_names as _missing_section_names,
+    PASS_THRESHOLD as _PASS_THRESHOLD,
+)
 
 bp = Blueprint("pipeline", __name__)
 
@@ -29,34 +34,6 @@ def _stage_for_status(status: str | None) -> str | None:
         return "In Review"
     return None
 
-
-def _sections_readiness(sections) -> tuple[int, list[str]]:
-    required = ["Introduction", "Methodology", "Conclusion"]
-    total = len(required)
-    if total == 0:
-        return 0, []
-
-    completed = 0
-    issues: list[str] = []
-
-    if not isinstance(sections, dict):
-        sections = {}
-
-    for field in required:
-        val = sections.get(field)
-        ok = False
-        if isinstance(val, str):
-            ok = bool(val.strip())
-        elif val is not None:
-            ok = True
-
-        if ok:
-            completed += 1
-        else:
-            issues.append(f"{field} is required")
-
-    score = int(round((completed / total) * 100))
-    return score, issues
 
 
 @bp.get("/analytics/proposal-pipeline")
@@ -423,6 +400,10 @@ def completion_rates(username=None, user_id=None, email=None):
         if "sections" in existing_columns:
             sections_expr = "p.sections"
 
+        content_expr = "NULL::text"
+        if "content" in existing_columns:
+            content_expr = "p.content"
+
         owner_id = user_id
         if not owner_id:
             lookup_email = email or username
@@ -602,7 +583,8 @@ def completion_rates(username=None, user_id=None, email=None):
                 p.{client_expr} AS client,
                 u.id AS owner_id,
                 COALESCE(u.full_name, u.username, u.email) AS owner,
-                {sections_expr} AS sections
+                {sections_expr} AS sections,
+                {content_expr} AS content_data
             FROM proposals p
             LEFT JOIN users u ON {join_cond}
             WHERE {where_sql}
@@ -615,21 +597,11 @@ def completion_rates(username=None, user_id=None, email=None):
         passed = 0
         failed = 0
 
-        for pid, title, status, created_at, updated_at, client, owner_id_row, owner, sections_raw in cursor.fetchall() or []:
-            sections = {}
-            if sections_raw:
-                if isinstance(sections_raw, dict):
-                    sections = sections_raw
-                else:
-                    try:
-                        import json
-
-                        sections = json.loads(sections_raw)
-                    except Exception:
-                        sections = {}
-
-            score, issues = _sections_readiness(sections)
-            ok = len(issues) == 0
+        for pid, title, status, created_at, updated_at, client, owner_id_row, owner, sections_raw, content_raw in cursor.fetchall() or []:
+            # Prefer the richer `content` column; fall back to `sections`
+            scored = _score_proposal(content_raw or sections_raw)
+            issues = _missing_section_names(scored)
+            ok = scored['score'] >= _PASS_THRESHOLD
             if ok:
                 passed += 1
             else:
@@ -645,7 +617,7 @@ def completion_rates(username=None, user_id=None, email=None):
                     "owner_id": int(owner_id_row) if owner_id_row is not None else None,
                     "created_at": created_at.isoformat() if created_at else None,
                     "updated_at": updated_at.isoformat() if updated_at else None,
-                    "readiness_score": int(score),
+                    "readiness_score": int(scored['score']),
                     "readiness_issues": issues,
                 }
             )
@@ -655,7 +627,7 @@ def completion_rates(username=None, user_id=None, email=None):
         if total > 0:
             pass_rate = int(round((passed / total) * 100))
 
-        low = [p for p in proposals if int(p.get("readiness_score") or 0) < 100]
+        low = [p for p in proposals if int(p.get("readiness_score") or 0) < _PASS_THRESHOLD]
         low.sort(key=lambda p: (int(p.get("readiness_score") or 0), str(p.get("title") or "")))
 
         return jsonify(

@@ -72,19 +72,17 @@ class RoleService extends ChangeNotifier {
   UserRole mapBackendRoleToFrontendRole(String? backendRole) {
     if (backendRole == null) return UserRole.creator;
 
-    final role = backendRole.toLowerCase().trim();
+    final role = backendRole.toLowerCase().trim().replaceAll('-', '_');
 
     // Admin roles → Approver (Admin Dashboard)
-    if (role == 'admin' || role == 'ceo') {
+    if (role == 'admin' || role == 'ceo' || role == 'approver') {
       return UserRole.approver;
     }
 
     // Finance roles → Finance Dashboard
-    if (role == 'finance' ||
-        role == 'finance manager' ||
-        role == 'financial manager' ||
-        role == 'finance_manager' ||
-        role == 'financial_manager') {
+    if (role.startsWith('finance') ||
+        role == 'financial_manager' ||
+        role == 'financial manager') {
       return UserRole.finance;
     }
 

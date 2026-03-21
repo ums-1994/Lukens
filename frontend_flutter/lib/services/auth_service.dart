@@ -183,17 +183,17 @@ class AuthService {
   static Future<Map<String, dynamic>?> verifyEmail(String token) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/verify-email'),
+        Uri.parse('$baseUrl/api/verify-email'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'token': token}),
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        final data = json.decode(response.body) as Map<String, dynamic>?;
         return data;
       } else {
         final error = json.decode(response.body);
-        throw Exception(error['error'] ?? 'Email verification failed');
+        throw Exception(error['detail'] ?? error['error'] ?? 'Email verification failed');
       }
     } catch (e) {
       print('Email verification error: $e');
@@ -236,7 +236,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> resendVerification(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/resend-verification'),
+        Uri.parse('$baseUrl/api/resend-verification'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'email': email}),
       );
@@ -246,7 +246,7 @@ class AuthService {
         return data;
       } else {
         final error = json.decode(response.body);
-        throw Exception(error['error'] ?? 'Failed to resend verification');
+        throw Exception(error['detail'] ?? error['error'] ?? 'Failed to resend verification');
       }
     } catch (e) {
       print('Resend verification error: $e');

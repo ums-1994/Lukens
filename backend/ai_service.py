@@ -9,6 +9,8 @@ Integrates with OpenRouter API for AI-powered features:
 import os
 import json
 import re
+import random
+import time
 import requests
 from typing import Dict, List, Optional, Any
 from pydantic import BaseModel
@@ -20,6 +22,12 @@ from api.utils.ai_safety import (
     sanitize_for_external_ai,
 )
 from api.utils.gemini_client import GeminiClient, GeminiSchemaError
+
+try:
+    from hf_ai_assistant_service import get_hf_ai_assistant_service, HFAIAssistantError
+except ImportError:
+    get_hf_ai_assistant_service = None  # type: ignore
+    HFAIAssistantError = Exception  # type: ignore
 
 # Pydantic models for AI responses
 class RiskIssue(BaseModel):
@@ -43,6 +51,13 @@ load_dotenv()
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-sonnet")
+OPENROUTER_FALLBACK_MODEL = (os.getenv("OPENROUTER_FALLBACK_MODEL") or "").strip() or None
+# Extra fallbacks when primary/env fallback rate-limit or 404 (order: try in sequence)
+OPENROUTER_EXTRA_FALLBACKS = [
+    "google/gemini-2.0-flash-exp:free",
+    "google/gemini-2.0-flash-exp",  # some keys use without :free
+    "meta-llama/llama-3.2-3b-instruct:free",
+]
 DEFAULT_CURRENCY = os.getenv("DEFAULT_CURRENCY", "ZAR")  # Default to South African Rands
 DEFAULT_CURRENCY_SYMBOL = os.getenv("DEFAULT_CURRENCY_SYMBOL", "R")  # Default to R
 
@@ -60,6 +75,7 @@ HF_RISK_GATE_URL = (
 HF_TOKEN = os.getenv("HF_TOKEN", "")
 
 
+
 class AIService:
     """Service for AI-powered proposal analysis and generation"""
     
@@ -72,39 +88,145 @@ class AIService:
         self.currency_symbol = DEFAULT_CURRENCY_SYMBOL  # Default: R
 
         self._gemini_client: GeminiClient | None = None
+        self._hf_ai_assistant = None
+        if get_hf_ai_assistant_service:
+            try:
+                self._hf_ai_assistant = get_hf_ai_assistant_service()
+                if self._hf_ai_assistant:
+                    print("✅ HF Assistant enabled for content generation (generate-section, improve-area)")
+            except Exception as e:
+                print(f"⚠️ HF AI Assistant not available: {e}")
 
         if self.provider == "gemini":
             self._gemini_client = GeminiClient()
+            print("✅ Using AI provider: gemini")
+            print(f"✅ Using model: {os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')}")
         elif self.provider == "huggingface":
-            # HuggingFace provider — no OpenRouter key required
+            # HuggingFace is used only for risk gate (analyze_proposal_risks).
             if not HF_RISK_GATE_URL:
                 print("⚠️  AI_PROVIDER=huggingface but no HuggingFace URL configured "
                       "(set Risk_Gate_engine_API in .env)")
             else:
-                print(f"[OK] Using AI provider: huggingface -> {HF_RISK_GATE_URL}")
+                print(f"[OK] Risk gate uses HuggingFace: {HF_RISK_GATE_URL}")
         else:
-            if not self.api_key:
-                raise ValueError("OPENROUTER_API_KEY not found in environment variables")
-        
-        if self.provider == "gemini":
-            print("✅ Using AI provider: gemini")
-            print(f"✅ Using model: {os.getenv('GEMINI_MODEL', 'gemini-1.5-flash')}")
-            print(f"💰 Currency set to: {self.currency} ({self.currency_symbol})")
-        elif self.provider != "huggingface":
+            # OpenRouter-only mode (legacy). Still used for risk summaries/compliance, not for proposal editor when HF assistant is available.
             if self.api_key:
                 print(f"✅ OpenRouter API Key loaded: {self.api_key[:10]}...{self.api_key[-4:]}")
                 print(f"✅ Using model: {self.model}")
-                print(f"💰 Currency set to: {self.currency} ({self.currency_symbol})")
-            else:
-                print("❌ OpenRouter API Key is empty!")
+            elif not self._hf_ai_assistant:
+                print("❌ No AI provider configured for content generation (OpenRouter or HF Assistant)")
+
+    def _make_openrouter_request(
+        self, messages: List[Dict[str, str]], temperature: float = 0.7, max_tokens: int = 2000
+    ) -> str:
+        """
+        Content generation only: always use OpenRouter. HuggingFace is used only for risk gate
+        (analyze_proposal_risks). This path never uses AI_PROVIDER for routing.
+        """
+        if not self.api_key:
+            raise ValueError(
+                "OpenRouter is required for content generation. Set OPENROUTER_API_KEY in .env."
+            )
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8000",
+            "X-OpenRouter-Title": "Proposal & SOW Builder",
+        }
+        sanitized_messages = enforce_safe_for_external_ai(messages)
+        max_retries = 10  # more retries for 429 so rate limit can reset
+        base_delay = 2.0
+        max_delay = 90  # cap wait so we don't block forever
+        models_to_try = [self.model]
+        if OPENROUTER_FALLBACK_MODEL and OPENROUTER_FALLBACK_MODEL != self.model:
+            models_to_try.append(OPENROUTER_FALLBACK_MODEL)
+        for m in OPENROUTER_EXTRA_FALLBACKS:
+            if m not in models_to_try:
+                models_to_try.append(m)
+
+        last_exception = None
+        for model_name in models_to_try:
+            payload = {
+                "model": model_name,
+                "messages": sanitized_messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            for attempt in range(max_retries):
+                try:
+                    url = f"{self.base_url.rstrip('/')}/chat/completions"
+                    response = requests.post(
+                        url,
+                        headers=headers,
+                        json=payload,
+                        timeout=60,
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    return result["choices"][0]["message"]["content"]
+                except AISafetyError:
+                    raise
+                except requests.exceptions.HTTPError as e:
+                    last_exception = e
+                    status = e.response.status_code if e.response is not None else 0
+                    # Retry on rate limit (429) or server error (500, 502, 503)
+                    if status in (429, 500, 502, 503):
+                        if attempt < max_retries - 1:
+                            delay = min(
+                                base_delay * (2 ** attempt) + random.uniform(0, 2),
+                                max_delay,
+                            )
+                            kind = "rate limit (429)" if status == 429 else f"server error ({status})"
+                            print(
+                                f"⚠️ OpenRouter {kind}. Retry in {delay:.1f}s (attempt {attempt + 1}/{max_retries}, model={model_name})"
+                            )
+                            time.sleep(delay)
+                        else:
+                            if model_name != models_to_try[-1]:
+                                kind = "rate limit (429)" if status == 429 else f"server error ({status})"
+                                print(
+                                    f"⚠️ OpenRouter {kind} after {max_retries} attempts on {model_name}, trying fallback model."
+                                )
+                            break
+                    elif status == 404:
+                        try:
+                            body = e.response.text[:200] if e.response and e.response.text else ""
+                            print(
+                                f"⚠️ OpenRouter 404 for model={model_name}, trying next. Response: {body}"
+                            )
+                        except Exception:
+                            print(f"⚠️ OpenRouter 404 for model={model_name}, trying next model.")
+                        last_exception = e
+                        break
+                    else:
+                        raise Exception(
+                            f"OpenRouter API request failed after {attempt + 1} attempts: {str(e)}"
+                        )
+                except requests.exceptions.RequestException as e:
+                    last_exception = e
+                    raise Exception(f"OpenRouter API request failed: {str(e)}")
+
+        err_msg = str(last_exception) if last_exception else "unknown"
+        if "429" in err_msg or "Too Many Requests" in err_msg:
+            raise Exception(
+                "OpenRouter rate limit. Please wait a minute and try again, or use a paid model for higher limits."
+            )
+        if "500" in err_msg or "502" in err_msg or "503" in err_msg:
+            raise Exception(
+                "OpenRouter is temporarily unavailable (server error). Please try again in a minute."
+            )
+        raise Exception(
+            f"OpenRouter API request failed (all models tried). Last error: {err_msg}"
+        )
 
     def _make_request(self, messages: List[Dict[str, str]], temperature: float = 0.7, max_tokens: int = 2000) -> str:
-        """Make a request to OpenRouter API (sanitized-only payload)"""
+        """
+        Used for content generation only. Always uses OpenRouter (never HuggingFace).
+        HuggingFace is only for risk gate via analyze_proposal_risks().
+        """
         if self.provider == "gemini":
             if not self._gemini_client:
                 raise Exception("Gemini client not initialized")
-
-            # Convert chat-style messages into a single prompt for Gemini.
             safe_messages = enforce_safe_for_external_ai(messages)
             prompt = "\n\n".join(
                 f"{m.get('role', 'user').upper()}: {m.get('content', '')}" for m in safe_messages
@@ -114,41 +236,8 @@ class AIService:
                 temperature=temperature,
                 max_output_tokens=max_tokens,
             )
-
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8000",  # Required by OpenRouter
-            "X-Title": "Proposal & SOW Builder"
-        }
-
-        # Enforce that we never send sensitive data to third-party AI providers.
-        # We sanitize all outbound message content and block if secrets are detected.
-        sanitized_messages = enforce_safe_for_external_ai(messages)
-
-        payload = {
-            "model": self.model,
-            "messages": sanitized_messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens
-        }
-
-        try:
-            response = requests.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=60
-            )
-            response.raise_for_status()
-
-            result = response.json()
-            return result["choices"][0]["message"]["content"]
-
-        except AISafetyError:
-            raise
-        except requests.exceptions.RequestException as e:
-            raise Exception(f"OpenRouter API request failed: {str(e)}")
+        # OpenRouter only for content generation (never HuggingFace)
+        return self._make_openrouter_request(messages, temperature=temperature, max_tokens=max_tokens)
 
     def analyze_proposal_risks(self, proposal_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -409,8 +498,51 @@ class AIService:
     
     def generate_proposal_section(self, section_type: str, context: Dict[str, Any]) -> str:
         """
-        Generate content for a specific proposal section
+        Generate content for a specific proposal section.
+        For proposal editor endpoints (/ai/generate), we ONLY use the HF Assistant when configured.
+        OpenRouter is not used for this feature anymore.
         """
+        if self._hf_ai_assistant:
+            try:
+                proposal_text = context.get("user_request") or ""
+                if isinstance(context, dict) and len(context) > 1:
+                    proposal_text = f"{proposal_text}\n\nContext: {json.dumps({k: v for k, v in context.items() if k != 'user_request'}, indent=2)}"
+                result = self._hf_ai_assistant.generate_section(
+                    section_type,
+                    proposal_text or "Generate content for this section.",
+                )
+                # Debug: inspect raw HF payload to understand why content may be missing
+                try:
+                    print(f"DEBUG: HF generate_section raw result: {result}")
+                except Exception:
+                    pass
+                # HF Flask backend shape: { success: bool, generated_text: str, error?: str }
+                if isinstance(result, dict) and "success" in result:
+                    if result.get("success") is True:
+                        text = (result.get("generated_text") or "").strip()
+                        if not text:
+                            raise HFAIAssistantError("AI Assistant returned empty generated_text")
+                        return text
+                    # success == False → surface backend error message
+                    err_msg = result.get("error") or "AI Assistant reported failure"
+                    raise HFAIAssistantError(str(err_msg))
+
+                # Fallback for older shapes: try typical keys
+                text = (result.get("generated_text") or result.get("content") or "").strip()
+                if not text:
+                    raise HFAIAssistantError("AI Assistant returned empty content")
+                return text
+            except HFAIAssistantError:
+                raise
+            except Exception as e:
+                print(f"⚠️ HF AI Assistant generate_section failed: {e}")
+                raise
+
+        # If we reach here, HF Assistant is not configured; fail fast.
+        raise Exception(
+            "AI Assistant not configured for content generation. Set AI_ASSISTANT_API_KEY in backend .env."
+        )
+
         section_prompts = {
             "executive_summary": "Write a compelling executive summary that highlights the client's needs, our proposed solution, and key benefits.",
             "scope_deliverables": "Define clear scope and deliverables based on the project details. Be specific and measurable.",
@@ -513,62 +645,31 @@ Return a JSON object with section titles as keys and content as values:
     
     def improve_content(self, content: str, section_type: str) -> Dict[str, Any]:
         """
-        Analyze and suggest improvements for existing content
+        Analyze and suggest improvements for existing content.
+        For proposal editor endpoints (/ai/improve), we ONLY use the HF Assistant when configured.
+        OpenRouter is not used for this feature anymore.
+        Returns a dict that always includes at least: improved_version, summary.
         """
-        safe_content = enforce_safe_for_external_ai(content)
+        if self._hf_ai_assistant:
+            try:
+                result = self._hf_ai_assistant.improve_area(section_type, content)
+                improved = (result.get("generated_text") or result.get("content") or content).strip()
+                summary = result.get("reasoning") or result.get("summary") or "Content improved."
+                return {
+                    "improved_version": improved,
+                    "summary": summary,
+                    "confidence": result.get("confidence"),
+                    **{k: v for k, v in result.items() if k not in ("generated_text", "content", "reasoning", "summary", "confidence")},
+                }
+            except HFAIAssistantError:
+                raise
+            except Exception as e:
+                print(f"⚠️ HF AI Assistant improve_area failed: {e}")
+                raise
 
-        prompt = f"""You are an expert proposal editor for Khonology, a South African company. Review this content and suggest improvements.
-
-Section Type: {section_type}
-Current Content:
-{safe_content}
-
-IMPORTANT: If the content contains pricing/monetary amounts, ensure they are in South African Rands (ZAR) using the {self.currency_symbol} symbol.
-Convert any dollars ($), euros (€), or other currencies to Rands (e.g., ${self.currency_symbol}150,000).
-
-Analyze for:
-1. Clarity and readability
-2. Professional tone
-3. Completeness
-4. Grammar and style
-5. Persuasiveness
-6. Currency usage (must be ZAR/{self.currency_symbol})
-
-Provide a JSON response with:
-{{
-  "quality_score": 0-100,
-  "strengths": ["strength 1", "strength 2"],
-  "improvements": [
-    {{
-      "issue": "what needs improvement",
-      "suggestion": "how to improve it",
-      "priority": "low|medium|high"
-    }}
-  ],
-  "improved_version": "rewritten content with improvements applied",
-  "summary": "brief summary of changes"
-}}"""
-
-        messages = [
-            {"role": "system", "content": "You are an expert proposal editor. Always respond with valid JSON."},
-            {"role": "user", "content": prompt}
-        ]
-        
-        response = self._make_request(messages, temperature=0.5, max_tokens=2000)
-        
-        try:
-            start_idx = response.find('{')
-            end_idx = response.rfind('}') + 1
-            json_str = response[start_idx:end_idx]
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            return {
-                "quality_score": 70,
-                "strengths": ["Content is present"],
-                "improvements": [],
-                "improved_version": content,
-                "summary": "Could not analyze content"
-            }
+        raise Exception(
+            "AI Assistant not configured for content improvement. Set AI_ASSISTANT_API_KEY in backend .env."
+        )
     
     def check_compliance(self, proposal_data: Dict[str, Any]) -> Dict[str, Any]:
         """

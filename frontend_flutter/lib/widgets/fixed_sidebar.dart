@@ -71,21 +71,8 @@ class _FixedSidebarState extends State<FixedSidebar> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
-                        mainAxisAlignment: effectiveCollapsed
-                            ? MainAxisAlignment.center
-                            : MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          if (!effectiveCollapsed)
-                            Expanded(
-                              child: Text(
-                                'Navigation',
-                                style: TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
                           Icon(
                             effectiveCollapsed
                                 ? Icons.keyboard_arrow_right

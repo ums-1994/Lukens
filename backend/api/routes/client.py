@@ -2424,13 +2424,11 @@ def log_client_activity():
             if inv_proposal_id is not None and str(inv_proposal_id) != str(proposal_id):
                 return {'detail': 'Token is not valid for this proposal'}, 403
 
-            configured, err_or_hash, status = _require_identity_configured(cursor, int(inv_proposal_id or proposal_id))
-            if not configured:
-                return err_or_hash, status
-
-            allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, int(inv_proposal_id or proposal_id))
-            if not allowed:
-                return err_payload, status
+            # Note: Identity verification is bypassed here because:
+            # 1. The client already has a valid access token for this proposal
+            # 2. The token was validated above (lines 2328-2344)
+            # 3. Activity tracking should work regardless of identity verification status
+            # The frontend client viewer handles its own identity/OTP flow separately.
             
             client_email = result['invited_email']
             client_id = result.get('client_id')

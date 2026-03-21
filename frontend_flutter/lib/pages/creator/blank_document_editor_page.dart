@@ -8,12 +8,14 @@ import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/client_service.dart';
 import '../../services/asset_service.dart';
 import '../../services/role_service.dart';
+import '../../services/ai_assistant_api.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
@@ -25,6 +27,7 @@ import '../../document_editor/models/document_section.dart';
 import '../../document_editor/models/inline_image.dart';
 import '../../document_editor/models/document_table.dart';
 import '../../document_editor/models/positioned_pricing_table.dart';
+import '../../document_editor/models/document_format_models.dart';
 // Block-based section widget
 import '../../document_editor/widgets/section_widget.dart';
 import '../../document_editor/controllers/highlighting_text_controller.dart';
@@ -71,6 +74,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _selectedPanel = 'templates'; // templates, build, upload, signature
   int _selectedSectionIndex =
       0; // Track which section is selected for content insertion
+  /// Avoid registering Quill/listener hooks twice for the same section (e.g. AI init + auto-save setup).
+  final Set<String> _sectionRichListenersAttached = {};
   String _selectedCurrency = 'Rand (ZAR)';
 
   Widget _buildPositionedPricingTable(
@@ -441,12 +446,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Formatting state
   String _selectedTextStyle = 'Normal Text';
-  String _selectedFont = 'Plus Jakarta Sans';
-  String _selectedFontSize = '12px';
+  String _selectedFont = 'Arial';
+  String _selectedFontSize = '12';
   String _selectedAlignment = 'left';
+  String _selectedLineSpacing = '1.0';
   bool _isBold = false;
   bool _isItalic = false;
   bool _isUnderlined = false;
+  bool _isStrikethrough = false;
 
   // Sidebar state
   bool _isSidebarCollapsed = false;
@@ -650,7 +657,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           await _addComment(parentId: rootCommentId);
                           _threadReplyController.clear();
                           if (!mounted) return;
-                          await _loadCommentsFromDatabase(_savedProposalId!);
+                          unawaited(_loadCommentsFromDatabase(_savedProposalId!));
                           _threadOverlay?.markNeedsBuild();
                         },
                         style: ElevatedButton.styleFrom(
@@ -857,8 +864,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         section.titleFocus.addListener(() => setState(() {}));
 
         // Add auto-save listeners
-        section.controller.addListener(_onContentChanged);
-        section.titleController.addListener(_onContentChanged);
+        _attachSectionListeners(section);
       });
 
       _selectedSectionIndex = 0; // Select first section
@@ -1359,11 +1365,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _loadLibraryImages() async {
     if (_isLoadingLibraryImages) return;
 
+    if (!mounted) return;
     setState(() => _isLoadingLibraryImages = true);
 
     try {
       final token = await _getAuthToken();
       if (token == null) {
+        if (mounted) setState(() => _isLoadingLibraryImages = false);
         print('⚠️ No token available for loading library images');
         return;
       }
@@ -1376,6 +1384,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         },
       );
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final List<dynamic> content = data is Map && data.containsKey('content')
@@ -1414,11 +1423,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         print('✅ Loaded ${_libraryImages.length} images from library');
       } else {
         print('⚠️ Failed to load library images: ${response.statusCode}');
-        setState(() => _isLoadingLibraryImages = false);
+        if (mounted) setState(() => _isLoadingLibraryImages = false);
       }
     } catch (e) {
       print('❌ Error loading library images: $e');
-      setState(() => _isLoadingLibraryImages = false);
+      if (mounted) setState(() => _isLoadingLibraryImages = false);
     }
   }
 
@@ -1534,11 +1543,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             // Clear existing sections
             for (var section in _sections) {
               section.controller.dispose();
+              section.richController.dispose();
               section.titleController.dispose();
               section.contentFocus.dispose();
               section.titleFocus.dispose();
             }
             _sections.clear();
+            _sectionRichListenersAttached.clear();
 
             // Load sections from content
             final List<dynamic> savedSections = data['sections'] ?? [];
@@ -1552,12 +1563,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     sectionTypeNormalized == 'cover';
                 final String? sectionId =
                     sectionData is Map ? (sectionData['id']?.toString()) : null;
+                final dynamic richDelta = sectionData['richContentDelta'];
                 final newSection = DocumentSection(
                   id: sectionId,
                   title: (sectionData['title'] ??
                           (isCover ? '' : 'Untitled Section'))
                       .toString(),
                   content: sectionData['content'] ?? '',
+                  richDeltaJson: richDelta == null ? null : jsonEncode(richDelta),
+                  lineSpacing: (sectionData['lineSpacing'] ?? '1.0').toString(),
+                  paragraphAlignment:
+                      (sectionData['paragraphAlignment'] ?? 'left').toString(),
+                  richParagraphs:
+                      (sectionData['richParagraphs'] as List<dynamic>?)
+                              ?.map((p) => Map<String, dynamic>.from(p as Map))
+                              .toList() ??
+                          [],
                   backgroundColor: sectionData['backgroundColor'] != null
                       ? Color(sectionData['backgroundColor'] as int)
                       : Colors.white,
@@ -1613,8 +1634,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 _sections.add(newSection);
 
                 // Add listeners
-                newSection.controller.addListener(_onContentChanged);
-                newSection.titleController.addListener(_onContentChanged);
+                _attachSectionListeners(newSection);
 
                 // Add focus listeners for UI updates
                 newSection.contentFocus.addListener(() => setState(() {}));
@@ -1627,8 +1647,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 content: '',
               );
               _sections.add(defaultSection);
-              defaultSection.controller.addListener(_onContentChanged);
-              defaultSection.titleController.addListener(_onContentChanged);
+              _attachSectionListeners(defaultSection);
 
               // Add focus listeners for UI updates
               defaultSection.contentFocus.addListener(() => setState(() {}));
@@ -1665,19 +1684,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           setState(() {
             for (var section in _sections) {
               section.controller.dispose();
+              section.richController.dispose();
               section.titleController.dispose();
               section.contentFocus.dispose();
               section.titleFocus.dispose();
             }
             _sections.clear();
+            _sectionRichListenersAttached.clear();
 
             final fallbackSection = DocumentSection(
               title: 'Content',
               content: fallbackText,
             );
             _sections.add(fallbackSection);
-            fallbackSection.controller.addListener(_onContentChanged);
-            fallbackSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(fallbackSection);
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
@@ -1691,8 +1711,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               content: '',
             );
             _sections.add(fallbackSection);
-            fallbackSection.controller.addListener(_onContentChanged);
-            fallbackSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(fallbackSection);
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
@@ -1716,6 +1735,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         proposalId: proposalId,
       );
 
+      if (!mounted) return;
       if (versions.isNotEmpty) {
         setState(() {
           _versionHistory.clear();
@@ -1791,6 +1811,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         addCommentWithReplies(comment as Map<String, dynamic>);
       }
 
+      if (!mounted) return;
       // Always update state, even if empty (to clear old comments)
       setState(() {
         _comments.clear();
@@ -1817,6 +1838,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             'resolved_at': comment['resolved_at'],
             'resolver_name': comment['resolver_name'],
             'replies': comment['replies'] ?? [],
+            'reactions': comment['reactions'] ?? [],
           });
         }
       });
@@ -1828,11 +1850,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _applyInlineHighlights();
 
       if (mounted) {
-        try {
-          await context.read<AppState>().fetchNotifications();
-        } catch (e) {
-          print('⚠️ Error refreshing notifications: $e');
-        }
+        unawaited(() async {
+          try {
+            await context.read<AppState>().fetchNotifications();
+          } catch (e) {
+            print('⚠️ Error refreshing notifications: $e');
+          }
+        }());
       }
     } catch (e) {
       if (e.toString().contains('unauthorized')) {
@@ -2012,6 +2036,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _mentionDebounce?.cancel();
     for (var section in _sections) {
       section.controller.dispose();
+      section.richController.dispose();
       section.titleController.dispose();
       section.contentFocus.dispose();
       section.titleFocus.dispose();
@@ -2028,8 +2053,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _sections.insert(afterIndex + 1, newSection);
 
       // Add listeners to new section
-      newSection.controller.addListener(_onContentChanged);
-      newSection.titleController.addListener(_onContentChanged);
+      _attachSectionListeners(newSection);
 
       // Add focus listeners for UI updates
       newSection.contentFocus.addListener(() => setState(() {}));
@@ -2839,15 +2863,44 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _pendingScrollToCommentId = createdId;
         }
 
+        final shouldOptimisticallyInsertRoot = parentId == null &&
+            (_commentFilterStatus == 'all' || _commentFilterStatus == 'open');
+
         setState(() {
           _showCommentsPanel = true;
-        });
+          if (shouldOptimisticallyInsertRoot) {
+            _comments.insert(0, {
+            'id': savedComment['id'] ?? DateTime.now().millisecondsSinceEpoch,
+            'parent_id': parentId,
+            'block_type': 'text',
+            'block_id': blockId,
+            'commenter_name': commenterName,
+            'created_by': savedComment['created_by'],
+            'comment_text': commentText,
+            'section_index': _selectedSectionForComment,
+            'section_name': sectionName,
+            'highlighted_text': (_draftSelectedText.isNotEmpty
+                        ? _draftSelectedText
+                        : _highlightedText)
+                    .isNotEmpty
+                ? (_draftSelectedText.isNotEmpty
+                    ? _draftSelectedText
+                    : _highlightedText)
+                : null,
+            'start_offset': startOffset,
+            'end_offset': endOffset,
+            'timestamp':
+                savedComment['created_at'] ?? DateTime.now().toIso8601String(),
+            'status': 'open',
+            'resolved_by': null,
+            'resolved_at': null,
+            'resolver_name': null,
+            'replies': <dynamic>[],
+            'reactions': <dynamic>[],
+            });
+          }
 
-        // Reload comments from database to get updated structure
-        await _loadCommentsFromDatabase(_savedProposalId!);
-
-        // Clear form fields
-        setState(() {
+          // Clear form fields immediately for a snappy UX.
           _commentController.clear();
           _highlightedText = '';
           _selectedSectionForComment = null;
@@ -2857,6 +2910,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _draftEndOffset = null;
           _draftSelectedText = '';
         });
+
+        // Reconcile in background after a short delay to avoid
+        // "appear then disappear" flicker from immediate eventual-consistency reads.
+        unawaited(Future<void>.delayed(const Duration(milliseconds: 900), () {
+          return _loadCommentsFromDatabase(_savedProposalId!);
+        }));
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -2876,11 +2935,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             _pendingScrollToCommentId = null;
           });
 
-          try {
-            await context.read<AppState>().fetchNotifications();
-          } catch (e) {
-            print('⚠️ Error refreshing notifications after comment: $e');
-          }
+          unawaited(() async {
+            try {
+              await context.read<AppState>().fetchNotifications();
+            } catch (e) {
+              print('⚠️ Error refreshing notifications after comment: $e');
+            }
+          }());
         }
       } else {
         throw Exception('Failed to save comment');
@@ -2900,13 +2961,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         return;
       }
       print('⚠️ Error saving comment to database: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error saving comment: ${e.toString()}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not post comment. Try again.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 
@@ -3301,9 +3364,41 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
     }
 
+    // If no timezone suffix exists, treat it as UTC from backend/storage.
+    final hasExplicitTimezone =
+        normalized.endsWith('Z') ||
+        RegExp(r'[+\-]\d{2}:\d{2}$').hasMatch(normalized);
+    if (!hasExplicitTimezone) {
+      final naiveMatch = RegExp(
+        r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?$',
+      ).firstMatch(normalized);
+      if (naiveMatch != null) {
+        final year = int.parse(naiveMatch.group(1)!);
+        final month = int.parse(naiveMatch.group(2)!);
+        final day = int.parse(naiveMatch.group(3)!);
+        final hour = int.parse(naiveMatch.group(4)!);
+        final minute = int.parse(naiveMatch.group(5)!);
+        final second = int.tryParse(naiveMatch.group(6) ?? '0') ?? 0;
+        final fracRaw = naiveMatch.group(7) ?? '0';
+        final fracPadded = (fracRaw + '000000').substring(0, 6);
+        final microseconds = int.tryParse(fracPadded) ?? 0;
+        final millisecond = microseconds ~/ 1000;
+        final microsecond = microseconds % 1000;
+        return DateTime.utc(
+          year,
+          month,
+          day,
+          hour,
+          minute,
+          second,
+          millisecond,
+          microsecond,
+        );
+      }
+    }
+
     final dt = DateTime.tryParse(normalized);
     if (dt != null) {
-      // Naive timestamps are already in local time (UTC+2) - do not convert to UTC
       return dt;
     }
 
@@ -3329,12 +3424,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return null;
   }
 
+  DateTime _toSast(DateTime dt) {
+    // South Africa Standard Time is UTC+2 year-round.
+    return dt.toUtc().add(const Duration(hours: 2));
+  }
+
   String _formatTimestamp(dynamic timestamp) {
     final parsed = _tryParseTimestamp(timestamp);
     if (parsed == null) return '';
     try {
-      final DateTime dt = parsed;  // Already in local time, no conversion needed
-      final now = DateTime.now();
+      final DateTime dt = _toSast(parsed);
+      final now = _toSast(DateTime.now());
 
       final timePart = DateFormat('HH:mm').format(dt);
       final isSameDate =
@@ -3822,55 +3922,78 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   // Auto-save and versioning methods
+  void _attachSectionListeners(DocumentSection section) {
+    if (_sectionRichListenersAttached.contains(section.id)) {
+      return;
+    }
+    _sectionRichListenersAttached.add(section.id);
+
+    // When the user focuses Quill directly, the outer SectionWidget onTap may not run;
+    // keep toolbar + _activeRichController() aligned with the section being edited.
+    section.contentFocus.addListener(() {
+      if (!section.contentFocus.hasFocus || !mounted) return;
+      final sectionIndex = _sections.indexOf(section);
+      if (sectionIndex < 0) return;
+      setState(() {
+        _selectedSectionIndex = sectionIndex;
+      });
+      _syncToolbarStateFromRichSelection();
+    });
+
+    section.richController.onSelectionChanged = (selection) {
+      if (!mounted) return;
+      final sectionIndex = _sections.indexOf(section);
+      if (sectionIndex < 0) return;
+      // Only respond when the editor has focus; avoids interfering with
+      // scroll/tap selection events elsewhere in the widget tree.
+      if (!section.contentFocus.hasFocus) return;
+      _onContentSelectionChanged(sectionIndex, selection, null);
+    };
+
+    section.controller.addListener(() {
+      // Keep rich document in sync when legacy plain-text flows update the controller.
+      section.syncRichFromPlainText();
+      _onContentChanged();
+    });
+    section.richController.addListener(() {
+      // Keep plain-text paths (comments/offset tooling) functional.
+      section.syncPlainTextFromRich();
+      _onContentChanged();
+      if (section.contentFocus.hasFocus) {
+        _syncToolbarStateFromRichSelection();
+      }
+    });
+    section.titleController.addListener(_onContentChanged);
+  }
+
   void _setupAutoSaveListeners() {
     // Listen to title changes
     _titleController.addListener(_onContentChanged);
 
     // Listen to all section changes
     for (var section in _sections) {
-      section.controller.addListener(_onContentChanged);
-      section.titleController.addListener(_onContentChanged);
+      _attachSectionListeners(section);
     }
   }
 
   void _ensureSectionSelectionListeners() {
-    for (final section in _sections) {
-      void onControllerChanged() {
-        final selection = section.controller.selection;
-        if (!selection.isValid) return;
-
-        final sectionIndex = _sections.indexOf(section);
-        if (sectionIndex < 0) return;
-
-        final base = selection.baseOffset;
-        final extent = selection.extentOffset;
-        final start = base < extent ? base : extent;
-        final end = base < extent ? extent : base;
-        final selectionHash = Object.hash(start, end, selection.isCollapsed);
-
-        final lastHash = _lastSelectionHashBySectionId[section.id];
-        if (lastHash == selectionHash) return;
-        _lastSelectionHashBySectionId[section.id] = selectionHash;
-
-        _onContentSelectionChanged(sectionIndex, selection, null);
-      }
-
-      if (_selectionListenerAttachedSectionIds.contains(section.id)) {
-        continue;
-      }
-
-      _selectionListenerAttachedSectionIds.add(section.id);
-      _lastSelectionHashBySectionId.putIfAbsent(section.id, () => null);
-      section.controller.addListener(onControllerChanged);
-    }
+    // Legacy selection wiring (plain TextField selection -> comments overlay).
+    // The live canvas is now Quill-based; selection events must come from
+    // `section.richController.onSelectionChanged`.
   }
 
   void _onContentChanged() {
+    if (_selectedSectionIndex >= 0 &&
+        _selectedSectionIndex < _sections.length &&
+        _sections[_selectedSectionIndex].contentFocus.hasFocus) {
+      _syncToolbarStateFromRichSelection();
+    }
     setState(() {
       _hasUnsavedChanges = true;
     });
 
-    _ensureSectionSelectionListeners();
+    // Selection handling is driven by Quill selection events (see
+    // `_attachSectionListeners`). No need to attach legacy listeners.
 
     // Cancel existing timer
     _autoSaveTimer?.cancel();
@@ -3892,6 +4015,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'id': section.id,
                 'title': section.titleController.text,
                 'content': section.controller.text,
+                'richContentDelta': section.exportRichDelta(),
+                'lineSpacing': section.lineSpacing,
+                'paragraphAlignment': section.paragraphAlignment,
+                'richParagraphs': paragraphsFromQuillDelta(
+                  section.exportRichDelta(),
+                  defaultFontFamily: _selectedFont,
+                  defaultFontSize:
+                      double.tryParse(_selectedFontSize) ?? 12.0,
+                  defaultAlignment: section.paragraphAlignment,
+                  defaultLineSpacing: section.lineSpacing,
+                )
+                    .map((p) => p.toJson())
+                    .toList(),
                 'backgroundColor': section.backgroundColor.value,
                 'backgroundImageUrl': section.backgroundImageUrl,
                 'sectionType': section.sectionType,
@@ -3929,6 +4065,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Save to backend
       await _saveToBackend();
 
+      if (!mounted) return;
       // For stricter approver sessions, auto-save should NOT create
       // a new version without an explicit description. Just persist
       // the latest content.
@@ -4043,6 +4180,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final content = _serializeDocumentContent();
     final isFinanceRole = context.read<RoleService>().isFinance();
     final computedBudget = _computePricingTotal();
+    final clientName = _clientNameController.text.trim().isEmpty
+        ? 'Unknown Client'
+        : _clientNameController.text.trim();
 
     try {
       if (_savedProposalId == null) {
@@ -4052,9 +4192,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           token: token,
           title: title,
           content: content,
-          clientName: _clientNameController.text.trim().isEmpty
-              ? null
-              : _clientNameController.text.trim(),
+          clientName: clientName,
           clientEmail: _clientEmailController.text.trim().isEmpty
               ? null
               : _clientEmailController.text.trim(),
@@ -4091,9 +4229,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           id: _savedProposalId!,
           title: title,
           content: content,
-          clientName: _clientNameController.text.trim().isEmpty
-              ? null
-              : _clientNameController.text.trim(),
+          clientName: clientName,
           clientEmail: _clientEmailController.text.trim().isEmpty
               ? null
               : _clientEmailController.text.trim(),
@@ -4185,11 +4321,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // Clear existing sections
     for (var section in _sections) {
       section.controller.dispose();
+      section.richController.dispose();
       section.titleController.dispose();
       section.contentFocus.dispose();
       section.titleFocus.dispose();
     }
     _sections.clear();
+    _sectionRichListenersAttached.clear();
 
     // Restore sections
     final List<dynamic> savedSections = version['sections'] ?? [];
@@ -4249,7 +4387,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Setup listeners for new sections
     for (var section in _sections) {
-      section.controller.addListener(_onContentChanged);
+      _attachSectionListeners(section);
       section.titleController.addListener(_onContentChanged);
 
       // Add focus listeners for UI updates
@@ -4508,6 +4646,147 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  QuillController? _activeRichController() {
+    if (_sections.isEmpty) return null;
+    if (_selectedSectionIndex < 0 || _selectedSectionIndex >= _sections.length) {
+      return null;
+    }
+    return _sections[_selectedSectionIndex].richController;
+  }
+
+  /// Toolbar buttons can steal focus from Quill; put focus back before formatting.
+  void _ensureToolbarTargetEditorFocused() {
+    if (_selectedSectionIndex < 0 || _selectedSectionIndex >= _sections.length) {
+      return;
+    }
+    _sections[_selectedSectionIndex].contentFocus.requestFocus();
+  }
+
+  Attribute? _attributeForFont(String v) =>
+      Attribute.fromKeyValue(Attribute.font.key, v) ??
+      Attribute.clone(Attribute.font, v);
+
+  Attribute? _attributeForSize(String v) =>
+      Attribute.fromKeyValue(Attribute.size.key, v) ??
+      Attribute.clone(Attribute.size, v);
+
+  Attribute<String?> _alignmentToAttribute(String value) {
+    switch (value) {
+      case 'center':
+        return Attribute.centerAlignment;
+      case 'right':
+        return Attribute.rightAlignment;
+      case 'justify':
+        return Attribute.justifyAlignment;
+      case 'left':
+      default:
+        return Attribute.leftAlignment;
+    }
+  }
+
+  Attribute<double?> _lineSpacingToAttribute(String value) {
+    switch (value) {
+      case '1.5':
+        return LineHeightAttribute.lineHeightOneAndHalf;
+      case '2.0':
+        return LineHeightAttribute.lineHeightDouble;
+      case '1.0':
+      default:
+        return LineHeightAttribute.lineHeightNormal;
+    }
+  }
+
+  void _syncToolbarStateFromRichSelection() {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    final attrs = controller.getSelectionStyle().attributes;
+    setState(() {
+      _isBold = attrs.containsKey(Attribute.bold.key);
+      _isItalic = attrs.containsKey(Attribute.italic.key);
+      _isUnderlined = attrs.containsKey(Attribute.underline.key);
+      _isStrikethrough = attrs.containsKey(Attribute.strikeThrough.key);
+      _selectedAlignment =
+          (attrs[Attribute.align.key]?.value?.toString() ?? 'left');
+      final lineHeightRaw = attrs[Attribute.lineHeight.key]?.value;
+      if (lineHeightRaw == 1.5) {
+        _selectedLineSpacing = '1.5';
+      } else if (lineHeightRaw == 2 || lineHeightRaw == 2.0) {
+        _selectedLineSpacing = '2.0';
+      } else {
+        _selectedLineSpacing = '1.0';
+      }
+      final font = attrs[Attribute.font.key]?.value?.toString();
+      if (font != null && font.trim().isNotEmpty) {
+        _selectedFont = font;
+      }
+      final size = attrs[Attribute.size.key]?.value?.toString();
+      if (size != null && size.trim().isNotEmpty) {
+        _selectedFontSize = size;
+      }
+    });
+  }
+
+  void _applyInlineAttribute(Attribute attribute) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
+    controller.formatSelection(attribute);
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _toggleInlineAttribute(Attribute toggleAttr) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
+    final attrs = controller.getSelectionStyle().attributes;
+    final enabled = attrs.containsKey(toggleAttr.key);
+    controller.formatSelection(Attribute.clone(toggleAttr, enabled ? null : true));
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _applyParagraphAlignment(String value) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
+    _selectedAlignment = value;
+    controller.formatSelection(_alignmentToAttribute(value));
+    if (_selectedSectionIndex >= 0 && _selectedSectionIndex < _sections.length) {
+      _sections[_selectedSectionIndex].paragraphAlignment = value;
+    }
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _applyLineSpacing(String value) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
+    _selectedLineSpacing = value;
+    controller.formatSelection(_lineSpacingToAttribute(value));
+    if (_selectedSectionIndex >= 0 && _selectedSectionIndex < _sections.length) {
+      _sections[_selectedSectionIndex].lineSpacing = value;
+    }
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _toggleList(String type) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
+    final attrs = controller.getSelectionStyle().attributes;
+    final currentList = attrs[Attribute.list.key]?.value?.toString();
+    if (currentList == type) {
+      controller.formatSelection(Attribute.clone(Attribute.list, null));
+    } else {
+      controller.formatSelection(type == 'ordered' ? Attribute.ol : Attribute.ul);
+    }
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
   // Get font family name
   String _getFontFamily() {
     return _selectedFont;
@@ -4521,32 +4800,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Get content text style with all formatting applied
   TextStyle _getContentTextStyle() {
-    double fontSize = _getFontSize();
-
-    // Adjust font size based on text style
-    if (_selectedTextStyle == 'Heading 1') {
-      fontSize = 24.0;
-    } else if (_selectedTextStyle == 'Heading 2') {
-      fontSize = 20.0;
-    } else if (_selectedTextStyle == 'Heading 3') {
-      fontSize = 16.0;
-    } else if (_selectedTextStyle == 'Title') {
-      fontSize = 28.0;
-    }
-
     return TextStyle(
-      fontSize: fontSize,
-      fontFamily: _getFontFamily(),
-      fontWeight: _isBold ||
-              _selectedTextStyle.contains('Heading') ||
-              _selectedTextStyle == 'Title'
-          ? FontWeight.w700
-          : FontWeight.normal,
-      fontStyle: _isItalic ? FontStyle.italic : FontStyle.normal,
-      decoration:
-          _isUnderlined ? TextDecoration.underline : TextDecoration.none,
+      // Keep paragraph baseline neutral so per-span Quill formatting
+      // (font family/size/bold/italic/underline/strike) stays visible.
+      fontSize: 13,
+      fontFamily: 'Arial',
+      fontWeight: FontWeight.normal,
+      fontStyle: FontStyle.normal,
+      decoration: TextDecoration.none,
       color: const Color(0xFF1A1A1A),
-      height: 1.8,
+      height: 1.6,
       letterSpacing: 0.2,
     );
   }
@@ -5807,83 +6070,84 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           const SizedBox(width: 24),
           // Price
-          Row(
-            children: [
-              Text(
-                '${_getCurrencySymbol()} ',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A1A),
+          Flexible(
+            child: Row(
+              children: [
+                Text(
+                  '${_getCurrencySymbol()} ',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A1A),
+                  ),
                 ),
-              ),
-              SizedBox(
-                width: 80,
-                child: isFinanceRole
-                    ? Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                            color: Colors.grey[300]!,
-                            width: 1,
+                Flexible(
+                  child: isFinanceRole
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
                           ),
-                        ),
-                        child: Text(
-                          _computePricingTotal().toStringAsFixed(2),
-                          textAlign: TextAlign.left,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: Colors.grey[300]!,
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            _computePricingTotal().toStringAsFixed(2),
+                            textAlign: TextAlign.left,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        )
+                      : TextField(
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          onChanged: (value) {
+                            // Price value input - ready for future use
+                            setState(() {});
+                          },
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
                             color: Color(0xFF1A1A1A),
                           ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      )
-                    : TextField(
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        onChanged: (value) {
-                          // Price value input - ready for future use
-                          setState(() {});
-                        },
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                        decoration: InputDecoration(
-                          hintText: '0.00',
-                          hintStyle: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[400],
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide: BorderSide(
-                              color: Colors.grey[300]!,
-                              width: 1,
+                          decoration: InputDecoration(
+                            hintText: '0.00',
+                            hintStyle: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[400],
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: BorderSide(
+                                color: Colors.grey[300]!,
+                                width: 1,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF00BCD4),
+                                width: 1,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
                             ),
                           ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(4),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF00BCD4),
-                              width: 1,
-                            ),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 8,
-                          ),
                         ),
-                      ),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 16),
           // Save status with version info
@@ -6158,7 +6422,199 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildToolbar() {
-    return const SizedBox.shrink();
+    final canEdit = !widget.readOnly;
+    if (!canEdit) return const SizedBox.shrink();
+
+    // ~50% larger controls; shifted slightly left vs centered row.
+    const double kToolbarScale = 1.5;
+    final double iconSz = 24 * kToolbarScale;
+    final double ddFont = 14 * kToolbarScale;
+    final double gapSm = 12 * kToolbarScale;
+    final double gapMd = 18 * kToolbarScale;
+
+    // Single toolbar instance bound to the active section (selectedSectionIndex).
+    // Formatting actions apply to current Quill selection/cursor.
+    return Container(
+      padding: EdgeInsets.only(
+        left: 8 * kToolbarScale,
+        right: 24 * kToolbarScale,
+        top: 16 * kToolbarScale,
+        bottom: 16 * kToolbarScale,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey[200]!, width: 1),
+        ),
+      ),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        descendantsAreFocusable: false,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Inline formatting
+                IconButton(
+                  icon: Icon(Icons.format_bold,
+                      color: _isBold ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.bold),
+                  tooltip: 'Bold',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_italic,
+                      color: _isItalic ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.italic),
+                  tooltip: 'Italic',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_underlined,
+                      color: _isUnderlined ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.underline),
+                  tooltip: 'Underline',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_strikethrough,
+                      color: _isStrikethrough ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.strikeThrough),
+                  tooltip: 'Strikethrough',
+                  iconSize: iconSz,
+                ),
+                SizedBox(width: gapSm),
+                // Font family
+                DropdownButton<String>(
+                  value: _selectedFont,
+                  underline: const SizedBox(),
+                  style: TextStyle(fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    final attr = _attributeForFont(v);
+                    if (attr == null) return;
+                    setState(() => _selectedFont = v);
+                    _applyInlineAttribute(attr);
+                  },
+                  items: const [
+                    'Arial',
+                    'Times New Roman',
+                    'Georgia',
+                    'Calibri',
+                    'Verdana',
+                  ].map((font) {
+                    return DropdownMenuItem(
+                      value: font,
+                      child: Text(font, style: TextStyle(fontSize: ddFont)),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(width: gapSm),
+                // Font size
+                DropdownButton<String>(
+                  value: _selectedFontSize,
+                  underline: const SizedBox(),
+                  style: TextStyle(fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    final attr = _attributeForSize(v);
+                    if (attr == null) return;
+                    setState(() => _selectedFontSize = v);
+                    _applyInlineAttribute(attr);
+                  },
+                  items: const ['10', '12', '14', '16', '18', '24'].map((size) {
+                    return DropdownMenuItem(
+                      value: size,
+                      child: Text(size, style: TextStyle(fontSize: ddFont)),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(width: gapMd),
+
+                // Paragraph alignment
+                IconButton(
+                  icon: Icon(Icons.format_align_left,
+                      color: _selectedAlignment == 'left'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('left'),
+                  tooltip: 'Align Left',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_align_center,
+                      color: _selectedAlignment == 'center'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('center'),
+                  tooltip: 'Align Center',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_align_right,
+                      color: _selectedAlignment == 'right'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('right'),
+                  tooltip: 'Align Right',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_align_justify,
+                      color: _selectedAlignment == 'justify'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('justify'),
+                  tooltip: 'Justify',
+                  iconSize: iconSz,
+                ),
+                SizedBox(width: gapSm),
+
+                // Line spacing
+                DropdownButton<String>(
+                  value: _selectedLineSpacing,
+                  underline: const SizedBox(),
+                  style: TextStyle(fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    _applyLineSpacing(v);
+                  },
+                  items: const ['1.0', '1.5', '2.0'].map((v) {
+                    final label = v == '1.0'
+                        ? 'Single'
+                        : (v == '1.5' ? '1.5' : 'Double');
+                    return DropdownMenuItem(
+                      value: v,
+                      child: Text(label, style: TextStyle(fontSize: ddFont)),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(width: gapSm),
+
+                // Lists
+                IconButton(
+                  icon: Icon(Icons.format_list_bulleted),
+                  onPressed: () => _toggleList('bullet'),
+                  tooltip: 'Bullet List',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_list_numbered),
+                  onPressed: () => _toggleList('ordered'),
+                  tooltip: 'Numbered List',
+                  iconSize: iconSz,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSmallDropdown(
@@ -6597,8 +7053,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 _selectedSectionIndex = _sections.length - 1;
 
                 // Add listeners to new section
-                newSection.controller.addListener(_onContentChanged);
-                newSection.titleController.addListener(_onContentChanged);
+                _attachSectionListeners(newSection);
 
                 // Add focus listeners for UI updates
                 newSection.contentFocus.addListener(() => setState(() {}));
@@ -7529,25 +7984,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     width: 1,
                   ),
                 ),
-                child: TextField(
+                child: QuillEditor.basic(
+                  controller: section.richController,
                   focusNode: section.contentFocus,
-                  controller: section.controller,
-                  enabled: true,
-                  maxLines: null,
-                  textAlign: _getTextAlignment(),
-                  textAlignVertical: TextAlignVertical.top,
-                  style: _getContentTextStyle(),
-                  decoration: InputDecoration(
-                    hintText:
+                  config: QuillEditorConfig(
+                    placeholder:
                         'Click here to start typing or insert content from library...',
-                    hintStyle: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[400],
+                    customStyles: DefaultStyles(
+                      paragraph: DefaultTextBlockStyle(
+                        _getContentTextStyle(),
+                        const HorizontalSpacing(0, 0),
+                        const VerticalSpacing(0, 0),
+                        const VerticalSpacing(0, 0),
+                        null,
+                      ),
                     ),
-                    border: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    isDense: true,
                   ),
                 ),
               ),
@@ -8485,31 +8936,33 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         const SizedBox(height: 8),
         // Font dropdown
         _buildSmallDropdown(_selectedFont, [
-          'Plus Jakarta Sans',
           'Arial',
           'Times New Roman',
           'Georgia',
-          'Courier New'
+          'Calibri',
+          'Verdana'
         ], (value) {
           setState(() {
             _selectedFont = value!;
           });
+          final attr = _attributeForFont(_selectedFont);
+          if (attr != null) _applyInlineAttribute(attr);
         }),
         const SizedBox(height: 8),
         // Font size dropdown
         _buildSmallDropdown(_selectedFontSize, [
-          '10px',
-          '12px',
-          '14px',
-          '16px',
-          '18px',
-          '20px',
-          '24px',
-          '28px'
+          '10',
+          '12',
+          '14',
+          '16',
+          '18',
+          '24'
         ], (value) {
           setState(() {
             _selectedFontSize = value!;
           });
+          final attr = _attributeForSize(_selectedFontSize);
+          if (attr != null) _applyInlineAttribute(attr);
         }),
         const SizedBox(height: 12),
         // Alignment
@@ -8522,9 +8975,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ? const Color(0xFF00BCD4)
                       : null),
               onPressed: () {
-                setState(() {
-                  _selectedAlignment = 'left';
-                });
+                _applyParagraphAlignment('left');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8536,9 +8987,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ? const Color(0xFF00BCD4)
                       : null),
               onPressed: () {
-                setState(() {
-                  _selectedAlignment = 'center';
-                });
+                _applyParagraphAlignment('center');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8550,16 +8999,30 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ? const Color(0xFF00BCD4)
                       : null),
               onPressed: () {
-                setState(() {
-                  _selectedAlignment = 'right';
-                });
+                _applyParagraphAlignment('right');
               },
               iconSize: 20,
               splashRadius: 20,
               tooltip: 'Align Right',
             ),
+            IconButton(
+              icon: Icon(Icons.format_align_justify,
+                  color: _selectedAlignment == 'justify'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () => _applyParagraphAlignment('justify'),
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Justify',
+            ),
           ],
         ),
+        const SizedBox(height: 8),
+        _buildSmallDropdown(_selectedLineSpacing, const ['1.0', '1.5', '2.0'],
+            (value) {
+          if (value == null) return;
+          _applyLineSpacing(value);
+        }),
         const SizedBox(height: 12),
         const Text(
           'Text Formatting',
@@ -8576,9 +9039,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               icon: Icon(Icons.format_bold,
                   color: _isBold ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                setState(() {
-                  _isBold = !_isBold;
-                });
+                _toggleInlineAttribute(Attribute.bold);
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8588,9 +9049,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               icon: Icon(Icons.format_italic,
                   color: _isItalic ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                setState(() {
-                  _isItalic = !_isItalic;
-                });
+                _toggleInlineAttribute(Attribute.italic);
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8600,43 +9059,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               icon: Icon(Icons.format_underlined,
                   color: _isUnderlined ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                setState(() {
-                  _isUnderlined = !_isUnderlined;
-                });
+                _toggleInlineAttribute(Attribute.underline);
               },
               iconSize: 20,
               splashRadius: 20,
               tooltip: 'Underline',
             ),
             IconButton(
-              icon: const Icon(Icons.format_color_text),
+              icon: Icon(Icons.format_strikethrough,
+                  color: _isStrikethrough ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Text color picker - Feature coming soon'),
-                    backgroundColor: Color(0xFF00BCD4),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
+                _toggleInlineAttribute(Attribute.strikeThrough);
               },
               iconSize: 20,
               splashRadius: 20,
-              tooltip: 'Text Color',
-            ),
-            IconButton(
-              icon: const Icon(Icons.link),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Insert link - Feature coming soon'),
-                    backgroundColor: Color(0xFF00BCD4),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
-              iconSize: 20,
-              splashRadius: 20,
-              tooltip: 'Link',
+              tooltip: 'Strikethrough',
             ),
           ],
         ),
@@ -8646,15 +9083,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             IconButton(
               icon: const Icon(Icons.format_list_bulleted),
               onPressed: () {
-                if (_sections.isNotEmpty &&
-                    _selectedSectionIndex < _sections.length) {
-                  setState(() {
-                    final section = _sections[_selectedSectionIndex];
-                    final currentText = section.controller.text;
-                    section.controller.text =
-                        currentText + '\n• Item 1\n• Item 2\n• Item 3';
-                  });
-                }
+                _toggleList('bullet');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8663,15 +9092,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             IconButton(
               icon: const Icon(Icons.format_list_numbered),
               onPressed: () {
-                if (_sections.isNotEmpty &&
-                    _selectedSectionIndex < _sections.length) {
-                  setState(() {
-                    final section = _sections[_selectedSectionIndex];
-                    final currentText = section.controller.text;
-                    section.controller.text =
-                        currentText + '\n1. Item 1\n2. Item 2\n3. Item 3';
-                  });
-                }
+                _toggleList('ordered');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -10348,6 +10769,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ],
             ),
 
+          // Emoji reactions (for all comments - root and replies)
+          _buildCommentReactions(comment),
+
           // Replies section
           if (replies.isNotEmpty && !isReply) ...[
             const SizedBox(height: 12),
@@ -10358,6 +10782,164 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ],
       ),
     );
+  }
+
+  static const List<String> _reactionEmojis = ['👍', '👎', '👀', '❤️', '😄', '😕', '🎉'];
+
+  Widget _buildCommentReactions(Map<String, dynamic> comment) {
+    final reactions = (comment['reactions'] as List<dynamic>?) ?? [];
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          // Display existing reactions
+          ...reactions.map<Widget>((r) {
+            final emoji = r['emoji']?.toString() ?? '';
+            final count = (r['count'] as num?)?.toInt() ?? 0;
+            final reactedByMe = r['reacted_by_me'] == true;
+            if (emoji.isEmpty || count == 0) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: InkWell(
+                onTap: () => _toggleReaction(comment['id'], emoji),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: reactedByMe
+                        ? const Color(0xFF00BCD4).withOpacity(0.2)
+                        : Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                    border: reactedByMe
+                        ? Border.all(color: const Color(0xFF00BCD4), width: 1)
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(emoji, style: const TextStyle(fontSize: 14)),
+                      if (count > 1) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          count.toString(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+          // Add reaction button
+          PopupMenuButton<String>(
+            padding: EdgeInsets.zero,
+            offset: const Offset(0, -120),
+            icon: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Icon(Icons.add_reaction_outlined, size: 18, color: Colors.grey[600]),
+            ),
+            onSelected: (emoji) => _toggleReaction(comment['id'], emoji),
+            itemBuilder: (context) => _reactionEmojis
+                .map((emoji) => PopupMenuItem<String>(
+                      value: emoji,
+                      child: Text(emoji, style: const TextStyle(fontSize: 20)),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleReaction(dynamic commentId, String emoji) async {
+    final id = commentId is int ? commentId : int.tryParse(commentId?.toString() ?? '');
+    if (id == null) return;
+    final token = await _getAuthToken();
+    if (token == null) return;
+
+    // Optimistic update: show reaction immediately
+    _applyReactionOptimistically(id, emoji);
+
+    final result = await ApiService.toggleCommentReaction(
+      token: token,
+      commentId: id,
+      emoji: emoji,
+    );
+
+    if (result != null && _savedProposalId != null && mounted) {
+      // Keep reaction updates instant; sync server state in background.
+      unawaited(_loadCommentsFromDatabase(_savedProposalId!));
+    } else if (mounted) {
+      // API failed - revert optimistic update and notify user
+      _revertReactionOptimistically(id, emoji);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not save reaction. Make sure the backend has been restarted.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  void _applyReactionOptimistically(int commentId, String emoji) {
+    setState(() {
+      for (var i = 0; i < _comments.length; i++) {
+        if (_comments[i]['id'] == commentId) {
+          final reactions = List<Map<String, dynamic>>.from(
+            (_comments[i]['reactions'] as List<dynamic>?)?.map((r) => Map<String, dynamic>.from(r as Map)) ?? [],
+          );
+          final existingIdx = reactions.indexWhere((r) => r['emoji'] == emoji);
+          final reactedByMe = existingIdx >= 0 && reactions[existingIdx]['reacted_by_me'] == true;
+
+          if (reactedByMe) {
+            // Remove our reaction
+            final count = ((reactions[existingIdx]['count'] as num?) ?? 1).toInt();
+            if (count <= 1) {
+              reactions.removeAt(existingIdx);
+            } else {
+              reactions[existingIdx] = {
+                ...reactions[existingIdx],
+                'count': count - 1,
+                'reacted_by_me': false,
+              };
+            }
+          } else if (existingIdx >= 0) {
+            // Add our reaction to existing emoji
+            final count = ((reactions[existingIdx]['count'] as num?) ?? 0).toInt();
+            reactions[existingIdx] = {
+              ...reactions[existingIdx],
+              'count': count + 1,
+              'reacted_by_me': true,
+            };
+          } else {
+            // New emoji
+            reactions.add({
+              'emoji': emoji,
+              'count': 1,
+              'user_ids': [],
+              'reactor_names': [],
+              'reacted_by_me': true,
+            });
+          }
+          _comments[i] = {..._comments[i], 'reactions': reactions};
+          break;
+        }
+      }
+    });
+  }
+
+  void _revertReactionOptimistically(int commentId, String emoji) {
+    _applyReactionOptimistically(commentId, emoji); // Toggle again to revert
   }
 
   void _showPreview() {
@@ -10656,11 +11238,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         if (mode == 'full' && sections != null) {
           for (var section in _sections) {
             section.controller.dispose();
+              section.richController.dispose();
             section.titleController.dispose();
             section.contentFocus.dispose();
             section.titleFocus.dispose();
           }
           _sections.clear();
+          _sectionRichListenersAttached.clear();
 
           sections.forEach((title, body) {
             final newSection = DocumentSection(
@@ -10668,8 +11252,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               content: body,
             );
             _sections.add(newSection);
-            newSection.controller.addListener(_onContentChanged);
-            newSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(newSection);
             newSection.contentFocus.addListener(() => setState(() {}));
             newSection.titleFocus.addListener(() => setState(() {}));
           });
@@ -10684,8 +11267,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               content: '',
             );
             _sections.add(newSection);
-            newSection.controller.addListener(_onContentChanged);
-            newSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(newSection);
             newSection.contentFocus.addListener(() => setState(() {}));
             newSection.titleFocus.addListener(() => setState(() {}));
             _selectedSectionIndex = 0;
@@ -10720,6 +11302,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     showDialog(
       context: context,
       builder: (BuildContext context) {
+        bool dialogOpen = true;
+        bool cancelled = false;
+        String progressLabel = '';
+        int selectedMaxTokens = 192; // default, allow 256
+
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return Dialog(
@@ -10760,7 +11347,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             ),
                             const Spacer(),
                             IconButton(
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: () {
+                                dialogOpen = false;
+                                cancelled = true;
+                                Navigator.pop(context);
+                              },
                               icon: const Icon(Icons.close),
                             ),
                           ],
@@ -10943,6 +11534,35 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         ),
 
                         const SizedBox(height: 20),
+
+                        // Token budget (kept small for speed; default 192 with optional 256)
+                        Row(
+                          children: [
+                            Text(
+                              'Max tokens',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            DropdownButton<int>(
+                              value: selectedMaxTokens,
+                              items: const [
+                                DropdownMenuItem(value: 192, child: Text('192')),
+                                DropdownMenuItem(value: 256, child: Text('256')),
+                              ],
+                              onChanged: isGenerating
+                                  ? null
+                                  : (v) {
+                                      if (v == null) return;
+                                      setDialogState(() => selectedMaxTokens = v);
+                                    },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
 
                         // Section type selector (only for single section generation)
                         if (selectedAction == 'generate') ...[
@@ -11205,6 +11825,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               onPressed: isGenerating
                                   ? null
                                   : () {
+                                      dialogOpen = false;
+                                      cancelled = true;
                                       resetGeneratedState();
                                       Navigator.pop(context);
                                     },
@@ -11235,6 +11857,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                       setDialogState(() {
                                         isGenerating = true;
                                         resetGeneratedState();
+                                        progressLabel = '';
                                       });
 
                                       try {
@@ -11245,117 +11868,156 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         }
 
                                         if (selectedAction == 'generate') {
-                                          final result = await ApiService
-                                              .generateAIContent(
+                                          // SECTION: generate ONLY for selected section using its title as section_name.
+                                          final selectedSection =
+                                              (_sections.isNotEmpty &&
+                                                      _selectedSectionIndex <
+                                                          _sections.length)
+                                                  ? _sections[_selectedSectionIndex]
+                                                  : null;
+                                          final sectionTitle = (selectedSection
+                                                      ?.titleController
+                                                      .text
+                                                      .trim()
+                                                      .isNotEmpty ==
+                                                  true)
+                                              ? selectedSection!
+                                                  .titleController.text
+                                                  .trim()
+                                              : 'Untitled Section';
+
+                                          final existing =
+                                              selectedSection?.controller.text ??
+                                                  '';
+                                          final proposalText = [
+                                            'User request:\n${promptController.text.trim()}',
+                                            if (existing.trim().isNotEmpty)
+                                              '\n\nExisting section text:\n${existing.trim()}',
+                                          ].join('');
+
+                                          final result =
+                                              await AiAssistantApi.generateSection(
                                             token: token,
-                                            prompt: promptController.text,
-                                            context: {
-                                              'document_title':
-                                                  _titleController.text,
-                                              'current_section':
-                                                  _selectedSectionIndex,
-                                            },
-                                            sectionType: selectedSectionType,
+                                            sectionName: sectionTitle,
+                                            proposalText: proposalText,
+                                            maxTokens: selectedMaxTokens,
                                           );
 
-                                          if (result != null &&
-                                              result['content'] != null) {
-                                            final generatedText =
-                                                (result['content'] as String)
-                                                    .trim();
-                                            if (generatedText.isEmpty) {
-                                              throw Exception(
-                                                  'AI returned an empty draft.');
-                                            }
-                                            setDialogState(() {
-                                              generatedController?.dispose();
-                                              generatedController =
-                                                  TextEditingController(
-                                                      text: generatedText);
-                                              if (generatedSectionControllers !=
-                                                  null) {
-                                                for (final controller
-                                                    in generatedSectionControllers!
-                                                        .values) {
-                                                  controller.dispose();
-                                                }
-                                              }
-                                              generatedSectionControllers =
-                                                  null;
-                                              generationMode = 'section';
-                                            });
-                                            ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                    'Draft ready. Review and edit below before inserting.'),
-                                                backgroundColor:
-                                                    Color(0xFF00BCD4),
-                                              ),
-                                            );
-                                          } else {
+                                          final generatedText =
+                                              (result['generated_text'] ??
+                                                      result['content'] ??
+                                                      result['result'] ??
+                                                      '')
+                                                  .toString()
+                                                  .trim();
+                                          if (generatedText.isEmpty) {
                                             throw Exception(
-                                                'Failed to generate content.');
+                                                'AI returned an empty draft.');
                                           }
+
+                                          // After await: ensure dialog still active
+                                          if (!mounted || !dialogOpen) return;
+
+                                          // Replace content in ONLY the selected section immediately.
+                                          setState(() {
+                                            if (selectedSection != null) {
+                                              selectedSection.controller.text =
+                                                  generatedText;
+                                              _hasUnsavedChanges = true;
+                                            }
+                                          });
+
+                                          // Keep preview available
+                                          setDialogState(() {
+                                            generatedController?.dispose();
+                                            generatedController =
+                                                TextEditingController(
+                                                    text: generatedText);
+                                            generatedSectionControllers = null;
+                                            generationMode = 'section';
+                                          });
                                         } else if (selectedAction ==
                                             'full_proposal') {
-                                          final result = await ApiService
-                                              .generateFullProposal(
-                                            token: token,
-                                            prompt: promptController.text,
-                                            context: {
-                                              'document_title':
-                                                  _titleController.text,
-                                            },
-                                          );
-
-                                          if (result != null &&
-                                              result['sections'] is Map) {
-                                            final Map<String, dynamic>
-                                                generatedSections =
-                                                Map<String, dynamic>.from(
-                                                    result['sections'] as Map<
-                                                        dynamic, dynamic>);
-                                            if (generatedSections.isEmpty) {
-                                              throw Exception(
-                                                  'AI did not return any sections.');
-                                            }
-                                            setDialogState(() {
-                                              generatedController?.dispose();
-                                              generatedController = null;
-                                              if (generatedSectionControllers !=
-                                                  null) {
-                                                for (final controller
-                                                    in generatedSectionControllers!
-                                                        .values) {
-                                                  controller.dispose();
-                                                }
-                                              }
-                                              generatedSectionControllers = {};
-                                              generatedSections
-                                                  .forEach((title, content) {
-                                                generatedSectionControllers![
-                                                        title] =
-                                                    TextEditingController(
-                                                        text: (content ?? '')
-                                                            .toString()
-                                                            .trim());
-                                              });
-                                              generationMode = 'full';
-                                            });
-                                            ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                    'Draft proposal ready with ${generatedSections.length} sections. Review below.'),
-                                                backgroundColor:
-                                                    const Color(0xFF00BCD4),
-                                              ),
-                                            );
-                                          } else {
+                                          // FULL PROPOSAL: generate for ALL sections (sequential), progress + cancel.
+                                          final sectionsSnapshot = _sections
+                                              .where((s) =>
+                                                  s.sectionType
+                                                      .trim()
+                                                      .toLowerCase() ==
+                                                  'content')
+                                              .toList();
+                                          if (sectionsSnapshot.isEmpty) {
                                             throw Exception(
-                                                'Failed to generate full proposal.');
+                                                'No content sections found to generate.');
                                           }
+
+                                          for (var i = 0;
+                                              i < sectionsSnapshot.length;
+                                              i++) {
+                                            if (!mounted || !dialogOpen) return;
+                                            if (cancelled) return;
+
+                                            final s = sectionsSnapshot[i];
+                                            final title =
+                                                (s.titleController.text.trim().isNotEmpty)
+                                                    ? s.titleController.text
+                                                        .trim()
+                                                    : 'Untitled Section';
+
+                                            setDialogState(() {
+                                              progressLabel =
+                                                  'Generating ${i + 1}/${sectionsSnapshot.length}: $title';
+                                            });
+
+                                            final existing = s.controller.text;
+                                            final proposalText = [
+                                              'User request:\n${promptController.text.trim()}',
+                                              if (_titleController.text.trim().isNotEmpty)
+                                                '\n\nDocument title: ${_titleController.text.trim()}',
+                                              if (existing.trim().isNotEmpty)
+                                                '\n\nExisting section text:\n${existing.trim()}',
+                                            ].join('');
+                                            if (proposalText.trim().isEmpty) {
+                                              continue;
+                                            }
+
+                                            final r =
+                                                await AiAssistantApi.generateSection(
+                                              token: token,
+                                              sectionName: title,
+                                              proposalText: proposalText,
+                                              maxTokens: 192,
+                                            );
+
+                                            final gen =
+                                                (r['generated_text'] ??
+                                                        r['content'] ??
+                                                        r['result'] ??
+                                                        '')
+                                                    .toString()
+                                                    .trim();
+                                            if (gen.isEmpty) {
+                                              throw Exception(
+                                                  'AI returned empty content for "$title".');
+                                            }
+
+                                            if (!mounted || !dialogOpen) return;
+                                            if (cancelled) return;
+
+                                            setState(() {
+                                              s.controller.text = gen;
+                                              _hasUnsavedChanges = true;
+                                            });
+                                          }
+
+                                          if (!mounted || !dialogOpen) return;
+                                          setDialogState(() {
+                                            progressLabel = '';
+                                            generatedController?.dispose();
+                                            generatedController = null;
+                                            generatedSectionControllers = null;
+                                            generationMode = 'full';
+                                          });
                                         } else {
                                           if (_selectedSectionIndex >=
                                               _sections.length) {
@@ -11372,104 +12034,96 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                 'Current section is empty. Nothing to improve.');
                                           }
 
+                                          final selectedSection =
+                                              _sections[_selectedSectionIndex];
+                                          final areaName = (selectedSection
+                                                      .titleController.text
+                                                      .trim()
+                                                      .isNotEmpty)
+                                              ? selectedSection
+                                                  .titleController.text
+                                                  .trim()
+                                              : 'General';
+
+                                          // If user typed instructions in the box, include them as a prefix (but preserve the exact target text).
+                                          final instructions =
+                                              promptController.text.trim();
+                                          final improveInput = instructions.isEmpty
+                                              ? currentContent
+                                              : 'Instructions:\n$instructions\n\nText:\n$currentContent';
+
                                           final result =
-                                              await ApiService.improveContent(
+                                              await AiAssistantApi.improveArea(
                                             token: token,
-                                            content: currentContent,
-                                            sectionType: selectedSectionType,
+                                            areaName: areaName,
+                                            proposalText: improveInput,
+                                            maxTokens: selectedMaxTokens,
                                           );
 
-                                          if (result != null &&
-                                              result['improved_version'] !=
-                                                  null) {
-                                            final improvedText =
-                                                (result['improved_version']
-                                                        as String)
-                                                    .trim();
-                                            if (improvedText.isEmpty) {
-                                              throw Exception(
-                                                  'AI returned an empty improvement.');
-                                            }
-
-                                            setDialogState(() {
-                                              generatedController?.dispose();
-                                              generatedController =
-                                                  TextEditingController(
-                                                      text: improvedText);
-                                              if (generatedSectionControllers !=
-                                                  null) {
-                                                for (final controller
-                                                    in generatedSectionControllers!
-                                                        .values) {
-                                                  controller.dispose();
-                                                }
-                                              }
-                                              generatedSectionControllers =
-                                                  null;
-                                              generationMode = 'improve';
-                                            });
-
-                                            if (result['summary'] != null) {
-                                              ScaffoldMessenger.of(rootContext)
-                                                  .showSnackBar(
-                                                SnackBar(
-                                                  content: Column(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      const Text(
-                                                        'Improvements ready. Review below.',
-                                                        style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                      Text(result['summary']
-                                                          as String),
-                                                    ],
-                                                  ),
-                                                  backgroundColor:
-                                                      const Color(0xFF00BCD4),
-                                                  duration: const Duration(
-                                                      seconds: 4),
-                                                ),
-                                              );
-                                            } else {
-                                              ScaffoldMessenger.of(rootContext)
-                                                  .showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                      'Improvements ready. Review and edit below before applying.'),
-                                                  backgroundColor:
-                                                      Color(0xFF00BCD4),
-                                                ),
-                                              );
-                                            }
-                                          } else {
+                                          final improvedText =
+                                              (result['generated_text'] ??
+                                                      result['improved_version'] ??
+                                                      result['content'] ??
+                                                      result['result'] ??
+                                                      '')
+                                                  .toString()
+                                                  .trim();
+                                          if (improvedText.isEmpty) {
                                             throw Exception(
-                                                'Failed to improve content.');
+                                                'AI returned an empty improvement.');
                                           }
-                                        }
-                                      } catch (e) {
-                                        if (mounted) {
+
+                                          if (!mounted || !dialogOpen) return;
+
+                                          setDialogState(() {
+                                            generatedController?.dispose();
+                                            generatedController =
+                                                TextEditingController(
+                                                    text: improvedText);
+                                            generatedSectionControllers = null;
+                                            generationMode = 'improve';
+                                          });
+
                                           ScaffoldMessenger.of(rootContext)
                                               .showSnackBar(
-                                            SnackBar(
+                                            const SnackBar(
                                               content: Text(
-                                                  'Error: ${e.toString()}'),
-                                              backgroundColor: Colors.red,
+                                                  'Improvements ready. Review and edit below before applying.'),
+                                              backgroundColor:
+                                                  Color(0xFF00BCD4),
                                             ),
                                           );
                                         }
-                                      } finally {
-                                        if (mounted) {
-                                          setDialogState(() {
-                                            isGenerating = false;
-                                          });
+                                      } catch (e) {
+                                        if (!mounted || !dialogOpen) return;
+                                        final raw = e.toString();
+                                        String friendly;
+                                        if (raw.contains('504') ||
+                                            raw.contains('Gateway') ||
+                                            raw.contains('Timeout')) {
+                                          friendly =
+                                              'AI Assistant is taking longer than expected. Please retry.';
+                                        } else if (raw.contains('500') ||
+                                            raw.contains('Internal Server Error') ||
+                                            raw.contains('server error')) {
+                                          friendly =
+                                              'AI service error. Please try again in a moment.';
+                                        } else {
+                                          friendly = raw;
                                         }
+                                        ScaffoldMessenger.of(rootContext)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text('Error: $friendly'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      } finally {
+                                        if (!mounted || !dialogOpen) return;
+                                        setDialogState(() {
+                                          isGenerating = false;
+                                          progressLabel = '';
+                                        });
                                       }
                                     },
                               icon: isGenerating
@@ -11502,6 +12156,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             ),
                           ],
                         ),
+                        if (isGenerating && progressLabel.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            progressLabel,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF555555),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),

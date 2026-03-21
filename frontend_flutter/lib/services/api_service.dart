@@ -7,11 +7,15 @@ import 'package:http/http.dart' as http;
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
+import 'ai_assistant_api.dart';
+
 class ApiService {
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
     if (kIsWeb) {
       try {
+        final hostname = html.window.location.hostname;
+
         // Honor USE_LOCAL_API first (set in index.html for local dev)
         final useLocal = js.context['USE_LOCAL_API'];
         if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
@@ -34,6 +38,15 @@ class ApiService {
           final url = explicitEnvUrl.toString().replaceAll('"', '').trim();
           print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
           return url;
+        }
+
+        // For local web development, prefer local backend by default.
+        // This prevents stale/cached APP_CONFIG values from forcing Render
+        // and causing CORS failures from http://localhost:* origins.
+        if (hostname == 'localhost' || hostname == '127.0.0.1') {
+          print(
+              '🌐 ApiService: Using local API URL (localhost default): http://127.0.0.1:5000');
+          return 'http://127.0.0.1:5000';
         }
 
         // Try to get from window.APP_CONFIG.API_URL
@@ -61,7 +74,7 @@ class ApiService {
             '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
         return 'https://lukens-wp8w.onrender.com';
       }
-      // When on localhost with no override, use local backend so dev works
+      // When on localhost with no override, use Render backend (same as production)
       if (hostname == 'localhost' || hostname == '127.0.0.1') {
         print(
             '🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:5000');
@@ -626,6 +639,29 @@ class ApiService {
     }
   }
 
+  /// Toggle emoji reaction on a comment. If user already reacted with that emoji, removes it.
+  static Future<Map<String, dynamic>?> toggleCommentReaction({
+    required String token,
+    required int commentId,
+    required String emoji,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/comments/$commentId/reactions'),
+        headers: _getHeaders(token),
+        body: json.encode({'emoji': emoji}),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error toggling comment reaction: $e');
+      return null;
+    }
+  }
+
   // User search for @mentions autocomplete
   static Future<List<dynamic>> searchUsersForMentions({
     required String token,
@@ -719,25 +755,33 @@ class ApiService {
     String sectionType = 'general',
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/ai/generate'),
-        headers: _getHeaders(token),
-        body: json.encode({
-          'prompt': prompt,
-          'context': context ?? {},
-          'section_type': sectionType,
-        }),
+      // New minimal proxy path: backend forwards to HF Space using server-side env vars.
+      // HF expects: { section_name, proposal_text }
+      final String proposalText = [
+        prompt.trim(),
+        if (context != null && context.isNotEmpty)
+          '\n\nContext (JSON):\n${json.encode(context)}',
+      ].where((s) => s.trim().isNotEmpty).join('');
+
+      final data = await AiAssistantApi.generateSection(
+        token: token,
+        sectionName: sectionType,
+        proposalText: proposalText,
       );
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      print(
-          'Error generating AI content: ${response.statusCode} - ${response.body}');
-      return null;
+      // Upstream should return { generated_text: ... } (or similar). Normalize to {content: ...}
+      final generated = (data['generated_text'] ??
+              data['content'] ??
+              data['result'] ??
+              '')
+          .toString();
+      return {
+        ...data,
+        'content': generated,
+      };
     } catch (e) {
       print('Error generating AI content: $e');
-      return null;
+      rethrow;
     }
   }
 
@@ -747,21 +791,21 @@ class ApiService {
     String sectionType = 'general',
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/ai/improve'),
-        headers: _getHeaders(token),
-        body: json.encode({
-          'content': content,
-          'section_type': sectionType,
-        }),
+      // HF expects: { area_name, proposal_text }
+      final data = await AiAssistantApi.improveArea(
+        token: token,
+        areaName: sectionType,
+        proposalText: content,
       );
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      print(
-          'Error improving content: ${response.statusCode} - ${response.body}');
-      return null;
+      // Normalize to the shape existing UI expects
+      final improved =
+          (data['generated_text'] ?? data['improved_version'] ?? data['content'])
+              ?.toString();
+      return {
+        ...data,
+        if (improved != null) 'improved_version': improved,
+      };
     } catch (e) {
       print('Error improving content: $e');
       return null;
@@ -850,12 +894,18 @@ class ApiService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
-      print(
-          'Error generating full proposal: ${response.statusCode} - ${response.body}');
-      return null;
+      String detail = 'Error generating full proposal';
+      try {
+        final body = json.decode(response.body);
+        if (body is Map && body['detail'] != null) {
+          detail = body['detail'].toString();
+        }
+      } catch (_) {}
+      print('Error generating full proposal: ${response.statusCode} - $detail');
+      throw Exception(detail);
     } catch (e) {
       print('Error generating full proposal: $e');
-      return null;
+      rethrow;
     }
   }
 }

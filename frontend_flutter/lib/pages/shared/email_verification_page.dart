@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../services/smtp_auth_service.dart';
+import 'package:provider/provider.dart';
+import '../../services/auth_service.dart';
+import '../../api.dart';
+import '../../services/role_service.dart';
 
 class EmailVerificationPage extends StatefulWidget {
   final String? token;
@@ -37,7 +40,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     });
 
     try {
-      await SmtpAuthService.verifyEmail(token: widget.token!);
+      final result = await AuthService.verifyEmail(widget.token!);
 
       if (mounted) {
         setState(() {
@@ -52,7 +55,24 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
           ),
         );
 
-        // Navigate to login page after 2 seconds
+        // If backend returned token + user (Google sign-up flow), log in and go to dashboard
+        final token = result?['token'];
+        final user = result?['user'] as Map<String, dynamic>?;
+        if (token != null && user != null) {
+          final appState = context.read<AppState>();
+          appState.authToken = token;
+          appState.currentUser = user;
+          AuthService.setUserData(user, token);
+          final roleService = context.read<RoleService>();
+          await roleService.initializeRoleFromUser(user);
+          await appState.init();
+          if (mounted) {
+            Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+          }
+          return;
+        }
+
+        // Otherwise navigate to login page after 2 seconds
         Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
             Navigator.pushNamed(context, '/login');
@@ -78,13 +98,10 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     });
 
     try {
-      await SmtpAuthService.resendVerificationEmail(email: widget.email!);
+      await AuthService.resendVerification(widget.email!);
 
       if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-
+        setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Verification email sent! Please check your inbox.'),
