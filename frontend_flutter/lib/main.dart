@@ -38,6 +38,7 @@ import 'pages/client/client_dashboard_home.dart';
 import 'pages/finance_manager/finance_analytics.dart';
 import 'pages/admin/analytics_page.dart' as admin;
 import 'pages/admin/ai_configuration_page.dart';
+import 'pages/creator/creator_analytics_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
 import 'services/auth_service.dart';
@@ -483,7 +484,10 @@ class MyApp extends StatelessWidget {
             if (role.isFinance()) {
               return const FinanceAnalyticsPage();
             }
-            return const admin.AnalyticsPage();
+            if (role.isApprover() || role.isAdmin()) {
+              return const admin.AnalyticsPage();
+            }
+            return const CreatorAnalyticsPage();
           },
           '/approved-proposals': (context) => const ApprovedProposalsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),

@@ -10,6 +10,9 @@ import 'dart:html' as html;
 import 'ai_assistant_api.dart';
 
 class ApiService {
+  static const String _productionBaseUrl = 'https://lukens-wp8w.onrender.com';
+  static const String _localDevBaseUrl = 'http://127.0.0.1:5000';
+
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
     if (kIsWeb) {
@@ -19,9 +22,8 @@ class ApiService {
         // Honor USE_LOCAL_API first (set in index.html for local dev)
         final useLocal = js.context['USE_LOCAL_API'];
         if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
-          print(
-              '🌐 ApiService: Using local API URL (USE_LOCAL_API): http://127.0.0.1:5000');
-          return 'http://127.0.0.1:5000';
+          print('🌐 ApiService: Using local API URL (USE_LOCAL_API): $_localDevBaseUrl');
+          return _localDevBaseUrl;
         }
         // If the user explicitly overrides the API URL for local dev, honor it.
         final explicitAppUrl = js.context['APP_API_URL'];
@@ -71,19 +73,18 @@ class ApiService {
           (hostname.contains('netlify.app') ||
               hostname.contains('onrender.com'))) {
         print(
-            '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-        return 'https://lukens-wp8w.onrender.com';
+            '🌐 ApiService: Using production API URL: $_productionBaseUrl');
+        return _productionBaseUrl;
       }
       // When on localhost with no override, use Render backend (same as production)
       if (hostname == 'localhost' || hostname == '127.0.0.1') {
         print(
-            '🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:5000');
-        return 'http://127.0.0.1:5000';
+            '🌐 ApiService: Using local API URL (localhost): $_localDevBaseUrl');
+        return _localDevBaseUrl;
       }
     }
-    print(
-        '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+    print('🌐 ApiService: Using Render API URL: $_productionBaseUrl');
+    return _productionBaseUrl;
   }
 
   // Get headers with Firebase token

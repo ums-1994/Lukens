@@ -1,7 +1,7 @@
 """
 Client role routes - Viewing proposals, commenting, approving/rejecting, signing
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 import os
 import json
 import traceback
@@ -697,27 +697,25 @@ def verify_client_device_otp():
         data = request.get_json(silent=True) or {}
         challenge_id = (data.get('challenge_id') or data.get('challengeId') or '').strip()
         otp = (data.get('otp') or data.get('code') or '').strip()
-        try:
-            otp = ''.join([c for c in str(otp) if c.isdigit()])
-        except Exception:
-            otp = str(otp).strip()
+
+        device_id_hdr = (request.headers.get('X-Client-Device-Id') or '').strip()
+        session_token_hdr = (request.headers.get('X-Client-Session-Token') or '').strip()
+
         if not challenge_id:
-            try:
-                raw_len = len(request.get_data(cache=False, as_text=False) or b'')
-                print(
-                    f"[CLIENT_PORTAL] verify-otp missing challenge_id content_type={request.content_type} raw_len={raw_len} keys={list(data.keys())}"
-                )
-            except Exception:
-                pass
+            current_app.logger.warning(
+                'verify_client_device_otp: missing challenge_id (device_id_hdr=%s, has_session_hdr=%s)',
+                device_id_hdr or None,
+                bool(session_token_hdr),
+            )
             return {'detail': 'challenge_id is required'}, 400
+
         if not otp:
-            try:
-                raw_len = len(request.get_data(cache=False, as_text=False) or b'')
-                print(
-                    f"[CLIENT_PORTAL] verify-otp missing otp content_type={request.content_type} raw_len={raw_len} challenge_id={challenge_id[:10]}... keys={list(data.keys())}"
-                )
-            except Exception:
-                pass
+            current_app.logger.warning(
+                'verify_client_device_otp: missing otp (challenge_id=%s, device_id_hdr=%s, has_session_hdr=%s)',
+                challenge_id,
+                device_id_hdr or None,
+                bool(session_token_hdr),
+            )
             return {'detail': 'otp is required'}, 400
 
         with get_db_connection() as conn:
@@ -733,18 +731,43 @@ def verify_client_device_otp():
             )
             row = cursor.fetchone()
             if not row:
+                current_app.logger.info(
+                    'verify_client_device_otp: invalid challenge_id (challenge_id=%s, device_id_hdr=%s, has_session_hdr=%s)',
+                    challenge_id,
+                    device_id_hdr or None,
+                    bool(session_token_hdr),
+                )
                 return {'detail': 'Invalid challenge_id'}, 404
             if row.get('verified_at') is not None:
                 return {'detail': 'Challenge already used'}, 400
             expires_at = row.get('expires_at')
             if expires_at is not None and _now_utc() > expires_at:
+                current_app.logger.info(
+                    'verify_client_device_otp: expired otp (challenge_id=%s, device_id=%s, attempts=%s)',
+                    challenge_id,
+                    device_id_hdr or None,
+                    row.get('attempts'),
+                )
                 return {'detail': 'OTP expired'}, 400
+
             attempts = int(row.get('attempts') or 0)
             if attempts >= 5:
+                current_app.logger.info(
+                    'verify_client_device_otp: too many attempts (challenge_id=%s, device_id=%s)',
+                    challenge_id,
+                    device_id_hdr or None,
+                )
                 return {'detail': 'Too many attempts'}, 429
+
             expected = row.get('otp_hash')
             actual = _hash_client_otp(otp, row.get('challenge_salt'))
             if not hmac.compare_digest(str(expected or ''), str(actual or '')):
+                current_app.logger.info(
+                    'verify_client_device_otp: invalid otp (challenge_id=%s, device_id=%s, attempts=%s)',
+                    challenge_id,
+                    device_id_hdr or None,
+                    attempts,
+                )
                 cursor.execute(
                     """
                     UPDATE client_device_otp_challenges

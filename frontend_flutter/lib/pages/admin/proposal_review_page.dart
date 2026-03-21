@@ -1084,7 +1084,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
   @override
   Widget build(BuildContext context) {
-    final appState = context.watch<AppState>();
+    context.watch<AppState>();
     final role = (AuthService.currentUser?['role'] ?? '')
         .toString()
         .toLowerCase()
@@ -1534,7 +1534,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
                 ),
                 onSelect: (label) {
                   if (label != 'Sign Out') setState(() => _currentPage = label);
-                  _navigateAdminToPage(context, label);
+                  _navigateToPage(context, label);
                 },
               ),
             ),
@@ -1544,8 +1544,10 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
     );
   }
 
-  void _navigateAdminToPage(BuildContext context, String label) {
-    switch (label) {
+  void _navigateToPage(BuildContext context, String page) {
+    setState(() => _currentPage = page);
+
+    switch (page) {
       case 'Dashboard':
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
@@ -1557,6 +1559,8 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         );
         break;
       case 'Analytics':
+      case 'All analytics':
+      case 'My analytics':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'History':

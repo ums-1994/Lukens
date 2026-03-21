@@ -100,11 +100,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return 'flutter-device';
     }
     try {
-      final existing = web.window.localStorage['lukens_client_device_id'];
+      final existing = web.window.localStorage.getItem('lukens_client_device_id');
       final clean = existing?.trim();
       if (clean != null && clean.isNotEmpty) return clean;
       final id = 'dev_${DateTime.now().millisecondsSinceEpoch}_${(100000 + (DateTime.now().microsecondsSinceEpoch % 900000))}';
-      web.window.localStorage['lukens_client_device_id'] = id;
+      web.window.localStorage.setItem('lukens_client_device_id', id);
       return id;
     } catch (_) {
       return 'dev_${DateTime.now().millisecondsSinceEpoch}';
@@ -115,9 +115,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     if (!kIsWeb) return;
     try {
       final storedSession =
-          web.window.localStorage['lukens_client_session_token']?.trim();
+          web.window.localStorage.getItem('lukens_client_session_token')?.trim();
       final storedAccess =
-          web.window.localStorage['lukens_client_session_access_token']?.trim();
+          web.window.localStorage.getItem('lukens_client_session_access_token')?.trim();
 
       final currentAccess = accessToken?.trim();
       if (currentAccess != null && currentAccess.isNotEmpty) {
@@ -146,10 +146,12 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         web.window.localStorage.removeItem('lukens_client_session_access_token');
         _clientSessionAccessToken = null;
       } else {
-        web.window.localStorage['lukens_client_session_token'] = token.trim();
+        web.window.localStorage.setItem('lukens_client_session_token', token.trim());
         if (_accessToken != null && _accessToken!.trim().isNotEmpty) {
-          web.window.localStorage['lukens_client_session_access_token'] =
-              _accessToken!.trim();
+          web.window.localStorage.setItem(
+            'lukens_client_session_access_token',
+            _accessToken!.trim(),
+          );
           _clientSessionAccessToken = _accessToken!.trim();
         }
       }
@@ -253,7 +255,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     if (kIsWeb) {
       try {
         final storedAccess =
-            web.window.localStorage['lukens_client_session_access_token']?.trim();
+            web.window.localStorage.getItem('lukens_client_session_access_token')?.trim();
         if (storedAccess != null && storedAccess.isNotEmpty && storedAccess != token.trim()) {
           _clientSessionToken = null;
           _clientSessionAccessToken = null;
@@ -534,8 +536,20 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (id == null || _accessToken == null || _accessToken!.isEmpty) return;
 
-    final url =
-        '$baseUrl/api/client/proposals/$id/export/pdf?token=${Uri.encodeComponent(_accessToken!)}&download=1';
+    final qp = <String, String>{
+      'token': _accessToken!,
+      'download': '1',
+    };
+    if (_deviceId != null && _deviceId!.trim().isNotEmpty) {
+      qp['device_id'] = _deviceId!.trim();
+    }
+    if (_clientSessionToken != null && _clientSessionToken!.trim().isNotEmpty) {
+      qp['session_token'] = _clientSessionToken!.trim();
+    }
+
+    final url = Uri.parse('$baseUrl/api/client/proposals/$id/export/pdf')
+        .replace(queryParameters: qp)
+        .toString();
     web.window.open(url, '_blank');
   }
 
@@ -1529,9 +1543,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         if (kIsWeb) {
           try {
             final storedSession =
-                web.window.localStorage['lukens_client_session_token']?.trim();
+                web.window.localStorage.getItem('lukens_client_session_token')?.trim();
             final storedAccess = web
-                .window.localStorage['lukens_client_session_access_token']
+                .window.localStorage.getItem('lukens_client_session_access_token')
                 ?.trim();
 
             // Only use a cached session token if it's bound to this invitation token.
@@ -1761,6 +1775,12 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   @override
   Widget build(BuildContext context) {
+    assert(() {
+      _buildHeader;
+      _buildStatsCards;
+      _buildProposalsSection;
+      return true;
+    }());
     if (_isLoading) {
       return Scaffold(
         backgroundColor: Colors.transparent,

@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../services/client_service.dart';
 import '../../services/auth_service.dart';
-import '../../services/asset_service.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
 import '../../theme/premium_theme.dart';
@@ -25,8 +24,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   String _selectedTab = 'clients'; // clients, invitations
   String _inviteFilter = 'all'; // all, verified, unverified
   String _searchQuery = '';
-  String _currentPage = 'Client Management';
-  bool _isSidebarCollapsed = false;
   final ScrollController _scrollController = ScrollController();
   bool _routeSynced = false;
 
@@ -229,12 +226,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-    });
   }
 
   void _syncRoute() {
@@ -665,113 +656,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
             ),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(
-      String label, String assetPath, bool isActive, BuildContext context) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              setState(() => _currentPage = label);
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          setState(() => _currentPage = label);
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -1706,57 +1590,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     }
   }
 
-  void _handleInvitationAction(
-      String action, Map<String, dynamic> invite) async {
-    final token = AuthService.token;
-    if (token == null) return;
-
-    final inviteId = invite['id'];
-    if (inviteId == null) return;
-
-    switch (action) {
-      case 'resend':
-        final success = await ClientService.resendInvitation(token, inviteId);
-        _showSnackBar(
-          success ? 'Invitation resent!' : 'Failed to resend invitation',
-          isSuccess: success,
-        );
-        if (success) _loadData();
-        break;
-      case 'send_code':
-        final success =
-            await ClientService.sendVerificationCode(token, inviteId);
-        _showSnackBar(
-          success ? 'Verification code sent!' : 'Failed to send code',
-          isSuccess: success,
-        );
-        if (success) _loadData();
-        break;
-      case 'cancel':
-        final success = await ClientService.cancelInvitation(token, inviteId);
-        _showSnackBar(
-          success ? 'Invitation canceled' : 'Failed to cancel invitation',
-          isSuccess: success,
-        );
-        if (success) _loadData();
-        break;
-      case 'delete':
-        final confirmed = await _confirmAction(
-          title: 'Delete Invitation',
-          message:
-              'This will permanently remove the invitation for ${invite['invited_email'] ?? 'this email'}. Continue?',
-          confirmLabel: 'Delete',
-        );
-        if (!confirmed) return;
-        final success = await ClientService.deleteInvitation(token, inviteId);
-        _showSnackBar(
-          success ? 'Invitation deleted' : 'Failed to delete invitation',
-          isSuccess: success,
-        );
-        if (success) _loadData();
-        break;
-    }
-  }
 
   void _showClientMenu(Map<String, dynamic> client) {
     // TODO: Show menu with options (edit, view notes, link proposal, etc.)
@@ -1792,58 +1625,5 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         ],
       ),
     );
-  }
-
-  Future<bool> _confirmAction({
-    required String title,
-    required String message,
-    String confirmLabel = 'Confirm',
-  }) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF0E1726),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: PremiumTheme.error.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.delete_forever, color: Colors.white),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          message,
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Keep', style: TextStyle(color: Colors.white70)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: PremiumTheme.error,
-              foregroundColor: Colors.white,
-            ),
-            child: Text(confirmLabel),
-          ),
-        ],
-      ),
-    );
-    return result ?? false;
   }
 }

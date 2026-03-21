@@ -113,6 +113,10 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
 
   @override
   Widget build(BuildContext context) {
+    assert(() {
+      _buildFloatingShapes;
+      return true;
+    }());
     final size = MediaQuery.of(context).size;
     final isMobile =
         size.width < 1200; // Increased breakpoint for better desktop support
@@ -195,7 +199,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
+                  color: Colors.black.withValues(alpha: 0.7),
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(color: const Color(0xFF333333), width: 1),
                 ),
@@ -272,7 +276,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                 angle: _parallaxController.value * 2 * math.pi,
                 child: CustomPaint(
                   painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                      TrianglePainter(color: Colors.white.withValues(alpha: 0.04)),
                   size: const Size(70, 70),
                 ),
               ),
@@ -290,7 +294,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                 angle: -_parallaxController.value * 2 * math.pi * 0.8,
                 child: CustomPaint(
                   painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
+                      TrianglePainter(color: Colors.white.withValues(alpha: 0.05)),
                   size: const Size(90, 90),
                 ),
               ),
@@ -306,7 +310,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                 angle: _parallaxController.value * 2 * math.pi * 0.6,
                 child: CustomPaint(
                   painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.03)),
+                      TrianglePainter(color: Colors.white.withValues(alpha: 0.03)),
                   size: const Size(60, 60),
                 ),
               ),
@@ -317,12 +321,12 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
               right: 180 +
                   (math.sin(_parallaxController.value * 2 * math.pi + 4) * 45),
               top: 400 +
-                  (math.cos(_parallaxController.value * 2 * math.pi + 4) * 40),
+                  (math.cos(_parallaxController.value * 2 * math.pi + 4) * 28),
               child: Transform.rotate(
                 angle: -_parallaxController.value * 2 * math.pi * 0.7,
                 child: CustomPaint(
                   painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
+                      TrianglePainter(color: Colors.white.withValues(alpha: 0.04)),
                   size: const Size(80, 80),
                 ),
               ),
@@ -429,7 +433,7 @@ class _CinematicSequencePageState extends State<CinematicSequencePage>
                     boxShadow: [
                       BoxShadow(
                         color:
-                            const Color(0xFFE9293A).withOpacity(glowIntensity),
+                            const Color(0xFFE9293A).withValues(alpha: glowIntensity),
                         blurRadius: 24,
                         spreadRadius: 4,
                       ),

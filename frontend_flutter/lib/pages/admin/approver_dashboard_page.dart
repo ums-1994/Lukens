@@ -378,7 +378,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                     ),
                     onSelect: (label) {
                       setState(() => _currentPage = label);
-                      _navigateToPage(context, label);
+                      _navigateToPage(label);
                     },
                   ),
                 ),
@@ -1020,7 +1020,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             child: InkWell(
               onTap: () {
                 setState(() => _currentPage = label);
-                _navigateToPage(context, label);
+                _navigateToPage(label);
               },
               borderRadius: BorderRadius.circular(30),
               child: Container(
@@ -1056,7 +1056,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           borderRadius: BorderRadius.circular(12),
           onTap: () {
             setState(() => _currentPage = label);
-            _navigateToPage(context, label);
+            _navigateToPage(label);
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1154,7 +1154,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             child: TextButton(
               onPressed: () {
                 setState(() => _currentPage = 'Approvals');
-                _navigateToPage(context, 'Approvals');
+                _navigateToPage('Approvals');
               },
               child: Text(
                 'View all (${_pendingApprovals.length})',
@@ -1163,6 +1163,15 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             ),
           ),
       ],
+    );
+  }
+
+  void _handleLogout() {
+    AuthService.logout();
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/login',
+      (Route<dynamic> route) => false,
     );
   }
 
@@ -1573,20 +1582,19 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     return _currencyFormatter.format(value);
   }
 
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
+  void _navigateToPage(String page) {
+    setState(() => _currentPage = page);
+
+    switch (page) {
       case 'Dashboard':
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
       case 'Approvals':
-        // Go to the dedicated admin approvals view
-        Navigator.pushReplacementNamed(
-          context,
-          '/admin_approvals',
-          arguments: const {'initialFilter': 'pending'},
-        );
+        Navigator.pushReplacementNamed(context, '/admin_approvals');
         break;
       case 'Analytics':
+      case 'All analytics':
+      case 'My analytics':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'History':
@@ -1598,9 +1606,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         );
         break;
       case 'Sign Out':
-        AuthService.logout();
-        Navigator.pushNamedAndRemoveUntil(
-            context, '/login', (Route<dynamic> route) => false);
+        _handleLogout();
         break;
     }
   }

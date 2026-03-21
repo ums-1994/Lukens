@@ -101,7 +101,7 @@ python setup_database.py
 ### 4. Start Backend
 
 ```bash
-python -m uvicorn app:app --host 127.0.0.1 --port 8000 --reload
+python -m uvicorn app:app --host 127.0.0.1 --port 5000 --reload
 ```
 
 ## 📱 Flutter Frontend Setup
@@ -172,10 +172,10 @@ The system automatically detects your setup:
 
 ```bash
 # Test health endpoint
-curl http://localhost:8000/
+curl http://localhost:5000/
 
 # Test database connection
-curl http://localhost:8000/api/status
+curl http://localhost:5000/api/status
 ```
 
 ### 2. Test Flutter App

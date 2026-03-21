@@ -232,8 +232,8 @@ class _FinanceClientManagementPageState
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(24),
-                    color: PremiumTheme.darkBg2.withOpacity(0.9),
-                    border: Border.all(color: Colors.white.withOpacity(0.06)),
+                    color: PremiumTheme.darkBg2.withValues(alpha: 0.9),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
                   ),
                   child: _loading
                       ? const Center(
@@ -250,7 +250,7 @@ class _FinanceClientManagementPageState
                           : ListView.separated(
                               itemCount: _clients.length,
                               separatorBuilder: (_, __) => Divider(
-                                color: Colors.white.withOpacity(0.08),
+                                color: Colors.white.withValues(alpha: 0.08),
                                 height: 20,
                               ),
                               itemBuilder: (context, index) {
@@ -326,8 +326,8 @@ class _FinanceClientManagementPageState
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          color: PremiumTheme.darkBg2.withOpacity(0.85),
-          border: Border.all(color: Colors.white.withOpacity(0.06)),
+          color: PremiumTheme.darkBg2.withValues(alpha: 0.85),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
         ),
         child: Row(
           children: [
@@ -358,7 +358,7 @@ class _FinanceClientManagementPageState
                 ],
               ),
             ),
-            Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.6)),
+            Icon(Icons.chevron_right, color: Colors.white.withValues(alpha: 0.6)),
           ],
         ),
       ),

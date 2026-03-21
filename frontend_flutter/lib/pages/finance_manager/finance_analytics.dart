@@ -1,6 +1,9 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:math' as math;
 
 import 'dart:convert';
+// ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
 import 'package:fl_chart/fl_chart.dart';
@@ -554,7 +557,7 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
     final actual = [1.7, 2.1, 2.85, 2.3, 3.1, 3.0];
 
     final maxY = math.max(projected.reduce(math.max), actual.reduce(math.max));
-    final gridColor = Colors.white.withOpacity(0.08);
+    final gridColor = Colors.white.withValues(alpha: 0.08);
 
     return SizedBox(
       height: 260,
@@ -617,7 +620,7 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
           lineTouchData: LineTouchData(
             enabled: true,
             touchTooltipData: LineTouchTooltipData(
-              getTooltipColor: (touchedSpot) => Colors.black.withOpacity(0.86),
+              getTooltipColor: (touchedSpot) => Colors.black.withValues(alpha: 0.86),
               getTooltipItems: (touchedSpots) {
                 if (touchedSpots.isEmpty) return [];
                 final x = touchedSpots.first.x.round();
@@ -658,12 +661,12 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                   radius: 3.6,
                   color: PremiumTheme.teal,
                   strokeWidth: 2,
-                  strokeColor: Colors.black.withOpacity(0.35),
+                  strokeColor: Colors.black.withValues(alpha: 0.35),
                 ),
               ),
               belowBarData: BarAreaData(
                 show: true,
-                color: PremiumTheme.teal.withOpacity(0.12),
+                color: PremiumTheme.teal.withValues(alpha: 0.12),
               ),
             ),
             LineChartBarData(
@@ -701,9 +704,9 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
             horizontalInterval: 0.75,
             verticalInterval: 1,
             getDrawingHorizontalLine: (_) =>
-                FlLine(color: Colors.white.withOpacity(0.08), strokeWidth: 1),
+                FlLine(color: Colors.white.withValues(alpha: 0.08), strokeWidth: 1),
             getDrawingVerticalLine: (_) =>
-                FlLine(color: Colors.white.withOpacity(0.08), strokeWidth: 1),
+                FlLine(color: Colors.white.withValues(alpha: 0.08), strokeWidth: 1),
           ),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
@@ -744,7 +747,7 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
           barTouchData: BarTouchData(
             enabled: true,
             touchTooltipData: BarTouchTooltipData(
-              getTooltipColor: (group) => Colors.black.withOpacity(0.86),
+              getTooltipColor: (group) => Colors.black.withValues(alpha: 0.86),
               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                 final label = entries[group.x.toInt()].key;
                 return BarTooltipItem(
@@ -792,12 +795,12 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                 borderRadius: BorderRadius.circular(999),
                 child: Container(
                   height: 14,
-                  color: Colors.white.withOpacity(0.08),
+                  color: Colors.white.withValues(alpha: 0.08),
                   child: Align(
                     alignment: Alignment.centerLeft,
                     child: FractionallySizedBox(
                       widthFactor: pct.clamp(0.0, 1.0),
-                      child: Container(color: color.withOpacity(0.8)),
+                      child: Container(color: color.withValues(alpha: 0.8)),
                     ),
                   ),
                 ),
@@ -834,10 +837,10 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
       height: 72,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.25),
+        color: Colors.black.withValues(alpha: 0.25),
         border: Border(
           bottom: BorderSide(
-            color: Colors.white.withOpacity(0.06),
+            color: Colors.white.withValues(alpha: 0.06),
             width: 1,
           ),
         ),

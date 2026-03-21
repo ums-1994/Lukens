@@ -67,7 +67,7 @@ You should have **TWO terminals running**:
 ```bash
 cd backend
 python app.py
-# Running on http://localhost:8000
+# Running on http://localhost:5000
 ```
 
 **Terminal 2: Frontend**

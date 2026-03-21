@@ -423,7 +423,7 @@ class _ContentLibrarySelectionDialogState
                                                     vertical: 6,
                                                   ),
                                                   color: Colors.black
-                                                      .withOpacity(0.45),
+                                                      .withValues(alpha: 0.45),
                                                   child: Text(
                                                     (m['label'] ?? 'Untitled')
                                                         .toString(),
@@ -489,19 +489,15 @@ class _ContentLibrarySelectionDialogState
                                                       height: 48,
                                                       decoration: BoxDecoration(
                                                         color:
-                                                            _getCategoryColor(
-                                                                    category)
-                                                                .withOpacity(
-                                                                    0.1),
+                                                            _getCategoryColor(category)
+                                                                .withValues(alpha: 0.1),
                                                         borderRadius:
-                                                            BorderRadius
-                                                                .circular(8),
+                                                            BorderRadius.circular(8),
                                                       ),
                                                       child: Icon(
                                                         Icons.image,
-                                                        color:
-                                                            _getCategoryColor(
-                                                                category),
+                                                        color: _getCategoryColor(
+                                                            category),
                                                       ),
                                                     );
                                                   },
@@ -513,7 +509,7 @@ class _ContentLibrarySelectionDialogState
                                                 decoration: BoxDecoration(
                                                   color: _getCategoryColor(
                                                           category)
-                                                      .withOpacity(0.1),
+                                                      .withValues(alpha: 0.1),
                                                   borderRadius:
                                                       BorderRadius.circular(8),
                                                 ),
@@ -544,7 +540,7 @@ class _ContentLibrarySelectionDialogState
                                               decoration: BoxDecoration(
                                                 color:
                                                     _getCategoryColor(category)
-                                                        .withOpacity(0.1),
+                                                        .withValues(alpha: 0.1),
                                                 borderRadius:
                                                     BorderRadius.circular(12),
                                               ),

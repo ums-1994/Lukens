@@ -1492,12 +1492,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Parse the content JSON (editor stores full doc in content; backend may also expose sections)
       Map<String, dynamic>? contentData;
       final dynamic rawContent = proposal['content'];
-      if (rawContent != null &&
-          (!(rawContent is String) || (rawContent as String).trim().isNotEmpty)) {
+      if (rawContent != null) {
         try {
           contentData = rawContent is String
-              ? Map<String, dynamic>.from(json.decode(rawContent) as Map)
-              : Map<String, dynamic>.from(rawContent is Map ? rawContent as Map : <String, dynamic>{});
+              ? Map<String, dynamic>.from(json.decode(rawContent))
+              : Map<String, dynamic>.from(rawContent);
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
         }
@@ -1509,8 +1508,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           List<dynamic> sectionList;
           if (rawSections is List && rawSections.isNotEmpty) {
             sectionList = rawSections;
-          } else if (rawSections is Map && (rawSections as Map).isNotEmpty) {
-            sectionList = (rawSections as Map).entries.map<Map<String, dynamic>>((e) {
+          } else if (rawSections is Map && rawSections.isNotEmpty) {
+            sectionList = rawSections.entries.map<Map<String, dynamic>>((e) {
               final v = e.value;
               return {
                 'title': e.key.toString(),
@@ -1532,7 +1531,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
       if (contentData != null && contentData.isNotEmpty) {
         try {
-          final Map<String, dynamic> data = contentData!;
+          final Map<String, dynamic> data = contentData;
           setState(() {
             // Set title
             _titleController.text = (data['title'] ??

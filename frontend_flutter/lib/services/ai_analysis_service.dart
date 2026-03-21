@@ -228,6 +228,10 @@ class AIAnalysisService {
   // Legacy method for backward compatibility
   static Future<Map<String, dynamic>> analyzeProposalContent(
       Map<String, dynamic> proposalData) async {
+    assert(() {
+      _getMockAnalysis;
+      return true;
+    }());
     // Always use the real-time risk analysis endpoint
     return analyzeProposalRisks(proposalData);
   }

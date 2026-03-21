@@ -5,7 +5,7 @@
 Your application uses multiple ports for different services:
 
 ```
-Port 8000  → Python Backend (Flask API)
+Port 5000  → Python Backend (Flask API)
 Port 8080  → PostgreSQL/Database Interface
 Port 8081  → Flutter Frontend (Web App)
 Port 5432  → PostgreSQL Database
@@ -62,7 +62,7 @@ FRONTEND_URL=http://localhost:8081
 
 ### 1. Check Backend is Running
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:5000/health
 ```
 Should return: `{"status": "ok", ...}`
 
@@ -129,7 +129,7 @@ flutter run -d chrome --web-port 8081
 ```bash
 cd backend
 python app.py
-# Should start on http://localhost:8000
+# Should start on http://localhost:5000
 ```
 
 ### Step 3: Start Frontend
@@ -140,7 +140,7 @@ flutter run -d chrome --web-port 8081
 ```
 
 ### Step 4: Verify All Services
-- Backend API: http://localhost:8000/health
+- Backend API: http://localhost:5000/health
 - Frontend App: http://localhost:8081
 - Database UI: http://localhost:8080 (optional)
 
@@ -152,7 +152,7 @@ If you encounter port conflicts:
 
 | Service | Default Port | Alternative |
 |---------|--------------|-------------|
-| Backend | 8000 | 8001, 5000 |
+| Backend | 5000 | 5001, 8000 |
 | Frontend | 8081 | 8082, 8083 |
 | PostgreSQL | 5432 | 5433 |
 | DB Interface | 8080 | (depends on your setup) |
@@ -193,7 +193,7 @@ cd frontend_flutter && flutter run -d chrome --web-port 8081
 **Check Services:**
 ```bash
 # Backend
-curl http://localhost:8000/health
+curl http://localhost:5000/health
 
 # Frontend (in browser)
 open http://localhost:8081
@@ -203,7 +203,7 @@ open http://localhost:8081
 
 ## ✨ Summary
 
-✅ **Port 8000** - Backend API  
+✅ **Port 5000** - Backend API  
 ✅ **Port 8081** - Flutter Frontend ← **Use this for collaboration!**  
 ✅ **Port 8080** - Database Interface (don't use for frontend)  
 

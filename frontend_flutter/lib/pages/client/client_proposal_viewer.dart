@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -12,6 +14,56 @@ import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import 'package:web/web.dart' as web;
 import '../../api.dart';
+
+Map<String, String> _clientDeviceHeadersFromStorage() {
+  if (!kIsWeb) return const <String, String>{};
+  final headers = <String, String>{};
+  try {
+    final deviceId = web.window.localStorage.getItem('lukens_client_device_id')?.trim();
+    if (deviceId != null && deviceId.isNotEmpty) {
+      headers['X-Client-Device-Id'] = deviceId;
+    }
+    final sessionToken =
+        web.window.localStorage.getItem('lukens_client_session_token')?.trim();
+    if (sessionToken != null && sessionToken.isNotEmpty) {
+      headers['X-Client-Session-Token'] = sessionToken;
+    }
+  } catch (_) {
+    // ignore
+  }
+  return headers;
+}
+
+Map<String, String> _clientJsonHeadersFromStorage() {
+  return {
+    'Content-Type': 'application/json',
+    ..._clientDeviceHeadersFromStorage(),
+  };
+}
+
+String _clientPortalUrlWithDeviceSession(String url) {
+  if (!kIsWeb) return url;
+  try {
+    final uri = Uri.parse(url);
+    final qp = Map<String, String>.from(uri.queryParameters);
+
+    final deviceId =
+        web.window.localStorage.getItem('lukens_client_device_id')?.trim();
+    final sessionToken =
+        web.window.localStorage.getItem('lukens_client_session_token')?.trim();
+
+    if (deviceId != null && deviceId.isNotEmpty) {
+      qp['device_id'] = deviceId;
+    }
+    if (sessionToken != null && sessionToken.isNotEmpty) {
+      qp['session_token'] = sessionToken;
+    }
+
+    return uri.replace(queryParameters: qp).toString();
+  } catch (_) {
+    return url;
+  }
+}
 
 class ClientProposalViewer extends StatefulWidget {
   final int proposalId;
@@ -57,24 +109,250 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
   static const Duration _networkTimeout = Duration(seconds: 20);
 
-  Map<String, String> _clientDeviceHeaders() {
-    final headers = <String, String>{};
-    try {
-      // Align with ClientDashboardHome keys
-      final deviceId =
-          web.window.localStorage['lukens_client_device_id']?.trim();
-      if (deviceId != null && deviceId.isNotEmpty) {
-        headers['X-Client-Device-Id'] = deviceId;
-      }
-      final sessionToken =
-          web.window.localStorage['lukens_client_session_token']?.trim();
-      if (sessionToken != null && sessionToken.isNotEmpty) {
-        headers['X-Client-Session-Token'] = sessionToken;
-      }
-    } catch (_) {
-      // ignore
+  Future<bool>? _deviceSessionInFlight;
+  String? _deviceId;
+
+  String _getOrCreateDeviceId() {
+    if (!kIsWeb) {
+      return 'flutter-device';
     }
-    return headers;
+    try {
+      final existing = web.window.localStorage.getItem('lukens_client_device_id');
+      final clean = existing?.trim();
+      if (clean != null && clean.isNotEmpty) return clean;
+      final id =
+          'dev_${DateTime.now().millisecondsSinceEpoch}_${(100000 + (DateTime.now().microsecondsSinceEpoch % 900000))}';
+      web.window.localStorage.setItem('lukens_client_device_id', id);
+      return id;
+    } catch (_) {
+      return 'dev_${DateTime.now().millisecondsSinceEpoch}';
+    }
+  }
+
+  Map<String, String> _clientDeviceHeaders() {
+    return _clientDeviceHeadersFromStorage();
+  }
+
+  Map<String, String> _clientJsonHeaders() {
+    return {
+      'Content-Type': 'application/json',
+      ..._clientDeviceHeaders(),
+    };
+  }
+
+  Future<String?> _promptForOtp() async {
+    String? result;
+    final controller = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Enter verification code'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Check your email for a 6-digit code.'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: '6-digit code',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                result = null;
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                result = controller.text.trim();
+                Navigator.of(ctx).pop();
+              },
+              child: const Text('Verify'),
+            ),
+          ],
+        );
+      },
+    );
+    return result;
+  }
+
+  String _normalizeOtp(String raw) {
+    return raw.replaceAll(RegExp(r'\D'), '');
+  }
+
+  void _saveCachedClientSession(String? token) {
+    if (!kIsWeb) return;
+    try {
+      if (token == null || token.trim().isEmpty) {
+        web.window.localStorage.removeItem('lukens_client_session_token');
+        web.window.localStorage.removeItem('lukens_client_session_access_token');
+      } else {
+        web.window.localStorage
+            .setItem('lukens_client_session_token', token.trim());
+        web.window.localStorage
+            .setItem('lukens_client_session_access_token', widget.accessToken.trim());
+      }
+    } catch (_) {}
+  }
+
+  Future<bool> _ensureDeviceSession() async {
+    final inflight = _deviceSessionInFlight;
+    if (inflight != null) return inflight;
+
+    final f = _ensureDeviceSessionInternal();
+    _deviceSessionInFlight = f;
+    try {
+      return await f;
+    } finally {
+      if (identical(_deviceSessionInFlight, f)) {
+        _deviceSessionInFlight = null;
+      }
+    }
+  }
+
+  Future<bool> _ensureDeviceSessionInternal() async {
+    if (!kIsWeb) return true;
+
+    _deviceId ??= _getOrCreateDeviceId();
+    final deviceId = _deviceId;
+    if (deviceId == null || deviceId.isEmpty) {
+      return false;
+    }
+
+    // If a valid cached session exists, trust it.
+    try {
+      final storedSession =
+          web.window.localStorage.getItem('lukens_client_session_token')?.trim();
+      final storedAccess =
+          web.window.localStorage.getItem('lukens_client_session_access_token')?.trim();
+      if (storedAccess != null &&
+          storedAccess.isNotEmpty &&
+          storedAccess != widget.accessToken.trim()) {
+        _saveCachedClientSession(null);
+      } else if (storedSession != null && storedSession.isNotEmpty) {
+        return true;
+      }
+    } catch (_) {}
+
+    final startUri = Uri.parse('$baseUrl/api/client/device-session/start');
+    final startResp = await http
+        .post(
+          startUri,
+          headers: _clientJsonHeaders(),
+          body: jsonEncode({
+            'token': widget.accessToken,
+            'device_id': deviceId,
+          }),
+        )
+        .timeout(_networkTimeout);
+
+    Map<String, dynamic>? decoded;
+    try {
+      final body = jsonDecode(startResp.body);
+      if (body is Map) decoded = Map<String, dynamic>.from(body);
+    } catch (_) {}
+
+    if (startResp.statusCode != 200) {
+      final msg = decoded?['detail']?.toString() ??
+          'Failed to start verification (HTTP ${startResp.statusCode})';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+      return false;
+    }
+
+    final otpRequired = decoded?['otp_required'] == true;
+    final sessionToken = decoded?['session_token']?.toString().trim();
+    if (!otpRequired && sessionToken != null && sessionToken.isNotEmpty) {
+      _saveCachedClientSession(sessionToken);
+      return true;
+    }
+
+    final challengeId = decoded?['challenge_id']?.toString().trim() ?? '';
+    if (!otpRequired || challengeId.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Verification challenge could not be created.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+
+    final otp = await _promptForOtp();
+    if (otp == null || otp.trim().isEmpty) return false;
+    final normalizedOtp = _normalizeOtp(otp.trim());
+    if (normalizedOtp.length != 6) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please enter the 6-digit code.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+
+    final verifyUri = Uri.parse('$baseUrl/api/client/device-session/verify-otp');
+    final verifyResp = await http
+        .post(
+          verifyUri,
+          headers: _clientJsonHeaders(),
+          body: jsonEncode({
+            'challenge_id': challengeId,
+            'otp': normalizedOtp,
+          }),
+        )
+        .timeout(_networkTimeout);
+
+    Map<String, dynamic>? verifyDecoded;
+    try {
+      final body = jsonDecode(verifyResp.body);
+      if (body is Map) verifyDecoded = Map<String, dynamic>.from(body);
+    } catch (_) {}
+
+    if (verifyResp.statusCode != 200) {
+      final msg = verifyDecoded?['detail']?.toString() ??
+          'Verification failed (HTTP ${verifyResp.statusCode})';
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+      return false;
+    }
+
+    final verifiedSession =
+        verifyDecoded?['session_token']?.toString().trim() ?? '';
+    if (verifiedSession.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Verified but no session token was returned.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+
+    _saveCachedClientSession(verifiedSession);
+    return true;
   }
 
   @override
@@ -82,6 +360,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     super.initState();
     _selectedTab = widget.initialTab;
     _pdfViewType = 'pdf-preview-${DateTime.now().microsecondsSinceEpoch}';
+    _deviceId = _getOrCreateDeviceId();
     _initPdfView();
     _checkIfReturnedFromSigning();
     _loadProposal();
@@ -246,8 +525,9 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
     try {
       // Load directly via URL so the browser can stream + cache.
-      final url =
-          '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}';
+      final url = _clientPortalUrlWithDeviceSession(
+        '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}',
+      );
 
 // Probe the endpoint first. Iframe load events are unreliable for PDFs
       // and can lead to an endless spinner. A small Range request gives us a
@@ -256,8 +536,9 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       try {
         probe = await http.get(
           Uri.parse(url),
-          headers: const {
+          headers: {
             'Range': 'bytes=0-0',
+            ..._clientDeviceHeadersFromStorage(),
           },
         ).timeout(const Duration(seconds: 25));
       } catch (_) {
@@ -316,8 +597,9 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   }
 
   Future<void> _exportPdf() async {
-    final url =
-        '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}&download=1';
+    final url = _clientPortalUrlWithDeviceSession(
+      '$baseUrl/api/client/proposals/${widget.proposalId}/export/pdf?token=${Uri.encodeComponent(widget.accessToken)}&download=1',
+    );
     if (kIsWeb) {
       web.window.open(url, '_blank');
       return;
@@ -326,8 +608,9 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   }
 
   Future<void> _exportWord() async {
-    final url =
-        '$baseUrl/api/client/proposals/${widget.proposalId}/export/word?token=${Uri.encodeComponent(widget.accessToken)}';
+    final url = _clientPortalUrlWithDeviceSession(
+      '$baseUrl/api/client/proposals/${widget.proposalId}/export/word?token=${Uri.encodeComponent(widget.accessToken)}',
+    );
     if (kIsWeb) {
       web.window.open(url, '_blank');
       return;
@@ -464,7 +747,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/api/client/session/start'),
-        headers: {'Content-Type': 'application/json'},
+        headers: _clientJsonHeaders(),
         body: jsonEncode({
           'token': widget.accessToken,
           'proposal_id': widget.proposalId,
@@ -487,7 +770,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         await http
             .post(
               Uri.parse('$baseUrl/api/client/session/end'),
-              headers: {'Content-Type': 'application/json'},
+              headers: _clientJsonHeaders(),
               body: jsonEncode({
                 'session_id': _currentSessionId,
               }),
@@ -505,7 +788,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       await http
           .post(
             Uri.parse('$baseUrl/api/client/activity'),
-            headers: {'Content-Type': 'application/json'},
+            headers: _clientJsonHeaders(),
             body: jsonEncode({
               'token': widget.accessToken,
               'proposal_id': widget.proposalId,
@@ -526,24 +809,62 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     });
 
     try {
-      final extraHeaders =
-          kIsWeb ? _clientDeviceHeaders() : const <String, String>{};
-      final response = await http
-          .get(
-            Uri.parse(
-                '$baseUrl/api/client/proposals/${widget.proposalId}?token=${Uri.encodeComponent(widget.accessToken)}'),
-            headers: extraHeaders.isEmpty ? null : extraHeaders,
-          )
-          .timeout(_networkTimeout);
+      http.Response? response;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        final extraHeaders =
+            kIsWeb ? _clientDeviceHeaders() : const <String, String>{};
+        response = await http
+            .get(
+              Uri.parse(
+                  '$baseUrl/api/client/proposals/${widget.proposalId}?token=${Uri.encodeComponent(widget.accessToken)}'),
+              headers: extraHeaders.isEmpty ? null : extraHeaders,
+            )
+            .timeout(_networkTimeout);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        if (response.statusCode == 428) {
+          if (attempt == 0) {
+            final ok = await _ensureDeviceSession();
+            if (ok) {
+              continue;
+            }
+          }
+          if (!mounted) return;
+          setState(() {
+            _error = 'Device verification required. Please retry.';
+            _isLoading = false;
+          });
+          return;
+        }
+
+        break;
+      }
+
+      final resp = response;
+      if (resp == null) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Failed to load proposal. Please retry.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
+        print('📄 Proposal data received: ${data['proposal']?['title']}');
         final content = data['proposal']?['content'];
         if (content != null) {
-          content.toString();
-        } else {}
+          final contentStr = content.toString();
+          final preview = contentStr.length > 100
+              ? contentStr.substring(0, 100)
+              : contentStr;
+          print('📄 Content value: $preview');
+        } else {
+          print('📄 Content is null or empty');
+        }
         final parsedSections = _parseSectionsFromContent(content);
 
+        if (!mounted) return;
         setState(() {
           _proposalData = data['proposal'];
           _signatureData = data['signature'] != null
@@ -566,28 +887,33 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
         await _loadPdfPreview();
       } else {
-        final errorBody = response.body;
+        final errorBody = resp.body;
+        print('❌ Error loading proposal: ${resp.statusCode}');
+        print('❌ Error body: $errorBody');
         try {
           final error = jsonDecode(errorBody);
+          if (!mounted) return;
           setState(() {
             _error = error['detail'] ?? 'Failed to load proposal';
             _isLoading = false;
           });
         } catch (e) {
+          if (!mounted) return;
           setState(() {
-            _error =
-                'Failed to load proposal (${response.statusCode}): $errorBody';
+            _error = 'Failed to load proposal (${resp.statusCode}): $errorBody';
             _isLoading = false;
           });
         }
       }
     } on TimeoutException {
+      if (!mounted) return;
       setState(() {
         _error =
             'Request timed out. Confirm the backend is running on ${baseUrl.replaceAll("/api", "")} and retry.';
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Error: $e';
         _isLoading = false;
@@ -613,10 +939,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/comment'),
-        headers: {
-          'Content-Type': 'application/json',
-          ..._clientDeviceHeaders(),
-        },
+        headers: _clientJsonHeaders(),
         body: jsonEncode({
           'token': widget.accessToken,
           'comment_text': _commentController.text.trim(),
@@ -1121,9 +1444,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         final response = await http.post(
           Uri.parse(
               '$baseUrl/api/client/proposals/${widget.proposalId}/get_signing_url'),
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: _clientJsonHeaders(),
           body: jsonEncode({
             'token': widget.accessToken,
           }),
@@ -1824,9 +2145,7 @@ class _RejectDialogState extends State<RejectDialog> {
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/reject'),
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: _clientJsonHeadersFromStorage(),
         body: jsonEncode({
           'token': widget.accessToken,
           'reason': _reasonController.text.trim(),
@@ -2007,9 +2326,7 @@ class _ApproveDialogState extends State<ApproveDialog> {
           .post(
             Uri.parse(
                 '$baseUrl/api/client/proposals/${widget.proposalId}/approve'),
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: _clientJsonHeadersFromStorage(),
             body: jsonEncode({
               'token': widget.accessToken,
               'signer_name': _signerNameController.text.trim(),

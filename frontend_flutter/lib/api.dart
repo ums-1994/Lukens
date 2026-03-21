@@ -724,6 +724,35 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  Future<Map<String, dynamic>?> getSowMetricsAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/sow-metrics").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching SOW metrics analytics: $e');
+    }
+    return null;
+  }
+
   Future<Map<String, dynamic>?> getClientEngagementAnalytics({
     String? startDate,
     String? endDate,

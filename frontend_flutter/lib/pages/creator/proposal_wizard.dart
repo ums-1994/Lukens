@@ -1454,8 +1454,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         return 'payment_terms';
       case 'Termination Clause':
         return 'termination_clause';
-      case 'Deliverables':
-        return 'deliverables';
       case 'Company Profile':
       case 'Appendix – Company Profile':
         return 'company_profile';
@@ -1614,7 +1612,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                 color: Color(0xFF4B5563),
                               ),
                             ),
-                            if (opportunityName != null) ...[
+                            if (opportunityName.trim().isNotEmpty) ...[
                               const SizedBox(height: 4),
                               Text(
                                 opportunityName,

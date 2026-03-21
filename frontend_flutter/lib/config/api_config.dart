@@ -3,6 +3,8 @@
 import 'package:flutter/foundation.dart';
 import '../services/api_service.dart';
 
+import '../services/api_service.dart';
+
 /// Centralized API configuration for the Flutter application
 class ApiConfig {
   // Production URLs
@@ -12,7 +14,6 @@ class ApiConfig {
       'https://frontend-sow.onrender.com';
 
   // Development URLs
-  static const String _developmentBackendUrl = 'http://localhost:8000';
   static const String _developmentFrontendUrl = 'http://localhost:3000';
 
   /// Get the backend API base URL (uses same logic as ApiService so content library uses local when appropriate)

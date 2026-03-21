@@ -10,12 +10,12 @@
 cd "C:\Users\Unathi Sibanda\Documents\Lukens-Unathi-Test\backend"
 
 # Start the server
-uvicorn app:app --reload --port 8000
+uvicorn app:app --reload --port 5000
 ```
 
 **Expected Output**:
 ```
-INFO:     Uvicorn running on http://127.0.0.1:8000
+INFO:     Uvicorn running on http://127.0.0.1:5000
 INFO:     Application startup complete.
 ```
 
@@ -29,7 +29,7 @@ INFO:     Application startup complete.
 
 ```powershell
 # Test AI status
-Invoke-WebRequest -Uri "http://localhost:8000/ai/status" -Method GET
+Invoke-WebRequest -Uri "http://localhost:5000/ai/status" -Method GET
 
 # Expected: {"ai_enabled":true,"model":"anthropic/claude-3.5-sonnet","provider":"OpenRouter"}
 ```
@@ -98,7 +98,7 @@ flutter run -d chrome
 ### Get Authentication Token
 
 ```http
-POST http://localhost:8000/auth/login
+POST http://localhost:5000/auth/login
 Content-Type: application/json
 
 {
@@ -118,7 +118,7 @@ Content-Type: application/json
 ### Test Risk Analysis
 
 ```http
-POST http://localhost:8000/ai/analyze-risks
+POST http://localhost:5000/ai/analyze-risks
 Authorization: Bearer YOUR_TOKEN_HERE
 Content-Type: application/json
 
@@ -152,7 +152,7 @@ Content-Type: application/json
 ### Test Content Generation
 
 ```http
-POST http://localhost:8000/ai/generate-section
+POST http://localhost:5000/ai/generate-section
 Authorization: Bearer YOUR_TOKEN_HERE
 Content-Type: application/json
 
@@ -179,7 +179,7 @@ Content-Type: application/json
 
 ### 1. Show Backend is Running (30 seconds)
 
-- Open browser to `http://localhost:8000/docs`
+- Open browser to `http://localhost:5000/docs`
 - Show FastAPI Swagger UI with AI endpoints
 - Point out: `/ai/analyze-risks`, `/ai/generate-section`, etc.
 
@@ -273,9 +273,9 @@ pip install -r backend/requirements.txt
 
 ### Frontend can't connect
 
-**Error**: `Failed to connect to localhost:8000`
+**Error**: `Failed to connect to localhost:5000`
 - Make sure backend is running
-- Check backend is on port 8000
+- Check backend is on port 5000
 - Check CORS settings in backend
 
 ---
@@ -351,10 +351,10 @@ cd backend && python test_ai_service.py
 cd frontend_flutter && flutter run -d chrome
 
 # Check AI status
-curl http://localhost:8000/ai/status
+curl http://localhost:5000/ai/status
 
 # View API docs
-# Open browser: http://localhost:8000/docs
+# Open browser: http://localhost:5000/docs
 ```
 
 ---

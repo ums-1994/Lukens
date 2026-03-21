@@ -20,6 +20,36 @@ def _parse_date(s: str | None):
         return datetime.strptime(s, "%Y-%m-%d")
 
 
+def _end_of_day_if_date_only(dt: datetime | None, raw: str | None) -> datetime | None:
+    if not dt or not raw:
+        return dt
+    if "T" not in raw and len(raw) == 10:
+        return dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return dt
+
+
+def _extract_int(val) -> int:
+    if val is None:
+        return 0
+    if isinstance(val, int):
+        return int(val)
+    try:
+        return int(str(val))
+    except Exception:
+        return 0
+
+
+def _extract_float(val):
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        return float(str(val))
+    except Exception:
+        return None
+
+
 def _stage_for_status(status: str | None) -> str | None:
     s = (status or "").strip().lower()
     if not s or "draft" in s:
@@ -328,6 +358,303 @@ def proposal_pipeline(username=None, user_id=None, email=None):
         traceback.print_exc()
         return jsonify({"detail": str(e)}), 500
 
+    finally:
+        release_pg_conn(conn)
+
+
+@bp.get("/analytics/sow-metrics")
+@token_required
+def sow_metrics(username=None, user_id=None, email=None):
+    """SOW metrics.
+
+    Heuristic: treat a proposal as a SOW if template_type == 'sow' OR template_key ILIKE '%sow%'.
+
+    Returns:
+      - sows_generated: count of SOWs created in range
+      - released: count with a release timestamp
+      - signed: count with signed timestamp (and released)
+      - conversion_rate_percent: signed / released
+      - time_to_sign_avg_days: avg(signed_at - base_at) where base_at is released_at else created_at
+    """
+
+    conn = _pg_conn()
+    cursor = conn.cursor()
+
+    try:
+        start_date_raw = request.args.get("start_date")
+        end_date_raw = request.args.get("end_date")
+        start_date = _parse_date(start_date_raw)
+        end_date = _end_of_day_if_date_only(_parse_date(end_date_raw), end_date_raw)
+
+        owner_filter = request.args.get("owner")
+        scope = (request.args.get("scope") or "self").strip().lower()
+        department_filter = (request.args.get("department") or "").strip()
+
+        if owner_filter is None:
+            owner_filter = request.args.get("owner_id")
+
+        cursor.execute(
+            """
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'proposals'
+            """
+        )
+        cols = cursor.fetchall() or []
+        existing_columns = {r[0] for r in cols}
+        col_types = {r[0]: r[1] for r in cols}
+
+        owner_col = None
+        if "owner_id" in existing_columns:
+            owner_col = "owner_id"
+        elif "user_id" in existing_columns:
+            owner_col = "user_id"
+        if not owner_col:
+            return jsonify({"detail": "Proposals table is missing owner column"}), 500
+
+        owner_col_type = (col_types.get(owner_col) or "").lower()
+        owner_col_is_text = owner_col_type in {"character varying", "text", "varchar"}
+
+        proposal_type_col = None
+        if "template_type" in existing_columns:
+            proposal_type_col = "template_type"
+        elif "template_key" in existing_columns:
+            proposal_type_col = "template_key"
+
+        release_expr = None
+        if "released_at" in existing_columns:
+            release_expr = "released_at"
+        elif "sent_to_client_at" in existing_columns:
+            release_expr = "sent_to_client_at"
+        elif "sent_at" in existing_columns:
+            release_expr = "sent_at"
+
+        signed_expr = None
+        if "signed_at" in existing_columns:
+            signed_expr = "signed_at"
+        elif "signed_date" in existing_columns:
+            signed_expr = "signed_date"
+
+        owner_id_val = user_id
+        if not owner_id_val:
+            lookup_email = email or username
+            cursor.execute(
+                "SELECT id FROM users WHERE email = %s OR username = %s",
+                (lookup_email, username),
+            )
+            row = cursor.fetchone()
+            owner_id_val = row[0] if row else None
+
+        if not owner_id_val and scope != "all":
+            return jsonify(
+                {
+                    "metric": "sow_metrics",
+                    "filters": {
+                        "start_date": start_date_raw,
+                        "end_date": end_date_raw,
+                        "owner": owner_filter,
+                        "scope": scope,
+                        "department": department_filter or None,
+                    },
+                    "sows_generated": 0,
+                    "released": 0,
+                    "signed": 0,
+                    "conversion_rate_percent": 0.0,
+                    "time_to_sign": {"samples": 0, "avg_days": None},
+                }
+            ), 200
+
+        team_owner_ids = None
+        if scope in {"team", "all"} and not owner_filter and owner_id_val:
+            cursor.execute(
+                "SELECT role, department FROM users WHERE id = %s",
+                (owner_id_val,),
+            )
+            me = cursor.fetchone()
+            my_role = (me[0] if me else None) or ""
+            my_department = (me[1] if me else None) or None
+
+            if scope == "all":
+                role_lower = str(my_role).strip().lower()
+                if role_lower not in {"admin", "ceo"}:
+                    return jsonify({"detail": "Not authorized for scope=all"}), 403
+                team_owner_ids = None
+            else:
+                dept = department_filter or my_department
+                if dept:
+                    cursor.execute(
+                        "SELECT id FROM users WHERE department = %s",
+                        (dept,),
+                    )
+                    team_owner_ids = [int(r[0]) for r in cursor.fetchall() or []]
+                else:
+                    team_owner_ids = [int(owner_id_val)]
+
+        resolved_owner_id = None
+        if owner_filter:
+            cursor.execute(
+                "SELECT id FROM users WHERE username = %s OR email = %s OR id::text = %s",
+                (owner_filter, owner_filter, owner_filter),
+            )
+            owner_row = cursor.fetchone()
+            resolved_owner_id = owner_row[0] if owner_row else None
+            if not resolved_owner_id:
+                return jsonify(
+                    {
+                        "metric": "sow_metrics",
+                        "filters": {
+                            "start_date": start_date_raw,
+                            "end_date": end_date_raw,
+                            "owner": owner_filter,
+                            "scope": scope,
+                            "department": department_filter or None,
+                        },
+                        "sows_generated": 0,
+                        "released": 0,
+                        "signed": 0,
+                        "conversion_rate_percent": 0.0,
+                        "time_to_sign": {"samples": 0, "avg_days": None},
+                    }
+                ), 200
+
+        where = ["p.created_at IS NOT NULL"]
+        params = []
+
+        if owner_filter and resolved_owner_id is not None:
+            if owner_col_is_text:
+                where.append(f"p.{owner_col}::text = %s::text")
+                params.append(str(resolved_owner_id))
+            else:
+                where.append(f"p.{owner_col} = %s")
+                params.append(resolved_owner_id)
+        else:
+            if scope == "all":
+                pass
+            elif scope == "team" and team_owner_ids is not None:
+                if not team_owner_ids:
+                    return jsonify(
+                        {
+                            "metric": "sow_metrics",
+                            "filters": {
+                                "start_date": start_date_raw,
+                                "end_date": end_date_raw,
+                                "owner": owner_filter,
+                                "scope": scope,
+                                "department": department_filter or None,
+                            },
+                            "sows_generated": 0,
+                            "released": 0,
+                            "signed": 0,
+                            "conversion_rate_percent": 0.0,
+                            "time_to_sign": {"samples": 0, "avg_days": None},
+                        }
+                    ), 200
+                if owner_col_is_text:
+                    where.append(f"p.{owner_col}::text = ANY(%s::text[])")
+                    params.append([str(x) for x in team_owner_ids])
+                else:
+                    where.append(f"p.{owner_col} = ANY(%s::int[])")
+                    params.append(team_owner_ids)
+            else:
+                if owner_id_val:
+                    if owner_col_is_text:
+                        where.append(f"p.{owner_col}::text = %s::text")
+                        params.append(str(owner_id_val))
+                    else:
+                        where.append(f"p.{owner_col} = %s")
+                        params.append(owner_id_val)
+
+        if start_date:
+            where.append("p.created_at >= %s")
+            params.append(start_date)
+        if end_date:
+            where.append("p.created_at <= %s")
+            params.append(end_date)
+
+        # SOW filter
+        if proposal_type_col == "template_type":
+            where.append("LOWER(p.template_type) = 'sow'")
+        elif proposal_type_col == "template_key":
+            where.append("p.template_key ILIKE %s")
+            params.append("%sow%")
+        else:
+            # No template column -> cannot determine SOWs.
+            return jsonify(
+                {
+                    "metric": "sow_metrics",
+                    "filters": {
+                        "start_date": start_date_raw,
+                        "end_date": end_date_raw,
+                        "owner": owner_filter,
+                        "scope": scope,
+                        "department": department_filter or None,
+                    },
+                    "sows_generated": 0,
+                    "released": 0,
+                    "signed": 0,
+                    "conversion_rate_percent": 0.0,
+                    "time_to_sign": {"samples": 0, "avg_days": None},
+                }
+            ), 200
+
+        where_sql = " AND ".join(where)
+
+        release_sql = f"p.{release_expr}" if release_expr else "NULL::timestamp"
+        signed_sql = f"p.{signed_expr}" if signed_expr else "NULL::timestamp"
+
+        cursor.execute(
+            f"""
+            SELECT
+              COUNT(*) AS total_created,
+              SUM(CASE WHEN {release_sql} IS NOT NULL THEN 1 ELSE 0 END) AS released_count,
+              SUM(CASE WHEN {release_sql} IS NOT NULL AND {signed_sql} IS NOT NULL THEN 1 ELSE 0 END) AS signed_count,
+              AVG(
+                CASE
+                  WHEN {signed_sql} IS NOT NULL THEN EXTRACT(EPOCH FROM ({signed_sql} - COALESCE({release_sql}, p.created_at))) / 86400.0
+                  ELSE NULL
+                END
+              ) AS avg_days_to_sign,
+              SUM(CASE WHEN {release_sql} IS NOT NULL AND {signed_sql} IS NOT NULL THEN 1 ELSE 0 END) AS signed_samples
+            FROM proposals p
+            WHERE {where_sql}
+            """,
+            params,
+        )
+        row = cursor.fetchone() or (0, 0, 0, None, 0)
+
+        total_created = _extract_int(row[0])
+        released = _extract_int(row[1])
+        signed = _extract_int(row[2])
+        avg_days = _extract_float(row[3])
+        samples = _extract_int(row[4])
+
+        conversion_rate = 0.0
+        if released > 0:
+            conversion_rate = (signed / released) * 100.0
+
+        return jsonify(
+            {
+                "metric": "sow_metrics",
+                "filters": {
+                    "start_date": start_date_raw,
+                    "end_date": end_date_raw,
+                    "owner": owner_filter,
+                    "scope": scope,
+                    "department": department_filter or None,
+                },
+                "sows_generated": int(total_created),
+                "released": int(released),
+                "signed": int(signed),
+                "conversion_rate_percent": float(conversion_rate),
+                "time_to_sign": {"samples": int(samples), "avg_days": avg_days},
+            }
+        ), 200
+
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return jsonify({"detail": str(e)}), 500
     finally:
         release_pg_conn(conn)
 

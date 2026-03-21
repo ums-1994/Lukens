@@ -37,7 +37,6 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
 
   String? _invitedEmail;
   String? _expectedCompany;
-  String? _expiresAt;
 
   @override
   void initState() {
@@ -73,7 +72,6 @@ class _ClientOnboardingPageState extends State<ClientOnboardingPage> {
         setState(() {
           _invitedEmail = data['invited_email'];
           _expectedCompany = data['expected_company'];
-          _expiresAt = data['expires_at'];
           _emailController.text = _invitedEmail ?? '';
           _companyNameController.text = _expectedCompany ?? '';
           _loading = false;

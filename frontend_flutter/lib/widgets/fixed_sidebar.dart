@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../services/asset_service.dart';
+import '../services/role_service.dart';
 import '../theme/app_colors.dart';
 
 class FixedSidebar extends StatefulWidget {
@@ -31,6 +32,16 @@ class _FixedSidebarState extends State<FixedSidebar> {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmall = screenWidth < 768;
     final effectiveCollapsed = isSmall ? true : widget.isCollapsed;
+    final role = RoleService().currentRole;
+    final analyticsLabel = role == UserRole.approver
+        ? 'All analytics'
+        : role == UserRole.finance
+            ? 'My analytics'
+            : 'Analytics (My Pipeline)';
+    final isAnalyticsSelected = widget.currentPage == 'Analytics' ||
+        widget.currentPage == 'Analytics (My Pipeline)' ||
+        widget.currentPage == 'My analytics' ||
+        widget.currentPage == 'All analytics';
 
     return AnimatedContainer(
       duration: AppColors.animationDuration,
@@ -135,22 +146,21 @@ class _FixedSidebarState extends State<FixedSidebar> {
                       ),
                       _buildSidebarNavItem(
                         label: 'Approved Proposals',
-                        assetPath: widget.customAssets?['Approved Proposals'] ??
-                            'assets/images/Time Allocation_Approval_Blue.png',
+                        assetPath:
+                            widget.customAssets?['Approved Proposals'] ??
+                                'assets/images/Time Allocation_Approval_Blue.png',
                         isSelected: widget.currentPage == 'Approved Proposals',
                         isCollapsed: effectiveCollapsed,
                         onTap: () => widget.onNavigate('Approved Proposals'),
                       ),
                       _buildSidebarNavItem(
-                        label: 'Analytics (My Pipeline)',
+                        label: analyticsLabel,
                         assetPath:
-                            widget.customAssets?['Analytics (My Pipeline)'] ??
+                            widget.customAssets?['Analytics'] ??
                                 'assets/images/analytics.png',
-                        isSelected:
-                            widget.currentPage == 'Analytics (My Pipeline)',
+                        isSelected: isAnalyticsSelected,
                         isCollapsed: effectiveCollapsed,
-                        onTap: () =>
-                            widget.onNavigate('Analytics (My Pipeline)'),
+                        onTap: () => widget.onNavigate(analyticsLabel),
                       ),
                       const SizedBox(height: 20),
 

@@ -16,7 +16,7 @@ Authorization: Bearer YOUR_TOKEN_HERE
 
 ### Create Suggestion
 ```bash
-POST http://localhost:8000/api/proposals/1/suggestions
+POST http://localhost:5000/api/proposals/1/suggestions
 Authorization: Bearer YOUR_TOKEN
 Content-Type: application/json
 
@@ -29,13 +29,13 @@ Content-Type: application/json
 
 ### Get All Suggestions
 ```bash
-GET http://localhost:8000/api/proposals/1/suggestions
+GET http://localhost:5000/api/proposals/1/suggestions
 Authorization: Bearer YOUR_TOKEN
 ```
 
 ### Accept Suggestion
 ```bash
-POST http://localhost:8000/api/proposals/1/suggestions/5/resolve
+POST http://localhost:5000/api/proposals/1/suggestions/5/resolve
 Authorization: Bearer YOUR_TOKEN
 Content-Type: application/json
 
@@ -46,7 +46,7 @@ Content-Type: application/json
 
 ### Reject Suggestion
 ```bash
-POST http://localhost:8000/api/proposals/1/suggestions/5/resolve
+POST http://localhost:5000/api/proposals/1/suggestions/5/resolve
 Authorization: Bearer YOUR_TOKEN
 Content-Type: application/json
 
@@ -61,7 +61,7 @@ Content-Type: application/json
 
 ### Lock a Section
 ```bash
-POST http://localhost:8000/api/proposals/1/sections/section-2/lock
+POST http://localhost:5000/api/proposals/1/sections/section-2/lock
 Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -76,13 +76,13 @@ Authorization: Bearer YOUR_TOKEN
 
 ### Get All Locks
 ```bash
-GET http://localhost:8000/api/proposals/1/sections/locks
+GET http://localhost:5000/api/proposals/1/sections/locks
 Authorization: Bearer YOUR_TOKEN
 ```
 
 ### Unlock Section
 ```bash
-POST http://localhost:8000/api/proposals/1/sections/section-2/unlock
+POST http://localhost:5000/api/proposals/1/sections/section-2/unlock
 Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -92,7 +92,7 @@ Authorization: Bearer YOUR_TOKEN
 
 ### Get Activity Feed
 ```bash
-GET http://localhost:8000/api/proposals/1/activity
+GET http://localhost:5000/api/proposals/1/activity
 Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -122,7 +122,7 @@ Authorization: Bearer YOUR_TOKEN
 
 ### Get All Notifications
 ```bash
-GET http://localhost:8000/api/notifications
+GET http://localhost:5000/api/notifications
 Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -146,13 +146,13 @@ Authorization: Bearer YOUR_TOKEN
 
 ### Mark as Read
 ```bash
-POST http://localhost:8000/api/notifications/123/mark-read
+POST http://localhost:5000/api/notifications/123/mark-read
 Authorization: Bearer YOUR_TOKEN
 ```
 
 ### Mark All as Read
 ```bash
-POST http://localhost:8000/api/notifications/mark-all-read
+POST http://localhost:5000/api/notifications/mark-all-read
 Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -162,7 +162,7 @@ Authorization: Bearer YOUR_TOKEN
 
 ### Compare Two Versions
 ```bash
-GET http://localhost:8000/api/proposals/1/versions/compare?version1=1&version2=2
+GET http://localhost:5000/api/proposals/1/versions/compare?version1=1&version2=2
 Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -194,7 +194,7 @@ Authorization: Bearer YOUR_TOKEN
 
 ### Create Comment with Mention
 ```bash
-POST http://localhost:8000/api/comments/document/1
+POST http://localhost:5000/api/comments/document/1
 Authorization: Bearer YOUR_TOKEN
 Content-Type: application/json
 
@@ -212,7 +212,7 @@ Content-Type: application/json
 
 ### Get My Mentions
 ```bash
-GET http://localhost:8000/api/mentions
+GET http://localhost:5000/api/mentions
 Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -239,7 +239,7 @@ Authorization: Bearer YOUR_TOKEN
 
 ### Mark Mention as Read
 ```bash
-POST http://localhost:8000/api/mentions/456/mark-read
+POST http://localhost:5000/api/mentions/456/mark-read
 Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -249,7 +249,7 @@ Authorization: Bearer YOUR_TOKEN
 
 ### Add Section-Level Comment
 ```bash
-POST http://localhost:8000/api/comments/document/1
+POST http://localhost:5000/api/comments/document/1
 Authorization: Bearer YOUR_TOKEN
 Content-Type: application/json
 
@@ -262,7 +262,7 @@ Content-Type: application/json
 
 ### Get All Comments
 ```bash
-GET http://localhost:8000/api/comments/proposal/1
+GET http://localhost:5000/api/comments/proposal/1
 Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -385,7 +385,7 @@ Import this JSON into Postman:
     }
   ],
   "variable": [
-    {"key": "baseUrl", "value": "http://localhost:8000"},
+    {"key": "baseUrl", "value": "http://localhost:5000"},
     {"key": "token", "value": "YOUR_TOKEN_HERE"},
     {"key": "proposalId", "value": "1"}
   ]
@@ -398,25 +398,25 @@ Import this JSON into Postman:
 
 **Get notifications:**
 ```
-curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8000/api/notifications
+curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:5000/api/notifications
 ```
 
 **Create suggestion:**
 ```
 curl -X POST -H "Authorization: Bearer YOUR_TOKEN" -H "Content-Type: application/json" \
   -d '{"section_id":"section-1","suggestion_text":"New","original_text":"Old"}' \
-  http://localhost:8000/api/proposals/1/suggestions
+  http://localhost:5000/api/proposals/1/suggestions
 ```
 
 **Get mentions:**
 ```
-curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:8000/api/mentions
+curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:5000/api/mentions
 ```
 
 **Compare versions:**
 ```
 curl -H "Authorization: Bearer YOUR_TOKEN" \
-  "http://localhost:8000/api/proposals/1/versions/compare?version1=1&version2=2"
+  "http://localhost:5000/api/proposals/1/versions/compare?version1=1&version2=2"
 ```
 
 ---

@@ -36,6 +36,14 @@ class _DashboardPageState extends State<DashboardPage>
   String _statusFilter = 'all'; // all, draft, published, pending, approved
   final ScrollController _scrollController = ScrollController();
 
+  bool _analyticsLoading = false;
+  String? _analyticsError;
+  Map<String, dynamic>? _pipelineAnalytics;
+  Map<String, dynamic>? _cycleTimeAnalytics;
+  Map<String, dynamic>? _completionAnalytics;
+  Map<String, dynamic>? _riskSummaryAnalytics;
+  String? _pipelineStageFilter;
+
   // AI Risk Gate mock data
   List<Map<String, dynamic>> _riskItems = [];
 
@@ -91,6 +99,8 @@ class _DashboardPageState extends State<DashboardPage>
         app.fetchDashboard(),
         app.fetchNotifications(),
       ]);
+
+      await _refreshAnalytics(app);
       print(
           'Dashboard data refreshed - ${app.proposals.length} proposals loaded');
 
@@ -102,6 +112,42 @@ class _DashboardPageState extends State<DashboardPage>
       if (mounted) {
         setState(() => _isRefreshing = false);
       }
+    }
+  }
+
+  Future<void> _refreshAnalytics(AppState app) async {
+    if (_analyticsLoading) return;
+    if (app.authToken == null) return;
+
+    setState(() {
+      _analyticsLoading = true;
+      _analyticsError = null;
+    });
+
+    try {
+      final results = await Future.wait([
+        app.getProposalPipelineAnalytics(
+          scope: 'self',
+          stage: _pipelineStageFilter,
+        ),
+        app.getCycleTimeAnalytics(scope: 'self'),
+        app.getCompletionRatesAnalytics(scope: 'self'),
+        app.getRiskGateSummary(scope: 'self'),
+      ]);
+
+      if (!mounted) return;
+      setState(() {
+        _pipelineAnalytics = results[0];
+        _cycleTimeAnalytics = results[1];
+        _completionAnalytics = results[2];
+        _riskSummaryAnalytics = results[3];
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _analyticsError = e.toString());
+    } finally {
+      if (!mounted) return;
+      setState(() => _analyticsLoading = false);
     }
   }
 
@@ -389,6 +435,415 @@ class _DashboardPageState extends State<DashboardPage>
           ),
       ],
     );
+  }
+
+  Widget _buildDashboardAnalytics(AppState app) {
+    if (_analyticsError != null && _analyticsError!.trim().isNotEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Failed to load analytics',
+            style: PremiumTheme.bodyMedium.copyWith(color: Colors.redAccent),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              ElevatedButton(
+                onPressed: _analyticsLoading ? null : () => _refreshAnalytics(app),
+                child: const Text('Retry'),
+              ),
+              const SizedBox(width: 12),
+              TextButton(
+                onPressed: () => Navigator.pushNamed(context, '/analytics'),
+                child: const Text('Open full analytics'),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+
+    if (_analyticsLoading && _pipelineAnalytics == null) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final hasAnyData =
+        _pipelineAnalytics != null || _cycleTimeAnalytics != null || _completionAnalytics != null;
+
+    if (!hasAnyData) {
+      return Row(
+        children: [
+          Expanded(
+            child: Text(
+              'No analytics available yet',
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pushNamed(context, '/analytics'),
+            child: const Text('Open'),
+          ),
+        ],
+      );
+    }
+
+    final pipelineCounts = _pipelineCountsFromResponse(_pipelineAnalytics);
+    final selectedStage = _pipelineStageFilter;
+    final stageProposals = _stageProposals(selectedStage);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            _stageHeader('Draft', pipelineCounts['Draft'] ?? 0),
+            _stageHeader('In Review', pipelineCounts['In Review'] ?? 0),
+            _stageHeader('Released', pipelineCounts['Released'] ?? 0),
+            _stageHeader('Signed', pipelineCounts['Signed'] ?? 0),
+            _stageHeader('Archived', pipelineCounts['Archived'] ?? 0),
+          ],
+        ),
+        const SizedBox(height: 18),
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          childAspectRatio: 2.2,
+          crossAxisSpacing: 24,
+          mainAxisSpacing: 24,
+          children: [
+            PremiumStatCard(
+              title: 'Pipeline Stage',
+              value: (selectedStage ?? 'All'),
+              subtitle: 'Current filter',
+              icon: Icons.filter_alt,
+              gradient: PremiumTheme.purpleGradient,
+              onTap: () => Navigator.pushNamed(context, '/analytics'),
+            ),
+            PremiumStatCard(
+              title: 'Avg Cycle Time',
+              value: _avgCycleTimeDays(),
+              subtitle: 'Days',
+              icon: Icons.timelapse,
+              gradient: PremiumTheme.blueGradient,
+              onTap: () => Navigator.pushNamed(context, '/analytics'),
+            ),
+            PremiumStatCard(
+              title: 'Readiness',
+              value: _avgReadinessScore(),
+              subtitle: 'Pass rate',
+              icon: Icons.checklist,
+              gradient: PremiumTheme.tealGradient,
+              onTap: () => Navigator.pushNamed(context, '/analytics'),
+            ),
+            PremiumStatCard(
+              title: 'Total in Filter',
+              value: stageProposals.length.toString(),
+              subtitle: selectedStage == null ? 'Across stages' : selectedStage,
+              icon: Icons.stacked_bar_chart,
+              gradient: PremiumTheme.orangeGradient,
+              onTap: () => Navigator.pushNamed(context, '/analytics'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        if (stageProposals.isEmpty)
+          Center(
+            child: Text(
+              'No pipeline proposals match this filter yet',
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+            ),
+          )
+        else
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ...stageProposals.take(6).map((p) => _pipelineProposalTile(p)),
+              if (stageProposals.length > 6)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    '+${stageProposals.length - 6} more in this stage',
+                    style:
+                        PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+                  ),
+                ),
+            ],
+          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            TextButton(
+              onPressed: _analyticsLoading ? null : () => _refreshAnalytics(app),
+              child: Text(_analyticsLoading ? 'Refreshing…' : 'Refresh'),
+            ),
+            const Spacer(),
+            TextButton(
+              onPressed: () => Navigator.pushNamed(context, '/analytics'),
+              child: const Text('Open full analytics'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Map<String, int> _pipelineCountsFromResponse(Map<String, dynamic>? data) {
+    final counts = <String, int>{
+      'Draft': 0,
+      'In Review': 0,
+      'Released': 0,
+      'Signed': 0,
+      'Archived': 0,
+    };
+    final stages = (data?['stages'] as List?) ?? const [];
+    for (final s in stages) {
+      if (s is! Map) continue;
+      final stageName = (s['stage'] ?? '').toString();
+      final v = s['count'];
+      final cnt = (v is num) ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
+      if (counts.containsKey(stageName)) {
+        counts[stageName] = cnt;
+      }
+    }
+    return counts;
+  }
+
+  List<Map<String, dynamic>> _stageProposals(String? stage) {
+    final stages = (_pipelineAnalytics?['stages'] as List?) ?? const [];
+    final all = <Map<String, dynamic>>[];
+    for (final s in stages) {
+      if (s is! Map) continue;
+      final stageName = (s['stage'] ?? '').toString();
+      if (stage != null && stage.isNotEmpty) {
+        if (stageName.toLowerCase() != stage.toLowerCase()) continue;
+      }
+      final proposals = (s['proposals'] as List?) ?? const [];
+      for (final p in proposals) {
+        if (p is Map) {
+          all.add(p.cast<String, dynamic>());
+        }
+      }
+    }
+    return all;
+  }
+
+  Color _stageColor(String stage) {
+    switch (stage) {
+      case 'Signed':
+        return PremiumTheme.success;
+      case 'Released':
+        return PremiumTheme.info;
+      case 'In Review':
+        return PremiumTheme.warning;
+      case 'Archived':
+        return Colors.white70;
+      default:
+        return PremiumTheme.orange;
+    }
+  }
+
+  Widget _stageHeader(String stage, int count) {
+    final active =
+        (_pipelineStageFilter ?? '').toLowerCase() == stage.toLowerCase();
+    return InkWell(
+      onTap: () {
+        setState(() {
+          if (active) {
+            _pipelineStageFilter = null;
+          } else {
+            _pipelineStageFilter = stage;
+          }
+        });
+        final app = context.read<AppState>();
+        _refreshAnalytics(app);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: _stageColor(stage).withValues(alpha: active ? 0.22 : 0.10),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: _stageColor(stage).withValues(alpha: active ? 0.55 : 0.25),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              stage,
+              overflow: TextOverflow.ellipsis,
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                count.toString(),
+                style: PremiumTheme.labelMedium.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _pipelineProposalTile(Map<String, dynamic> p) {
+    final id = (p['proposal_id'] ?? p['id'] ?? '').toString();
+    final title = (p['title'] ?? 'Untitled').toString();
+    final client = (p['client'] ?? '').toString();
+    final owner = (p['owner'] ?? '').toString();
+    final status = (p['status'] ?? '').toString();
+    final stage = (p['stage'] ?? '').toString();
+
+    return InkWell(
+      onTap: () {
+        Navigator.pushNamed(
+          context,
+          '/proposal_review',
+          arguments: {
+            'id': id,
+            'title': title,
+          },
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: _stageColor(stage.isEmpty ? status : stage)
+                    .withValues(alpha: 0.9),
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    [client, owner, status]
+                        .where((e) => e.trim().isNotEmpty)
+                        .join(' • '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: PremiumTheme.bodySmall
+                        .copyWith(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white70),
+          ],
+        ),
+      ),
+    );
+  }
+
+  int _stageCount(String stage) {
+    final stages = (_pipelineAnalytics?['stages'] as List?) ?? const [];
+    for (final s in stages) {
+      if (s is Map && (s['stage']?.toString() ?? '') == stage) {
+        final v = s['count'];
+        if (v is int) return v;
+        return int.tryParse(v?.toString() ?? '') ?? 0;
+      }
+    }
+    return 0;
+  }
+
+  String _avgCycleTimeDays() {
+    final byStage = (_cycleTimeAnalytics?['by_stage'] as List?) ?? const [];
+    if (byStage.isEmpty) return '—';
+
+    double total = 0;
+    int n = 0;
+    for (final row in byStage) {
+      if (row is! Map) continue;
+      final v = row['avg_cycle_time_days'] ?? row['avg_days'];
+      final d = (v is num) ? v.toDouble() : double.tryParse(v?.toString() ?? '');
+      if (d == null) continue;
+      total += d;
+      n += 1;
+    }
+    if (n == 0) return '—';
+    return (total / n).toStringAsFixed(1);
+  }
+
+  String _avgReadinessScore() {
+    final totals = _completionAnalytics?['totals'];
+    if (totals is Map) {
+      final passed = totals['passed'];
+      final total = totals['total'];
+      if (total is int && total == 0) return '—';
+      if (total != null) {
+        final passRate = totals['pass_rate'];
+        final rate = (passRate is num)
+            ? passRate.toDouble()
+            : double.tryParse(passRate?.toString() ?? '');
+        if (rate != null) return '${rate.toStringAsFixed(0)}%';
+      }
+      if (passed != null && total != null) {
+        final p = (passed is num) ? passed.toDouble() : double.tryParse(passed.toString());
+        final t = (total is num) ? total.toDouble() : double.tryParse(total.toString());
+        if (p != null && t != null && t > 0) {
+          return '${((p / t) * 100).toStringAsFixed(0)}%';
+        }
+      }
+    }
+
+    final rows = (_completionAnalytics?['proposals'] as List?) ?? const [];
+    if (rows.isEmpty) return '—';
+    double total = 0;
+    int n = 0;
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final v = row['readiness_score'];
+      final score = (v is num) ? v.toDouble() : double.tryParse(v?.toString() ?? '');
+      if (score == null) continue;
+      total += score;
+      n += 1;
+    }
+    if (n == 0) return '—';
+    return (total / n).toStringAsFixed(0);
   }
 
   void _showNotificationsSheet(AppState app) {
@@ -1283,10 +1738,12 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
+  void _navigateToPage(BuildContext context, String page) {
+    setState(() => _currentPage = page);
+
+    switch (page) {
       case 'Dashboard':
-        // Already on dashboard
+        Navigator.pushReplacementNamed(context, '/dashboard');
         break;
       case 'My Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
@@ -1304,6 +1761,9 @@ class _DashboardPageState extends State<DashboardPage>
         Navigator.pushReplacementNamed(context, '/approved_proposals');
         break;
       case 'Analytics (My Pipeline)':
+      case 'Analytics':
+      case 'My analytics':
+      case 'All analytics':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'Logout':
@@ -1538,7 +1998,7 @@ class _DashboardPageState extends State<DashboardPage>
           Navigator.pushNamed(context, '/approvals');
           break;
         case 'Analytics':
-          Navigator.pushNamed(context, '/proposals');
+          Navigator.pushNamed(context, '/analytics');
           break;
         case 'User Management':
           Navigator.pushNamed(context, '/admin_dashboard');
@@ -2565,6 +3025,12 @@ class _DashboardPageState extends State<DashboardPage>
         _buildSection(
           'My Proposal Dashboard',
           _buildDashboardGrid(counts, context),
+        ),
+        const SizedBox(height: 20),
+
+        _buildSection(
+          'Analytics',
+          _buildDashboardAnalytics(app),
         ),
         const SizedBox(height: 20),
 

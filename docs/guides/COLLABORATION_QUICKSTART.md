@@ -125,7 +125,7 @@ POST /api/proposals/{id}/suggestions/{id}/resolve - Accept/reject
 **Example API Call:**
 ```bash
 # Create a suggestion
-curl -X POST http://localhost:8000/api/proposals/123/suggestions \
+curl -X POST http://localhost:5000/api/proposals/123/suggestions \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -150,7 +150,7 @@ curl -X POST http://localhost:8000/api/proposals/123/suggestions \
 **Example API Call:**
 ```bash
 # Lock a section
-curl -X POST http://localhost:8000/api/proposals/123/sections/section-2/lock \
+curl -X POST http://localhost:5000/api/proposals/123/sections/section-2/lock \
   -H "Authorization: Bearer YOUR_TOKEN"
 
 # Response:
@@ -185,7 +185,7 @@ curl -X POST http://localhost:8000/api/proposals/123/sections/section-2/lock \
 **Example API Call:**
 ```bash
 # Get activity timeline
-curl http://localhost:8000/api/proposals/123/activity \
+curl http://localhost:5000/api/proposals/123/activity \
   -H "Authorization: Bearer YOUR_TOKEN"
 
 # Response:

@@ -26,7 +26,7 @@ SMTP_FROM_EMAIL=your-email@gmail.com
 SMTP_FROM_NAME=Khonology
 
 # Frontend URL (for verification links)
-FRONTEND_URL=http://localhost:8080
+FRONTEND_URL=http://localhost:8081
 ```
 
 ### 2. Gmail Setup (Example)
@@ -214,7 +214,7 @@ When a user logs in, check their verification status:
 
 ```dart
 final response = await http.get(
-  Uri.parse('http://localhost:8000/api/auth/me'),
+  Uri.parse('http://localhost:5000/api/auth/me'),
   headers: {'Authorization': 'Bearer $token'},
 );
 
@@ -229,7 +229,7 @@ if (!user['is_email_verified']) {
 
 ```dart
 final response = await http.post(
-  Uri.parse('http://localhost:8000/api/auth/resend-verification'),
+  Uri.parse('http://localhost:5000/api/auth/resend-verification'),
   headers: {'Content-Type': 'application/json'},
   body: jsonEncode({'email': userEmail}),
 );
@@ -239,13 +239,13 @@ final response = await http.post(
 
 When user clicks email link, redirect to:
 ```
-http://localhost:8000/api/auth/verify-email?token=TOKEN
+http://localhost:5000/api/auth/verify-email?token=TOKEN
 ```
 
 Or make a POST request from your frontend:
 ```dart
 final response = await http.post(
-  Uri.parse('http://localhost:8000/api/auth/verify-email'),
+  Uri.parse('http://localhost:5000/api/auth/verify-email'),
   headers: {'Content-Type': 'application/json'},
   body: jsonEncode({'token': verificationToken}),
 );
@@ -272,7 +272,7 @@ The email utility will log detailed information about email sending:
 
 1. Register a new user:
    ```bash
-   curl -X POST http://localhost:8000/api/auth/register \
+   curl -X POST http://localhost:5000/api/auth/register \
      -H "Content-Type: application/json" \
      -d '{
        "username": "testuser",
@@ -285,12 +285,12 @@ The email utility will log detailed information about email sending:
 
 3. Click link or use token:
    ```bash
-   curl "http://localhost:8000/api/auth/verify-email?token=TOKEN_HERE"
+   curl "http://localhost:5000/api/auth/verify-email?token=TOKEN_HERE"
    ```
 
 4. Verify user status:
    ```bash
-   curl http://localhost:8000/api/auth/me \
+   curl http://localhost:5000/api/auth/me \
      -H "Authorization: Bearer YOUR_TOKEN"
    ```
 

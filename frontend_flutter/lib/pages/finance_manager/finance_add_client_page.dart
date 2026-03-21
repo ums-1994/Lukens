@@ -115,8 +115,8 @@ class _FinanceAddClientPageState extends State<FinanceAddClientPage> {
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(24),
-                color: PremiumTheme.darkBg2.withOpacity(0.9),
-                border: Border.all(color: Colors.white.withOpacity(0.06)),
+                color: PremiumTheme.darkBg2.withValues(alpha: 0.9),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -216,13 +216,13 @@ class _FinanceAddClientPageState extends State<FinanceAddClientPage> {
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: TextStyle(color: Colors.white.withOpacity(0.8)),
+        labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
         prefixIcon: Icon(icon, color: PremiumTheme.teal),
         filled: true,
-        fillColor: Colors.white.withOpacity(0.04),
+        fillColor: Colors.white.withValues(alpha: 0.04),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.white.withOpacity(0.08)),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),

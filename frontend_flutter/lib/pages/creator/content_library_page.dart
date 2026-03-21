@@ -3760,10 +3760,18 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                   ),
                   _buildNavItem(
                     icon: Icons.trending_up,
-                    label: 'Analytics',
+                    label: _isAdminUser()
+                        ? 'All analytics'
+                        : 'Analytics (My Pipeline)',
                     isActive: _currentNavIdx == 6,
                     onTap: () {
                       setState(() => _currentNavIdx = 6);
+                      _navigateToPage(
+                        context,
+                        _isAdminUser()
+                            ? 'All analytics'
+                            : 'Analytics (My Pipeline)',
+                      );
                     },
                   ),
                 ],

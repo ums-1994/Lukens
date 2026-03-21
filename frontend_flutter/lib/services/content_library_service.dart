@@ -111,8 +111,9 @@ class ContentLibraryService {
       );
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return (data as Map).map((k, v) => MapEntry(k.toString(), v))
-            as Map<String, dynamic>;
+        if (data is Map) {
+          return Map<String, dynamic>.from(data);
+        }
       }
     } catch (e) {
       print('Error fetching module version snapshot: $e');

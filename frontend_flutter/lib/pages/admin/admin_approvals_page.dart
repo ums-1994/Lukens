@@ -406,7 +406,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
                     onToggle: _toggleSidebar,
                     onSelect: (label) {
                       setState(() => _currentPage = label);
-                      _navigateToPage(context, label);
+                      _navigateToPage(label);
                     },
                   ),
                 ),
@@ -697,7 +697,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             child: InkWell(
               onTap: () {
                 setState(() => _currentPage = label);
-                _navigateToPage(context, label);
+                _navigateToPage(label);
               },
               borderRadius: BorderRadius.circular(30),
               child: Container(
@@ -740,7 +740,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           borderRadius: BorderRadius.circular(12),
           onTap: () {
             setState(() => _currentPage = label);
-            _navigateToPage(context, label);
+            _navigateToPage(label);
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1715,22 +1715,19 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     return '${diff.inDays} days ago';
   }
 
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
+  void _navigateToPage(String page) {
+    setState(() => _currentPage = page);
+
+    switch (page) {
       case 'Dashboard':
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
       case 'Approvals':
         setState(() => _activeFilter = 'pending');
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
         break;
       case 'Analytics':
+      case 'All analytics':
+      case 'My analytics':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'History':

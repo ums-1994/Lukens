@@ -519,7 +519,6 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         proposal['client']?.toString() ??
         'Unknown Client';
     final budget = proposal['budget']?.toString() ?? '0';
-    final status = proposal['status']?.toString() ?? 'unknown';
     final date = proposal['updated_at']?.toString();
 
     return Container(

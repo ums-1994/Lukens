@@ -3,7 +3,7 @@
 ## ⚡ Quick Start
 
 ```bash
-# 1. Backend is already running on http://localhost:8000
+# 1. Backend is already running on http://localhost:5000
 # 2. Content is already populated (30 modules + 20 blocks)
 # 3. Ready to use!
 ```
@@ -58,27 +58,27 @@ Assumptions (1)        - Project assumptions
 
 ### 1. Get Executive Summary Template
 ```bash
-curl "http://localhost:8000/api/modules/?category=Templates&q=Executive"
+curl "http://localhost:5000/api/modules/?category=Templates&q=Executive"
 ```
 
 ### 2. Get Company Information
 ```bash
-curl http://localhost:8000/content | jq '.[] | select(.key=="company_name")'
+curl http://localhost:5000/content | jq '.[] | select(.key=="company_name")'
 ```
 
 ### 3. Get All Templates
 ```bash
-curl "http://localhost:8000/api/modules/?category=Templates"
+curl "http://localhost:5000/api/modules/?category=Templates"
 ```
 
 ### 4. Search for Risk Content
 ```bash
-curl "http://localhost:8000/api/modules/?q=risk"
+curl "http://localhost:5000/api/modules/?q=risk"
 ```
 
 ### 5. Get Standard Terms
 ```bash
-curl http://localhost:8000/content | jq '.[] | select(.key=="terms")'
+curl http://localhost:5000/content | jq '.[] | select(.key=="terms")'
 ```
 
 ---
@@ -108,10 +108,10 @@ curl http://localhost:8000/content | jq '.[] | select(.key=="terms")'
 ### View All Content
 ```bash
 # PostgreSQL modules
-curl http://localhost:8000/api/modules/
+curl http://localhost:5000/api/modules/
 
 # SQLite blocks
-curl http://localhost:8000/content
+curl http://localhost:5000/content
 ```
 
 ### Run Demo
@@ -122,14 +122,14 @@ python demo_content_library.py
 
 ### Update Company Name
 ```bash
-curl -X PUT http://localhost:8000/content/1 \
+curl -X PUT http://localhost:5000/content/1 \
   -H "Content-Type: application/json" \
   -d '{"key":"company_name","label":"Company Name","content":"Your Company"}'
 ```
 
 ### Add New Template
 ```bash
-curl -X POST http://localhost:8000/api/modules/ \
+curl -X POST http://localhost:5000/api/modules/ \
   -H "Content-Type: application/json" \
   -d '{"title":"New Template","category":"Templates","body":"Content...","is_editable":true}'
 ```
@@ -153,19 +153,19 @@ Total Size:        ~29 KB
 
 ```bash
 # 1. Show statistics
-curl http://localhost:8000/api/modules/ | jq 'length'
+curl http://localhost:5000/api/modules/ | jq 'length'
 
 # 2. Show categories
-curl http://localhost:8000/api/modules/ | jq '.[].category' | sort -u
+curl http://localhost:5000/api/modules/ | jq '.[].category' | sort -u
 
 # 3. Show templates
-curl "http://localhost:8000/api/modules/?category=Templates" | jq '.[].title'
+curl "http://localhost:5000/api/modules/?category=Templates" | jq '.[].title'
 
 # 4. Show company info
-curl http://localhost:8000/content | jq '.[] | select(.key | startswith("company"))'
+curl http://localhost:5000/content | jq '.[] | select(.key | startswith("company"))'
 
 # 5. Search functionality
-curl "http://localhost:8000/api/modules/?q=risk" | jq '.[].title'
+curl "http://localhost:5000/api/modules/?q=risk" | jq '.[].title'
 ```
 
 ---
@@ -178,13 +178,13 @@ import requests
 # Get content
 def get_template(name):
     response = requests.get(
-        "http://localhost:8000/api/modules/",
+        "http://localhost:5000/api/modules/",
         params={"category": "Templates", "q": name}
     )
     return response.json()[0]["body"]
 
 def get_company_info(key):
-    response = requests.get("http://localhost:8000/content")
+    response = requests.get("http://localhost:5000/content")
     blocks = {b["key"]: b["content"] for b in response.json()}
     return blocks.get(key)
 
@@ -209,7 +209,7 @@ proposal = {
 - **Full Guide**: `CONTENT_LIBRARY_GUIDE.md`
 - **Inventory**: `CONTENT_LIBRARY_INVENTORY.md`
 - **Summary**: `CONTENT_LIBRARY_SUMMARY.md`
-- **API Docs**: http://localhost:8000/docs
+- **API Docs**: http://localhost:5000/docs
 
 ---
 
@@ -239,4 +239,4 @@ proposal = {
 
 ---
 
-**Quick access: http://localhost:8000/docs** 🚀
+**Quick access: http://localhost:5000/docs** 🚀

@@ -33,7 +33,7 @@ class AdminSidebar extends StatelessWidget {
       assetPath: 'assets/images/Time Allocation_Approval_Blue.png',
     ),
     _AdminNavItem(
-      label: 'Analytics',
+      label: 'All analytics',
       assetPath: 'assets/images/analytics.png',
     ),
     _AdminNavItem(
@@ -44,6 +44,11 @@ class AdminSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isAnalyticsSelected = currentPage == 'Analytics' ||
+        currentPage == 'All analytics' ||
+        currentPage == 'My analytics' ||
+        currentPage == 'Analytics (My Pipeline)';
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       width: isCollapsed ? 90.0 : 250.0,
@@ -104,7 +109,9 @@ class AdminSidebar extends StatelessWidget {
                         _AdminSidebarNavItem(
                           label: item.label,
                           assetPath: item.assetPath,
-                          isActive: currentPage == item.label,
+                          isActive: item.label == 'All analytics'
+                              ? isAnalyticsSelected
+                              : currentPage == item.label,
                           isCollapsed: effectiveCollapsed,
                           onTap: () => onSelect(item.label),
                           accent: _adminAccent,
