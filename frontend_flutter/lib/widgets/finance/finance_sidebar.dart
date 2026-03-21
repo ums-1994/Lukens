@@ -28,11 +28,6 @@ class FinanceSidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isAnalyticsSelected = currentPage == 'Analytics' ||
-        currentPage == 'All analytics' ||
-        currentPage == 'My analytics' ||
-        currentPage == 'Analytics (My Pipeline)';
-
     final items = <_FinanceNavItem>[
       const _FinanceNavItem(label: 'Dashboard', icon: Icons.dashboard_outlined),
       _FinanceNavItem(
@@ -49,8 +44,7 @@ class FinanceSidebar extends StatelessWidget {
           label: 'Audit',
           icon: Icons.receipt_long_outlined,
         ),
-      const _FinanceNavItem(
-          label: 'My analytics', icon: Icons.analytics_outlined),
+      const _FinanceNavItem(label: 'Analytics', icon: Icons.analytics_outlined),
       const _FinanceNavItem(label: 'Settings', icon: Icons.settings_outlined),
     ];
 
@@ -112,9 +106,7 @@ class FinanceSidebar extends StatelessWidget {
                           label: item.label,
                           icon: item.icon,
                           badge: item.badge,
-                          isActive: item.label == 'My analytics'
-                              ? isAnalyticsSelected
-                              : currentPage == item.label,
+                          isActive: currentPage == item.label,
                           isCollapsed: effectiveCollapsed,
                           onTap: () => onSelect(item.label),
                           accent: _accent,

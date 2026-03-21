@@ -33,6 +33,19 @@ class AppSideNav extends StatefulWidget {
   static const double itemHeight = 44.0; // Each nav item height
   static const double headerHeight = 64.0; // Fixed header height
 
+  static const List<Map<String, String>> _items = [
+    {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
+    {'label': 'My Proposals', 'icon': 'assets/images/My_Proposals.png'},
+    {'label': 'Templates', 'icon': 'assets/images/content_library.png'},
+    {'label': 'Content Library', 'icon': 'assets/images/content_library.png'},
+    {'label': 'Client Management', 'icon': 'assets/images/collaborations.png'},
+    {
+      'label': 'Approved Proposals',
+      'icon': 'assets/images/Time Allocation_Approval_Blue.png'
+    },
+    {'label': 'Analytics (My Pipeline)', 'icon': 'assets/images/analytics.png'},
+  ];
+
   @override
   State<AppSideNav> createState() => _AppSideNavState();
 }
@@ -42,25 +55,7 @@ class _AppSideNavState extends State<AppSideNav> {
 
   @override
   Widget build(BuildContext context) {
-    assert(() {
-      _buildIcon;
-      return true;
-    }());
     final effectiveCollapsed = widget.isCollapsed;
-    final analyticsLabel =
-        widget.isAdmin ? 'All analytics' : 'Analytics (My Pipeline)';
-    final items = <Map<String, String>>[
-      {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
-      {'label': 'My Proposals', 'icon': 'assets/images/My_Proposals.png'},
-      {'label': 'Templates', 'icon': 'assets/images/content_library.png'},
-      {'label': 'Content Library', 'icon': 'assets/images/content_library.png'},
-      {'label': 'Client Management', 'icon': 'assets/images/collaborations.png'},
-      {
-        'label': 'Approved Proposals',
-        'icon': 'assets/images/Time Allocation_Approval_Blue.png'
-      },
-      {'label': analyticsLabel, 'icon': 'assets/images/analytics.png'},
-    ];
 
     return GestureDetector(
       onTap: () {
@@ -75,8 +70,8 @@ class _AppSideNavState extends State<AppSideNav> {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Colors.black.withValues(alpha: 0.3),
-              Colors.black.withValues(alpha: 0.2),
+              Colors.black.withOpacity(0.3),
+              Colors.black.withOpacity(0.2),
             ],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
@@ -126,7 +121,7 @@ class _AppSideNavState extends State<AppSideNav> {
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      for (final item in items)
+                      for (final item in AppSideNav._items)
                         if (!_shouldHideItemForAdmin(item['label']!))
                           _buildNavItem(
                             label: item['label']!,
@@ -187,7 +182,6 @@ class _AppSideNavState extends State<AppSideNav> {
   }
 
   bool _shouldHideItemForAdmin(String label) {
-    // Keep the nav consistent across creator/manager/admin dashboards.
     return false;
   }
 
@@ -235,7 +229,7 @@ class _AppSideNavState extends State<AppSideNav> {
     final border = isActive
         ? Border.all(color: const Color(0xFFE74C3C), width: 1)
         : isHovering
-            ? Border.all(color: Colors.white.withValues(alpha: 0.18), width: 1)
+            ? Border.all(color: Colors.white.withOpacity(0.18), width: 1)
             : null;
 
     return Container(
@@ -277,9 +271,9 @@ class _AppSideNavState extends State<AppSideNav> {
     required bool isHovering,
   }) {
     final bg = isActive
-        ? const Color(0xFFC10D00).withValues(alpha: 0.16)
+        ? const Color(0xFFC10D00).withOpacity(0.16)
         : isHovering
-            ? Colors.white.withValues(alpha: 0.08)
+            ? Colors.white.withOpacity(0.08)
             : Colors.transparent;
 
     return Container(
@@ -300,11 +294,11 @@ class _AppSideNavState extends State<AppSideNav> {
   Widget _buildWhiteCircleIcon(String assetPath, bool isActive) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.10),
+        color: Colors.white.withOpacity(0.10),
         shape: BoxShape.circle,
         border: isActive
             ? Border.all(color: const Color(0xFFE74C3C), width: 1)
-            : Border.all(color: Colors.white.withValues(alpha: 0.10), width: 1),
+            : Border.all(color: Colors.white.withOpacity(0.10), width: 1),
       ),
       padding: const EdgeInsets.all(10),
       child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
