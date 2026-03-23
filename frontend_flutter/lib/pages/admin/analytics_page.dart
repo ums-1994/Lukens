@@ -1846,6 +1846,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     int proposalsWithBudget = 0;
     int winCount = 0;
     int lossCount = 0;
+    int sentCount = 0;
     int activeCount = 0;
     final Map<String, int> statusCounts = {};
     final List<_ProposalPerformanceRow> performanceRows = [];
@@ -1870,6 +1871,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         winCount++;
       } else if (isLoss) {
         lossCount++;
+      }
+
+      final isSentLike = statusLower.contains('sent to client') ||
+          statusLower.contains('released') ||
+          statusLower.contains('in review') ||
+          statusLower.contains('review') ||
+          statusLower.contains('pending approval');
+      if (isSentLike) {
+        sentCount++;
       }
       if (!_isClosedStatus(statusLower)) {
         activeCount++;
@@ -1919,12 +1929,16 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     });
     final recentProposals = performanceRows.take(5).toList();
 
-    final double winRate = winCount + lossCount > 0
-        ? (winCount / (winCount + lossCount)) * 100
-        : 0.0;
-    final double lossRate = winCount + lossCount > 0
-        ? (lossCount / (winCount + lossCount)) * 100
-        : 0.0;
+    final int decisions = winCount + lossCount;
+    double winRate = decisions > 0 ? (winCount / decisions) * 100 : 0.0;
+    double lossRate = decisions > 0 ? (lossCount / decisions) * 100 : 0.0;
+
+    // If we don't have explicit loss statuses yet, fall back to a pipeline-style
+    // conversion: Signed / Sent-to-Client (and similar "sent-like" stages).
+    if (decisions == 0 && sentCount > 0) {
+      winRate = (winCount / sentCount) * 100;
+      lossRate = 100 - winRate;
+    }
     final double averageDealSize =
         proposalsWithBudget > 0 ? totalRevenue / proposalsWithBudget : 0.0;
 

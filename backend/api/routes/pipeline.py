@@ -167,6 +167,25 @@ def owner_leaderboard(username=None, user_id=None, email=None):
         )
         existing_columns = {r[0] for r in cursor.fetchall() or []}
 
+        owner_col = None
+        if "owner_id" in existing_columns:
+            owner_col = "owner_id"
+        elif "user_id" in existing_columns:
+            owner_col = "user_id"
+        if not owner_col:
+            return jsonify({"detail": "Proposals table is missing owner column"}), 500
+
+        cursor.execute(
+            """
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'proposals'
+            """
+        )
+        col_types = {r[0]: r[1] for r in cursor.fetchall() or []}
+        owner_col_type = (col_types.get(owner_col) or "").lower()
+        owner_col_is_text = owner_col_type in {"character varying", "text", "varchar"}
+
         proposal_type_col = None
         if "template_type" in existing_columns:
             proposal_type_col = "template_type"
@@ -195,8 +214,12 @@ def owner_leaderboard(username=None, user_id=None, email=None):
 
         # Scope filtering
         if resolved_owner_id:
-            where.append("p.owner_id = %s")
-            params.append(resolved_owner_id)
+            if owner_col_is_text:
+                where.append(f"p.{owner_col}::text = %s::text")
+                params.append(str(resolved_owner_id))
+            else:
+                where.append(f"p.{owner_col} = %s")
+                params.append(resolved_owner_id)
         else:
             if scope == "all":
                 pass
@@ -220,27 +243,41 @@ def owner_leaderboard(username=None, user_id=None, email=None):
                     ), 200
                 # Avoid psycopg2 adaptation issues passing Python lists to int[] casts.
                 placeholders = ",".join(["%s"] * len(team_owner_ids))
-                where.append(f"p.owner_id IN ({placeholders})")
-                params.extend(team_owner_ids)
+                if owner_col_is_text:
+                    where.append(f"p.{owner_col}::text IN ({placeholders})")
+                    params.extend([str(x) for x in team_owner_ids])
+                else:
+                    where.append(f"p.{owner_col} IN ({placeholders})")
+                    params.extend(team_owner_ids)
+            elif scope == "team" and team_owner_ids is None:
+                pass
             else:
                 if owner_id:
-                    where.append("p.owner_id = %s")
-                    params.append(owner_id)
+                    if owner_col_is_text:
+                        where.append(f"p.{owner_col}::text = %s::text")
+                        params.append(str(owner_id))
+                    else:
+                        where.append(f"p.{owner_col} = %s")
+                        params.append(owner_id)
 
         # Sent vs signed classification using status text
         # sent: Released or In Review
         # signed: Signed
         sql = f"""
             SELECT
-                u.id AS owner_id,
-                COALESCE(u.username, u.email, u.id::text) AS owner,
+                p.{owner_col}::text AS owner_key,
+                COALESCE(u.username, u.email, p.{owner_col}::text) AS owner,
                 SUM(CASE WHEN (LOWER(COALESCE(p.status,'')) LIKE '%%sent to client%%' OR LOWER(COALESCE(p.status,'')) LIKE '%%released%%' OR LOWER(COALESCE(p.status,'')) LIKE '%%review%%' OR LOWER(COALESCE(p.status,'')) LIKE '%%approved%%' OR LOWER(COALESCE(p.status,'')) LIKE '%%pending approval%%') THEN 1 ELSE 0 END) AS sent_count,
                 SUM(CASE WHEN (LOWER(COALESCE(p.status,'')) LIKE '%%signed%%' OR LOWER(COALESCE(p.status,'')) LIKE '%%won%%') THEN 1 ELSE 0 END) AS signed_count,
                 COUNT(*) AS total_count
             FROM proposals p
-            JOIN users u ON u.id = p.owner_id
+            LEFT JOIN users u ON (
+                u.id::text = p.{owner_col}::text
+                OR LOWER(COALESCE(u.email,'')) = LOWER(p.{owner_col}::text)
+                OR LOWER(COALESCE(u.username,'')) = LOWER(p.{owner_col}::text)
+            )
             WHERE {' AND '.join(where)}
-            GROUP BY u.id, u.username, u.email
+            GROUP BY p.{owner_col}::text, u.username, u.email
             ORDER BY signed_count DESC, sent_count DESC, total_count DESC
         """
 
@@ -266,13 +303,21 @@ def owner_leaderboard(username=None, user_id=None, email=None):
         for r in rows:
             if r is None or len(r) < expected_cols:
                 continue
-            owner_id_val, owner_label, sent_raw, signed_raw, total_raw = r[:expected_cols]
+            owner_key, owner_label, sent_raw, signed_raw, total_raw = r[:expected_cols]
             sent = int(sent_raw or 0)
             signed = int(signed_raw or 0)
             conversion = (signed / sent) if sent > 0 else 0.0
+
+            parsed_owner_id = None
+            try:
+                if owner_key is not None:
+                    parsed_owner_id = int(str(owner_key))
+            except Exception:
+                parsed_owner_id = None
+
             result_rows.append(
                 {
-                    "owner_id": int(owner_id_val),
+                    "owner_id": parsed_owner_id,
                     "owner": owner_label,
                     "sent": sent,
                     "signed": signed,
@@ -913,7 +958,9 @@ def completion_rates(username=None, user_id=None, email=None):
 
         for pid, title, status, created_at, updated_at, client, owner_id_row, owner, sections_raw, content_raw in cursor.fetchall() or []:
             # Prefer the richer `content` column; fall back to `sections`
-            scored = _score_proposal(content_raw or sections_raw)
+            scored = _score_proposal(content_raw)
+            if (not scored) or int(scored.get('score') or 0) == 0:
+                scored = _score_proposal(sections_raw)
             issues = _missing_section_names(scored)
             ok = scored['score'] >= _PASS_THRESHOLD
             if ok:
