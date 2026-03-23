@@ -132,7 +132,16 @@ CORS(
     app,
     origins=_cors_origins,
     supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "X-AI-Request-ID"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Accept",
+        "X-AI-Request-ID",
+        "X-Client-Device-Id",
+        "X-Client-Session-Token",
+        "X-Device-Id",
+    ],
     methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
     expose_headers=["Content-Type", "Authorization"],
 )
@@ -192,7 +201,10 @@ def handle_options_preflight(remaining=None):
     if origin:
         resp.headers['Access-Control-Allow-Origin'] = origin
     resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
-    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID'
+    resp.headers['Access-Control-Allow-Headers'] = (
+        'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID, '
+        'X-Client-Device-Id, X-Client-Session-Token, X-Device-Id'
+    )
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
     return resp
 
