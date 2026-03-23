@@ -205,7 +205,8 @@ def _load_proposals_with_finance(year: int) -> List[ProposalFinanceRow]:
         if "updated_at" not in cols:
             updated_expr = "p.created_at"
 
-        content_expr = "p.content" if "content" in cols else ("p.sections" if "sections" in cols else "NULL::text")
+        content_expr = "p.content" if "content" in cols else "NULL::text"
+        sections_expr = "p.sections" if "sections" in cols else "NULL::text"
 
         # Pull a numeric amount directly from the proposals table when available.
         # This matches what the Flutter UI shows in the proposals list.
@@ -238,6 +239,7 @@ def _load_proposals_with_finance(year: int) -> List[ProposalFinanceRow]:
                 {target_close_expr} AS target_close_at,
                 {amount_expr} AS amount_field,
                 {content_expr} AS content,
+                {sections_expr} AS sections,
                 lr.risk_score AS risk_score
             FROM proposals p
             LEFT JOIN latest_risk lr ON lr.proposal_id = p.id
@@ -253,6 +255,7 @@ def _load_proposals_with_finance(year: int) -> List[ProposalFinanceRow]:
             continue
 
         content_obj = _safe_json_load(r.get("content"))
+        sections_obj = _safe_json_load(r.get("sections"))
         amount_field = None
         try:
             if r.get("amount_field") is not None:
@@ -267,6 +270,10 @@ def _load_proposals_with_finance(year: int) -> List[ProposalFinanceRow]:
             amount = float(amount_field)
         else:
             amount = float(_extract_amount_from_content(content_obj) or 0.0)
+            # Fallback: some deployments store pricing tables in the `sections` column
+            # while leaving `content` as non-JSON text.
+            if amount <= 0 and sections_obj is not None:
+                amount = float(_extract_amount_from_content(sections_obj) or 0.0)
 
         risk_score = r.get("risk_score")
         ai_probability = None
