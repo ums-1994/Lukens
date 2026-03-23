@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/auth_service.dart';
 import '../../services/firebase_service.dart';
 import '../../services/role_service.dart';
@@ -103,11 +104,24 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  Future<String?> _getSafeFinanceRoleHint() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedRole = prefs.getString('user_role');
+      if (savedRole == null) return null;
+      if (savedRole.contains('finance')) {
+        return 'finance_manager';
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _loginWithGoogle() async {
     setState(() => _isLoading = true);
     try {
-      final firebaseCredential =
-          await FirebaseService.signInWithGoogle();
+      final firebaseCredential = await FirebaseService.signInWithGoogle();
 
       if (firebaseCredential == null || firebaseCredential.user == null) {
         if (mounted) {
@@ -139,7 +153,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id_token': firebaseIdToken}),
+        body: json.encode({
+          'id_token': firebaseIdToken,
+          if (await _getSafeFinanceRoleHint() != null)
+            'role': await _getSafeFinanceRoleHint(),
+        }),
       );
 
       if (!mounted) return;
@@ -200,10 +218,13 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         final rawRole = userProfile['role']?.toString() ?? '';
         final userRole = rawRole.toLowerCase().trim();
         final roleKey = userRole.replaceAll('-', '_');
-        final isAdmin = roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
+        final isAdmin =
+            roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
         final isFinance = roleKey.startsWith('finance') ||
             roleKey == 'financial_manager' ||
-            roleKey == 'financial manager';
+            roleKey == 'finance_manager' ||
+            roleKey == 'financial manager' ||
+            roleKey == 'finance manager';
 
         String dashboardRoute;
         if (isAdmin) {
@@ -297,7 +318,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       // sent to finance dashboard). Backend uses DB role for existing users.
       print('📡 Sending Firebase token to backend...');
 
-      final requestBody = {'id_token': firebaseIdToken};
+      final financeRoleHint = await _getSafeFinanceRoleHint();
+      final requestBody = {
+        'id_token': firebaseIdToken,
+        if (financeRoleHint != null) 'role': financeRoleHint,
+      };
 
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
@@ -358,15 +383,15 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           String dashboardRoute;
 
           final roleKey = userRole.replaceAll('-', '_');
-          final isAdmin = roleKey == 'admin' ||
-              roleKey == 'ceo' ||
-              roleKey == 'approver';
+          final isAdmin =
+              roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
           final isFinance = roleKey.startsWith('finance') ||
               roleKey == 'financial_manager' ||
-              roleKey == 'financial manager';
-          final isManager = roleKey == 'manager' ||
-              roleKey == 'creator' ||
-              roleKey == 'user';
+              roleKey == 'finance_manager' ||
+              roleKey == 'financial manager' ||
+              roleKey == 'finance manager';
+          final isManager =
+              roleKey == 'manager' || roleKey == 'creator' || roleKey == 'user';
 
           if (isAdmin) {
             dashboardRoute = '/approver_dashboard';

@@ -281,6 +281,40 @@ def init_pg_schema():
         except Exception as e:
             print(f"[WARN] Could not add is_email_verified column (may already exist): {e}")
 
+        # Add firebase_uid column if it doesn't exist (needed for deterministic Firebase user linking)
+        try:
+            _exec_with_savepoint(
+                '''
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(255)
+                '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not add firebase_uid column (may already exist): {e}")
+
+        # Index firebase_uid for fast lookup
+        try:
+            _exec_with_savepoint(
+                '''
+                CREATE INDEX IF NOT EXISTS idx_users_firebase_uid
+                ON users(firebase_uid)
+                '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not create idx_users_firebase_uid index: {e}")
+
+        # Best-effort uniqueness for firebase_uid when present (multiple NULLs allowed)
+        try:
+            _exec_with_savepoint(
+                '''
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_users_firebase_uid
+                ON users(firebase_uid)
+                WHERE firebase_uid IS NOT NULL
+                '''
+            )
+        except Exception as e:
+            print(f"[INFO] Unique index on firebase_uid not added (may already exist or duplicates present): {e}")
+
         # Proposals table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
         id SERIAL PRIMARY KEY,
