@@ -541,15 +541,30 @@ def get_proposals(username=None, user_id=None, email=None):
                     row_dict = dict(zip(column_names, row))
                     
                     # Parse sections JSON
-                    sections_data = {}
+                    sections_data: object = {}
                     if 'sections' in row_dict and row_dict['sections']:
                         try:
                             if isinstance(row_dict['sections'], str):
                                 sections_data = json.loads(row_dict['sections'])
-                            elif isinstance(row_dict['sections'], dict):
+                            elif isinstance(row_dict['sections'], (dict, list)):
                                 sections_data = row_dict['sections']
                         except (json.JSONDecodeError, TypeError):
                             sections_data = {}
+
+                    # Fallback: some environments store sections inside content JSON.
+                    if (not sections_data or sections_data == {}) and row_dict.get('content'):
+                        try:
+                            content_obj = (
+                                json.loads(row_dict['content'])
+                                if isinstance(row_dict['content'], str)
+                                else row_dict['content']
+                            )
+                            if isinstance(content_obj, dict) and isinstance(content_obj.get('sections'), list):
+                                sections_data = content_obj.get('sections')
+                            elif isinstance(content_obj, list):
+                                sections_data = content_obj
+                        except Exception:
+                            pass
                     
                     # Build proposal object
                     proposal = {
