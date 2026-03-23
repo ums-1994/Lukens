@@ -414,7 +414,11 @@ def finance_summary(username=None, user_id=None, email=None):
         if _is_signed(p):
             signed_total += 1
 
-    win_rate = (signed_total / sent_total) if sent_total > 0 else 0.0
+    # Some deployments mark proposals directly as Signed without ever passing
+    # through an explicit Sent/Released status. If we only divide by sent_total
+    # we can incorrectly show 0% even though signed deals exist.
+    denom = sent_total if sent_total > 0 else signed_total
+    win_rate = (signed_total / denom) if denom > 0 else 0.0
     avg_deal = (signed_revenue / signed_deals) if signed_deals > 0 else 0.0
 
     return (
@@ -521,12 +525,14 @@ def proposal_win_rate(username=None, user_id=None, email=None):
             signed_total += 1
             by_month[month]["signed"] += 1
 
-    win_rate = (signed_total / sent_total) if sent_total > 0 else 0.0
+    denom = sent_total if sent_total > 0 else signed_total
+    win_rate = (signed_total / denom) if denom > 0 else 0.0
     trend = []
     for month in sorted(by_month.keys()):
         sent = int(by_month[month]["sent"])
         signed = int(by_month[month]["signed"])
-        rate = (signed / sent) if sent > 0 else 0.0
+        month_denom = sent if sent > 0 else signed
+        rate = (signed / month_denom) if month_denom > 0 else 0.0
         trend.append({"month": month, "sent": sent, "signed": signed, "win_rate": round(rate, 4)})
 
     return jsonify(
