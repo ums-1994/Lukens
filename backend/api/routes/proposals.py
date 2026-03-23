@@ -47,6 +47,70 @@ def _is_manager_role(role_key: str) -> bool:
     return role_key in ['manager', 'creator', 'user'] or not role_key
 
 
+def _safe_json_load(value):
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        s = value.strip()
+        if not s:
+            return None
+        if not (s.startswith('{') or s.startswith('[')):
+            return None
+        try:
+            return json.loads(s)
+        except Exception:
+            return None
+    return None
+
+
+def _extract_amount_from_content(content_data):
+    if not content_data:
+        return 0.0
+
+    def _parse_num(v):
+        if v is None:
+            return 0.0
+        if isinstance(v, (int, float)):
+            return float(v)
+        cleaned = str(v).replace(',', '').replace('R', '').replace('$', '').strip()
+        try:
+            return float(cleaned)
+        except Exception:
+            return 0.0
+
+    if isinstance(content_data, dict):
+        for key in ['budget', 'amount', 'total', 'value', 'price']:
+            if key in content_data:
+                amount = _parse_num(content_data.get(key))
+                if amount > 0:
+                    return amount
+
+    if isinstance(content_data, dict) and 'sections' in content_data:
+        total = 0.0
+        for section in content_data.get('sections', []) or []:
+            if not isinstance(section, dict):
+                continue
+            for table in section.get('tables', []) or []:
+                if isinstance(table, dict) and table.get('type') == 'price':
+                    cells = table.get('cells', [])
+                    if isinstance(cells, list) and len(cells) > 1:
+                        header_row = cells[0] if isinstance(cells[0], list) else []
+                        total_col_idx = None
+                        for i, header in enumerate(header_row):
+                            if isinstance(header, str) and 'total' in header.lower():
+                                total_col_idx = i
+                                break
+                        if total_col_idx is not None:
+                            for row in cells[1:]:
+                                if isinstance(row, list) and len(row) > total_col_idx:
+                                    total += _parse_num(row[total_col_idx])
+        return total
+
+    return 0.0
+
+
 @bp.post("/proposals")
 @token_required
 def create_proposal(username=None, user_id=None, email=None, auto_created=False):
@@ -590,6 +654,16 @@ def get_proposals(username=None, user_id=None, email=None):
                             proposal['budget'] = None
                     else:
                         proposal['budget'] = None
+
+                    if not proposal.get('budget'):
+                        content_obj = _safe_json_load(proposal.get('content'))
+                        derived = 0.0
+                        if isinstance(content_obj, dict):
+                            derived = _extract_amount_from_content(content_obj)
+                        if (not derived) and sections_data:
+                            derived = _extract_amount_from_content({'sections': sections_data.get('sections') if isinstance(sections_data, dict) else sections_data})
+                        if derived and derived > 0:
+                            proposal['budget'] = float(derived)
                     
                     proposal['timeline_days'] = row_dict.get('timeline_days')
                     

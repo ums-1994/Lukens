@@ -827,6 +827,180 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  Future<Map<String, dynamic>?> getApprovalsSummaryAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/approvals/summary").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) return jsonDecode(r.body);
+    } catch (e) {
+      print('Error fetching approvals summary analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getApprovalsBottlenecksAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+    int? staleDays,
+    int? limit,
+  }) async {
+    try {
+      final uri =
+          Uri.parse("$baseUrl/api/analytics/approvals/bottlenecks").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+          if (staleDays != null) 'stale_days': staleDays.toString(),
+          if (limit != null) 'limit': limit.toString(),
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) return jsonDecode(r.body);
+    } catch (e) {
+      print('Error fetching approvals bottlenecks analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getReadinessGovernanceAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+    int? passThreshold,
+    int? limit,
+  }) async {
+    try {
+      final uri =
+          Uri.parse("$baseUrl/api/analytics/readiness/governance").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+          if (passThreshold != null)
+            'pass_threshold': passThreshold.toString(),
+          if (limit != null) 'limit': limit.toString(),
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) return jsonDecode(r.body);
+    } catch (e) {
+      print('Error fetching readiness governance analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getRiskGateDetailsAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+    bool? blockedOnly,
+    int? limit,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/risk-gate/details").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+          if (blockedOnly != null) 'blocked_only': blockedOnly ? '1' : '0',
+          if (limit != null) 'limit': limit.toString(),
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) return jsonDecode(r.body);
+    } catch (e) {
+      print('Error fetching risk gate details analytics: $e');
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> getStageAgingAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? scope,
+    String? department,
+    int? staleDays,
+    int? limit,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/stage-aging").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+          if (staleDays != null) 'stale_days': staleDays.toString(),
+          if (limit != null) 'limit': limit.toString(),
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) return jsonDecode(r.body);
+    } catch (e) {
+      print('Error fetching stage aging analytics: $e');
+    }
+    return null;
+  }
+
   Future<Map<String, dynamic>?> getCollaborationLoadAnalytics({
     String? startDate,
     String? endDate,

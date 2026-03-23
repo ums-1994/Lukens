@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
@@ -126,6 +125,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final region = _globalRegionCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
+      final departmentFilter = _isAdminUser() ? null : department;
 
       final data = await context.read<AppState>().getClientEngagementAnalytics(
             startDate: startDate,
@@ -135,7 +135,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             client: client.isEmpty ? null : client,
             region: region.isEmpty ? null : region,
             scope: _cycleTimeScope,
-            department: department.isEmpty ? null : department,
+            department: (departmentFilter == null || departmentFilter.isEmpty)
+                ? null
+                : departmentFilter,
           );
       return data;
     } catch (e) {
@@ -157,6 +159,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final client = _globalClientCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
+      final departmentFilter = _isAdminUser() ? null : department;
       final app = context.read<AppState>();
 
       final results = await Future.wait([
@@ -167,7 +170,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           proposalType: proposalType.isEmpty ? null : proposalType,
           client: client.isEmpty ? null : client,
           scope: _cycleTimeScope,
-          department: department.isEmpty ? null : department,
+          department: (departmentFilter == null || departmentFilter.isEmpty)
+              ? null
+              : departmentFilter,
           stage: _pipelineStageFilter,
         ),
         app.getCompletionRatesAnalytics(
@@ -177,18 +182,495 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           proposalType: proposalType.isEmpty ? null : proposalType,
           client: client.isEmpty ? null : client,
           scope: _cycleTimeScope,
-          department: department.isEmpty ? null : department,
+          department: (departmentFilter == null || departmentFilter.isEmpty)
+              ? null
+              : departmentFilter,
+        ),
+        app.getApprovalsSummaryAnalytics(
+          startDate: startDate,
+          endDate: endDate,
+          owner: owner.isEmpty ? null : owner,
+          proposalType: proposalType.isEmpty ? null : proposalType,
+          client: client.isEmpty ? null : client,
+          scope: _cycleTimeScope,
+          department: (departmentFilter == null || departmentFilter.isEmpty)
+              ? null
+              : departmentFilter,
+        ),
+        app.getApprovalsBottlenecksAnalytics(
+          startDate: startDate,
+          endDate: endDate,
+          owner: owner.isEmpty ? null : owner,
+          proposalType: proposalType.isEmpty ? null : proposalType,
+          client: client.isEmpty ? null : client,
+          scope: _cycleTimeScope,
+          department: (departmentFilter == null || departmentFilter.isEmpty)
+              ? null
+              : departmentFilter,
+        ),
+        app.getReadinessGovernanceAnalytics(
+          startDate: startDate,
+          endDate: endDate,
+          owner: owner.isEmpty ? null : owner,
+          proposalType: proposalType.isEmpty ? null : proposalType,
+          client: client.isEmpty ? null : client,
+          scope: _cycleTimeScope,
+          department: (departmentFilter == null || departmentFilter.isEmpty)
+              ? null
+              : departmentFilter,
+        ),
+        app.getRiskGateDetailsAnalytics(
+          startDate: startDate,
+          endDate: endDate,
+          owner: owner.isEmpty ? null : owner,
+          proposalType: proposalType.isEmpty ? null : proposalType,
+          client: client.isEmpty ? null : client,
+          scope: _cycleTimeScope,
+          department: (departmentFilter == null || departmentFilter.isEmpty)
+              ? null
+              : departmentFilter,
+        ),
+        app.getStageAgingAnalytics(
+          startDate: startDate,
+          endDate: endDate,
+          owner: owner.isEmpty ? null : owner,
+          proposalType: proposalType.isEmpty ? null : proposalType,
+          client: client.isEmpty ? null : client,
+          scope: _cycleTimeScope,
+          department: (departmentFilter == null || departmentFilter.isEmpty)
+              ? null
+              : departmentFilter,
         ),
       ]);
 
       return {
         'pipeline': results[0],
         'completion_rates': results[1],
+        'approvals_summary': results[2],
+        'approvals_bottlenecks': results[3],
+        'readiness_governance': results[4],
+        'risk_gate_details': results[5],
+        'stage_aging': results[6],
       };
     } catch (e) {
       print('Pipeline bundle exception: $e');
       return null;
     }
+  }
+
+  Widget _buildMiniKpiRow(List<Map<String, dynamic>> items) {
+    final safeItems = items.where((e) => (e['label'] ?? '').toString().trim().isNotEmpty);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 12.0;
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
+
+        final tileCount = math.max(safeItems.length, 1);
+        final raw = (maxWidth - (spacing * (tileCount - 1))) / tileCount;
+        final tileWidth = raw.clamp(120.0, 180.0);
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: safeItems.map((item) {
+            final accent = (item['accent'] is Color)
+                ? item['accent'] as Color
+                : Colors.white.withValues(alpha: 0.70);
+            final iconData = item['icon'] is IconData
+                ? item['icon'] as IconData
+                : Icons.analytics_outlined;
+
+            return ConstrainedBox(
+              constraints: BoxConstraints.tightFor(width: tileWidth),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      accent.withValues(alpha: 0.14),
+                      Colors.white.withValues(alpha: 0.05),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.20),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: accent.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Icon(
+                            iconData,
+                            size: 16,
+                            color: Colors.white.withValues(alpha: 0.90),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            (item['label'] ?? '').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: PremiumTheme.bodySmall.copyWith(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      (item['value'] ?? '--').toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: PremiumTheme.displayMedium.copyWith(
+                        fontSize: 26,
+                        height: 1.1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildKeyValueList({
+    required String title,
+    required List<Map> items,
+    required String labelKey,
+    required String valueKey,
+    int maxItems = 6,
+  }) {
+    final rows = items.take(maxItems).toList();
+    final maxValue = rows.fold<int>(0, (m, r) {
+      final raw = r[valueKey];
+      final v = (raw is num)
+          ? raw.toInt()
+          : (int.tryParse((raw ?? '0').toString()) ?? 0);
+      return v > m ? v : m;
+    });
+
+    if (rows.isEmpty) {
+      return Text(
+        'No data for selected filters.',
+        style: PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+      );
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: PremiumTheme.bodyMedium.copyWith(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final r in rows)
+            Builder(
+              builder: (context) {
+                final raw = r[valueKey];
+                final v = (raw is num)
+                    ? raw.toInt()
+                    : (int.tryParse((raw ?? '0').toString()) ?? 0);
+                final ratio = maxValue <= 0 ? 0.0 : (v / maxValue).clamp(0.0, 1.0);
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              (r[labelKey] ?? '').toString(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: PremiumTheme.bodySmall
+                                  .copyWith(color: Colors.white70),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.12),
+                              ),
+                            ),
+                            child: Text(
+                              v.toString(),
+                              style: PremiumTheme.bodySmall.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: SizedBox(
+                          height: 6,
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: Container(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
+                              FractionallySizedBox(
+                                widthFactor: ratio,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        PremiumTheme.info
+                                            .withValues(alpha: 0.85),
+                                        PremiumTheme.info
+                                            .withValues(alpha: 0.35),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildApprovalsCard(
+    Map<String, dynamic>? summary,
+    Map<String, dynamic>? bottlenecks,
+  ) {
+    final totals = (summary?['totals'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final pending = (totals['pending'] is num) ? (totals['pending'] as num).toInt() : 0;
+    final approved = (totals['approved'] is num) ? (totals['approved'] as num).toInt() : 0;
+    final avgHoursRaw = totals['avg_approval_hours'];
+    final avgHours = (avgHoursRaw is num) ? avgHoursRaw.toDouble() : double.nan;
+
+    final aging = (bottlenecks?['aging_buckets'] as List?) ?? const [];
+    final topAging = aging.whereType<Map>().toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildMiniKpiRow([
+          {
+            'label': 'Pending',
+            'value': pending.toString(),
+            'icon': Icons.hourglass_top_rounded,
+            'accent': PremiumTheme.warning,
+          },
+          {
+            'label': 'Approved',
+            'value': approved.toString(),
+            'icon': Icons.verified_rounded,
+            'accent': PremiumTheme.success,
+          },
+          {
+            'label': 'Avg approval (hrs)',
+            'value': avgHours.isNaN ? '--' : avgHours.toStringAsFixed(1),
+            'icon': Icons.schedule_rounded,
+            'accent': PremiumTheme.info,
+          },
+        ]),
+        const SizedBox(height: 16),
+        _buildKeyValueList(
+          title: 'Aging buckets',
+          items: topAging,
+          labelKey: 'bucket',
+          valueKey: 'count',
+          maxItems: 6,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReadinessGovernanceCard(Map<String, dynamic>? data) {
+    final totals = (data?['totals'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final blocked = (totals['blocked'] is num) ? (totals['blocked'] as num).toInt() : 0;
+    final passRate = (totals['pass_rate'] is num) ? (totals['pass_rate'] as num).toInt() : 0;
+    final missing = (data?['missing_sections'] as List?) ?? const [];
+    final topMissing = missing.whereType<Map>().toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildMiniKpiRow([
+          {
+            'label': 'Pass rate',
+            'value': '$passRate%',
+            'icon': Icons.insights_rounded,
+            'accent': PremiumTheme.info,
+          },
+          {
+            'label': 'Blocked',
+            'value': blocked.toString(),
+            'icon': Icons.block_rounded,
+            'accent': PremiumTheme.error,
+          },
+        ]),
+        const SizedBox(height: 16),
+        _buildKeyValueList(
+          title: 'Top missing sections',
+          items: topMissing,
+          labelKey: 'section',
+          valueKey: 'count',
+          maxItems: 6,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRiskGateDetailsCard(Map<String, dynamic>? data) {
+    final counts = (data?['counts'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final pass = (counts['PASS'] is num) ? (counts['PASS'] as num).toInt() : 0;
+    final review = (counts['REVIEW'] is num) ? (counts['REVIEW'] as num).toInt() : 0;
+    final block = (counts['BLOCK'] is num) ? (counts['BLOCK'] as num).toInt() : 0;
+    final none = (counts['NONE'] is num) ? (counts['NONE'] as num).toInt() : 0;
+
+    final issues = (data?['issues_histogram'] as List?) ?? const [];
+    final topIssues = issues.whereType<Map>().toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildMiniKpiRow([
+          {
+            'label': 'PASS',
+            'value': pass.toString(),
+            'icon': Icons.check_circle_rounded,
+            'accent': PremiumTheme.success,
+          },
+          {
+            'label': 'REVIEW',
+            'value': review.toString(),
+            'icon': Icons.report_rounded,
+            'accent': PremiumTheme.warning,
+          },
+          {
+            'label': 'BLOCK',
+            'value': block.toString(),
+            'icon': Icons.cancel_rounded,
+            'accent': PremiumTheme.error,
+          },
+          {
+            'label': 'NONE',
+            'value': none.toString(),
+            'icon': Icons.help_outline_rounded,
+            'accent': Colors.white.withValues(alpha: 0.65),
+          },
+        ]),
+        const SizedBox(height: 16),
+        _buildKeyValueList(
+          title: 'Top risk issues',
+          items: topIssues,
+          labelKey: 'issue',
+          valueKey: 'count',
+          maxItems: 6,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStageAgingCard(Map<String, dynamic>? data) {
+    final byStage = (data?['by_stage'] as List?) ?? const [];
+    final rows = byStage.take(6).whereType<Map>().toList();
+
+    if (rows.isEmpty) {
+      return Text(
+        'No stage aging data for selected filters.',
+        style: PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final r in rows)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    (r['stage'] ?? '').toString(),
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'stale ${(r['stale'] is num) ? (r['stale'] as num).toInt() : 0}',
+                  style: PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '/ ${(r['total'] is num) ? (r['total'] as num).toInt() : 0}',
+                  style: PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '${(r['threshold_days'] is num) ? (r['threshold_days'] as num).toInt() : 0}d',
+                  style: PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
   }
 
   Map<String, int> _pipelineCountsFromResponse(Map<String, dynamic>? data) {
@@ -1911,7 +2393,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               ? proposal['title'].toString()
               : 'Untitled',
           value: budget > 0 ? budget : null,
-          valueLabel: budget > 0 ? _formatCurrency(budget) : 'â€”',
+          valueLabel: budget > 0 ? _formatCurrency(budget) : '--',
           status: statusLabel,
           daysOpen:
               updated != null ? DateTime.now().difference(updated).inDays : 0,
@@ -3036,34 +3518,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 ),
                               ],
                               const SizedBox(height: 28),
-                              Wrap(
-                                spacing: 16,
-                                runSpacing: 16,
-                                crossAxisAlignment:
-                                    WrapCrossAlignment.center,
-                                children: [
-                                  _buildGlassDropdown(),
-                                  _buildGlassButton(
-                                    'Refresh',
-                                    Icons.refresh,
-                                    () async {
-                                      await context
-                                          .read<AppState>()
-                                          .fetchProposals();
-                                      if (!mounted) return;
-                                      setState(() {
-                                        _cycleTimeRefreshTick++;
-                                      });
-                                    },
-                                  ),
-                                  _buildGlassButton(
-                                    'Export',
-                                    Icons.download,
-                                    _showExportDialog,
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 32),
+                              const SizedBox(height: 4),
                               LayoutBuilder(
                                 builder: (context, constraints) {
                                   final compact = constraints.maxWidth < 900;
@@ -3132,9 +3587,24 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                         final pipelineData =
                                             (bundle?['pipeline'] as Map?)
                                                 ?.cast<String, dynamic>();
-                                        final completionData =
-                                            (bundle?['completion_rates']
+                                        final approvalsSummary =
+                                            (bundle?['approvals_summary']
                                                     as Map?)
+                                                ?.cast<String, dynamic>();
+                                        final approvalsBottlenecks =
+                                            (bundle?['approvals_bottlenecks']
+                                                    as Map?)
+                                                ?.cast<String, dynamic>();
+                                        final readinessGovernance =
+                                            (bundle?['readiness_governance']
+                                                    as Map?)
+                                                ?.cast<String, dynamic>();
+                                        final riskGateDetails =
+                                            (bundle?['risk_gate_details']
+                                                    as Map?)
+                                                ?.cast<String, dynamic>();
+                                        final stageAging =
+                                            (bundle?['stage_aging'] as Map?)
                                                 ?.cast<String, dynamic>();
 
                                         Widget pipelineBody;
@@ -3189,6 +3659,75 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                                   'readOnly': false,
                                                 },
                                               ),
+                                              startDate: _periodStart(DateTime.now()),
+                                              endDate: DateTime.now(),
+                                              scope: _cycleTimeScope,
+                                              owner: _globalOwnerCtrl.text.trim().isEmpty
+                                                  ? null
+                                                  : _globalOwnerCtrl.text.trim(),
+                                              proposalType:
+                                                  _globalProposalTypeCtrl.text.trim().isEmpty
+                                                      ? null
+                                                      : _globalProposalTypeCtrl.text.trim(),
+                                              client: _globalClientCtrl.text.trim().isEmpty
+                                                  ? null
+                                                  : _globalClientCtrl.text.trim(),
+                                              department: ((context
+                                                              .read<AppState>()
+                                                              .currentUser?['department'] ??
+                                                          '')
+                                                      .toString()
+                                                      .trim()
+                                                      .isEmpty)
+                                                  ? null
+                                                  : (context
+                                                          .read<AppState>()
+                                                          .currentUser?['department'] ??
+                                                      '')
+                                                      .toString()
+                                                      .trim(),
+                                            ),
+                                            const SizedBox(height: 32),
+                                            _buildGlassChartCard(
+                                              'Approval Analytics',
+                                              SingleChildScrollView(
+                                                child: _buildApprovalsCard(
+                                                  approvalsSummary,
+                                                  approvalsBottlenecks,
+                                                ),
+                                              ),
+                                              height: 260,
+                                            ),
+                                            const SizedBox(height: 32),
+                                            _buildGlassChartCard(
+                                              'Readiness & Governance',
+                                              SingleChildScrollView(
+                                                child:
+                                                    _buildReadinessGovernanceCard(
+                                                  readinessGovernance,
+                                                ),
+                                              ),
+                                              height: 260,
+                                            ),
+                                            const SizedBox(height: 32),
+                                            _buildGlassChartCard(
+                                              'Risk Gate Details',
+                                              SingleChildScrollView(
+                                                child: _buildRiskGateDetailsCard(
+                                                  riskGateDetails,
+                                                ),
+                                              ),
+                                              height: 280,
+                                            ),
+                                            const SizedBox(height: 32),
+                                            _buildGlassChartCard(
+                                              'Stage Aging',
+                                              SingleChildScrollView(
+                                                child: _buildStageAgingCard(
+                                                  stageAging,
+                                                ),
+                                              ),
+                                              height: 240,
                                             ),
                                           ],
                                         );

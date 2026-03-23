@@ -17,7 +17,25 @@ class CompletionRatesWidget extends StatefulWidget {
   /// Called when the user taps a proposal row to open it in the editor.
   final void Function(int proposalId, String status, String title)? onOpenProposal;
 
-  const CompletionRatesWidget({super.key, this.onOpenProposal});
+  final DateTime? startDate;
+  final DateTime? endDate;
+  final String? scope;
+  final String? owner;
+  final String? proposalType;
+  final String? client;
+  final String? department;
+
+  const CompletionRatesWidget({
+    super.key,
+    this.onOpenProposal,
+    this.startDate,
+    this.endDate,
+    this.scope,
+    this.owner,
+    this.proposalType,
+    this.client,
+    this.department,
+  });
 
   @override
   State<CompletionRatesWidget> createState() => _CompletionRatesWidgetState();
@@ -43,6 +61,133 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
   // Auto-refresh every 60 s so scores stay current as proposals are edited
   static const Duration _refreshInterval = Duration(seconds: 60);
 
+  String _fmtDate(DateTime dt) {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)}';
+  }
+
+  Uri _buildUri() {
+    final base = Uri.parse('${ApiService.baseUrl}/api/analytics/completion-rates');
+    final q = <String, String>{};
+    final now = DateTime.now();
+    final start = widget.startDate ?? now.subtract(const Duration(days: 30));
+    final end = widget.endDate ?? now;
+    q['start_date'] = _fmtDate(start);
+    q['end_date'] = _fmtDate(end);
+    final scope = (widget.scope ?? '').trim();
+    if (scope.isNotEmpty) q['scope'] = scope;
+    final owner = (widget.owner ?? '').trim();
+    if (owner.isNotEmpty) q['owner'] = owner;
+    final proposalType = (widget.proposalType ?? '').trim();
+    if (proposalType.isNotEmpty) q['proposal_type'] = proposalType;
+    final client = (widget.client ?? '').trim();
+    if (client.isNotEmpty) q['client'] = client;
+    final department = (widget.department ?? '').trim();
+    if (department.isNotEmpty) q['department'] = department;
+    return base.replace(queryParameters: q);
+  }
+
+  Map<String, dynamic> _normalizeResponse(Map<String, dynamic> data) {
+    final totals = (data['totals'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final total = (totals['total'] ?? 0) as int;
+    final passed = (totals['passed'] ?? 0) as int;
+    final passRateRaw = totals['pass_rate'];
+    final passRate = passRateRaw is num
+        ? passRateRaw.toDouble()
+        : double.tryParse(passRateRaw?.toString() ?? '') ?? 0.0;
+
+    final low = (data['low_proposals'] as List?) ?? const [];
+
+    final proposals = <Map<String, dynamic>>[];
+    for (final p in low) {
+      if (p is Map<String, dynamic>) {
+        proposals.add(p);
+      } else if (p is Map) {
+        try {
+          proposals.add(p.cast<String, dynamic>());
+        } catch (_) {}
+      }
+    }
+
+    const sectionsTotal = 5;
+    final normalizedProposals = <Map<String, dynamic>>[];
+    for (final p in proposals) {
+      final rawIssues = p['readiness_issues'] ?? p['missing_sections'] ?? const [];
+      final issues = rawIssues is List
+          ? rawIssues.map((e) => e.toString()).toList()
+          : <String>[];
+
+      final scoreRaw = p['readiness_score'] ?? 0;
+      final score = scoreRaw is num
+          ? scoreRaw.toInt()
+          : int.tryParse(scoreRaw.toString()) ?? 0;
+
+      final idRaw = p['proposal_id'] ?? p['id'];
+      final id = idRaw is num ? idRaw.toInt() : int.tryParse(idRaw?.toString() ?? '');
+
+      final complete = (sectionsTotal - issues.length).clamp(0, sectionsTotal);
+
+      normalizedProposals.add({
+        ...p,
+        'id': id,
+        'proposal_id': id,
+        'client_name': p['client_name'] ?? p['client'],
+        'missing_sections': issues,
+        'sections_total': sectionsTotal,
+        'sections_complete': complete,
+        'readiness_score': score,
+      });
+    }
+
+    double avgScore = 0.0;
+    if (total > 0) {
+      // If we only have low proposals, approximate avg from those; otherwise 0.
+      if (proposals.isNotEmpty) {
+        final sum = proposals.fold<double>(0, (acc, p) {
+          final v = p['readiness_score'];
+          final d = v is num ? v.toDouble() : double.tryParse(v?.toString() ?? '') ?? 0.0;
+          return acc + d;
+        });
+        avgScore = sum / proposals.length;
+      }
+    }
+
+    int signedLike = 0;
+    for (final p in normalizedProposals) {
+      final s = (p['status'] ?? '').toString().toLowerCase();
+      if (s.contains('signed') || s.contains('approved') || s.contains('won')) {
+        signedLike++;
+      }
+    }
+    final signOffRate = total > 0 ? (signedLike / total) * 100.0 : 0.0;
+
+    final rawTrend = (data['trend'] as List?) ?? const [];
+    final trend = <Map<String, dynamic>>[];
+    for (final t in rawTrend) {
+      if (t is Map<String, dynamic>) {
+        trend.add(t);
+      } else if (t is Map) {
+        try {
+          trend.add(t.cast<String, dynamic>());
+        } catch (_) {}
+      }
+    }
+
+    return {
+      'summary': {
+        'total_proposals': total,
+        'passing_readiness': passed,
+        'completion_rate': passRate,
+        'sign_off_rate': signOffRate,
+        'avg_readiness_score': avgScore,
+        'pass_threshold': data['totals'] is Map ? (data['totals'] as Map)['pass_threshold'] : null,
+      },
+      'proposals': normalizedProposals,
+      'trend': trend,
+      'status_breakdown': const {},
+    };
+  }
+
   @override
   void initState() {
     super.initState();
@@ -66,14 +211,16 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
     try {
       final token = AuthService.token;
       final resp = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/analytics/completion-rates'),
+        _buildUri(),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
         },
       );
       if (resp.statusCode == 200 && mounted) {
-        final data = jsonDecode(resp.body);
+        final data = _normalizeResponse(
+          Map<String, dynamic>.from(jsonDecode(resp.body) as Map),
+        );
         setState(() {
           _summary = Map<String, dynamic>.from(data['summary'] ?? {});
           _proposals = List<dynamic>.from(data['proposals'] ?? []);
@@ -96,7 +243,7 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
     try {
       final token = AuthService.token;
       final resp = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/analytics/completion-rates'),
+        _buildUri(),
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
@@ -105,7 +252,9 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
 
       if (!mounted) return;
       if (resp.statusCode == 200) {
-        final data = jsonDecode(resp.body);
+        final data = _normalizeResponse(
+          Map<String, dynamic>.from(jsonDecode(resp.body) as Map),
+        );
         setState(() {
           _summary = Map<String, dynamic>.from(data['summary'] ?? {});
           _proposals = List<dynamic>.from(data['proposals'] ?? []);
@@ -562,6 +711,9 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
     final status = p['status'] as String? ?? 'draft';
     final isLow = score < _lowScoreThreshold;
 
+    final idRaw = p['id'] ?? p['proposal_id'];
+    final id = idRaw is num ? idRaw.toInt() : int.tryParse(idRaw?.toString() ?? '');
+
     final scoreColor = score >= 80
         ? const Color(0xFF20E3B2)
         : score >= 50
@@ -571,8 +723,9 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
     final title = p['title'] as String? ?? 'Untitled';
 
     return GestureDetector(
-      onTap: () =>
-          widget.onOpenProposal?.call(p['id'] as int, status, title),
+      onTap: id == null
+          ? null
+          : () => widget.onOpenProposal?.call(id, status, title),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(14),
