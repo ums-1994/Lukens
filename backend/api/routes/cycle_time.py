@@ -131,21 +131,34 @@ def cycle_time_metrics(username=None, user_id=None, email=None):
             my_role = (me[0] if me else None) or ""
             my_department = (me[1] if me else None) or None
 
+            role_lower = str(my_role).strip().lower()
+            is_admin = role_lower in {"admin", "ceo"}
+
             if scope == "all":
-                role_lower = str(my_role).strip().lower()
-                if role_lower not in {"admin", "ceo"}:
+                if not is_admin:
                     return jsonify({"detail": "Not authorized for scope=all"}), 403
                 team_owner_ids = None
             else:
-                dept = department_filter or my_department
-                if dept:
-                    cursor.execute(
-                        "SELECT id FROM users WHERE department = %s",
-                        (dept,),
-                    )
-                    team_owner_ids = [int(r[0]) for r in cursor.fetchall() or []]
+                if is_admin:
+                    # Admin team view defaults to everyone; only narrow if department filter is provided.
+                    if department_filter:
+                        cursor.execute(
+                            "SELECT id FROM users WHERE department = %s",
+                            (department_filter,),
+                        )
+                        team_owner_ids = [int(r[0]) for r in cursor.fetchall() or []]
+                    else:
+                        team_owner_ids = None
                 else:
-                    team_owner_ids = [int(owner_id)]
+                    dept = department_filter or my_department
+                    if dept:
+                        cursor.execute(
+                            "SELECT id FROM users WHERE department = %s",
+                            (dept,),
+                        )
+                        team_owner_ids = [int(r[0]) for r in cursor.fetchall() or []]
+                    else:
+                        team_owner_ids = [int(owner_id)]
         if owner_filter:
             cursor.execute(
                 "SELECT id FROM users WHERE username = %s OR email = %s OR id::text = %s",
@@ -209,6 +222,8 @@ def cycle_time_metrics(username=None, user_id=None, email=None):
                 else:
                     where.append(f"{owner_col} = ANY(%s::int[])")
                     params.append(team_owner_ids)
+            elif scope == "team" and team_owner_ids is None:
+                pass
             else:
                 if owner_col_is_text:
                     where.append(f"{owner_col}::text = %s::text")
@@ -466,21 +481,34 @@ def client_engagement(username=None, user_id=None, email=None):
             my_role = (me[0] if me else None) or ""
             my_department = (me[1] if me else None) or None
 
+            role_lower = str(my_role).strip().lower()
+            is_admin = role_lower in {"admin", "ceo"}
+
             if scope == "all":
-                role_lower = str(my_role).strip().lower()
-                if role_lower not in {"admin", "ceo"}:
+                if not is_admin:
                     return jsonify({"detail": "Not authorized for scope=all"}), 403
                 team_owner_ids = None
             else:
-                dept = department_filter or my_department
-                if dept:
-                    cursor.execute(
-                        "SELECT id FROM users WHERE department = %s",
-                        (dept,),
-                    )
-                    team_owner_ids = [int(r[0]) for r in cursor.fetchall() or []]
+                if is_admin:
+                    # Admin team view defaults to everyone; only narrow if department filter is provided.
+                    if department_filter:
+                        cursor.execute(
+                            "SELECT id FROM users WHERE department = %s",
+                            (department_filter,),
+                        )
+                        team_owner_ids = [int(r[0]) for r in cursor.fetchall() or []]
+                    else:
+                        team_owner_ids = None
                 else:
-                    team_owner_ids = [int(owner_id)]
+                    dept = department_filter or my_department
+                    if dept:
+                        cursor.execute(
+                            "SELECT id FROM users WHERE department = %s",
+                            (dept,),
+                        )
+                        team_owner_ids = [int(r[0]) for r in cursor.fetchall() or []]
+                    else:
+                        team_owner_ids = [int(owner_id)]
 
         if owner_filter:
             cursor.execute(
@@ -537,6 +565,8 @@ def client_engagement(username=None, user_id=None, email=None):
                     else:
                         where.append(f"{owner_col} = ANY(%s::int[])")
                         params.append(team_owner_ids)
+            elif scope == "team" and team_owner_ids is None:
+                pass
             else:
                 if owner_col_is_text:
                     where.append(f"{owner_col}::text = %s::text")
@@ -914,21 +944,34 @@ def collaboration_load(username=None, user_id=None, email=None):
                 my_role = (me[0] if me else None) or ""
                 my_department = (me[1] if me else None) or None
 
+                role_lower = str(my_role).strip().lower()
+                is_admin = role_lower in {"admin", "ceo"}
+
                 if scope == "all":
-                    role_lower = str(my_role).strip().lower()
-                    if role_lower not in {"admin", "ceo"}:
+                    if not is_admin:
                         return jsonify({"detail": "Not authorized for scope=all"}), 403
                     team_owner_ids = None
                 else:
-                    dept = department_filter or my_department
-                    if dept:
-                        cursor.execute(
-                            "SELECT id FROM users WHERE department = %s",
-                            (dept,),
-                        )
-                        team_owner_ids = [int(r[0]) for r in cursor.fetchall() or []]
+                    if is_admin:
+                        # Admin team view defaults to everyone; only narrow if department filter is provided.
+                        if department_filter:
+                            cursor.execute(
+                                "SELECT id FROM users WHERE department = %s",
+                                (department_filter,),
+                            )
+                            team_owner_ids = [int(r[0]) for r in cursor.fetchall() or []]
+                        else:
+                            team_owner_ids = None
                     else:
-                        team_owner_ids = [int(owner_id)]
+                        dept = department_filter or my_department
+                        if dept:
+                            cursor.execute(
+                                "SELECT id FROM users WHERE department = %s",
+                                (dept,),
+                            )
+                            team_owner_ids = [int(r[0]) for r in cursor.fetchall() or []]
+                        else:
+                            team_owner_ids = [int(owner_id)]
 
             if owner_filter:
                 cursor.execute(
@@ -1003,6 +1046,8 @@ def collaboration_load(username=None, user_id=None, email=None):
                     else:
                         where.append(f"{owner_col} = ANY(%s::int[])")
                         params.append(team_owner_ids)
+                elif scope == "team" and team_owner_ids is None:
+                    pass
                 else:
                     if owner_col_is_text:
                         where.append(f"{owner_col}::text = %s::text")

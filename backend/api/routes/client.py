@@ -1205,6 +1205,29 @@ def get_client_proposals():
             return {'detail': 'Access token required'}, 400
 
         device_id, session_token = _extract_client_device_session()
+        device_src = None
+        session_src = None
+        try:
+            if (request.headers.get('X-Client-Device-Id') or '').strip():
+                device_src = 'header:x-client-device-id'
+            elif (request.args.get('device_id') or '').strip():
+                device_src = 'query:device_id'
+            elif (request.headers.get('X-Device-Id') or '').strip():
+                device_src = 'header:x-device-id'
+            elif (request.args.get('deviceId') or '').strip():
+                device_src = 'query:deviceId'
+
+            if (request.headers.get('X-Client-Session-Token') or '').strip():
+                session_src = 'header:x-client-session-token'
+            elif (request.args.get('session_token') or '').strip():
+                session_src = 'query:session_token'
+            elif (request.headers.get('X-Session-Token') or '').strip():
+                session_src = 'header:x-session-token'
+            elif (request.args.get('sessionToken') or '').strip():
+                session_src = 'query:sessionToken'
+        except Exception:
+            device_src = device_src or None
+            session_src = session_src or None
         try:
             di_preview = (device_id or '')
             st_preview = (session_token or '')
@@ -1214,7 +1237,8 @@ def get_client_proposals():
                 st_preview = st_preview[:12] + '...'
             print(
                 f"[CLIENT_PORTAL] /client/proposals origin={request.headers.get('Origin')} "
-                f"device_id={di_preview or '∅'} session_token={st_preview or '∅'}"
+                f"device_id={di_preview or '∅'}({device_src or 'none'}) "
+                f"session_token={st_preview or '∅'}({session_src or 'none'})"
             )
         except Exception:
             pass

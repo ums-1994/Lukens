@@ -724,6 +724,42 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  Future<Map<String, dynamic>?> getOwnerLeaderboardAnalytics({
+    String? startDate,
+    String? endDate,
+    String? owner,
+    String? proposalType,
+    String? client,
+    String? region,
+    String? scope,
+    String? department,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/analytics/owner-leaderboard").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+          if (owner != null && owner.isNotEmpty) 'owner': owner,
+          if (proposalType != null && proposalType.isNotEmpty)
+            'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+        },
+      );
+
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+    } catch (e) {
+      print('Error fetching owner leaderboard analytics: $e');
+    }
+    return null;
+  }
+
   Future<Map<String, dynamic>?> getSowMetricsAnalytics({
     String? startDate,
     String? endDate,
@@ -913,8 +949,12 @@ class AppState extends ChangeNotifier {
       final rLegacy = await http.get(legacyUri, headers: _headers);
       if (rLegacy.statusCode == 200) return jsonDecode(rLegacy.body);
 
-      final rAnalytics = await http.get(analyticsUri, headers: _headers);
-      if (rAnalytics.statusCode == 200) return jsonDecode(rAnalytics.body);
+      // Fallback for older backends that might still expose the analytics prefixed route.
+      // Only try this if legacy is missing.
+      if (rLegacy.statusCode == 404) {
+        final rAnalytics = await http.get(analyticsUri, headers: _headers);
+        if (rAnalytics.statusCode == 200) return jsonDecode(rAnalytics.body);
+      }
     } catch (e) {
       print('Error fetching risk gate summary: $e');
     }

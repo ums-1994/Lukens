@@ -132,7 +132,17 @@ CORS(
     app,
     origins=_cors_origins,
     supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "X-AI-Request-ID"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Accept",
+        "X-AI-Request-ID",
+        "X-Client-Device-Id",
+        "x-client-device-id",
+        "X-Client-Session-Token",
+        "x-client-session-token",
+    ],
     methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
     expose_headers=["Content-Type", "Authorization"],
 )
@@ -145,6 +155,7 @@ from api.routes.shared import bp as shared_bp
 from api.routes.onboarding import bp as onboarding_bp
 from api.routes.collaborator import bp as collaborator_bp
 from api.routes.clients import bp as clients_bp
+from api.routes.client import bp as client_bp
 from api.routes.approver import bp as approver_bp
 from api.routes.cycle_time import bp as cycle_time_bp
 from api.routes.pipeline import bp as pipeline_bp
@@ -161,6 +172,7 @@ app.register_blueprint(shared_bp, url_prefix='/api')
 app.register_blueprint(onboarding_bp, url_prefix='/api')
 app.register_blueprint(collaborator_bp, url_prefix='/api')
 app.register_blueprint(clients_bp, url_prefix='/api')
+app.register_blueprint(client_bp)
 app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
@@ -192,7 +204,10 @@ def handle_options_preflight(remaining=None):
     if origin:
         resp.headers['Access-Control-Allow-Origin'] = origin
     resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
-    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID'
+    resp.headers['Access-Control-Allow-Headers'] = (
+        'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID, '
+        'X-Client-Device-Id, x-client-device-id, X-Client-Session-Token, x-client-session-token'
+    )
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
     return resp
 

@@ -426,6 +426,7 @@ def get_proposals(username=None, user_id=None, email=None):
 
             requester_role = (requester_role or '').strip().lower()
             is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_admin = requester_role in ['admin', 'ceo']
 
             if not user_id and not is_finance:
                 resolved_user_id = resolve_user_id(cursor, username or email)
@@ -449,7 +450,8 @@ def get_proposals(username=None, user_id=None, email=None):
             print(f"📋 Available columns in proposals table: {existing_columns}")
             
             # Finance users can see all proposals
-            if is_finance:
+            # Admin/CEO should also see all proposals (team default)
+            if is_finance or is_admin:
                 select_cols = ['id', 'title', 'content', 'status']
                 if 'owner_id' in existing_columns:
                     select_cols.append('owner_id')
@@ -478,7 +480,6 @@ def get_proposals(username=None, user_id=None, email=None):
 
                 query = f'''SELECT {', '.join(select_cols)}
                      FROM proposals
-                     WHERE LOWER(COALESCE(status, '')) <> 'draft'
                      ORDER BY created_at DESC'''
                 cursor.execute(query)
 

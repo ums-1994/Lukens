@@ -16,6 +16,7 @@ import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/app_side_nav.dart';
+import '../../widgets/admin/admin_sidebar.dart';
 import '../creator/widgets/completion_rates_widget.dart';
 
 class AnalyticsPage extends StatefulWidget {
@@ -40,7 +41,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   final TextEditingController _globalRegionCtrl = TextEditingController();
   final TextEditingController _globalOwnerCtrl = TextEditingController();
   final TextEditingController _globalProposalTypeCtrl = TextEditingController();
-  bool _isSidebarCollapsed = true;
+  Map<String, dynamic>? _selectedOwner;
+  List<Map<String, dynamic>> _ownerSuggestions = const [];
+  Timer? _ownerSearchDebounce;
+  bool _isSidebarCollapsed = false;
   late AnimationController _animationController;
   final ScrollController _scrollController = ScrollController();
   final _compactCurrencyFormatter = NumberFormat.compactCurrency(
@@ -58,6 +62,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   @override
   void initState() {
     super.initState();
+    final user = AuthService.currentUser;
+    final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
+    final isAdmin = backendRole == 'admin' || backendRole == 'ceo';
+    if (!isAdmin) {
+      _cycleTimeScope = 'self';
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final app = context.read<AppState>();
       app.fetchProposals();
@@ -68,6 +78,37 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       if (!mounted) return;
       if (!_cycleTimeAutoRefresh) return;
       setState(() => _cycleTimeRefreshTick++);
+    });
+  }
+
+  Future<void> _searchOwners(String query) async {
+    _ownerSearchDebounce?.cancel();
+    _ownerSearchDebounce = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final token = AuthService.token;
+        if (token == null) return;
+        final q = query.trim();
+        if (q.length < 2) {
+          if (!mounted) return;
+          setState(() => _ownerSuggestions = const []);
+          return;
+        }
+        final users = await ApiService.searchUsersForMentions(
+          token: token,
+          query: q,
+        );
+        if (!mounted) return;
+        setState(
+          () => _ownerSuggestions = users
+              .whereType<Map>()
+              .map((u) => u.map((k, v) => MapEntry(k.toString(), v)))
+              .cast<Map<String, dynamic>>()
+              .toList(),
+        );
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _ownerSuggestions = const []);
+      }
     });
   }
 
@@ -656,6 +697,73 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         ),
       ],
     );
+  }
+
+  Widget _buildOwnerAutocompleteDropdown() {
+    if (!_isAdminUser()) return const SizedBox.shrink();
+
+    return SizedBox(
+      width: 260,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              border: Border.all(color: const Color(0x33FFFFFF)),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+            child: TextField(
+              controller: _globalOwnerCtrl,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+              decoration: const InputDecoration(
+                isDense: true,
+                border: InputBorder.none,
+                hintText: 'Owner id/email/username',
+                hintStyle: TextStyle(color: Colors.white54),
+              ),
+              onChanged: (v) {
+                _searchOwners(v);
+              },
+              onSubmitted: (_) => setState(() => _cycleTimeRefreshTick++),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _fetchOwnerLeaderboard() async {
+    try {
+      final now = DateTime.now();
+      final start = _periodStart(now);
+      final fmt = DateFormat('yyyy-MM-dd');
+      final startDate = start != null ? fmt.format(start) : null;
+      final endDate = fmt.format(now);
+
+      final owner = _globalOwnerCtrl.text.trim();
+      final proposalType = _globalProposalTypeCtrl.text.trim();
+      final client = _globalClientCtrl.text.trim();
+      final region = _globalRegionCtrl.text.trim();
+      final currentUser = context.read<AppState>().currentUser;
+      final department = (currentUser?['department'] ?? '').toString().trim();
+
+      return await context.read<AppState>().getOwnerLeaderboardAnalytics(
+            startDate: startDate,
+            endDate: endDate,
+            owner: owner.isEmpty ? null : owner,
+            proposalType: proposalType.isEmpty ? null : proposalType,
+            client: client.isEmpty ? null : client,
+            region: region.isEmpty ? null : region,
+            scope: _cycleTimeScope,
+            department: department.isEmpty ? null : department,
+          );
+    } catch (e) {
+      print('Owner leaderboard exception: $e');
+      return null;
+    }
   }
 
   String _formatDurationSeconds(int seconds) {
@@ -2037,11 +2145,179 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       );
     }
 
+    Widget scopeToggle() {
+      final isAdminUser = _isAdminUser();
+      if (!isAdminUser) {
+        if (_cycleTimeScope != 'self') {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            setState(() => _cycleTimeScope = 'self');
+          });
+        }
+        return glassField(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Scope: Me',
+                style: TextStyle(color: Colors.white, fontSize: 12),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.lock,
+                size: 14,
+                color: Colors.white.withValues(alpha: 0.7),
+              ),
+            ],
+          ),
+        );
+      }
+
+      return glassField(
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: _cycleTimeScope,
+            dropdownColor: const Color(0xFF0A0E27),
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+            icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+            items: const [
+              DropdownMenuItem(value: 'team', child: Text('Scope: Team')),
+              DropdownMenuItem(value: 'self', child: Text('Scope: Me')),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() {
+                _cycleTimeScope = v;
+                _cycleTimeRefreshTick++;
+              });
+            },
+          ),
+        ),
+      );
+    }
+
+    Widget ownerPicker() {
+      if (!_isAdminUser()) {
+        return const SizedBox.shrink();
+      }
+
+      String ownerLabelForUser(Map<String, dynamic> u) {
+        final name = (u['full_name'] ?? u['name'] ?? '').toString().trim();
+        final username = (u['username'] ?? '').toString().trim();
+        final email = (u['email'] ?? '').toString().trim();
+        if (name.isNotEmpty && username.isNotEmpty) return '$name (@$username)';
+        if (name.isNotEmpty && email.isNotEmpty) return '$name ($email)';
+        if (username.isNotEmpty) return '@$username';
+        if (email.isNotEmpty) return email;
+        return (u['id'] ?? '').toString();
+      }
+
+      String ownerQueryValue(Map<String, dynamic> u) {
+        final username = (u['username'] ?? '').toString().trim();
+        if (username.isNotEmpty) return username;
+        final email = (u['email'] ?? '').toString().trim();
+        if (email.isNotEmpty) return email;
+        final id = (u['id'] ?? '').toString().trim();
+        return id;
+      }
+
+      return SizedBox(
+        width: 260,
+        child: glassField(
+          child: Autocomplete<Map<String, dynamic>>(
+            optionsBuilder: (TextEditingValue textEditingValue) {
+              final q = textEditingValue.text.trim().toLowerCase();
+              if (q.isEmpty) return const Iterable<Map<String, dynamic>>.empty();
+              return _ownerSuggestions.where((u) {
+                final label = ownerLabelForUser(u).toLowerCase();
+                return label.contains(q);
+              });
+            },
+            displayStringForOption: (u) => ownerLabelForUser(u),
+            fieldViewBuilder:
+                (context, textEditingController, focusNode, onFieldSubmitted) {
+              if (_selectedOwner != null &&
+                  textEditingController.text.trim().isEmpty) {
+                textEditingController.text = ownerLabelForUser(_selectedOwner!);
+              }
+              return TextField(
+                controller: textEditingController,
+                focusNode: focusNode,
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+                decoration: InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  hintText: 'Owner (optional)',
+                  hintStyle: const TextStyle(color: Colors.white54),
+                  suffixIcon: (_selectedOwner != null)
+                      ? IconButton(
+                          icon: const Icon(Icons.clear,
+                              size: 16, color: Colors.white70),
+                          onPressed: () {
+                            setState(() {
+                              _selectedOwner = null;
+                              _globalOwnerCtrl.clear();
+                              _cycleTimeRefreshTick++;
+                            });
+                          },
+                        )
+                      : null,
+                ),
+                onChanged: (v) {
+                  _searchOwners(v);
+                },
+                onSubmitted: (_) {
+                  onFieldSubmitted();
+                  setState(() => _cycleTimeRefreshTick++);
+                },
+              );
+            },
+            onSelected: (u) {
+              final value = ownerQueryValue(u);
+              setState(() {
+                _selectedOwner = u;
+                _globalOwnerCtrl.text = value;
+                _cycleTimeRefreshTick++;
+              });
+            },
+            optionsViewBuilder: (context, onSelected, options) {
+              return Align(
+                alignment: Alignment.topLeft,
+                child: Material(
+                  color: const Color(0xFF0A0E27),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 280, maxWidth: 420),
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      itemBuilder: (context, index) {
+                        final option = options.elementAt(index);
+                        return ListTile(
+                          dense: true,
+                          title: Text(
+                            ownerLabelForUser(option),
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
+                          ),
+                          onTap: () => onSelected(option),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
     return Wrap(
       spacing: 10,
       runSpacing: 10,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        scopeToggle(),
         SizedBox(
           width: 240,
           child: glassField(
@@ -2058,22 +2334,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             ),
           ),
         ),
-        SizedBox(
-          width: 240,
-          child: glassField(
-            child: TextField(
-              controller: _globalOwnerCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: const InputDecoration(
-                isDense: true,
-                border: InputBorder.none,
-                hintText: 'Owner (optional)',
-                hintStyle: TextStyle(color: Colors.white54),
-              ),
-              onSubmitted: (_) => setState(() {}),
-            ),
-          ),
-        ),
+        ownerPicker(),
         SizedBox(
           width: 260,
           child: glassField(
@@ -2118,6 +2379,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     _globalClientCtrl.clear();
                     _globalRegionCtrl.clear();
                     _globalOwnerCtrl.clear();
+                    _selectedOwner = null;
                     _globalProposalTypeCtrl.clear();
                     _cycleTimeRefreshTick++;
                   });
@@ -2436,16 +2698,27 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         color: Colors.transparent,
         child: Row(
           children: [
-            AppSideNav(
-              isCollapsed: _isSidebarCollapsed,
-              currentLabel:
-                  isAdminUser ? 'Analytics' : 'Analytics (My Pipeline)',
-              isAdmin: isAdminUser,
-              onToggle: () => setState(
-                () => _isSidebarCollapsed = !_isSidebarCollapsed,
+            if (isAdminUser)
+              Material(
+                child: AdminSidebar(
+                  isCollapsed: _isSidebarCollapsed,
+                  currentPage: 'Analytics',
+                  onToggle: () => setState(
+                    () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                  ),
+                  onSelect: _navigatePage,
+                ),
+              )
+            else
+              AppSideNav(
+                isCollapsed: _isSidebarCollapsed,
+                currentLabel: 'Analytics (My Pipeline)',
+                isAdmin: false,
+                onToggle: () => setState(
+                  () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                ),
+                onSelect: _navigatePage,
               ),
-              onSelect: _navigatePage,
-            ),
             Expanded(
               child: CustomScrollbar(
                       controller: _scrollController,
@@ -2540,9 +2813,243 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                   );
                                 },
                               ),
-                              const SizedBox(height: 32),
+                              const SizedBox(height: 18),
                               _buildGlobalFilterBar(),
-                              const SizedBox(height: 24),
+                              if (isAdminUser) ...[
+                                const SizedBox(height: 18),
+                                FutureBuilder<Map<String, dynamic>?>(
+                                  future: _fetchOwnerLeaderboard(),
+                                  builder: (context, snapshot) {
+                                    final rows =
+                                        (snapshot.data?['rows'] as List?) ?? [];
+                                    final detail =
+                                        (snapshot.data?['detail'] ?? '').toString();
+
+                                    Widget headerChip(String label) {
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.06),
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                          border: Border.all(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.10),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          label,
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      );
+                                    }
+
+                                    return ClipRRect(
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: BackdropFilter(
+                                        filter: ImageFilter.blur(
+                                            sigmaX: 15, sigmaY: 15),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(18),
+                                          decoration: BoxDecoration(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.05),
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                            border: Border.all(
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.10),
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      'Owner Leaderboard',
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: PremiumTheme
+                                                          .titleLarge
+                                                          .copyWith(
+                                                              color: Colors
+                                                                  .white),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 12),
+                                                  headerChip(
+                                                      _cycleTimeScope == 'self'
+                                                          ? 'Me'
+                                                          : 'Team'),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Sent, signed, and conversion rate by owner',
+                                                style: PremiumTheme.bodySmall
+                                                    .copyWith(
+                                                  color:
+                                                      PremiumTheme.textSecondary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 14),
+                                              if (snapshot.connectionState ==
+                                                      ConnectionState.waiting &&
+                                                  rows.isEmpty)
+                                                const LinearProgressIndicator(
+                                                  minHeight: 2,
+                                                  backgroundColor:
+                                                      Colors.transparent,
+                                                )
+                                              else if (snapshot.hasError)
+                                                Text(
+                                                  snapshot.error.toString(),
+                                                  style: PremiumTheme.bodySmall
+                                                      .copyWith(
+                                                          color:
+                                                              Colors.white70),
+                                                )
+                                              else if (detail.isNotEmpty)
+                                                Text(
+                                                  detail,
+                                                  style: PremiumTheme.bodySmall
+                                                      .copyWith(
+                                                          color:
+                                                              Colors.white70),
+                                                )
+                                              else if (rows.isEmpty)
+                                                Text(
+                                                  'No leaderboard data for selected filters.',
+                                                  style: PremiumTheme.bodySmall
+                                                      .copyWith(
+                                                          color:
+                                                              Colors.white70),
+                                                )
+                                              else
+                                                Column(
+                                                  children: rows
+                                                      .take(8)
+                                                      .map<Widget>((r) {
+                                                    final owner =
+                                                        (r['owner'] ?? '')
+                                                            .toString();
+                                                    final sent =
+                                                        (r['sent'] ?? 0) as int;
+                                                    final signed =
+                                                        (r['signed'] ?? 0) as int;
+                                                    final conv =
+                                                        ((r['conversion_rate'] ??
+                                                                    0.0)
+                                                                as num)
+                                                            .toDouble();
+                                                    return Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                              bottom: 10),
+                                                      child: Row(
+                                                        children: [
+                                                          Expanded(
+                                                            child: Text(
+                                                              owner,
+                                                              maxLines: 1,
+                                                              overflow:
+                                                                  TextOverflow.ellipsis,
+                                                              style: const TextStyle(
+                                                                  color:
+                                                                      Colors.white,
+                                                                  fontSize: 13,
+                                                                  fontWeight:
+                                                                      FontWeight.w600),
+                                                            ),
+                                                          ),
+                                                          Container(
+                                                            width: 90,
+                                                            alignment:
+                                                                Alignment.centerRight,
+                                                            child: Text(
+                                                              '$sent',
+                                                              style: const TextStyle(
+                                                                  color:
+                                                                      Colors.white70,
+                                                                  fontSize: 13),
+                                                            ),
+                                                          ),
+                                                          Container(
+                                                            width: 90,
+                                                            alignment:
+                                                                Alignment.centerRight,
+                                                            child: Text(
+                                                              '$signed',
+                                                              style: const TextStyle(
+                                                                  color:
+                                                                      Colors.white70,
+                                                                  fontSize: 13),
+                                                            ),
+                                                          ),
+                                                          Container(
+                                                            width: 120,
+                                                            alignment:
+                                                                Alignment.centerRight,
+                                                            child: Text(
+                                                              '${(conv * 100).toStringAsFixed(1)}%',
+                                                              style: const TextStyle(
+                                                                  color:
+                                                                      Colors.white70,
+                                                                  fontSize: 13),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    );
+                                                  }).toList(),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                              const SizedBox(height: 28),
+                              Wrap(
+                                spacing: 16,
+                                runSpacing: 16,
+                                crossAxisAlignment:
+                                    WrapCrossAlignment.center,
+                                children: [
+                                  _buildGlassDropdown(),
+                                  _buildGlassButton(
+                                    'Refresh',
+                                    Icons.refresh,
+                                    () async {
+                                      await context
+                                          .read<AppState>()
+                                          .fetchProposals();
+                                      if (!mounted) return;
+                                      setState(() {
+                                        _cycleTimeRefreshTick++;
+                                      });
+                                    },
+                                  ),
+                                  _buildGlassButton(
+                                    'Export',
+                                    Icons.download,
+                                    _showExportDialog,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 32),
                               LayoutBuilder(
                                 builder: (context, constraints) {
                                   final compact = constraints.maxWidth < 900;
@@ -3808,7 +4315,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   void _navigatePage(String label) {
     switch (label) {
       case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
       case 'My Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
@@ -3824,11 +4331,18 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         break;
       case 'Approved Proposals':
       case 'Approvals':
-        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        Navigator.pushReplacementNamed(context, '/admin_approvals');
         break;
       case 'Analytics':
       case 'Analytics (My Pipeline)':
         break; // already on this page
+      case 'History':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'approved'},
+        );
+        break;
       case 'Logout':
         Navigator.pushReplacementNamed(context, '/login');
         break;

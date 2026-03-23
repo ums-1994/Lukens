@@ -568,12 +568,24 @@ def summary(username=None, user_id=None, email=None):
                         return jsonify({"detail": "Not authorized for scope=all"}), 403
                     team_owner_ids = None
                 else:
-                    dept = department_filter or my_department
-                    if dept:
-                        cursor.execute("SELECT id FROM users WHERE department = %s", (dept,))
-                        team_owner_ids = [int(r["id"]) for r in cursor.fetchall() or []]
+                    is_admin = my_role in {"admin", "ceo"}
+                    if is_admin:
+                        # Admin team view defaults to everyone; only narrow if department filter is provided.
+                        if department_filter:
+                            cursor.execute(
+                                "SELECT id FROM users WHERE department = %s",
+                                (department_filter,),
+                            )
+                            team_owner_ids = [int(r["id"]) for r in cursor.fetchall() or []]
+                        else:
+                            team_owner_ids = None
                     else:
-                        team_owner_ids = [int(owner_id_val)]
+                        dept = department_filter or my_department
+                        if dept:
+                            cursor.execute("SELECT id FROM users WHERE department = %s", (dept,))
+                            team_owner_ids = [int(r["id"]) for r in cursor.fetchall() or []]
+                        else:
+                            team_owner_ids = [int(owner_id_val)]
 
             resolved_owner_id = None
             if owner_filter:
@@ -641,6 +653,8 @@ def summary(username=None, user_id=None, email=None):
                     else:
                         where.append(f"p.{owner_col} = ANY(%s::int[])")
                         params.append(team_owner_ids)
+                elif scope == "team" and team_owner_ids is None:
+                    pass
                 else:
                     if owner_col_is_text:
                         where.append(f"p.{owner_col}::text = %s::text")
@@ -824,12 +838,24 @@ def proposals(username=None, user_id=None, email=None):
                         return jsonify({"detail": "Not authorized for scope=all"}), 403
                     team_owner_ids = None
                 else:
-                    dept = department_filter or my_department
-                    if dept:
-                        cursor.execute("SELECT id FROM users WHERE department = %s", (dept,))
-                        team_owner_ids = [int(r["id"]) for r in cursor.fetchall() or []]
+                    is_admin = my_role in {"admin", "ceo"}
+                    if is_admin:
+                        # Admin team view defaults to everyone; only narrow if department filter is provided.
+                        if department_filter:
+                            cursor.execute(
+                                "SELECT id FROM users WHERE department = %s",
+                                (department_filter,),
+                            )
+                            team_owner_ids = [int(r["id"]) for r in cursor.fetchall() or []]
+                        else:
+                            team_owner_ids = None
                     else:
-                        team_owner_ids = [int(owner_id_val)]
+                        dept = department_filter or my_department
+                        if dept:
+                            cursor.execute("SELECT id FROM users WHERE department = %s", (dept,))
+                            team_owner_ids = [int(r["id"]) for r in cursor.fetchall() or []]
+                        else:
+                            team_owner_ids = [int(owner_id_val)]
 
             resolved_owner_id = None
             if owner_filter:
@@ -865,6 +891,8 @@ def proposals(username=None, user_id=None, email=None):
                     else:
                         where.append(f"p.{owner_col} = ANY(%s::int[])")
                         params.append(team_owner_ids)
+                elif scope == "team" and team_owner_ids is None:
+                    pass
                 else:
                     if owner_col_is_text:
                         where.append(f"p.{owner_col}::text = %s::text")
