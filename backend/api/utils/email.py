@@ -139,6 +139,7 @@ def send_email(to_email, subject, html_content):
     - SENDGRID_FROM_NAME: Sender name (optional, defaults to 'Khonology')
     """
     provider = (os.getenv('EMAIL_PROVIDER') or 'auto').strip().lower()
+    disable_smtp = (os.getenv('DISABLE_SMTP') or '').strip().lower() in ('1', 'true', 'yes')
 
     # Prefer SendGrid when fully configured
     sendgrid_api_key = (os.getenv('SENDGRID_API_KEY') or '').strip()
@@ -148,6 +149,9 @@ def send_email(to_email, subject, html_content):
     smtp_pass = os.getenv('SMTP_PASS')
 
     if provider == 'smtp':
+        if disable_smtp:
+            print('[ERROR] SMTP is disabled (DISABLE_SMTP=true)')
+            return False
         if smtp_host and smtp_user and smtp_pass:
             return send_email_via_smtp(to_email, subject, html_content)
         print('[ERROR] EMAIL_PROVIDER=smtp but SMTP is not fully configured')
@@ -174,14 +178,16 @@ def send_email(to_email, subject, html_content):
         ok = send_email_via_sendgrid(to_email, subject, html_content)
         if ok:
             return True
-        # If SendGrid is configured but failing (e.g. 401/403), optionally fall back
-        # to SMTP when available.
+        if disable_smtp:
+            return False
         if smtp_host and smtp_user and smtp_pass:
             print('[EMAIL] SendGrid failed; attempting SMTP fallback...')
             return send_email_via_smtp(to_email, subject, html_content)
         return False
 
     # Fallback to SMTP if configured
+    if disable_smtp:
+        return False
     if smtp_host and smtp_user and smtp_pass:
         return send_email_via_smtp(to_email, subject, html_content)
 
