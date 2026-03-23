@@ -32,6 +32,57 @@ def _normalize_role(raw_role, default='manager'):
         return 'manager'
     return default
 
+
+def _is_finance_requested(requested_role) -> bool:
+    role_key = (requested_role or '').strip().lower().replace('-', '_').replace(' ', '_')
+    return role_key.startswith('finance') or role_key in {
+        'financial_manager',
+        'finance_manager',
+        'financial manager',
+        'finance manager',
+    }
+
+
+def _try_upgrade_to_finance_manager(cursor, conn, user_id, uid, email) -> bool:
+    """Safely upgrade role to finance_manager for the authenticated Firebase user.
+
+    We only perform this upgrade when we can reasonably prove the user controls the
+    account (firebase_uid matches, or the row is not yet linked).
+    """
+    try:
+        cursor.execute(
+            """UPDATE users
+                   SET role = 'finance_manager'
+                 WHERE id = %s
+                   AND (firebase_uid IS NULL OR firebase_uid = %s)""",
+            (user_id, uid),
+        )
+        upgraded = cursor.rowcount > 0
+        if upgraded:
+            conn.commit()
+        else:
+            conn.rollback()
+        return upgraded
+    except psycopg2.ProgrammingError:
+        # firebase_uid column may not exist in older schemas; fall back to an email-scoped update.
+        conn.rollback()
+        cursor.execute(
+            """UPDATE users
+                   SET role = 'finance_manager'
+                 WHERE id = %s
+                   AND email = %s""",
+            (user_id, email),
+        )
+        upgraded = cursor.rowcount > 0
+        if upgraded:
+            conn.commit()
+        else:
+            conn.rollback()
+        return upgraded
+    except Exception:
+        conn.rollback()
+        return False
+
 def _select_firebase_user(cursor, email, uid):
     """
     Resolve a Firebase-authenticated user deterministically.
@@ -535,6 +586,15 @@ def firebase_auth():
                 normalized_role = _normalize_role(user_role, default='manager')
                 if normalized_role == 'manager' and (user_role or '').strip():
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
+
+                # If the client is registering/logging in with a finance role but the DB still
+                # has manager/user, upgrade ONLY to finance_manager (never to admin) and only
+                # when we can safely bind it to this Firebase identity.
+                if normalized_role == 'manager' and _is_finance_requested(requested_role):
+                    if _try_upgrade_to_finance_manager(cursor, conn, user_id, uid, email):
+                        user_role = 'finance_manager'
+                        normalized_role = 'finance_manager'
+                        print(f'🔐 Upgraded user {email} to finance_manager (safe Firebase-bound upgrade)')
 
                 # SECURITY: Never upgrade stored roles based on a client-provided "role" during login.
                 # This is an escalation vector (e.g. if the frontend persists a stale role locally).
