@@ -1231,6 +1231,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final region = _globalRegionCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
+      final departmentFilter = _isAdminUser() ? null : department;
 
       return await context.read<AppState>().getOwnerLeaderboardAnalytics(
             startDate: startDate,
@@ -1240,7 +1241,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             client: client.isEmpty ? null : client,
             region: region.isEmpty ? null : region,
             scope: _cycleTimeScope,
-            department: department.isEmpty ? null : department,
+            department: (departmentFilter == null || departmentFilter.isEmpty)
+                ? null
+                : departmentFilter,
           );
     } catch (e) {
       print('Owner leaderboard exception: $e');
