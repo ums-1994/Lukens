@@ -372,11 +372,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               children: [
                 Material(
                   child: AdminSidebar(
-                    isCollapsed: _isSidebarCollapsed,
+                    isCollapsed: app.isAdminSidebarCollapsed,
                     currentPage: _currentPage,
-                    onToggle: () => setState(
-                      () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                    ),
+                    onToggle: () => context.read<AppState>().toggleAdminSidebar(),
                     onSelect: (label) {
                       setState(() => _currentPage = label);
                       _navigateToPage(context, label);
@@ -1365,7 +1363,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   }
 
   void _toggleSidebar() {
-    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
+    final app = context.read<AppState>();
+    app.setAdminSidebarCollapsed(!app.isAdminSidebarCollapsed);
   }
 
   Widget _buildPendingApprovalsList() {

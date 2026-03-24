@@ -38,7 +38,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   final TextEditingController _globalRegionCtrl = TextEditingController();
   final TextEditingController _globalOwnerCtrl = TextEditingController();
   final TextEditingController _globalProposalTypeCtrl = TextEditingController();
-  bool _isSidebarCollapsed = true;
   final ScrollController _scrollController = ScrollController();
   final _compactCurrencyFormatter = NumberFormat.compactCurrency(
     decimalDigits: 0,
@@ -2036,6 +2035,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final sidebarCollapsed = app.isAdminSidebarCollapsed;
     final filtered = _filterProposals(app.proposals);
     final analytics = _calculateAnalytics(filtered);
     final metrics = _buildMetricCards(analytics);
@@ -2047,13 +2047,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         child: Row(
           children: [
             AppSideNav(
-              isCollapsed: _isSidebarCollapsed,
+              isCollapsed: sidebarCollapsed,
               currentLabel:
                   isAdminUser ? 'Analytics' : 'Analytics (My Pipeline)',
               isAdmin: isAdminUser,
-              onToggle: () => setState(
-                () => _isSidebarCollapsed = !_isSidebarCollapsed,
-              ),
+              onToggle: () => app.toggleAdminSidebar(),
               onSelect: _navigatePage,
             ),
             Expanded(
@@ -3432,7 +3430,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     bool isActive,
     BuildContext context,
   ) {
-    final collapsed = _isSidebarCollapsed;
+    final collapsed = context.watch<AppState>().isAdminSidebarCollapsed;
     return Tooltip(
       message: collapsed ? label : '',
       child: InkWell(
