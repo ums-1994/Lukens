@@ -3346,21 +3346,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'signed':
-      case 'approved':
-        return Colors.green;
-      case 'in review':
-      case 'pending':
-        return Colors.orange;
-      case 'draft':
-        return Colors.grey;
-      default:
-        return Colors.blue;
-    }
-  }
 
+  // ignore: unused_element
   String _formatDate(DateTime? date) {
     if (date == null) return 'No date';
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
@@ -3437,6 +3424,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
+  // ignore: unused_element
   Widget _buildNavItem(
     String label,
     String iconAsset,
