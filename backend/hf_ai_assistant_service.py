@@ -25,12 +25,13 @@ def _getenv(name: str, default: str = "") -> str:
         v = v[1:-1].strip()
     return v
 
-# Support both naming conventions: AI_ASSISTANT_HF_* (your .env) and legacy names
-_def_base = _getenv("AI_ASSISTANT_HF_URL") or _getenv("HF_AI_ASSISTANT_BASE_URL") or "https://lorde01v-ai-content-v2.hf.space"
-_def_base = _def_base.rstrip("/")
-if "/ai-assistant" not in _def_base:
-    _def_base = f"{_def_base}/ai-assistant"
-HF_AI_ASSISTANT_BASE_URL = _def_base
+# Support both naming conventions; no baked-in Space URL — set AI_ASSISTANT_HF_URL in .env / Render.
+_raw_base = (_getenv("AI_ASSISTANT_HF_URL") or _getenv("HF_AI_ASSISTANT_BASE_URL") or "").rstrip("/")
+HF_AI_ASSISTANT_BASE_URL = ""
+if _raw_base:
+    HF_AI_ASSISTANT_BASE_URL = (
+        _raw_base if "/ai-assistant" in _raw_base else f"{_raw_base}/ai-assistant"
+    )
 
 # Prefer AI_ASSISTANT_API_KEY (matches HF Space secret name); fallback to AI_ASSISTANT_HF_TOKEN
 AI_ASSISTANT_API_KEY = _getenv("AI_ASSISTANT_API_KEY") or _getenv("AI_ASSISTANT_HF_TOKEN") or None
@@ -58,6 +59,8 @@ class HFAIAssistantService:
         self.api_key = raw.strip() if isinstance(raw, str) else ""
         if not self.api_key:
             raise ValueError("AI_ASSISTANT_HF_TOKEN (or AI_ASSISTANT_API_KEY) is required for HF AI Assistant.")
+        if not (self.base_url or "").strip():
+            raise ValueError("AI_ASSISTANT_HF_URL (or HF_AI_ASSISTANT_BASE_URL) is required for HF AI Assistant.")
         # Some HF Spaces expect "Bearer <token>"; others accept token as-is
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -192,8 +195,8 @@ class HFAIAssistantService:
 
 
 def get_hf_ai_assistant_service() -> Optional[HFAIAssistantService]:
-    """Return a configured HFAIAssistantService if AI_ASSISTANT_API_KEY is set, else None."""
-    if not AI_ASSISTANT_API_KEY:
+    """Return a configured HFAIAssistantService if URL + API key are set, else None."""
+    if not AI_ASSISTANT_API_KEY or not HF_AI_ASSISTANT_BASE_URL:
         return None
     try:
         return HFAIAssistantService()

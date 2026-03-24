@@ -98,6 +98,15 @@ print(
 
 app = Flask(__name__)
 
+def _normalize_origin(origin: str) -> str:
+    raw = (origin or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return raw.rstrip("/")
+
 # Flask-Cors origin matching is strict unless you provide regex objects.
 # Use compiled regexes so localhost dev ports (Flutter web) are allowed.
 _cors_origins = [
@@ -128,11 +137,43 @@ except Exception:
     # Never fail app startup due to CORS parsing.
     pass
 
+# Optional env-driven allowlist extension for local + deployed frontends.
+_extra_cors = (os.getenv("CORS_ALLOWED_ORIGINS") or "").strip()
+if _extra_cors:
+    for item in _extra_cors.split(","):
+        origin = _normalize_origin(item)
+        if origin:
+            _cors_origins.append(origin)
+
+
+def _is_allowed_origin(origin: str) -> bool:
+    candidate = _normalize_origin(origin)
+    if not candidate:
+        return False
+    for allowed in _cors_origins:
+        try:
+            if isinstance(allowed, str) and candidate == allowed:
+                return True
+            if hasattr(allowed, "match") and allowed.match(candidate):
+                return True
+        except Exception:
+            continue
+    return False
+
 CORS(
     app,
     origins=_cors_origins,
     supports_credentials=True,
-    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "X-AI-Request-ID"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Accept",
+        "X-AI-Request-ID",
+        "X-Client-Device-Id",
+        "X-Client-Session-Token",
+        "X-Device-Id",
+    ],
     methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
     expose_headers=["Content-Type", "Authorization"],
 )
@@ -153,6 +194,7 @@ from api.routes.finance_export import bp as finance_export_bp
 from api.routes.finance_audit import bp as finance_audit_bp
 from api.routes.finance_analytics import bp as finance_analytics_bp
 from api.routes.ai_assistant_proxy import bp as ai_assistant_proxy_bp
+from api.routes.client import bp as client_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -169,7 +211,7 @@ app.register_blueprint(finance_export_bp, url_prefix='/api')
 app.register_blueprint(finance_audit_bp, url_prefix='/api')
 app.register_blueprint(finance_analytics_bp, url_prefix='/api')
 app.register_blueprint(ai_assistant_proxy_bp, url_prefix='/api')
-
+app.register_blueprint(client_bp)
 
 @app.route("/", methods=["GET", "HEAD"])
 def root():
@@ -177,7 +219,6 @@ def root():
         "status": "ok",
         "service": "lukens-backend",
     }, 200
-
 
 @app.route("/health", methods=["GET", "HEAD"])
 def health():
@@ -189,11 +230,29 @@ def health():
 def handle_options_preflight(remaining=None):
     resp = Response("", status=200)
     origin = request.headers.get('Origin')
-    if origin:
+    if origin and _is_allowed_origin(origin):
         resp.headers['Access-Control-Allow-Origin'] = origin
     resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
-    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID'
+    resp.headers['Access-Control-Allow-Headers'] = (
+        'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID, '
+        'X-Client-Device-Id, X-Client-Session-Token, X-Device-Id'
+    )
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    return resp
+
+
+@app.after_request
+def _add_cors_headers(resp):
+    origin = request.headers.get('Origin')
+    if origin and _is_allowed_origin(origin):
+        resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Vary'] = 'Origin'
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
+        resp.headers['Access-Control-Allow-Headers'] = (
+            'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID, '
+            'X-Client-Device-Id, X-Client-Session-Token, X-Device-Id'
+        )
     return resp
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility

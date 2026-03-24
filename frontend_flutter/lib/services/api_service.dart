@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'dart:html' as html;
 
 import 'ai_assistant_api.dart';
+import '../config/risk_gate_config.dart';
 
 class ApiService {
   // Get API URL from JavaScript config or use default
@@ -852,8 +853,15 @@ class ApiService {
         'sections': sections,
       };
 
+      final riskBase = await resolveRiskGateHfBaseUrl();
+      if (riskBase.isEmpty) {
+        print(
+            'Risk analysis: RISK_GATE_HF_BASE_URL not set (use .env or --dart-define).');
+        return null;
+      }
+
       final response = await http.post(
-        Uri.parse('https://lorde01v-v3.hf.space/analyze-proposal'),
+        Uri.parse('$riskBase/analyze-proposal'),
         headers: _getHeaders(token),
         body: json.encode(proposalRequest),
       );

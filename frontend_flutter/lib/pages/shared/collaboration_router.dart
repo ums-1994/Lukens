@@ -34,8 +34,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
       // First, try the collaborate endpoint (for collaborators)
       final collaborateResponse = await http
           .get(
-            Uri.parse(
-                '$baseUrl/api/collaborate?token=${widget.token}'),
+            Uri.parse('$baseUrl/api/collaborate?token=${widget.token}'),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -53,7 +52,8 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
         // Route all collaborators to full editor with edit access (no restrictions)
         if (authToken != null && proposalData != null) {
           // All collaborators get full editing rights regardless of permission level
-          print('→ Routing to Document Editor (full edit access for all collaborators)');
+          print(
+              '→ Routing to Document Editor (full edit access for all collaborators)');
           print('   Auth token received: ${authToken.substring(0, 20)}...');
 
           if (mounted) {
@@ -74,7 +74,9 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
                   proposalId: proposalData['id']?.toString(),
                   proposalTitle: proposalData['title'] ?? 'Untitled',
                   readOnly: false, // Full edit access for all collaborators
-                  isCollaborator: true, // Hide navigation, show only editor and comments
+                  isCollaborator:
+                      true, // Hide navigation, show only editor and comments
+                  forceCommentsPanelOpen: true,
                 ),
               ),
             );
@@ -102,7 +104,9 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
                   proposalId: proposalData['id']?.toString(),
                   proposalTitle: proposalData['title'] ?? 'Untitled',
                   readOnly: false, // Full edit access
-                  isCollaborator: true, // Hide navigation, show only editor and comments
+                  isCollaborator:
+                      true, // Hide navigation, show only editor and comments
+                  forceCommentsPanelOpen: true,
                 ),
               ),
             );
@@ -118,8 +122,7 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
 
       final clientResponse = await http
           .get(
-            Uri.parse(
-                '$baseUrl/api/client/proposals?token=${widget.token}'),
+            Uri.parse('$baseUrl/api/client/proposals?token=${widget.token}'),
           )
           .timeout(const Duration(seconds: 5));
 
@@ -217,4 +220,3 @@ class _CollaborationRouterState extends State<CollaborationRouter> {
     );
   }
 }
-

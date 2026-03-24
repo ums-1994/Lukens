@@ -45,7 +45,8 @@ import 'services/role_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-const String _buildSha = String.fromEnvironment('BUILD_SHA', defaultValue: 'dev');
+const String _buildSha =
+    String.fromEnvironment('BUILD_SHA', defaultValue: 'dev');
 
 String? _extractTokenLoose(String input) {
   try {
@@ -93,7 +94,8 @@ Future<void> main() async {
 
       // Alias legacy/typo route: /client/portals -> /client/proposals
       if (hash.startsWith('#/client/portals')) {
-        final fixedHash = hash.replaceFirst('#/client/portals', '#/client/proposals');
+        final fixedHash =
+            hash.replaceFirst('#/client/portals', '#/client/proposals');
         web.window.location.replace('${href.split('#').first}$fixedHash');
         return;
       }
@@ -242,7 +244,8 @@ class MyApp extends StatelessWidget {
 
     // Handle client proposals route
     if (settings.name == '/client/proposals' ||
-        (settings.name != null && settings.name!.startsWith('/client/proposals'))) {
+        (settings.name != null &&
+            settings.name!.startsWith('/client/proposals'))) {
       print('🔍 Client proposals route detected: ${settings.name}');
 
       final currentUrl = web.window.location.href;
@@ -271,7 +274,8 @@ class MyApp extends StatelessWidget {
       // If not found in query params, check fragment (hash route)
       if ((token == null || token.isEmpty) && hash.contains('token=')) {
         try {
-          final normalizedFragment = hash.startsWith('#') ? hash.substring(1) : hash;
+          final normalizedFragment =
+              hash.startsWith('#') ? hash.substring(1) : hash;
           final fragmentUri = Uri.parse('http://dummy/$normalizedFragment');
           token = fragmentUri.queryParameters['token'];
         } catch (_) {
@@ -415,6 +419,8 @@ class MyApp extends StatelessWidget {
                   requireVersionDescription:
                       args['requireVersionDescription'] ?? false,
                   isCollaborator: args['isCollaborator'] ?? false,
+                  forceCommentsPanelOpen:
+                      args['forceCommentsPanelOpen'] ?? false,
                 );
               }
             }
@@ -592,9 +598,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
             String dashboardRoute;
 
             final roleKey = userRole.replaceAll('-', '_');
-            final isAdmin = roleKey == 'admin' ||
-                roleKey == 'ceo' ||
-                roleKey == 'approver';
+            final isAdmin =
+                roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
             final isFinance = roleKey.startsWith('finance') ||
                 roleKey == 'financial_manager' ||
                 roleKey == 'financial manager';
@@ -699,12 +704,14 @@ class _AuthWrapperState extends State<AuthWrapper> {
         final tokenPreview = clientToken.length >= 10
             ? clientToken.substring(0, 10)
             : clientToken;
-        print('✅ Detected client proposals URL in _checkVerificationUrl - token: $tokenPreview...');
+        print(
+            '✅ Detected client proposals URL in _checkVerificationUrl - token: $tokenPreview...');
         WidgetsBinding.instance.addPostFrameCallback((_) {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => ClientDashboardHome(initialToken: clientToken),
+              builder: (context) =>
+                  ClientDashboardHome(initialToken: clientToken),
             ),
           );
         });
@@ -804,11 +811,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
         uri.path.contains('verify-email') ||
         hash.contains('verify-email');
     String? verifyToken = uri.queryParameters['token'];
-    if ((verifyToken == null || verifyToken.isEmpty) && hash.contains('token=')) {
+    if ((verifyToken == null || verifyToken.isEmpty) &&
+        hash.contains('token=')) {
       final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
       if (hashMatch != null) verifyToken = hashMatch.group(1);
     }
-    if ((verifyToken == null || verifyToken.isEmpty) && currentUrl.contains('token=')) {
+    if ((verifyToken == null || verifyToken.isEmpty) &&
+        currentUrl.contains('token=')) {
       final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
       if (urlMatch != null) verifyToken = urlMatch.group(1);
     }
@@ -837,7 +846,8 @@ class _AuthWrapperState extends State<AuthWrapper> {
       }
     } catch (_) {}
     if (!isClientPreview) {
-      isClientPreview = currentUrl.contains('preview=1') || hash.contains('preview=1');
+      isClientPreview =
+          currentUrl.contains('preview=1') || hash.contains('preview=1');
     }
 
     if (isClientProposals) {

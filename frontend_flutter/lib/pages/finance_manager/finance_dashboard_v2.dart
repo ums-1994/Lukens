@@ -700,9 +700,23 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
           );
         }
 
-        final displayCount = months.length >= 6 ? 6 : months.length;
-        final months6 = months.sublist(months.length - displayCount);
-        final values6 = values.sublist(values.length - displayCount);
+        final now = DateTime.now();
+        int endIndex = months.length - 1;
+        if (_selectedYear == now.year) {
+          // Prefer to end at the current month so the chart doesn't jump to
+          // Jul-Dec just because the API returns Jan-Dec buckets.
+          final currentKey =
+              '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}';
+          final idx = months.indexOf(currentKey);
+          if (idx >= 0) {
+            endIndex = idx;
+          }
+        }
+
+        final displayCount = (endIndex + 1) >= 6 ? 6 : (endIndex + 1);
+        final startIndex = (endIndex - displayCount + 1).clamp(0, endIndex);
+        final months6 = months.sublist(startIndex, endIndex + 1);
+        final values6 = values.sublist(startIndex, endIndex + 1);
 
         double maxY = 0;
         for (final v in values6) {
@@ -3341,12 +3355,14 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
           );
 
           // Ensure value is one of the dropdown items to avoid assertion (e.g. never use 'pending')
-          final effectiveStatusFilter = _validStatusFilters.contains(_statusFilter)
-              ? _statusFilter
-              : 'all';
+          final effectiveStatusFilter =
+              _validStatusFilters.contains(_statusFilter)
+                  ? _statusFilter
+                  : 'all';
           if (_statusFilter != effectiveStatusFilter) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _statusFilter = effectiveStatusFilter);
+              if (mounted)
+                setState(() => _statusFilter = effectiveStatusFilter);
             });
           }
           final statusDropdown = Expanded(

@@ -593,14 +593,6 @@ def get_clients(username=None, user_id=None, email=None):
             # Build ORDER BY clause - use created_at if available, otherwise id
             order_by = 'created_at DESC' if 'created_at' in available_columns else 'id DESC'
             
-            # Ensure user_id is an integer
-            if not isinstance(resolved_user_id, int):
-                try:
-                    resolved_user_id = int(resolved_user_id)
-                except (ValueError, TypeError):
-                    print(f"[ERROR] Invalid user_id type: {type(resolved_user_id)} = {resolved_user_id}")
-                    return jsonify({"error": "Invalid user ID"}), 400
-            
             if user_role == 'manager':
                 query = f"""
                     SELECT {', '.join(select_fields)}
@@ -610,13 +602,16 @@ def get_clients(username=None, user_id=None, email=None):
                 query_params = ()
             else:
                 if 'created_by' in available_columns:
+                    # Be defensive about schema differences on Render/local.
+                    # created_by might be int, uuid, or text depending on historical migrations.
+                    resolved_user_id_text = str(resolved_user_id)
                     query = f"""
                         SELECT {', '.join(select_fields)}
                         FROM clients
-                        WHERE created_by = %s OR created_by IS NULL
+                        WHERE created_by::text = %s OR created_by IS NULL
                         ORDER BY {order_by}
                     """
-                    query_params = (resolved_user_id,)
+                    query_params = (resolved_user_id_text,)
                 else:
                     # Older schemas may not have created_by; fall back to returning all clients
                     query = f"""
