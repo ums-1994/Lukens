@@ -560,6 +560,8 @@ def start_client_device_session():
                     'expires_at': session['expires_at'].isoformat(),
                 }, 200
 
+            now = _now_utc()
+
             try:
                 cursor.execute(
                     """
@@ -618,6 +620,7 @@ def start_client_device_session():
                             else None,
                             'reused_challenge': True,
                         }
+                        conn.commit()
                         return payload, 200
             except Exception:
                 # Best-effort dedupe only; never block OTP generation.
@@ -627,7 +630,6 @@ def start_client_device_session():
             challenge_id = secrets.token_urlsafe(24)
             challenge_salt = secrets.token_urlsafe(16)
             otp_hash = _hash_client_otp(otp_code, challenge_salt)
-            now = _now_utc()
             expires_at = now + timedelta(minutes=10)
             cursor.execute(
                 """

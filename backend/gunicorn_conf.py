@@ -7,9 +7,9 @@ if not port:
     port = '8000'
 
 bind = f"0.0.0.0:{port}"
-workers = int(os.environ.get('WORKERS', '4'))
-threads = int(os.environ.get('THREADS', '2'))
-timeout = int(os.environ.get('TIMEOUT', '120'))
+workers = int(os.environ.get('WORKERS', '2'))
+threads = int(os.environ.get('THREADS', '4'))
+timeout = int(os.environ.get('TIMEOUT', '180'))
 worker_class = 'sync'
 
 # Log the bind address for debugging

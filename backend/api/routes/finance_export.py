@@ -131,34 +131,101 @@ def _extract_amount_from_content(content_data):
                 amount = _parse_num(content_data[key])
                 if amount > 0:
                     return amount
-    
-    # Try to extract from pricing tables in sections
-    if isinstance(content_data, dict) and 'sections' in content_data:
-        total = 0.0
-        for section in content_data.get('sections', []):
-            if not isinstance(section, dict):
+
+    def _find_header_index(headers, needles):
+        if not isinstance(headers, list):
+            return None
+        for i, header in enumerate(headers):
+            try:
+                h = str(header).lower().strip()
+            except Exception:
                 continue
-                
-            # Check for tables in section
-            for table in section.get('tables', []):
-                if isinstance(table, dict) and table.get('type') == 'price':
-                    cells = table.get('cells', [])
-                    if isinstance(cells, list) and len(cells) > 1:
-                        # Look for total column
-                        header_row = cells[0] if isinstance(cells[0], list) else []
-                        total_col_idx = None
-                        
-                        for i, header in enumerate(header_row):
-                            if isinstance(header, str) and 'total' in header.lower():
-                                total_col_idx = i
-                                break
-                        
-                        if total_col_idx is not None:
-                            for row in cells[1:]:
-                                if isinstance(row, list) and len(row) > total_col_idx:
-                                    total += _parse_num(row[total_col_idx])
-        
-        return total
+            for n in needles:
+                if h == n or n in h:
+                    return i
+        return None
+
+    def _table_subtotal_from_cells(cells):
+        if not isinstance(cells, list) or not cells:
+            return 0.0
+        header_row = cells[0] if isinstance(cells[0], list) else None
+        if not isinstance(header_row, list):
+            return 0.0
+
+        total_col = _find_header_index(header_row, ['total', 'amount', 'line total'])
+        qty_col = _find_header_index(header_row, ['quantity', 'qty'])
+        unit_col = _find_header_index(header_row, ['unit price', 'price'])
+
+        subtotal = 0.0
+        for row in cells[1:]:
+            if not isinstance(row, list):
+                continue
+            row_total = 0.0
+            if total_col is not None and 0 <= total_col < len(row):
+                row_total = _parse_num(row[total_col])
+            if row_total == 0.0:
+                qty = _parse_num(row[qty_col]) if qty_col is not None and 0 <= qty_col < len(row) else 0.0
+                unit = _parse_num(row[unit_col]) if unit_col is not None and 0 <= unit_col < len(row) else 0.0
+                row_total = qty * unit
+            subtotal += float(row_total)
+        return float(subtotal)
+
+    def _sum_price_tables_from_tables_list(tables_any):
+        if not isinstance(tables_any, list):
+            return 0.0
+        total = 0.0
+        for t in tables_any:
+            if not isinstance(t, dict):
+                continue
+            if str(t.get('type') or '').lower().strip() != 'price':
+                continue
+            cells = t.get('cells')
+            subtotal = _table_subtotal_from_cells(cells)
+            vat_rate = _parse_num(t.get('vatRate'))
+            vat = subtotal * vat_rate if vat_rate > 0 else 0.0
+            total += (subtotal + vat)
+        return float(total)
+
+    def _sum_price_tables_from_section(section):
+        if not isinstance(section, dict):
+            return 0.0
+        total = 0.0
+        total += _sum_price_tables_from_tables_list(section.get('tables'))
+
+        positioned = section.get('positionedPricingTables')
+        if isinstance(positioned, list):
+            for p in positioned:
+                if not isinstance(p, dict):
+                    continue
+                table = p.get('table')
+                if isinstance(table, dict):
+                    total += _sum_price_tables_from_tables_list([table])
+
+        body = section.get('body') or section.get('content')
+        if isinstance(body, dict):
+            total += _sum_price_tables_from_tables_list(body.get('tables'))
+            positioned2 = body.get('positionedPricingTables')
+            if isinstance(positioned2, list):
+                for p in positioned2:
+                    if not isinstance(p, dict):
+                        continue
+                    table = p.get('table')
+                    if isinstance(table, dict):
+                        total += _sum_price_tables_from_tables_list([table])
+        return float(total)
+
+    # Try to extract from pricing tables in sections
+    sections_list = None
+    if isinstance(content_data, dict) and isinstance(content_data.get('sections'), list):
+        sections_list = content_data.get('sections')
+    elif isinstance(content_data, list):
+        sections_list = content_data
+
+    if isinstance(sections_list, list):
+        total = 0.0
+        for section in sections_list:
+            total += _sum_price_tables_from_section(section)
+        return float(total)
     
     return 0.0
 

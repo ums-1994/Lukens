@@ -3163,7 +3163,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         prompt:
             'Generate content for the "$sectionName" section of a proposal about ${_formData['proposalTitle'] ?? ''}',
         context: contextPayload,
-        sectionType: 'proposal_section',
+        sectionType: moduleId,
       );
 
       if (!mounted) return;
@@ -3237,7 +3237,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       final result = await ApiService.improveContent(
         token: token,
         content: controller.text,
-        sectionType: 'proposal_section',
+        sectionType: moduleId,
       );
 
       if (!mounted) return;
