@@ -32,6 +32,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   bool _cycleTimeAutoRefresh = true;
   int _cycleTimeRefreshTick = 0;
   Timer? _cycleTimeRefreshTimer;
+  DateTime? _lastRefreshAt;
   String? _pipelineStageFilter;
   final TextEditingController _cycleTimeOwnerCtrl = TextEditingController();
   final TextEditingController _cycleTimeProposalTypeCtrl =
@@ -46,17 +47,21 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   bool _isSidebarCollapsed = false;
   late AnimationController _animationController;
   final ScrollController _scrollController = ScrollController();
+  bool _performanceExpanded = true;
+  bool _pipelineFlowExpanded = false;
+  bool _riskReadinessExpanded = false;
+  bool _clientEngagementExpanded = false;
   final _compactCurrencyFormatter = NumberFormat.compactCurrency(
     decimalDigits: 0,
-    symbol: r'$',
-    locale: 'en_US',
+    symbol: 'R',
+    locale: 'en_ZA',
   );
   final _currencyFormatter = NumberFormat.currency(
-    symbol: r'$',
+    symbol: 'R',
     decimalDigits: 0,
-    locale: 'en_US',
+    locale: 'en_ZA',
   );
-  static const _currencySymbol = r'$';
+  static const _currencySymbol = 'R';
 
   @override
   void initState() {
@@ -70,14 +75,138 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final app = context.read<AppState>();
       app.fetchProposals();
+      if (!mounted) return;
+      setState(() => _lastRefreshAt = DateTime.now());
     });
 
     _cycleTimeRefreshTimer =
         Timer.periodic(const Duration(seconds: 60), (timer) {
       if (!mounted) return;
       if (!_cycleTimeAutoRefresh) return;
-      setState(() => _cycleTimeRefreshTick++);
+      setState(() {
+        _cycleTimeRefreshTick++;
+        _lastRefreshAt = DateTime.now();
+      });
     });
+  }
+
+  String _formatTimeAgo(DateTime? dt) {
+    if (dt == null) return 'Updated just now';
+    final diff = DateTime.now().difference(dt);
+    if (diff.inSeconds < 20) return 'Updated just now';
+    if (diff.inMinutes < 1) return 'Updated ${diff.inSeconds}s ago';
+    if (diff.inHours < 1) return 'Updated ${diff.inMinutes}m ago';
+    if (diff.inDays < 1) return 'Updated ${diff.inHours}h ago';
+    return 'Updated ${diff.inDays}d ago';
+  }
+
+  Widget _buildSectionBadge(String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white70,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassSection({
+    required String title,
+    required IconData icon,
+    required bool expanded,
+    required ValueChanged<bool> onChanged,
+    List<Widget> badges = const [],
+    required Widget child,
+  }) {
+    final header = Row(
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          child: Icon(icon, size: 14, color: Colors.white.withValues(alpha: 0.92)),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: PremiumTheme.titleMedium.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                _formatTimeAgo(_lastRefreshAt),
+                style: PremiumTheme.bodySmall.copyWith(
+                  color: PremiumTheme.textSecondary,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (badges.isNotEmpty) ...[
+          const SizedBox(width: 12),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: badges,
+          ),
+        ],
+      ],
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          ),
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              dividerColor: Colors.transparent,
+              splashColor: Colors.white.withValues(alpha: 0.06),
+              highlightColor: Colors.white.withValues(alpha: 0.04),
+              hoverColor: Colors.white.withValues(alpha: 0.04),
+            ),
+            child: ExpansionTile(
+              initiallyExpanded: expanded,
+              onExpansionChanged: onChanged,
+              tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              iconColor: Colors.white.withValues(alpha: 0.80),
+              collapsedIconColor: Colors.white.withValues(alpha: 0.75),
+              title: header,
+              children: [child],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _searchOwners(String query) async {
@@ -3249,6 +3378,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                           if (!mounted) return;
                                           setState(() {
                                             _cycleTimeRefreshTick++;
+                                            _lastRefreshAt = DateTime.now();
                                           });
                                         },
                                       ),
@@ -3314,350 +3444,305 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                               ),
                               const SizedBox(height: 18),
                               _buildGlobalFilterBar(),
-                              if (isAdminUser) ...[
-                                const SizedBox(height: 18),
-                                FutureBuilder<Map<String, dynamic>?>(
-                                  future: _fetchOwnerLeaderboard(),
-                                  builder: (context, snapshot) {
-                                    final rows =
-                                        (snapshot.data?['rows'] as List?) ?? [];
-                                    final detail =
-                                        (snapshot.data?['detail'] ?? '').toString();
+                              const SizedBox(height: 24),
+                              _buildGlassSection(
+                                title: 'Performance',
+                                icon: Icons.insights_outlined,
+                                expanded: _performanceExpanded,
+                                onChanged: (v) => setState(() => _performanceExpanded = v),
+                                badges: [
+                                  if (isAdminUser)
+                                    _buildSectionBadge(_cycleTimeScope == 'self' ? 'Scope: Me' : 'Scope: Team'),
+                                ],
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    if (isAdminUser) ...[
+                                      FutureBuilder<Map<String, dynamic>?>(
+                                        future: _fetchOwnerLeaderboard(),
+                                        builder: (context, snapshot) {
+                                          final rows =
+                                              (snapshot.data?['rows'] as List?) ?? [];
+                                          final detail =
+                                              (snapshot.data?['detail'] ?? '').toString();
 
-                                    Widget headerChip(String label) {
-                                      return Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 6),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.06),
-                                          borderRadius:
-                                              BorderRadius.circular(999),
-                                          border: Border.all(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.10),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          label,
-                                          style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      );
-                                    }
-
-                                    return ClipRRect(
-                                      borderRadius: BorderRadius.circular(16),
-                                      child: BackdropFilter(
-                                        filter: ImageFilter.blur(
-                                            sigmaX: 15, sigmaY: 15),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(18),
-                                          decoration: BoxDecoration(
-                                            color: Colors.white
-                                                .withValues(alpha: 0.05),
-                                            borderRadius:
-                                                BorderRadius.circular(16),
-                                            border: Border.all(
-                                              color: Colors.white
-                                                  .withValues(alpha: 0.10),
-                                            ),
-                                          ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      'Owner Leaderboard',
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: PremiumTheme
-                                                          .titleLarge
-                                                          .copyWith(
-                                                              color: Colors
-                                                                  .white),
-                                                    ),
+                                          return _buildGlassChartCard(
+                                            'Owner Leaderboard',
+                                            Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  'Sent, signed, and conversion rate by owner',
+                                                  style: PremiumTheme.bodySmall.copyWith(
+                                                    color: PremiumTheme.textSecondary,
                                                   ),
-                                                  const SizedBox(width: 12),
-                                                  headerChip(
-                                                      _cycleTimeScope == 'self'
-                                                          ? 'Me'
-                                                          : 'Team'),
-                                                ],
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                'Sent, signed, and conversion rate by owner',
-                                                style: PremiumTheme.bodySmall
-                                                    .copyWith(
-                                                  color:
-                                                      PremiumTheme.textSecondary,
                                                 ),
-                                              ),
-                                              const SizedBox(height: 14),
-                                              if (snapshot.connectionState ==
-                                                      ConnectionState.waiting &&
-                                                  rows.isEmpty)
-                                                const LinearProgressIndicator(
-                                                  minHeight: 2,
-                                                  backgroundColor:
-                                                      Colors.transparent,
-                                                )
-                                              else if (snapshot.hasError)
-                                                Text(
-                                                  snapshot.error.toString(),
-                                                  style: PremiumTheme.bodySmall
-                                                      .copyWith(
-                                                          color:
-                                                              Colors.white70),
-                                                )
-                                              else if (detail.isNotEmpty)
-                                                Text(
-                                                  detail,
-                                                  style: PremiumTheme.bodySmall
-                                                      .copyWith(
-                                                          color:
-                                                              Colors.white70),
-                                                )
-                                              else if (rows.isEmpty)
-                                                Text(
-                                                  'No leaderboard data for selected filters.',
-                                                  style: PremiumTheme.bodySmall
-                                                      .copyWith(
-                                                          color:
-                                                              Colors.white70),
-                                                )
-                                              else
-                                                Column(
-                                                  children: rows
-                                                      .take(8)
-                                                      .map<Widget>((r) {
-                                                    final owner =
-                                                        (r['owner'] ?? '')
-                                                            .toString();
-                                                    final sent =
-                                                        (r['sent'] ?? 0) as int;
-                                                    final signed =
-                                                        (r['signed'] ?? 0) as int;
-                                                    final conv =
-                                                        ((r['conversion_rate'] ??
-                                                                    0.0)
-                                                                as num)
-                                                            .toDouble();
-                                                    return Padding(
-                                                      padding:
-                                                          const EdgeInsets.only(
-                                                              bottom: 10),
-                                                      child: Row(
-                                                        children: [
-                                                          Expanded(
-                                                            child: Text(
-                                                              owner,
-                                                              maxLines: 1,
-                                                              overflow:
-                                                                  TextOverflow.ellipsis,
-                                                              style: const TextStyle(
-                                                                  color:
-                                                                      Colors.white,
+                                                const SizedBox(height: 14),
+                                                if (snapshot.connectionState ==
+                                                        ConnectionState.waiting &&
+                                                    rows.isEmpty)
+                                                  const LinearProgressIndicator(
+                                                    minHeight: 2,
+                                                    backgroundColor:
+                                                        Colors.transparent,
+                                                  )
+                                                else if (snapshot.hasError)
+                                                  Text(
+                                                    snapshot.error.toString(),
+                                                    style: PremiumTheme.bodySmall
+                                                        .copyWith(color: Colors.white70),
+                                                  )
+                                                else if (detail.isNotEmpty)
+                                                  Text(
+                                                    detail,
+                                                    style: PremiumTheme.bodySmall
+                                                        .copyWith(color: Colors.white70),
+                                                  )
+                                                else if (rows.isEmpty)
+                                                  Text(
+                                                    'No leaderboard data for selected filters.',
+                                                    style: PremiumTheme.bodySmall
+                                                        .copyWith(color: Colors.white70),
+                                                  )
+                                                else
+                                                  Column(
+                                                    children: rows
+                                                        .take(8)
+                                                        .map<Widget>((r) {
+                                                      final owner =
+                                                          (r['owner'] ?? '').toString();
+                                                      final sent =
+                                                          (r['sent'] ?? 0) as int;
+                                                      final signed =
+                                                          (r['signed'] ?? 0) as int;
+                                                      final conv =
+                                                          ((r['conversion_rate'] ?? 0.0) as num)
+                                                              .toDouble();
+                                                      return Padding(
+                                                        padding: const EdgeInsets.only(bottom: 10),
+                                                        child: Row(
+                                                          children: [
+                                                            Expanded(
+                                                              child: Text(
+                                                                owner,
+                                                                maxLines: 1,
+                                                                overflow: TextOverflow.ellipsis,
+                                                                style: const TextStyle(
+                                                                  color: Colors.white,
                                                                   fontSize: 13,
-                                                                  fontWeight:
-                                                                      FontWeight.w600),
+                                                                  fontWeight: FontWeight.w600,
+                                                                ),
+                                                              ),
                                                             ),
-                                                          ),
-                                                          Container(
-                                                            width: 90,
-                                                            alignment:
-                                                                Alignment.centerRight,
-                                                            child: Text(
-                                                              '$sent',
-                                                              style: const TextStyle(
-                                                                  color:
-                                                                      Colors.white70,
-                                                                  fontSize: 13),
+                                                            Container(
+                                                              width: 90,
+                                                              alignment: Alignment.centerRight,
+                                                              child: Text(
+                                                                '$sent',
+                                                                style: const TextStyle(
+                                                                  color: Colors.white70,
+                                                                  fontSize: 13,
+                                                                ),
+                                                              ),
                                                             ),
-                                                          ),
-                                                          Container(
-                                                            width: 90,
-                                                            alignment:
-                                                                Alignment.centerRight,
-                                                            child: Text(
-                                                              '$signed',
-                                                              style: const TextStyle(
-                                                                  color:
-                                                                      Colors.white70,
-                                                                  fontSize: 13),
+                                                            Container(
+                                                              width: 90,
+                                                              alignment: Alignment.centerRight,
+                                                              child: Text(
+                                                                '$signed',
+                                                                style: const TextStyle(
+                                                                  color: Colors.white70,
+                                                                  fontSize: 13,
+                                                                ),
+                                                              ),
                                                             ),
-                                                          ),
-                                                          Container(
-                                                            width: 120,
-                                                            alignment:
-                                                                Alignment.centerRight,
-                                                            child: Text(
-                                                              '${(conv * 100).toStringAsFixed(1)}%',
-                                                              style: const TextStyle(
-                                                                  color:
-                                                                      Colors.white70,
-                                                                  fontSize: 13),
+                                                            Container(
+                                                              width: 120,
+                                                              alignment: Alignment.centerRight,
+                                                              child: Text(
+                                                                '${(conv * 100).toStringAsFixed(1)}%',
+                                                                style: const TextStyle(
+                                                                  color: Colors.white70,
+                                                                  fontSize: 13,
+                                                                ),
+                                                              ),
                                                             ),
-                                                          ),
-                                                        ],
-                                                      ),
-                                                    );
-                                                  }).toList(),
-                                                ),
-                                            ],
-                                          ),
-                                        ),
+                                                          ],
+                                                        ),
+                                                      );
+                                                    }).toList(),
+                                                  ),
+                                              ],
+                                            ),
+                                            height: 260,
+                                          );
+                                        },
                                       ),
-                                    );
-                                  },
-                                ),
-                              ],
-                              const SizedBox(height: 28),
-                              const SizedBox(height: 4),
-                              LayoutBuilder(
-                                builder: (context, constraints) {
-                                  final compact = constraints.maxWidth < 900;
-                                  if (compact) {
-                                    return Column(
-                                      children: [
-                                        for (int i = 0;
-                                            i < metrics.length;
-                                            i++) ...[
-                                          _buildGlassMetricCard(
-                                            metrics[i].title,
-                                            metrics[i].value,
-                                            metrics[i].change,
-                                            metrics[i].isPositive,
-                                            metrics[i].subtitle,
-                                          ),
-                                          if (i != metrics.length - 1)
-                                            const SizedBox(height: 20),
-                                        ],
-                                      ],
-                                    );
-                                  }
-
-                                  return Row(
-                                    children: [
-                                      for (int i = 0;
-                                          i < metrics.length;
-                                          i++) ...[
-                                        Expanded(
-                                          child: _buildGlassMetricCard(
-                                            metrics[i].title,
-                                            metrics[i].value,
-                                            metrics[i].change,
-                                            metrics[i].isPositive,
-                                            metrics[i].subtitle,
-                                          ),
-                                        ),
-                                        if (i != metrics.length - 1)
-                                          const SizedBox(width: 20),
-                                      ],
+                                      const SizedBox(height: 24),
                                     ],
-                                  );
-                                },
-                              ),
-                              const SizedBox(height: 32),
-                              _buildGlassChartCard(
-                                'Revenue Analytics',
-                                _buildRevenueChart(analytics.monthlyPoints),
-                                height: 350,
-                              ),
-                              const SizedBox(height: 32),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: FutureBuilder<Map<String, dynamic>?>(
-                                      key: ValueKey(
-                                          'pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
-                                      future: _fetchPipelineBundle(),
-                                      builder: (context, snapshot) {
-                                        final waiting =
-                                            snapshot.connectionState ==
-                                                ConnectionState.waiting;
-                                        final hasError = snapshot.hasError;
-                                        final bundle = snapshot.data;
-                                        final pipelineData =
-                                            (bundle?['pipeline'] as Map?)
-                                                ?.cast<String, dynamic>();
-                                        final approvalsSummary =
-                                            (bundle?['approvals_summary']
-                                                    as Map?)
-                                                ?.cast<String, dynamic>();
-                                        final approvalsBottlenecks =
-                                            (bundle?['approvals_bottlenecks']
-                                                    as Map?)
-                                                ?.cast<String, dynamic>();
-                                        final readinessGovernance =
-                                            (bundle?['readiness_governance']
-                                                    as Map?)
-                                                ?.cast<String, dynamic>();
-                                        final riskGateDetails =
-                                            (bundle?['risk_gate_details']
-                                                    as Map?)
-                                                ?.cast<String, dynamic>();
-                                        final stageAging =
-                                            (bundle?['stage_aging'] as Map?)
-                                                ?.cast<String, dynamic>();
-
-                                        Widget pipelineBody;
-                                        if (waiting) {
-                                          pipelineBody = const Center(
-                                            child: CircularProgressIndicator(),
+                                    LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final compact = constraints.maxWidth < 900;
+                                        if (compact) {
+                                          return Column(
+                                            children: [
+                                              for (int i = 0;
+                                                  i < metrics.length;
+                                                  i++) ...[
+                                                _buildGlassMetricCard(
+                                                  metrics[i].title,
+                                                  metrics[i].value,
+                                                  metrics[i].change,
+                                                  metrics[i].isPositive,
+                                                  metrics[i].subtitle,
+                                                ),
+                                                if (i != metrics.length - 1)
+                                                  const SizedBox(height: 20),
+                                              ],
+                                            ],
                                           );
-                                        } else if (hasError) {
-                                          pipelineBody = Center(
-                                            child: Text(
-                                              'Failed to load pipeline view.',
-                                              style: PremiumTheme.bodyMedium
-                                                  .copyWith(
-                                                      color: Colors.white70),
-                                            ),
-                                          );
-                                        } else if (pipelineData == null) {
-                                          pipelineBody = Center(
-                                            child: Text(
-                                              'Failed to load pipeline view.',
-                                              style: PremiumTheme.bodyMedium
-                                                  .copyWith(
-                                                      color: Colors.white70),
-                                            ),
-                                          );
-                                        } else {
-                                          pipelineBody =
-                                              _buildProposalPipelineView(
-                                                  pipelineData);
                                         }
 
-                                        return Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.stretch,
+                                        return Row(
+                                          children: [
+                                            for (int i = 0;
+                                                i < metrics.length;
+                                                i++) ...[
+                                              Expanded(
+                                                child: _buildGlassMetricCard(
+                                                  metrics[i].title,
+                                                  metrics[i].value,
+                                                  metrics[i].change,
+                                                  metrics[i].isPositive,
+                                                  metrics[i].subtitle,
+                                                ),
+                                              ),
+                                              if (i != metrics.length - 1)
+                                                const SizedBox(width: 20),
+                                            ],
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                    const SizedBox(height: 24),
+                                    _buildGlassChartCard(
+                                      'Revenue Analytics',
+                                      _buildRevenueChart(analytics.monthlyPoints),
+                                      height: 350,
+                                    ),
+                                    const SizedBox(height: 24),
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          flex: 2,
+                                          child: _buildGlassChartCard(
+                                            'Proposal Status',
+                                            _buildProposalStatusChart(
+                                                analytics.statusCounts),
+                                            height: 320,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 20),
+                                        Expanded(
+                                          child: _buildGlassChartCard(
+                                            'Win Rate',
+                                            _buildWinRatePieChart(
+                                                analytics.winRate, analytics.lossRate),
+                                            height: 320,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 24),
+                                    _buildGlassPerformanceTable(analytics.recentProposals),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                              FutureBuilder<Map<String, dynamic>?>(
+                                key: ValueKey(
+                                    'pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
+                                future: _fetchPipelineBundle(),
+                                builder: (context, snapshot) {
+                                  final waiting = snapshot.connectionState ==
+                                      ConnectionState.waiting;
+                                  final hasError = snapshot.hasError;
+                                  final bundle = snapshot.data;
+                                  final pipelineData = (bundle?['pipeline'] as Map?)
+                                      ?.cast<String, dynamic>();
+                                  final approvalsSummary =
+                                      (bundle?['approvals_summary'] as Map?)
+                                          ?.cast<String, dynamic>();
+                                  final approvalsBottlenecks =
+                                      (bundle?['approvals_bottlenecks'] as Map?)
+                                          ?.cast<String, dynamic>();
+                                  final readinessGovernance =
+                                      (bundle?['readiness_governance'] as Map?)
+                                          ?.cast<String, dynamic>();
+                                  final riskGateDetails =
+                                      (bundle?['risk_gate_details'] as Map?)
+                                          ?.cast<String, dynamic>();
+                                  final stageAging = (bundle?['stage_aging'] as Map?)
+                                      ?.cast<String, dynamic>();
+
+                                  Widget pipelineBody;
+                                  if (waiting) {
+                                    pipelineBody = const Center(
+                                      child: CircularProgressIndicator(),
+                                    );
+                                  } else if (hasError) {
+                                    pipelineBody = Center(
+                                      child: Text(
+                                        'Failed to load pipeline view.',
+                                        style: PremiumTheme.bodyMedium
+                                            .copyWith(color: Colors.white70),
+                                      ),
+                                    );
+                                  } else if (pipelineData == null) {
+                                    pipelineBody = Center(
+                                      child: Text(
+                                        'Failed to load pipeline view.',
+                                        style: PremiumTheme.bodyMedium
+                                            .copyWith(color: Colors.white70),
+                                      ),
+                                    );
+                                  } else {
+                                    pipelineBody =
+                                        _buildProposalPipelineView(pipelineData);
+                                  }
+
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      _buildGlassSection(
+                                        title: 'Pipeline & Flow',
+                                        icon: Icons.tune_outlined,
+                                        expanded: _pipelineFlowExpanded,
+                                        onChanged: (v) =>
+                                            setState(() => _pipelineFlowExpanded = v),
+                                        badges: [
+                                          if (isAdminUser)
+                                            _buildSectionBadge(_cycleTimeScope == 'self'
+                                                ? 'Scope: Me'
+                                                : 'Scope: Team'),
+                                        ],
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
                                           children: [
                                             _buildGlassChartCard(
                                               'Proposal Pipeline View',
                                               pipelineBody,
                                               height: 520,
                                             ),
-                                            const SizedBox(height: 32),
+                                            const SizedBox(height: 24),
                                             CompletionRatesWidget(
                                               onOpenProposal:
-                                                  (id, status, title) =>
-                                                      Navigator.pushNamed(
+                                                  (id, status, title) => Navigator.pushNamed(
                                                 context,
                                                 '/blank-document',
                                                 arguments: {
-                                                  'proposalId':
-                                                      id.toString(),
+                                                  'proposalId': id.toString(),
                                                   'proposalTitle': title,
                                                   'readOnly': false,
                                                 },
@@ -3668,10 +3753,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                               owner: _globalOwnerCtrl.text.trim().isEmpty
                                                   ? null
                                                   : _globalOwnerCtrl.text.trim(),
-                                              proposalType:
-                                                  _globalProposalTypeCtrl.text.trim().isEmpty
-                                                      ? null
-                                                      : _globalProposalTypeCtrl.text.trim(),
+                                              proposalType: _globalProposalTypeCtrl.text.trim().isEmpty
+                                                  ? null
+                                                  : _globalProposalTypeCtrl.text.trim(),
                                               client: _globalClientCtrl.text.trim().isEmpty
                                                   ? null
                                                   : _globalClientCtrl.text.trim(),
@@ -3690,7 +3774,13 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                                       .toString()
                                                       .trim(),
                                             ),
-                                            const SizedBox(height: 32),
+                                            const SizedBox(height: 24),
+                                            _buildGlassChartCard(
+                                              'Cycle Time Metrics',
+                                              _buildCycleTimeContent(null),
+                                              height: 320,
+                                            ),
+                                            const SizedBox(height: 24),
                                             _buildGlassChartCard(
                                               'Approval Analytics',
                                               SingleChildScrollView(
@@ -3701,18 +3791,37 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                               ),
                                               height: 260,
                                             ),
-                                            const SizedBox(height: 32),
+                                            const SizedBox(height: 24),
+                                            _buildGlassChartCard(
+                                              'Stage Aging',
+                                              SingleChildScrollView(
+                                                child: _buildStageAgingCard(stageAging),
+                                              ),
+                                              height: 240,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(height: 24),
+                                      _buildGlassSection(
+                                        title: 'Risk & Readiness',
+                                        icon: Icons.shield_outlined,
+                                        expanded: _riskReadinessExpanded,
+                                        onChanged: (v) =>
+                                            setState(() => _riskReadinessExpanded = v),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
                                             _buildGlassChartCard(
                                               'Readiness & Governance',
                                               SingleChildScrollView(
-                                                child:
-                                                    _buildReadinessGovernanceCard(
+                                                child: _buildReadinessGovernanceCard(
                                                   readinessGovernance,
                                                 ),
                                               ),
                                               height: 260,
                                             ),
-                                            const SizedBox(height: 32),
+                                            const SizedBox(height: 24),
                                             _buildGlassChartCard(
                                               'Risk Gate Details',
                                               SingleChildScrollView(
@@ -3722,146 +3831,112 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                               ),
                                               height: 280,
                                             ),
-                                            const SizedBox(height: 32),
+                                            const SizedBox(height: 24),
                                             _buildGlassChartCard(
-                                              'Stage Aging',
-                                              SingleChildScrollView(
-                                                child: _buildStageAgingCard(
-                                                  stageAging,
-                                                ),
+                                              'Risk Gate',
+                                              FutureBuilder<Map<String, dynamic>?>(
+                                                key: ValueKey(
+                                                    'risk_gate_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                                future: _fetchRiskGateSummary(),
+                                                builder: (context, snapshot) {
+                                                  if (snapshot.connectionState ==
+                                                      ConnectionState.waiting) {
+                                                    return const Center(
+                                                        child: CircularProgressIndicator());
+                                                  }
+                                                  if (snapshot.hasError) {
+                                                    return Center(
+                                                      child: Text(
+                                                        'Failed to load risk gate summary.',
+                                                        style: PremiumTheme.bodyMedium.copyWith(
+                                                          color: Colors.white70,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                  final data = snapshot.data;
+                                                  return _buildRiskGateIndicator(data);
+                                                },
                                               ),
-                                              height: 240,
+                                              height: 220,
+                                            ),
+                                            const SizedBox(height: 24),
+                                            _buildGlassChartCard(
+                                              'Collaboration Load',
+                                              FutureBuilder<Map<String, dynamic>?>(
+                                                key: ValueKey(
+                                                    'collab_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                                future: _fetchCollaborationLoad(),
+                                                builder: (context, snapshot) {
+                                                  if (snapshot.connectionState ==
+                                                      ConnectionState.waiting) {
+                                                    return const Center(
+                                                        child: CircularProgressIndicator());
+                                                  }
+                                                  if (snapshot.hasError) {
+                                                    return Center(
+                                                      child: Text(
+                                                        'Failed to load collaboration metrics.',
+                                                        style: PremiumTheme.bodyMedium.copyWith(
+                                                          color: Colors.white70,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                  return _buildCollaborationLoadCard(
+                                                      snapshot.data);
+                                                },
+                                              ),
+                                              height: 360,
                                             ),
                                           ],
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 32),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    flex: 2,
-                                    child: _buildGlassChartCard(
-                                      'Proposal Status',
-                                      _buildProposalStatusChart(
-                                          analytics.statusCounts),
-                                      height: 320,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 20),
-                                  Expanded(
-                                    child: _buildGlassChartCard(
-                                      'Win Rate',
-                                      _buildWinRatePieChart(analytics.winRate,
-                                          analytics.lossRate),
-                                      height: 320,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 32),
-                              _buildGlassChartCard(
-                                'Risk Gate',
-                                FutureBuilder<Map<String, dynamic>?>(
-                                  key: ValueKey(
-                                      'risk_gate_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
-                                  future: _fetchRiskGateSummary(),
-                                  builder: (context, snapshot) {
-                                    if (snapshot.connectionState ==
-                                        ConnectionState.waiting) {
-                                      return const Center(
-                                          child: CircularProgressIndicator());
-                                    }
-                                    if (snapshot.hasError) {
-                                      return Center(
-                                        child: Text(
-                                          'Failed to load risk gate summary.',
-                                          style:
-                                              PremiumTheme.bodyMedium.copyWith(
-                                            color: Colors.white70,
-                                          ),
                                         ),
-                                      );
-                                    }
-                                    final data = snapshot.data;
-                                    return _buildRiskGateIndicator(data);
-                                  },
-                                ),
-                                height: 220,
-                              ),
-                              const SizedBox(height: 32),
-                              _buildGlassChartCard(
-                                'Collaboration Load',
-                                FutureBuilder<Map<String, dynamic>?>(
-                                  key: ValueKey(
-                                      'collab_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
-                                  future: _fetchCollaborationLoad(),
-                                  builder: (context, snapshot) {
-                                    if (snapshot.connectionState ==
-                                        ConnectionState.waiting) {
-                                      return const Center(
-                                          child: CircularProgressIndicator());
-                                    }
-                                    if (snapshot.hasError) {
-                                      return Center(
-                                        child: Text(
-                                          'Failed to load collaboration metrics.',
-                                          style:
-                                              PremiumTheme.bodyMedium.copyWith(
-                                            color: Colors.white70,
-                                          ),
+                                      ),
+                                      const SizedBox(height: 24),
+                                      _buildGlassSection(
+                                        title: 'Client Engagement',
+                                        icon: Icons.people_outline,
+                                        expanded: _clientEngagementExpanded,
+                                        onChanged: (v) => setState(
+                                            () => _clientEngagementExpanded = v),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                                          children: [
+                                            _buildGlassChartCard(
+                                              'Client Engagement',
+                                              FutureBuilder<Map<String, dynamic>?>(
+                                                key: ValueKey(
+                                                    'engagement_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
+                                                future: _fetchClientEngagement(),
+                                                builder: (context, snapshot) {
+                                                  if (snapshot.connectionState ==
+                                                      ConnectionState.waiting) {
+                                                    return const Center(
+                                                        child: CircularProgressIndicator());
+                                                  }
+                                                  if (snapshot.hasError) {
+                                                    return Center(
+                                                      child: Text(
+                                                        'Failed to load client engagement.',
+                                                        style: PremiumTheme.bodyMedium.copyWith(
+                                                          color: Colors.white70,
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                  return _buildClientEngagementCard(
+                                                      snapshot.data);
+                                                },
+                                              ),
+                                              height: 360,
+                                            ),
+                                          ],
                                         ),
-                                      );
-                                    }
-                                    return _buildCollaborationLoadCard(
-                                        snapshot.data);
-                                  },
-                                ),
-                                height: 360,
+                                      ),
+                                    ],
+                                  );
+                                },
                               ),
-                              const SizedBox(height: 32),
-                              _buildGlassChartCard(
-                                'Client Engagement',
-                                FutureBuilder<Map<String, dynamic>?>(
-                                  key: ValueKey(
-                                      'engagement_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
-                                  future: _fetchClientEngagement(),
-                                  builder: (context, snapshot) {
-                                    if (snapshot.connectionState ==
-                                        ConnectionState.waiting) {
-                                      return const Center(
-                                          child: CircularProgressIndicator());
-                                    }
-                                    if (snapshot.hasError) {
-                                      return Center(
-                                        child: Text(
-                                          'Failed to load client engagement.',
-                                          style:
-                                              PremiumTheme.bodyMedium.copyWith(
-                                            color: Colors.white70,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                    return _buildClientEngagementCard(
-                                        snapshot.data);
-                                  },
-                                ),
-                                height: 360,
-                              ),
-                              const SizedBox(height: 32),
-                              _buildGlassChartCard(
-                                'Cycle Time Metrics',
-                                _buildCycleTimeContent(null),
-                                height: 320,
-                              ),
-                              const SizedBox(height: 32),
-                              _buildGlassPerformanceTable(
-                                  analytics.recentProposals),
                               const SizedBox(height: 32),
                             ],
                           ),
@@ -3979,7 +4054,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
         child: Container(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: [
@@ -4002,19 +4077,20 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 title,
                 style: PremiumTheme.bodyMedium.copyWith(
                   color: PremiumTheme.textSecondary,
+                  fontSize: 12,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
               Text(
                 value,
-                style: PremiumTheme.displayMedium.copyWith(fontSize: 32),
+                style: PremiumTheme.displayMedium.copyWith(fontSize: 24),
               ),
               const SizedBox(height: 8),
               Row(
                 children: [
                   Icon(
                     isPositive ? Icons.trending_up : Icons.trending_down,
-                    size: 16,
+                    size: 14,
                     color:
                         isPositive ? PremiumTheme.success : PremiumTheme.error,
                   ),
@@ -4024,7 +4100,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                       change,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 12,
                         color: isPositive
                             ? PremiumTheme.success
                             : PremiumTheme.error,
@@ -4039,7 +4115,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 13,
+                        fontSize: 12,
                         color: Color(0xFF6B7280),
                       ),
                     ),
