@@ -560,11 +560,34 @@ def start_client_device_session():
                     'expires_at': session['expires_at'].isoformat(),
                 }, 200
 
+            now = _now_utc()
+            cursor.execute(
+                """
+                SELECT id, expires_at
+                FROM client_device_otp_challenges
+                WHERE invitation_token = %s
+                  AND device_id = %s
+                  AND verified_at IS NULL
+                  AND expires_at > %s
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (invitation_token, device_id, now),
+            )
+            existing = cursor.fetchone()
+            if existing:
+                expires_at = existing.get('expires_at') if isinstance(existing, dict) else None
+                conn.commit()
+                return {
+                    'otp_required': True,
+                    'challenge_id': (existing.get('id') if isinstance(existing, dict) else existing[0]),
+                    'expires_at': expires_at.isoformat() if hasattr(expires_at, 'isoformat') else None,
+                }, 200
+
             otp_code = f"{secrets.randbelow(1_000_000):06d}"
             challenge_id = secrets.token_urlsafe(24)
             challenge_salt = secrets.token_urlsafe(16)
             otp_hash = _hash_client_otp(otp_code, challenge_salt)
-            now = _now_utc()
             expires_at = now + timedelta(minutes=10)
             cursor.execute(
                 """

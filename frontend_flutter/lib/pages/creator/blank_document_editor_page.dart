@@ -42,6 +42,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
   final bool
       isCollaborator; // For collaborator mode - hide navigation, show only editor
   final bool requireVersionDescription;
+  final bool forceCommentsPanelOpen;
 
   const BlankDocumentEditorPage({
     super.key,
@@ -53,6 +54,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.readOnly = false, // Default to editable
     this.isCollaborator = false, // Default to false
     this.requireVersionDescription = false,
+    this.forceCommentsPanelOpen = false,
   });
 
   @override
@@ -657,7 +659,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           await _addComment(parentId: rootCommentId);
                           _threadReplyController.clear();
                           if (!mounted) return;
-                          unawaited(_loadCommentsFromDatabase(_savedProposalId!));
+                          unawaited(
+                              _loadCommentsFromDatabase(_savedProposalId!));
                           _threadOverlay?.markNeedsBuild();
                         },
                         style: ElevatedButton.styleFrom(
@@ -843,8 +846,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _commentFocusNode.addListener(_handleCommentFocusChange);
     _threadReplyController = TextEditingController();
 
-    // Auto-show comments panel for collaborators
-    if (widget.isCollaborator) {
+    if (widget.forceCommentsPanelOpen) {
       _showCommentsPanel = true;
     }
 
@@ -1493,24 +1495,28 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       Map<String, dynamic>? contentData;
       final dynamic rawContent = proposal['content'];
       if (rawContent != null &&
-          (!(rawContent is String) || (rawContent as String).trim().isNotEmpty)) {
+          (!(rawContent is String) ||
+              (rawContent as String).trim().isNotEmpty)) {
         try {
           contentData = rawContent is String
               ? Map<String, dynamic>.from(json.decode(rawContent) as Map)
-              : Map<String, dynamic>.from(rawContent is Map ? rawContent as Map : <String, dynamic>{});
+              : Map<String, dynamic>.from(
+                  rawContent is Map ? rawContent as Map : <String, dynamic>{});
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
         }
       }
       // Fallback: build from proposal.sections when content is missing (e.g. legacy or alternate save path)
-      if (contentData == null || (contentData['sections'] as List?)?.isEmpty == true) {
+      if (contentData == null ||
+          (contentData['sections'] as List?)?.isEmpty == true) {
         final dynamic rawSections = proposal['sections'];
         if (rawSections != null) {
           List<dynamic> sectionList;
           if (rawSections is List && rawSections.isNotEmpty) {
             sectionList = rawSections;
           } else if (rawSections is Map && (rawSections as Map).isNotEmpty) {
-            sectionList = (rawSections as Map).entries.map<Map<String, dynamic>>((e) {
+            sectionList =
+                (rawSections as Map).entries.map<Map<String, dynamic>>((e) {
               final v = e.value;
               return {
                 'title': e.key.toString(),
@@ -1535,10 +1541,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           final Map<String, dynamic> data = contentData!;
           setState(() {
             // Set title
-            _titleController.text = (data['title'] ??
-                    proposal['title'] ??
-                    'Untitled Document')
-                .toString();
+            _titleController.text =
+                (data['title'] ?? proposal['title'] ?? 'Untitled Document')
+                    .toString();
 
             // Clear existing sections
             for (var section in _sections) {
@@ -1570,7 +1575,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           (isCover ? '' : 'Untitled Section'))
                       .toString(),
                   content: sectionData['content'] ?? '',
-                  richDeltaJson: richDelta == null ? null : jsonEncode(richDelta),
+                  richDeltaJson:
+                      richDelta == null ? null : jsonEncode(richDelta),
                   lineSpacing: (sectionData['lineSpacing'] ?? '1.0').toString(),
                   paragraphAlignment:
                       (sectionData['paragraphAlignment'] ?? 'left').toString(),
@@ -2870,33 +2876,33 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _showCommentsPanel = true;
           if (shouldOptimisticallyInsertRoot) {
             _comments.insert(0, {
-            'id': savedComment['id'] ?? DateTime.now().millisecondsSinceEpoch,
-            'parent_id': parentId,
-            'block_type': 'text',
-            'block_id': blockId,
-            'commenter_name': commenterName,
-            'created_by': savedComment['created_by'],
-            'comment_text': commentText,
-            'section_index': _selectedSectionForComment,
-            'section_name': sectionName,
-            'highlighted_text': (_draftSelectedText.isNotEmpty
-                        ? _draftSelectedText
-                        : _highlightedText)
-                    .isNotEmpty
-                ? (_draftSelectedText.isNotEmpty
-                    ? _draftSelectedText
-                    : _highlightedText)
-                : null,
-            'start_offset': startOffset,
-            'end_offset': endOffset,
-            'timestamp':
-                savedComment['created_at'] ?? DateTime.now().toIso8601String(),
-            'status': 'open',
-            'resolved_by': null,
-            'resolved_at': null,
-            'resolver_name': null,
-            'replies': <dynamic>[],
-            'reactions': <dynamic>[],
+              'id': savedComment['id'] ?? DateTime.now().millisecondsSinceEpoch,
+              'parent_id': parentId,
+              'block_type': 'text',
+              'block_id': blockId,
+              'commenter_name': commenterName,
+              'created_by': savedComment['created_by'],
+              'comment_text': commentText,
+              'section_index': _selectedSectionForComment,
+              'section_name': sectionName,
+              'highlighted_text': (_draftSelectedText.isNotEmpty
+                          ? _draftSelectedText
+                          : _highlightedText)
+                      .isNotEmpty
+                  ? (_draftSelectedText.isNotEmpty
+                      ? _draftSelectedText
+                      : _highlightedText)
+                  : null,
+              'start_offset': startOffset,
+              'end_offset': endOffset,
+              'timestamp': savedComment['created_at'] ??
+                  DateTime.now().toIso8601String(),
+              'status': 'open',
+              'resolved_by': null,
+              'resolved_at': null,
+              'resolver_name': null,
+              'replies': <dynamic>[],
+              'reactions': <dynamic>[],
             });
           }
 
@@ -3365,8 +3371,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
 
     // If no timezone suffix exists, treat it as UTC from backend/storage.
-    final hasExplicitTimezone =
-        normalized.endsWith('Z') ||
+    final hasExplicitTimezone = normalized.endsWith('Z') ||
         RegExp(r'[+\-]\d{2}:\d{2}$').hasMatch(normalized);
     if (!hasExplicitTimezone) {
       final naiveMatch = RegExp(
@@ -4021,13 +4026,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'richParagraphs': paragraphsFromQuillDelta(
                   section.exportRichDelta(),
                   defaultFontFamily: _selectedFont,
-                  defaultFontSize:
-                      double.tryParse(_selectedFontSize) ?? 12.0,
+                  defaultFontSize: double.tryParse(_selectedFontSize) ?? 12.0,
                   defaultAlignment: section.paragraphAlignment,
                   defaultLineSpacing: section.lineSpacing,
-                )
-                    .map((p) => p.toJson())
-                    .toList(),
+                ).map((p) => p.toJson()).toList(),
                 'backgroundColor': section.backgroundColor.value,
                 'backgroundImageUrl': section.backgroundImageUrl,
                 'sectionType': section.sectionType,
@@ -4648,7 +4650,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   QuillController? _activeRichController() {
     if (_sections.isEmpty) return null;
-    if (_selectedSectionIndex < 0 || _selectedSectionIndex >= _sections.length) {
+    if (_selectedSectionIndex < 0 ||
+        _selectedSectionIndex >= _sections.length) {
       return null;
     }
     return _sections[_selectedSectionIndex].richController;
@@ -4656,7 +4659,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   /// Toolbar buttons can steal focus from Quill; put focus back before formatting.
   void _ensureToolbarTargetEditorFocused() {
-    if (_selectedSectionIndex < 0 || _selectedSectionIndex >= _sections.length) {
+    if (_selectedSectionIndex < 0 ||
+        _selectedSectionIndex >= _sections.length) {
       return;
     }
     _sections[_selectedSectionIndex].contentFocus.requestFocus();
@@ -4741,7 +4745,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _ensureToolbarTargetEditorFocused();
     final attrs = controller.getSelectionStyle().attributes;
     final enabled = attrs.containsKey(toggleAttr.key);
-    controller.formatSelection(Attribute.clone(toggleAttr, enabled ? null : true));
+    controller
+        .formatSelection(Attribute.clone(toggleAttr, enabled ? null : true));
     _syncToolbarStateFromRichSelection();
     _onContentChanged();
   }
@@ -4752,7 +4757,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _ensureToolbarTargetEditorFocused();
     _selectedAlignment = value;
     controller.formatSelection(_alignmentToAttribute(value));
-    if (_selectedSectionIndex >= 0 && _selectedSectionIndex < _sections.length) {
+    if (_selectedSectionIndex >= 0 &&
+        _selectedSectionIndex < _sections.length) {
       _sections[_selectedSectionIndex].paragraphAlignment = value;
     }
     _syncToolbarStateFromRichSelection();
@@ -4765,7 +4771,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _ensureToolbarTargetEditorFocused();
     _selectedLineSpacing = value;
     controller.formatSelection(_lineSpacingToAttribute(value));
-    if (_selectedSectionIndex >= 0 && _selectedSectionIndex < _sections.length) {
+    if (_selectedSectionIndex >= 0 &&
+        _selectedSectionIndex < _sections.length) {
       _sections[_selectedSectionIndex].lineSpacing = value;
     }
     _syncToolbarStateFromRichSelection();
@@ -4781,7 +4788,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     if (currentList == type) {
       controller.formatSelection(Attribute.clone(Attribute.list, null));
     } else {
-      controller.formatSelection(type == 'ordered' ? Attribute.ol : Attribute.ul);
+      controller
+          .formatSelection(type == 'ordered' ? Attribute.ol : Attribute.ul);
     }
     _syncToolbarStateFromRichSelection();
     _onContentChanged();
@@ -5109,6 +5117,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // In collaborator mode, hide navigation sidebar but allow editing
     final isCollaboratorMode = widget.isCollaborator;
+    final forceCommentsPanelOpen = widget.forceCommentsPanelOpen;
     final _statusForSidebar = (_proposalStatus ?? '').toLowerCase().trim();
     // Show the full sidebar to finance when the proposal is returned for changes
     // so they can access Content Library and insert blocks like any other editor.
@@ -5169,8 +5178,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             // Right sidebar (hide in read-only mode AND collaborator mode)
                             if (!isReadOnly && !isCollaboratorMode)
                               _buildRightSidebar(),
-                            // Comments panel (right-side, toggleable) - always show for collaborators
-                            if (_showCommentsPanel || isCollaboratorMode)
+                            if (_showCommentsPanel || forceCommentsPanelOpen)
                               _buildCommentsPanel(),
                           ],
                         ),
@@ -6484,7 +6492,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 IconButton(
                   icon: Icon(Icons.format_strikethrough,
                       color: _isStrikethrough ? const Color(0xFF00BCD4) : null),
-                  onPressed: () => _toggleInlineAttribute(Attribute.strikeThrough),
+                  onPressed: () =>
+                      _toggleInlineAttribute(Attribute.strikeThrough),
                   tooltip: 'Strikethrough',
                   iconSize: iconSz,
                 ),
@@ -6493,7 +6502,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 DropdownButton<String>(
                   value: _selectedFont,
                   underline: const SizedBox(),
-                  style: TextStyle(fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  style: TextStyle(
+                      fontSize: ddFont, color: const Color(0xFF1A1A1A)),
                   onChanged: (v) {
                     if (v == null) return;
                     final attr = _attributeForFont(v);
@@ -6519,7 +6529,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 DropdownButton<String>(
                   value: _selectedFontSize,
                   underline: const SizedBox(),
-                  style: TextStyle(fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  style: TextStyle(
+                      fontSize: ddFont, color: const Color(0xFF1A1A1A)),
                   onChanged: (v) {
                     if (v == null) return;
                     final attr = _attributeForSize(v);
@@ -6579,15 +6590,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 DropdownButton<String>(
                   value: _selectedLineSpacing,
                   underline: const SizedBox(),
-                  style: TextStyle(fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  style: TextStyle(
+                      fontSize: ddFont, color: const Color(0xFF1A1A1A)),
                   onChanged: (v) {
                     if (v == null) return;
                     _applyLineSpacing(v);
                   },
                   items: const ['1.0', '1.5', '2.0'].map((v) {
-                    final label = v == '1.0'
-                        ? 'Single'
-                        : (v == '1.5' ? '1.5' : 'Double');
+                    final label =
+                        v == '1.0' ? 'Single' : (v == '1.5' ? '1.5' : 'Double');
                     return DropdownMenuItem(
                       value: v,
                       child: Text(label, style: TextStyle(fontSize: ddFont)),
@@ -8950,14 +8961,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }),
         const SizedBox(height: 8),
         // Font size dropdown
-        _buildSmallDropdown(_selectedFontSize, [
-          '10',
-          '12',
-          '14',
-          '16',
-          '18',
-          '24'
-        ], (value) {
+        _buildSmallDropdown(
+            _selectedFontSize, ['10', '12', '14', '16', '18', '24'], (value) {
           setState(() {
             _selectedFontSize = value!;
           });
@@ -10784,7 +10789,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-  static const List<String> _reactionEmojis = ['👍', '👎', '👀', '❤️', '😄', '😕', '🎉'];
+  static const List<String> _reactionEmojis = [
+    '👍',
+    '👎',
+    '👀',
+    '❤️',
+    '😄',
+    '😕',
+    '🎉'
+  ];
 
   Widget _buildCommentReactions(Map<String, dynamic> comment) {
     final reactions = (comment['reactions'] as List<dynamic>?) ?? [];
@@ -10804,7 +10817,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 onTap: () => _toggleReaction(comment['id'], emoji),
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: reactedByMe
                         ? const Color(0xFF00BCD4).withOpacity(0.2)
@@ -10846,7 +10860,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey[300]!),
               ),
-              child: Icon(Icons.add_reaction_outlined, size: 18, color: Colors.grey[600]),
+              child: Icon(Icons.add_reaction_outlined,
+                  size: 18, color: Colors.grey[600]),
             ),
             onSelected: (emoji) => _toggleReaction(comment['id'], emoji),
             itemBuilder: (context) => _reactionEmojis
@@ -10862,7 +10877,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Future<void> _toggleReaction(dynamic commentId, String emoji) async {
-    final id = commentId is int ? commentId : int.tryParse(commentId?.toString() ?? '');
+    final id = commentId is int
+        ? commentId
+        : int.tryParse(commentId?.toString() ?? '');
     if (id == null) return;
     final token = await _getAuthToken();
     if (token == null) return;
@@ -10884,7 +10901,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _revertReactionOptimistically(id, emoji);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Could not save reaction. Make sure the backend has been restarted.'),
+          content: Text(
+              'Could not save reaction. Make sure the backend has been restarted.'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -10896,14 +10914,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       for (var i = 0; i < _comments.length; i++) {
         if (_comments[i]['id'] == commentId) {
           final reactions = List<Map<String, dynamic>>.from(
-            (_comments[i]['reactions'] as List<dynamic>?)?.map((r) => Map<String, dynamic>.from(r as Map)) ?? [],
+            (_comments[i]['reactions'] as List<dynamic>?)
+                    ?.map((r) => Map<String, dynamic>.from(r as Map)) ??
+                [],
           );
           final existingIdx = reactions.indexWhere((r) => r['emoji'] == emoji);
-          final reactedByMe = existingIdx >= 0 && reactions[existingIdx]['reacted_by_me'] == true;
+          final reactedByMe = existingIdx >= 0 &&
+              reactions[existingIdx]['reacted_by_me'] == true;
 
           if (reactedByMe) {
             // Remove our reaction
-            final count = ((reactions[existingIdx]['count'] as num?) ?? 1).toInt();
+            final count =
+                ((reactions[existingIdx]['count'] as num?) ?? 1).toInt();
             if (count <= 1) {
               reactions.removeAt(existingIdx);
             } else {
@@ -10915,7 +10937,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             }
           } else if (existingIdx >= 0) {
             // Add our reaction to existing emoji
-            final count = ((reactions[existingIdx]['count'] as num?) ?? 0).toInt();
+            final count =
+                ((reactions[existingIdx]['count'] as num?) ?? 0).toInt();
             reactions[existingIdx] = {
               ...reactions[existingIdx],
               'count': count + 1,
@@ -11238,7 +11261,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         if (mode == 'full' && sections != null) {
           for (var section in _sections) {
             section.controller.dispose();
-              section.richController.dispose();
+            section.richController.dispose();
             section.titleController.dispose();
             section.contentFocus.dispose();
             section.titleFocus.dispose();
@@ -11550,14 +11573,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             DropdownButton<int>(
                               value: selectedMaxTokens,
                               items: const [
-                                DropdownMenuItem(value: 192, child: Text('192')),
-                                DropdownMenuItem(value: 256, child: Text('256')),
+                                DropdownMenuItem(
+                                    value: 192, child: Text('192')),
+                                DropdownMenuItem(
+                                    value: 256, child: Text('256')),
                               ],
                               onChanged: isGenerating
                                   ? null
                                   : (v) {
                                       if (v == null) return;
-                                      setDialogState(() => selectedMaxTokens = v);
+                                      setDialogState(
+                                          () => selectedMaxTokens = v);
                                     },
                             ),
                           ],
@@ -11869,15 +11895,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
                                         if (selectedAction == 'generate') {
                                           // SECTION: generate ONLY for selected section using its title as section_name.
-                                          final selectedSection =
-                                              (_sections.isNotEmpty &&
-                                                      _selectedSectionIndex <
-                                                          _sections.length)
-                                                  ? _sections[_selectedSectionIndex]
-                                                  : null;
+                                          final selectedSection = (_sections
+                                                      .isNotEmpty &&
+                                                  _selectedSectionIndex <
+                                                      _sections.length)
+                                              ? _sections[_selectedSectionIndex]
+                                              : null;
                                           final sectionTitle = (selectedSection
-                                                      ?.titleController
-                                                      .text
+                                                      ?.titleController.text
                                                       .trim()
                                                       .isNotEmpty ==
                                                   true)
@@ -11886,17 +11911,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                   .trim()
                                               : 'Untitled Section';
 
-                                          final existing =
-                                              selectedSection?.controller.text ??
-                                                  '';
+                                          final existing = selectedSection
+                                                  ?.controller.text ??
+                                              '';
                                           final proposalText = [
                                             'User request:\n${promptController.text.trim()}',
                                             if (existing.trim().isNotEmpty)
                                               '\n\nExisting section text:\n${existing.trim()}',
                                           ].join('');
 
-                                          final result =
-                                              await AiAssistantApi.generateSection(
+                                          final result = await AiAssistantApi
+                                              .generateSection(
                                             token: token,
                                             sectionName: sectionTitle,
                                             proposalText: proposalText,
@@ -11958,11 +11983,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                             if (cancelled) return;
 
                                             final s = sectionsSnapshot[i];
-                                            final title =
-                                                (s.titleController.text.trim().isNotEmpty)
-                                                    ? s.titleController.text
-                                                        .trim()
-                                                    : 'Untitled Section';
+                                            final title = (s
+                                                    .titleController.text
+                                                    .trim()
+                                                    .isNotEmpty)
+                                                ? s.titleController.text.trim()
+                                                : 'Untitled Section';
 
                                             setDialogState(() {
                                               progressLabel =
@@ -11972,7 +11998,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                             final existing = s.controller.text;
                                             final proposalText = [
                                               'User request:\n${promptController.text.trim()}',
-                                              if (_titleController.text.trim().isNotEmpty)
+                                              if (_titleController.text
+                                                  .trim()
+                                                  .isNotEmpty)
                                                 '\n\nDocument title: ${_titleController.text.trim()}',
                                               if (existing.trim().isNotEmpty)
                                                 '\n\nExisting section text:\n${existing.trim()}',
@@ -11981,21 +12009,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                               continue;
                                             }
 
-                                            final r =
-                                                await AiAssistantApi.generateSection(
+                                            final r = await AiAssistantApi
+                                                .generateSection(
                                               token: token,
                                               sectionName: title,
                                               proposalText: proposalText,
                                               maxTokens: 192,
                                             );
 
-                                            final gen =
-                                                (r['generated_text'] ??
-                                                        r['content'] ??
-                                                        r['result'] ??
-                                                        '')
-                                                    .toString()
-                                                    .trim();
+                                            final gen = (r['generated_text'] ??
+                                                    r['content'] ??
+                                                    r['result'] ??
+                                                    '')
+                                                .toString()
+                                                .trim();
                                             if (gen.isEmpty) {
                                               throw Exception(
                                                   'AI returned empty content for "$title".');
@@ -12037,9 +12064,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                           final selectedSection =
                                               _sections[_selectedSectionIndex];
                                           final areaName = (selectedSection
-                                                      .titleController.text
-                                                      .trim()
-                                                      .isNotEmpty)
+                                                  .titleController.text
+                                                  .trim()
+                                                  .isNotEmpty)
                                               ? selectedSection
                                                   .titleController.text
                                                   .trim()
@@ -12048,7 +12075,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                           // If user typed instructions in the box, include them as a prefix (but preserve the exact target text).
                                           final instructions =
                                               promptController.text.trim();
-                                          final improveInput = instructions.isEmpty
+                                          final improveInput = instructions
+                                                  .isEmpty
                                               ? currentContent
                                               : 'Instructions:\n$instructions\n\nText:\n$currentContent';
 
@@ -12060,14 +12088,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                             maxTokens: selectedMaxTokens,
                                           );
 
-                                          final improvedText =
-                                              (result['generated_text'] ??
-                                                      result['improved_version'] ??
-                                                      result['content'] ??
-                                                      result['result'] ??
-                                                      '')
-                                                  .toString()
-                                                  .trim();
+                                          final improvedText = (result[
+                                                      'generated_text'] ??
+                                                  result['improved_version'] ??
+                                                  result['content'] ??
+                                                  result['result'] ??
+                                                  '')
+                                              .toString()
+                                              .trim();
                                           if (improvedText.isEmpty) {
                                             throw Exception(
                                                 'AI returned an empty improvement.');
@@ -12104,7 +12132,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                           friendly =
                                               'AI Assistant is taking longer than expected. Please retry.';
                                         } else if (raw.contains('500') ||
-                                            raw.contains('Internal Server Error') ||
+                                            raw.contains(
+                                                'Internal Server Error') ||
                                             raw.contains('server error')) {
                                           friendly =
                                               'AI service error. Please try again in a moment.';
