@@ -964,13 +964,8 @@ def generate_proposal_pdf(
     if sections:
         for idx, section in enumerate(sections[:max_sections]):
             if isinstance(section, dict):
-                section_title = (
-                    section.get("title")
-                    or section.get("name")
-                    or section.get("label")
-                    or section.get("id")
-                    or "Section"
-                )
+                raw_title = section.get("title") or section.get("name") or section.get("label")
+                section_title = raw_title or "Section"
                 body = None
                 if "body" in section:
                     body = section.get("body")
@@ -990,6 +985,21 @@ def generate_proposal_pdf(
                 body = section
 
             section_title = str(section_title).replace("_", " ").strip() or "Section"
+            # Guard against accidentally using internal IDs (often long numeric strings)
+            # as visible headings in the PDF.
+            try:
+                _t = section_title.replace(" ", "")
+                _t = _t[1:] if _t.startswith("#") else _t
+                _t = _t.replace("-", "")
+                if _t.isdigit() and len(_t) >= 10:
+                    # If the builder stored an internal numeric ID but no user-friendly
+                    # title, skip rendering this section entirely so numbering matches
+                    # the visible content.
+                    if not raw_title:
+                        continue
+                    section_title = "Section"
+            except Exception:
+                pass
             numbered_title = f"{idx + 1}. {section_title}".strip()
             elements.append(Paragraph(html.escape(numbered_title), heading_style))
 
@@ -1056,11 +1066,6 @@ def generate_proposal_pdf(
         )
     )
     elements.append(Spacer(1, 0.6 * inch))
-    elements.append(Paragraph("Name: ________________________________", content_style))
-    elements.append(Spacer(1, 0.15 * inch))
-    elements.append(Paragraph("Title: _________________________________", content_style))
-    elements.append(Spacer(1, 0.15 * inch))
-    elements.append(Paragraph("Date: _________________________________", content_style))
 
     has_cover_page = bool(cover_bytes)
     header_title = (title or "Proposal").strip() or "Proposal"
