@@ -17,10 +17,18 @@ class AiAssistantApi {
 
   // Keep payload bounded so upstream is faster and avoids gateway timeouts.
   static const int _maxProposalChars = 20000;
-  static const bool _useAsyncAiAssistant =
-      bool.fromEnvironment('USE_AI_ASSISTANT_ASYNC', defaultValue: kDebugMode);
+
+  /// Prefer async on web when [USE_AI_ASSISTANT_ASYNC] is not set; override with --dart-define.
+  static bool get _useAsyncAiAssistant {
+    const hasOverride = bool.hasEnvironment('USE_AI_ASSISTANT_ASYNC');
+    if (hasOverride) {
+      return const bool.fromEnvironment('USE_AI_ASSISTANT_ASYNC', defaultValue: false);
+    }
+    return kIsWeb;
+  }
   static const Duration _pollInterval = Duration(seconds: 2);
   static const Duration _asyncJobTimeout = Duration(seconds: 130);
+  static const Duration _asyncImproveJobTimeout = Duration(seconds: 200);
 
   static Map<String, String> _headers(String token) => {
         'Content-Type': 'application/json',
@@ -228,6 +236,19 @@ class AiAssistantApi {
     required String proposalText,
     int maxTokens = 96,
   }) async {
+    if (_useAsyncAiAssistant) {
+      try {
+        return await _improveAreaAsync(
+          token: token,
+          areaName: areaName,
+          proposalText: proposalText,
+          maxTokens: maxTokens,
+        );
+      } catch (e) {
+        print('[AI][improve-area] async path failed, fallback to sync: $e');
+      }
+    }
+
     final uri = Uri.parse('${ApiService.baseUrl}/api/ai-assistant/improve-area');
     final clipped = proposalText.length > _maxProposalChars
         ? proposalText.substring(0, _maxProposalChars)
@@ -254,6 +275,83 @@ class AiAssistantApi {
       return m;
     }
     throw _friendlyError(resp.statusCode, resp.body);
+  }
+
+  static Future<Map<String, dynamic>> _improveAreaAsync({
+    required String token,
+    required String areaName,
+    required String proposalText,
+    int maxTokens = 96,
+  }) async {
+    final clipped = proposalText.length > _maxProposalChars
+        ? proposalText.substring(0, _maxProposalChars)
+        : proposalText;
+    final requestId =
+        'ai-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(9999)}';
+    final startUri =
+        Uri.parse('${ApiService.baseUrl}/api/ai-assistant/improve-area/async');
+    final startResp = await _postJson(
+      startUri,
+      _headers(token),
+      {
+        'area_name': areaName,
+        'proposal_text': clipped,
+        'max_tokens': maxTokens,
+      },
+      action: 'improve-area-async-start',
+      requestId: requestId,
+    );
+    if (startResp.statusCode == 404) {
+      throw Exception('Async improve-area not enabled on server.');
+    }
+    if (startResp.statusCode != 202) {
+      throw _friendlyError(startResp.statusCode, startResp.body);
+    }
+
+    final startBody = json.decode(startResp.body);
+    if (startBody is! Map<String, dynamic> || startBody['job_id'] == null) {
+      throw Exception('Invalid async start response from AI assistant.');
+    }
+    final jobId = startBody['job_id'].toString();
+    final pollUri = Uri.parse('${ApiService.baseUrl}/api/ai-assistant/jobs/$jobId');
+    final deadline = DateTime.now().add(_asyncImproveJobTimeout);
+
+    while (DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(_pollInterval);
+      final pollResp = await http
+          .get(
+            pollUri,
+            headers: {
+              ..._headers(token),
+              'X-AI-Request-ID': requestId,
+            },
+          )
+          .timeout(totalTimeout);
+      final decoded = json.decode(pollResp.body);
+      final map = decoded is Map<String, dynamic>
+          ? decoded
+          : <String, dynamic>{'result': decoded};
+
+      if (pollResp.statusCode >= 200 && pollResp.statusCode < 300) {
+        final status = (map['status'] ?? '').toString().toLowerCase();
+        if (status == 'pending') {
+          continue;
+        }
+        if (status == 'done') {
+          final result = map['result'];
+          final resultMap = result is Map<String, dynamic>
+              ? result
+              : <String, dynamic>{'result': result};
+          if (clipped.length != proposalText.length) {
+            resultMap['client_truncated'] = true;
+            resultMap['client_truncated_chars'] = proposalText.length - clipped.length;
+          }
+          return resultMap;
+        }
+      }
+      throw _friendlyError(pollResp.statusCode, pollResp.body);
+    }
+    throw Exception('AI Assistant timed out waiting for async improve result.');
   }
 }
 

@@ -1,10 +1,22 @@
 import 'dart:convert';
 import 'dart:io';
 
+const String _kRiskBase = String.fromEnvironment(
+  'RISK_GATE_HF_BASE_URL',
+  defaultValue: '',
+);
+
 void main() async {
   print('🔍 Testing different Hugging Face endpoints...\n');
-  
-  final baseUrl = 'https://lorde01v-v3.hf.space';
+
+  var baseUrl = _kRiskBase.trim();
+  if (baseUrl.isEmpty) {
+    baseUrl = (Platform.environment['RISK_GATE_HF_BASE_URL'] ?? '').trim();
+  }
+  if (baseUrl.isEmpty) {
+    print('❌ Set RISK_GATE_HF_BASE_URL (export or --dart-define).');
+    return;
+  }
   final endpoints = [
     '/analyze',
     '/api/analyze',

@@ -5,6 +5,7 @@ These endpoints forward requests to the Hugging Face Space while keeping the
 AI assistant API key server-side.
 """
 
+import contextlib
 import os
 import time
 import threading
@@ -29,6 +30,8 @@ bp = Blueprint("ai_assistant_proxy", __name__, url_prefix="")
 _async_jobs: Dict[str, Dict[str, Any]] = {}
 _async_jobs_lock = threading.Lock()
 _async_executor: Optional[ThreadPoolExecutor] = None
+# Serialize authenticated upstream POSTs so one worker never runs two HF calls at once (OOM on small RAM).
+_upstream_post_lock = threading.Lock()
 
 
 def _getenv(name: str, default: str = "") -> str:
@@ -74,7 +77,7 @@ def _get_async_executor() -> ThreadPoolExecutor:
     global _async_executor
     if _async_executor is None:
         _async_executor = ThreadPoolExecutor(
-            max_workers=_getenv_int("AI_ASSISTANT_ASYNC_MAX_WORKERS", 2, minimum=1, maximum=8)
+            max_workers=_getenv_int("AI_ASSISTANT_ASYNC_MAX_WORKERS", 1, minimum=1, maximum=8)
         )
     return _async_executor
 
@@ -228,45 +231,47 @@ def _call_upstream(
         )
 
     start = time.monotonic()
+    lock_ctx = _upstream_post_lock if include_auth and method == "POST" else contextlib.nullcontext()
     try:
-        resp = requests.request(
-            method,
-            url,
-            headers=headers,
-            json=payload,
-            # Separate connect/read timeouts: fail fast on bad network, allow slow model inference.
-            timeout=(connect_timeout, read_timeout),
-        )
-        elapsed_ms = int((time.monotonic() - start) * 1000)
-        print(f"[AI Assistant Proxy] response status={resp.status_code} elapsed_ms={elapsed_ms} endpoint={endpoint}")
+        with lock_ctx:
+            resp = requests.request(
+                method,
+                url,
+                headers=headers,
+                json=payload,
+                # Separate connect/read timeouts: fail fast on bad network, allow slow model inference.
+                timeout=(connect_timeout, read_timeout),
+            )
+            elapsed_ms = int((time.monotonic() - start) * 1000)
+            print(f"[AI Assistant Proxy] response status={resp.status_code} elapsed_ms={elapsed_ms} endpoint={endpoint}")
 
-        # Parse body best-effort.
-        body_json: Any = None
-        body_text = (resp.text or "").strip()
-        if body_text:
-            try:
-                body_json = resp.json()
-            except Exception:
-                body_json = None
+            # Parse body best-effort (keep inside lock so a second HF call does not start while buffering body).
+            body_json: Any = None
+            body_text = (resp.text or "").strip()
+            if body_text:
+                try:
+                    body_json = resp.json()
+                except Exception:
+                    body_json = None
 
-        if 200 <= resp.status_code <= 299:
-            # Success: return upstream JSON if available; otherwise wrap the text.
-            if body_json is not None:
-                return body_json, resp.status_code
-            return {"success": True, "result": body_text}, resp.status_code
+            if 200 <= resp.status_code <= 299:
+                # Success: return upstream JSON if available; otherwise wrap the text.
+                if body_json is not None:
+                    return body_json, resp.status_code
+                return {"success": True, "result": body_text}, resp.status_code
 
-        # Error: normalize
-        details: Any = body_json if body_json is not None else (body_text[:2000] if body_text else None)
-        err_msg = _extract_error(details) if details is not None else "Upstream AI Assistant error"
-        return (
-            {
-                "success": False,
-                "error": err_msg,
-                "upstream_status": resp.status_code,
-                "details": details,
-            },
-            resp.status_code,
-        )
+            # Error: normalize
+            details: Any = body_json if body_json is not None else (body_text[:2000] if body_text else None)
+            err_msg = _extract_error(details) if details is not None else "Upstream AI Assistant error"
+            return (
+                {
+                    "success": False,
+                    "error": err_msg,
+                    "upstream_status": resp.status_code,
+                    "details": details,
+                },
+                resp.status_code,
+            )
     except requests.exceptions.ConnectTimeout as e:
         elapsed_ms = int((time.monotonic() - start) * 1000)
         print(
@@ -511,4 +516,49 @@ def proxy_improve_area(username=None):
     total_elapsed_ms = int((time.monotonic() - req_start) * 1000)
     print(f"[AI Assistant Proxy][{req_id}] completed status={status} total_elapsed_ms={total_elapsed_ms}")
     return jsonify(body), status
+
+
+@bp.post("/ai-assistant/improve-area/async")
+@token_required
+def proxy_improve_area_async(username=None):
+    if not _is_async_enabled():
+        return jsonify({"success": False, "error": "Async AI assistant mode is disabled."}), 404
+
+    data = request.get_json(silent=True) or {}
+    area_name = (data.get("area_name") or "").strip()
+    proposal_text = (data.get("proposal_text") or "").strip()
+    max_tokens = _parse_max_tokens(data.get("max_tokens"), default=96)
+    if not area_name or not proposal_text:
+        return jsonify({"success": False, "error": "area_name and proposal_text are required."}), 400
+
+    req_id = (request.headers.get("X-AI-Request-ID") or "").strip() or f"ai-{int(time.time()*1000)}"
+    job_id = f"job-{int(time.time()*1000)}-{os.getpid()}-{abs(hash(req_id)) % 100000}"
+    _set_async_job(
+        job_id,
+        {
+            "status": "pending",
+            "created_at": int(time.time()),
+            "req_id": req_id,
+            "action": "improve-area",
+            "area_name": area_name,
+        },
+    )
+
+    def _run() -> None:
+        payload = {
+            "area_name": area_name,
+            "proposal_text": _compact_text(
+                proposal_text,
+                _getenv_int("AI_ASSISTANT_MAX_CHARS", 12000, minimum=1000, maximum=30000),
+            ),
+            "max_tokens": max_tokens,
+        }
+        body, status = _call_upstream("/improve-area", payload, include_auth=True)
+        if 200 <= status <= 299:
+            _set_async_job(job_id, {"status": "done", "status_code": status, "result": body})
+        else:
+            _set_async_job(job_id, {"status": "error", "status_code": status, "error": body})
+
+    _get_async_executor().submit(_run)
+    return jsonify({"success": True, "job_id": job_id, "status": "pending"}), 202
 
