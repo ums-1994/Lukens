@@ -44,8 +44,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   Map<String, dynamic>? _selectedOwner;
   List<Map<String, dynamic>> _ownerSuggestions = const [];
   Timer? _ownerSearchDebounce;
-  bool _isSidebarCollapsed = false;
-  late AnimationController _animationController;
   final ScrollController _scrollController = ScrollController();
   bool _performanceExpanded = true;
   bool _pipelineFlowExpanded = false;
@@ -1799,17 +1797,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     super.dispose();
   }
 
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
-  }
-
   void _exportAsCSV() {
     try {
       final app = context.read<AppState>();
@@ -3314,6 +3301,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final sidebarCollapsed = app.isAdminSidebarCollapsed;
     final filtered = _filterProposals(app.proposals);
     final analytics = _calculateAnalytics(filtered);
     final metrics = _buildMetricCards(analytics);
@@ -3327,27 +3315,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         color: Colors.transparent,
         child: Row(
           children: [
-            if (isAdminUser)
-              Material(
-                child: AdminSidebar(
-                  isCollapsed: _isSidebarCollapsed,
-                  currentPage: 'Analytics',
-                  onToggle: () => setState(
-                    () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                  ),
-                  onSelect: _navigatePage,
-                ),
-              )
-            else
-              AppSideNav(
-                isCollapsed: _isSidebarCollapsed,
-                currentLabel: 'Analytics (My Pipeline)',
-                isAdmin: false,
-                onToggle: () => setState(
-                  () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                ),
-                onSelect: _navigatePage,
-              ),
+            AppSideNav(
+              isCollapsed: sidebarCollapsed,
+              currentLabel:
+                  isAdminUser ? 'Analytics' : 'Analytics (My Pipeline)',
+              isAdmin: isAdminUser,
+              onToggle: () => app.toggleAdminSidebar(),
+              onSelect: _navigatePage,
+            ),
             Expanded(
               child: CustomScrollbar(
                       controller: _scrollController,
@@ -5029,7 +5004,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     bool isActive,
     BuildContext context,
   ) {
-    final collapsed = _isSidebarCollapsed;
+    final collapsed = context.watch<AppState>().isAdminSidebarCollapsed;
     return Tooltip(
       message: collapsed ? label : '',
       child: InkWell(
