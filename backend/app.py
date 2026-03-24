@@ -128,6 +128,20 @@ except Exception:
     # Never fail app startup due to CORS parsing.
     pass
 
+
+def _is_allowed_origin(origin: str) -> bool:
+    if not origin:
+        return False
+    for allowed in _cors_origins:
+        try:
+            if isinstance(allowed, str) and origin == allowed:
+                return True
+            if hasattr(allowed, "match") and allowed.match(origin):
+                return True
+        except Exception:
+            continue
+    return False
+
 CORS(
     app,
     origins=_cors_origins,
@@ -198,7 +212,7 @@ def health():
 def handle_options_preflight(remaining=None):
     resp = Response("", status=200)
     origin = request.headers.get('Origin')
-    if origin:
+    if origin and _is_allowed_origin(origin):
         resp.headers['Access-Control-Allow-Origin'] = origin
     resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
     resp.headers['Access-Control-Allow-Headers'] = (
@@ -206,6 +220,21 @@ def handle_options_preflight(remaining=None):
         'X-Client-Device-Id, X-Client-Session-Token, X-Device-Id'
     )
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    return resp
+
+
+@app.after_request
+def _add_cors_headers(resp):
+    origin = request.headers.get('Origin')
+    if origin and _is_allowed_origin(origin):
+        resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Vary'] = 'Origin'
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
+        resp.headers['Access-Control-Allow-Headers'] = (
+            'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID, '
+            'X-Client-Device-Id, X-Client-Session-Token, X-Device-Id'
+        )
     return resp
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
