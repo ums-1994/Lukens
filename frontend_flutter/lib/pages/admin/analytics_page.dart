@@ -240,6 +240,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     });
   }
 
+
   Future<Map<String, dynamic>?> _fetchClientEngagement() async {
     try {
       final now = DateTime.now();
