@@ -786,31 +786,32 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>?> improveContent({
+  static Future<Map<String, dynamic>> improveContent({
     required String token,
     required String content,
     String sectionType = 'general',
   }) async {
-    try {
-      // HF expects: { area_name, proposal_text }
-      final data = await AiAssistantApi.improveArea(
-        token: token,
-        areaName: sectionType,
-        proposalText: content,
-      );
+    // HF expects: { area_name, proposal_text }
+    final data = await AiAssistantApi.improveArea(
+      token: token,
+      areaName: sectionType,
+      proposalText: content,
+    );
 
-      // Normalize to the shape existing UI expects
-      final improved =
-          (data['generated_text'] ?? data['improved_version'] ?? data['content'])
-              ?.toString();
-      return {
-        ...data,
-        if (improved != null) 'improved_version': improved,
-      };
-    } catch (e) {
-      print('Error improving content: $e');
-      return null;
+    final improved = (data['generated_text'] ??
+            data['improved_version'] ??
+            data['content'])
+        ?.toString()
+        .trim();
+    if (improved == null || improved.isEmpty) {
+      throw Exception(
+          'AI returned no improved text. Shorten the section and try again.');
     }
+
+    return {
+      ...data,
+      'improved_version': improved,
+    };
   }
 
   static Future<Map<String, dynamic>?> analyzeRisks({
