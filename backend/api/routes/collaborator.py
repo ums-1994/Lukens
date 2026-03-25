@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
+from api.utils.helpers import create_notification
 
 bp = Blueprint('collaborator', __name__)
 
@@ -147,6 +148,34 @@ def add_guest_comment():
             """, (proposal_id, comment_text, user_id, 'open'))
             
             result = cursor.fetchone()
+            comment_id = result['id']
+
+            # Notify proposal owner when a collaborator/guest comments
+            try:
+                cursor.execute(
+                    "SELECT owner_id, title FROM proposals WHERE id = %s",
+                    (proposal_id,),
+                )
+                proposal = cursor.fetchone()
+                if proposal and proposal.get('owner_id') and proposal['owner_id'] != user_id:
+                    commenter_label = invited_email or 'A collaborator'
+                    proposal_title = proposal.get('title') or f"Proposal #{proposal_id}"
+                    create_notification(
+                        proposal['owner_id'],
+                        'proposal_comment_added',
+                        'New comment on your proposal',
+                        f"{commenter_label} commented on \"{proposal_title}\"",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'comment_id': comment_id,
+                            'comment_author_id': user_id,
+                            'comment_author_email': invited_email,
+                            'proposal_title': proposal_title,
+                        },
+                    )
+            except Exception as notify_error:
+                print(f"⚠️ Error notifying proposal owner on guest comment: {notify_error}")
+
             conn.commit()
             
             return dict(result), 201
@@ -207,7 +236,7 @@ def create_comment(username=None, user_id=None, proposal_id=None):
 
             user_id = user['id']
             
-            cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
+            cursor.execute('SELECT owner_id, title FROM proposals WHERE id = %s', (proposal_id,))
             proposal_row = cursor.fetchone()
             proposal_title = proposal_row['title'] if proposal_row else f"Proposal {proposal_id}"
             
@@ -280,6 +309,27 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                 )
             except Exception as e:
                 print(f"⚠️ Error logging activity: {e}")
+
+            # Notify proposal owner when someone else comments on their proposal
+            try:
+                proposal_owner_id = proposal_row.get('owner_id') if proposal_row else None
+                if proposal_owner_id and proposal_owner_id != user_id:
+                    commenter_name = user.get('full_name') or user.get('email') or username or 'Someone'
+                    create_notification(
+                        proposal_owner_id,
+                        'proposal_comment_added',
+                        'New comment on your proposal',
+                        f"{commenter_name} commented on \"{proposal_title}\"",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'comment_id': comment_id,
+                            'comment_author_id': user_id,
+                            'proposal_title': proposal_title,
+                            'parent_id': parent_id,
+                        },
+                    )
+            except Exception as notify_error:
+                print(f"⚠️ Error notifying proposal owner on comment: {notify_error}")
             
             return dict(result), 201
             
@@ -477,6 +527,46 @@ def toggle_comment_reaction(username=None, user_id=None, comment_id=None):
                     INSERT INTO comment_reactions (comment_id, user_id, emoji)
                     VALUES (%s, %s, %s)
                 """, (comment_id, current_user_id, emoji))
+
+                # Notify original comment author when someone reacts
+                try:
+                    cursor.execute("""
+                        SELECT dc.created_by, dc.proposal_id, p.title AS proposal_title
+                        FROM document_comments dc
+                        LEFT JOIN proposals p ON p.id = dc.proposal_id
+                        WHERE dc.id = %s
+                    """, (comment_id,))
+                    comment_owner = cursor.fetchone()
+
+                    if comment_owner and comment_owner.get('created_by') and comment_owner['created_by'] != current_user_id:
+                        cursor.execute(
+                            "SELECT full_name, email FROM users WHERE id = %s",
+                            (current_user_id,),
+                        )
+                        reactor = cursor.fetchone()
+                        reactor_name = (
+                            (reactor.get('full_name') if reactor else None)
+                            or (reactor.get('email') if reactor else None)
+                            or username
+                            or 'Someone'
+                        )
+                        proposal_title = comment_owner.get('proposal_title') or f"Proposal #{comment_owner.get('proposal_id')}"
+                        create_notification(
+                            comment_owner['created_by'],
+                            'comment_reaction_added',
+                            'New reaction to your comment',
+                            f"{reactor_name} reacted {emoji} to your comment on \"{proposal_title}\"",
+                            proposal_id=comment_owner.get('proposal_id'),
+                            metadata={
+                                'comment_id': comment_id,
+                                'emoji': emoji,
+                                'reacted_by': current_user_id,
+                                'proposal_title': proposal_title,
+                            },
+                        )
+                except Exception as notify_error:
+                    print(f"⚠️ Error notifying comment author on reaction: {notify_error}")
+
                 conn.commit()
                 return {'action': 'added', 'emoji': emoji}, 200
             

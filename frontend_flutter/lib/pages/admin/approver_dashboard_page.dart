@@ -52,6 +52,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       _enforceAccessAndLoad();
       if (!mounted) return;
       context.read<AppState>().setAdminNavLabel('Dashboard');
+      context.read<AppState>().fetchNotifications();
     });
   }
 
@@ -371,11 +372,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               children: [
                 Material(
                   child: AdminSidebar(
-                    isCollapsed: _isSidebarCollapsed,
+                    isCollapsed: app.isAdminSidebarCollapsed,
                     currentPage: _currentPage,
-                    onToggle: () => setState(
-                      () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                    ),
+                    onToggle: () => context.read<AppState>().toggleAdminSidebar(),
                     onSelect: (label) {
                       setState(() => _currentPage = label);
                       _navigateToPage(context, label);
@@ -619,6 +618,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         ),
         Row(
           children: [
+            _buildNotificationBell(app),
+            const SizedBox(width: 12),
             ClipOval(
               child: Image.asset(
                 'assets/images/User_Profile.png',
@@ -648,6 +649,252 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildNotificationBell(AppState app) {
+    final unread = app.unreadNotifications;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.18)),
+          ),
+          child: IconButton(
+            tooltip: 'Notifications',
+            icon: const Icon(Icons.notifications_none, color: Colors.white),
+            onPressed: () async {
+              await app.fetchNotifications();
+              if (!mounted) return;
+              await _showNotificationsDialog(app);
+            },
+          ),
+        ),
+        if (unread > 0)
+          Positioned(
+            right: -3,
+            top: -3,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: const BoxDecoration(
+                color: Color(0xFFE74C3C),
+                borderRadius: BorderRadius.all(Radius.circular(999)),
+              ),
+              child: Text(
+                unread > 99 ? '99+' : unread.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  String _formatNotificationTimestamp(dynamic raw) {
+    if (raw == null) return '';
+    final value = raw.toString().trim();
+    if (value.isEmpty) return '';
+    final dt = DateTime.tryParse(value);
+    if (dt == null) return value;
+    final local = dt.toLocal();
+    final diff = DateTime.now().difference(local);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+    if (diff.inDays < 1) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return DateFormat('MMM d, y • HH:mm').format(local);
+  }
+
+  Future<void> _showNotificationsDialog(AppState app) async {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final notifications = app.notifications;
+            final unread = app.unreadNotifications;
+            return Dialog(
+              backgroundColor: const Color(0xFF1E2A44),
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: Colors.white.withOpacity(0.12)),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560, maxHeight: 600),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom:
+                              BorderSide(color: Colors.white.withOpacity(0.08)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.notifications,
+                              color: Colors.white, size: 20),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Notifications',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          if (unread > 0)
+                            TextButton(
+                              onPressed: () async {
+                                await app.markAllNotificationsRead();
+                                await app.fetchNotifications();
+                                setDialogState(() {});
+                              },
+                              child: const Text('Mark all read'),
+                            ),
+                          IconButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            icon: const Icon(Icons.close, color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: notifications.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No notifications yet.',
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.all(12),
+                              itemCount: notifications.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final rawItem = notifications[index];
+                                final Map<String, dynamic> item =
+                                    rawItem is Map<String, dynamic>
+                                        ? rawItem
+                                        : (rawItem is Map
+                                            ? rawItem.cast<String, dynamic>()
+                                            : <String, dynamic>{});
+                                final isRead = item['is_read'] == true;
+                                final title = (item['title'] ?? 'Notification')
+                                    .toString()
+                                    .trim();
+                                final message =
+                                    (item['message'] ?? '').toString().trim();
+                                final timestamp = _formatNotificationTimestamp(
+                                  item['created_at'],
+                                );
+                                final idRaw = item['id'];
+                                final notificationId = idRaw is int
+                                    ? idRaw
+                                    : int.tryParse(idRaw?.toString() ?? '');
+
+                                return InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTap: () async {
+                                    if (!isRead && notificationId != null) {
+                                      await app.markNotificationRead(
+                                          notificationId);
+                                      await app.fetchNotifications();
+                                      setDialogState(() {});
+                                    }
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: isRead
+                                          ? Colors.white.withOpacity(0.04)
+                                          : Colors.white.withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.08),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(
+                                          isRead
+                                              ? Icons.notifications_none_outlined
+                                              : Icons.notifications_active,
+                                          color: isRead
+                                              ? Colors.white54
+                                              : const Color(0xFF5DA9FF),
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                title,
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: isRead
+                                                      ? FontWeight.w600
+                                                      : FontWeight.w700,
+                                                ),
+                                              ),
+                                              if (message.isNotEmpty) ...[
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  message,
+                                                  style: const TextStyle(
+                                                    color: Colors.white70,
+                                                    fontSize: 12.5,
+                                                  ),
+                                                ),
+                                              ],
+                                              if (timestamp.isNotEmpty) ...[
+                                                const SizedBox(height: 6),
+                                                Text(
+                                                  timestamp,
+                                                  style: const TextStyle(
+                                                    color: Colors.white54,
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1116,7 +1363,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   }
 
   void _toggleSidebar() {
-    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
+    final app = context.read<AppState>();
+    app.setAdminSidebarCollapsed(!app.isAdminSidebarCollapsed);
   }
 
   Widget _buildPendingApprovalsList() {

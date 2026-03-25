@@ -401,7 +401,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
               children: [
                 Material(
                   child: AdminSidebar(
-                    isCollapsed: _isSidebarCollapsed,
+                    isCollapsed: app.isAdminSidebarCollapsed,
                     currentPage: _currentPage,
                     onToggle: _toggleSidebar,
                     onSelect: (label) {
@@ -794,7 +794,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   void _toggleSidebar() {
-    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
+    final app = context.read<AppState>();
+    app.setAdminSidebarCollapsed(!app.isAdminSidebarCollapsed);
   }
 
   Widget _buildApprovalsToolbar() {

@@ -9,10 +9,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../services/auth_service.dart';
-import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/app_side_nav.dart';
@@ -40,8 +38,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   final TextEditingController _globalRegionCtrl = TextEditingController();
   final TextEditingController _globalOwnerCtrl = TextEditingController();
   final TextEditingController _globalProposalTypeCtrl = TextEditingController();
-  bool _isSidebarCollapsed = true;
-  late AnimationController _animationController;
   final ScrollController _scrollController = ScrollController();
   final _compactCurrencyFormatter = NumberFormat.compactCurrency(
     decimalDigits: 0,
@@ -70,6 +66,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       setState(() => _cycleTimeRefreshTick++);
     });
   }
+
 
   Future<Map<String, dynamic>?> _fetchClientEngagement() async {
     try {
@@ -150,216 +147,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     }
   }
 
-  Map<String, int> _pipelineCountsFromResponse(Map<String, dynamic>? data) {
-    final counts = <String, int>{
-      'Draft': 0,
-      'In Review': 0,
-      'Released': 0,
-      'Signed': 0,
-      'Archived': 0,
-    };
-    final stages = (data?['stages'] as List?) ?? [];
-    for (final s in stages) {
-      if (s is! Map) continue;
-      final stageName = (s['stage'] ?? '').toString();
-      final cnt = (s['count'] is num) ? (s['count'] as num).toInt() : 0;
-      if (counts.containsKey(stageName)) {
-        counts[stageName] = cnt;
-      }
-    }
-    return counts;
-  }
-
-  Future<void> _showCompletionRatesDialog(Map<String, dynamic>? data) async {
-    try {
-      final low = (data?['low_proposals'] as List?) ?? [];
-      await showDialog(
-        context: context,
-        builder: (context) {
-          return Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding:
-                const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: Container(
-                  constraints:
-                      const BoxConstraints(maxWidth: 980, maxHeight: 720),
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.white.withValues(alpha: 0.12),
-                        Colors.white.withValues(alpha: 0.06),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: PremiumTheme.glassWhiteBorder,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Completion Rates: Low Readiness',
-                              style: PremiumTheme.titleLarge
-                                  .copyWith(color: Colors.white),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          IconButton(
-                            onPressed: () => Navigator.pop(context),
-                            icon: const Icon(Icons.close, color: Colors.white),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      if (low.isEmpty)
-                        Expanded(
-                          child: Center(
-                            child: Text(
-                              'All proposals are passing mandatory section checks under the current filters.',
-                              style: PremiumTheme.bodyMedium,
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        )
-                      else
-                        Expanded(
-                          child: ListView.separated(
-                            itemCount: low.length,
-                            separatorBuilder: (_, __) => Divider(
-                              height: 1,
-                              color: Colors.white.withValues(alpha: 0.08),
-                            ),
-                            itemBuilder: (context, i) {
-                              final p = (low[i] as Map).cast<String, dynamic>();
-                              final id = (p['proposal_id'] ?? '').toString();
-                              final title =
-                                  (p['title'] ?? 'Untitled').toString();
-                              final clientName = (p['client'] ?? '').toString();
-                              final status = (p['status'] ?? '').toString();
-                              final score = (p['readiness_score'] is num)
-                                  ? (p['readiness_score'] as num).toInt()
-                                  : int.tryParse((p['readiness_score'] ?? '')
-                                          .toString()) ??
-                                      0;
-                              final issues =
-                                  (p['readiness_issues'] as List?) ?? const [];
-
-                              return InkWell(
-                                onTap: () {
-                                  Navigator.pop(context);
-                                  Navigator.pushNamed(
-                                    this.context,
-                                    '/proposal_review',
-                                    arguments: {
-                                      'id': id,
-                                      'title': title,
-                                    },
-                                  );
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 12),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        flex: 4,
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              title,
-                                              style: PremiumTheme.bodyMedium
-                                                  .copyWith(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              issues.isEmpty
-                                                  ? ''
-                                                  : (issues
-                                                      .take(2)
-                                                      .join(' â€¢ ')),
-                                              style: PremiumTheme.bodySmall
-                                                  .copyWith(
-                                                color: Colors.white70,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      Expanded(
-                                        flex: 3,
-                                        child: Text(
-                                          clientName.isEmpty ? '-' : clientName,
-                                          style:
-                                              PremiumTheme.bodyMedium.copyWith(
-                                            color: Colors.white70,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      Expanded(
-                                        flex: 2,
-                                        child: Text(
-                                          status.isEmpty ? '-' : status,
-                                          style:
-                                              PremiumTheme.bodyMedium.copyWith(
-                                            color: Colors.white70,
-                                          ),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          '$score%',
-                                          textAlign: TextAlign.right,
-                                          style:
-                                              PremiumTheme.bodyMedium.copyWith(
-                                            color: score >= 90
-                                                ? PremiumTheme.success
-                                                : score >= 60
-                                                    ? PremiumTheme.warning
-                                                    : PremiumTheme.error,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
-      );
-    } catch (e) {
-      print('Completion rates dialog error: $e');
-    }
-  }
 
   Widget _buildProposalPipelineView(Map<String, dynamic>? data) {
     final stagesRaw = (data?['stages'] as List?) ?? [];
@@ -1074,17 +861,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     _globalOwnerCtrl.dispose();
     _globalProposalTypeCtrl.dispose();
     super.dispose();
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-      if (_isSidebarCollapsed) {
-        _animationController.forward();
-      } else {
-        _animationController.reverse();
-      }
-    });
   }
 
   void _exportAsCSV() {
@@ -2202,17 +1978,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     return parts.isEmpty ? 'Draft' : parts.join(' ');
   }
 
-  String _getUserName(Map<String, dynamic>? user) {
-    if (user == null) return 'User';
-
-    String? name = user['full_name'] ??
-        user['first_name'] ??
-        user['name'] ??
-        user['email']?.split('@')[0];
-
-    return name ?? 'User';
-  }
-
   bool _isAdminUser() {
     final user = AuthService.currentUser;
     final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
@@ -2267,169 +2032,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     return counts;
   }
 
-  Widget _buildProposalPipelineFunnel(Map<String, int> counts) {
-    final stages = const ['Draft', 'In Review', 'Released', 'Signed'];
-    final maxCount = counts.values.fold<int>(0, (m, v) => v > m ? v : m);
-    final safeMax = math.max(maxCount, 1);
-
-    Color stageColor(String stage) {
-      switch (stage) {
-        case 'Signed':
-          return PremiumTheme.success;
-        case 'Released':
-          return PremiumTheme.info;
-        case 'In Review':
-          return PremiumTheme.warning;
-        default:
-          return PremiumTheme.orange;
-      }
-    }
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Column(
-          children: [
-            for (final stage in stages)
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 110,
-                        child: Text(
-                          stage,
-                          overflow: TextOverflow.ellipsis,
-                          style: PremiumTheme.bodyMedium.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Stack(
-                          alignment: Alignment.centerLeft,
-                          children: [
-                            Container(
-                              height: 16,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                            ),
-                            FractionallySizedBox(
-                              widthFactor: (counts[stage] ?? 0) / safeMax,
-                              child: Container(
-                                height: 16,
-                                decoration: BoxDecoration(
-                                  color:
-                                      stageColor(stage).withValues(alpha: 0.75),
-                                  borderRadius: BorderRadius.circular(999),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      SizedBox(
-                        width: 44,
-                        child: Text(
-                          (counts[stage] ?? 0).toString(),
-                          textAlign: TextAlign.right,
-                          style: PremiumTheme.bodyMedium.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildCompletionRateGauge(Map<String, dynamic>? data) {
-    final totals = (data?['totals'] as Map?)?.cast<String, dynamic>() ??
-        <String, dynamic>{};
-    final total =
-        (totals['total'] is num) ? (totals['total'] as num).toInt() : 0;
-    final passed =
-        (totals['passed'] is num) ? (totals['passed'] as num).toInt() : 0;
-    final passRate =
-        (totals['pass_rate'] is num) ? (totals['pass_rate'] as num).toInt() : 0;
-    final ratio = total <= 0 ? 0.0 : (passed / total).clamp(0.0, 1.0);
-
-    return Center(
-      child: InkWell(
-        onTap: () => _showCompletionRatesDialog(data),
-        child: SizedBox(
-          width: 180,
-          height: 180,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              SizedBox(
-                width: 180,
-                height: 180,
-                child: CircularProgressIndicator(
-                  value: ratio,
-                  strokeWidth: 12,
-                  backgroundColor: Colors.white.withValues(alpha: 0.10),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    passRate >= 90
-                        ? PremiumTheme.success
-                        : passRate >= 60
-                            ? PremiumTheme.warning
-                            : PremiumTheme.error,
-                  ),
-                ),
-              ),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    '$passRate%',
-                    style: PremiumTheme.displayMedium.copyWith(fontSize: 34),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '$passed of $total passing',
-                    style: PremiumTheme.bodyMedium.copyWith(
-                      color: PremiumTheme.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Tap to drill down',
-                    style: PremiumTheme.bodySmall.copyWith(
-                      color: Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final sidebarCollapsed = app.isAdminSidebarCollapsed;
     final filtered = _filterProposals(app.proposals);
     final analytics = _calculateAnalytics(filtered);
     final metrics = _buildMetricCards(analytics);
-    final pipelineCounts = _calculatePipelineCounts(filtered);
-    final pipelineTotal =
-        pipelineCounts.values.fold<int>(0, (sum, v) => sum + v);
-    final signedCount = pipelineCounts['Signed'] ?? 0;
+    _calculatePipelineCounts(filtered);
     final isAdminUser = _isAdminUser();
     return Scaffold(
       body: Container(
@@ -2437,13 +2047,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         child: Row(
           children: [
             AppSideNav(
-              isCollapsed: _isSidebarCollapsed,
+              isCollapsed: sidebarCollapsed,
               currentLabel:
                   isAdminUser ? 'Analytics' : 'Analytics (My Pipeline)',
               isAdmin: isAdminUser,
-              onToggle: () => setState(
-                () => _isSidebarCollapsed = !_isSidebarCollapsed,
-              ),
+              onToggle: () => app.toggleAdminSidebar(),
               onSelect: _navigatePage,
             ),
             Expanded(
@@ -2611,8 +2219,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                         final pipelineData =
                                             (bundle?['pipeline'] as Map?)
                                                 ?.cast<String, dynamic>();
-                                        final completionData =
-                                            (bundle?['completion_rates']
+                                        (bundle?['completion_rates']
                                                     as Map?)
                                                 ?.cast<String, dynamic>();
 
@@ -2808,53 +2415,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   ),
                 ],
               ),
-      ),
-    );
-  }
-
-  Widget _buildHeroSection() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blue.shade400, Colors.blue.shade600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Icon(
-              Icons.analytics,
-              color: Colors.white,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: 20),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Analytics Dashboard',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -3785,21 +3345,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
-  Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'signed':
-      case 'approved':
-        return Colors.green;
-      case 'in review':
-      case 'pending':
-        return Colors.orange;
-      case 'draft':
-        return Colors.grey;
-      default:
-        return Colors.blue;
-    }
-  }
 
+  // ignore: unused_element
   String _formatDate(DateTime? date) {
     if (date == null) return 'No date';
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
@@ -3876,13 +3423,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
+  // ignore: unused_element
   Widget _buildNavItem(
     String label,
     String iconAsset,
     bool isActive,
     BuildContext context,
   ) {
-    final collapsed = _isSidebarCollapsed;
+    final collapsed = context.watch<AppState>().isAdminSidebarCollapsed;
     return Tooltip(
       message: collapsed ? label : '',
       child: InkWell(
