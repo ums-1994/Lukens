@@ -216,7 +216,7 @@ def _call_upstream(
         "AI_ASSISTANT_CONNECT_TIMEOUT_S", 8, minimum=2, maximum=30
     )
     read_timeout = read_timeout_s or _getenv_int(
-        "AI_ASSISTANT_UPSTREAM_TIMEOUT_S", 75, minimum=5, maximum=180
+        "AI_ASSISTANT_UPSTREAM_TIMEOUT_S", 120, minimum=5, maximum=600
     )
     method = "GET" if payload is None else "POST"
     payload_chars = len(str(payload)) if payload is not None else 0
@@ -351,7 +351,7 @@ def proxy_generate_section(username=None):
     primary_max_chars = _getenv_int("AI_ASSISTANT_MAX_CHARS", 12000, minimum=1000, maximum=30000)
     retry_max_chars = _getenv_int("AI_ASSISTANT_RETRY_MAX_CHARS", 5000, minimum=500, maximum=20000)
     retry_max_tokens = _getenv_int("AI_ASSISTANT_RETRY_MAX_TOKENS", 96, minimum=48, maximum=192)
-    retry_read_timeout = _getenv_int("AI_ASSISTANT_RETRY_TIMEOUT_S", 60, minimum=5, maximum=120)
+    retry_read_timeout = _getenv_int("AI_ASSISTANT_RETRY_TIMEOUT_S", 90, minimum=5, maximum=300)
     primary_payload = {
         "section_name": section_name,
         "proposal_text": _compact_text(proposal_text, primary_max_chars),
@@ -480,7 +480,7 @@ def proxy_improve_area(username=None):
     primary_max_chars = _getenv_int("AI_ASSISTANT_MAX_CHARS", 12000, minimum=1000, maximum=30000)
     retry_max_chars = _getenv_int("AI_ASSISTANT_RETRY_MAX_CHARS", 5000, minimum=500, maximum=20000)
     retry_max_tokens = _getenv_int("AI_ASSISTANT_RETRY_MAX_TOKENS", 96, minimum=48, maximum=192)
-    retry_read_timeout = _getenv_int("AI_ASSISTANT_RETRY_TIMEOUT_S", 60, minimum=5, maximum=120)
+    retry_read_timeout = _getenv_int("AI_ASSISTANT_RETRY_TIMEOUT_S", 90, minimum=5, maximum=300)
     primary_payload = {
         "area_name": area_name,
         "proposal_text": _compact_text(proposal_text, primary_max_chars),
