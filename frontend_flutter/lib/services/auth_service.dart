@@ -2,26 +2,16 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web/web.dart' as web;
+import 'api_service.dart';
 
 class AuthService {
-  // Get API URL from JavaScript config or use default
+  // Get API URL: always use Render production backend
   static String get baseUrl {
-    // Check if we're in production (not localhost)
-    if (kIsWeb) {
-      final hostname = web.window.location.hostname;
-      final isProduction = hostname.contains('netlify.app') ||
-          hostname.contains('onrender.com') ||
-          !hostname.contains('localhost');
-
-      if (isProduction) {
-        print('🌐 Using production API URL: https://lukens-wp8w.onrender.com');
-        return 'https://lukens-wp8w.onrender.com';
-      }
-    }
-    // Default to Render backend (production)
-    print('🌐 Using Render API URL: https://lukens-wp8w.onrender.com');
-    return 'https://lukens-wp8w.onrender.com';
+    final url = ApiService.baseUrl;
+    print('🌐 AuthService: Using API URL: $url');
+    return url;
   }
+
   static String? _token;
   static Map<String, dynamic>? _currentUser;
 
@@ -164,10 +154,12 @@ class AuthService {
         final data = json.decode(response.body) as Map<String, dynamic>;
         // Backend may return either 'token' or 'access_token' and may include a 'user' object
         final token = data['token'] ?? data['access_token'];
-        final user = data['user'] ?? data['user_profile'] ?? {
-          'email': email,
-          'username': email,
-        };
+        final user = data['user'] ??
+            data['user_profile'] ??
+            {
+              'email': email,
+              'username': email,
+            };
 
         if (token != null) _token = token as String;
         _currentUser = Map<String, dynamic>.from(user as Map);
@@ -191,17 +183,17 @@ class AuthService {
   static Future<Map<String, dynamic>?> verifyEmail(String token) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/verify-email'),
+        Uri.parse('$baseUrl/api/verify-email'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'token': token}),
       );
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+        final data = json.decode(response.body) as Map<String, dynamic>?;
         return data;
       } else {
         final error = json.decode(response.body);
-        throw Exception(error['error'] ?? 'Email verification failed');
+        throw Exception(error['detail'] ?? error['error'] ?? 'Email verification failed');
       }
     } catch (e) {
       print('Email verification error: $e');
@@ -231,8 +223,8 @@ class AuthService {
         return data;
       } else {
         final error = json.decode(response.body);
-        throw Exception(
-            error['detail'] ?? 'External JWT login failed with status ${response.statusCode}');
+        throw Exception(error['detail'] ??
+            'External JWT login failed with status ${response.statusCode}');
       }
     } catch (e) {
       print('External JWT login error: $e');
@@ -244,7 +236,7 @@ class AuthService {
   static Future<Map<String, dynamic>?> resendVerification(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/resend-verification'),
+        Uri.parse('$baseUrl/api/resend-verification'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({'email': email}),
       );
@@ -254,7 +246,7 @@ class AuthService {
         return data;
       } else {
         final error = json.decode(response.body);
-        throw Exception(error['error'] ?? 'Failed to resend verification');
+        throw Exception(error['detail'] ?? error['error'] ?? 'Failed to resend verification');
       }
     } catch (e) {
       print('Resend verification error: $e');

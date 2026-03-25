@@ -12,7 +12,17 @@ from datetime import datetime, timedelta
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
-from api.utils.helpers import generate_proposal_pdf, create_docusign_envelope, create_notification, resolve_user_id
+from api.utils.helpers import (
+    generate_proposal_pdf,
+    create_docusign_envelope,
+    create_notification,
+    resolve_user_id,
+    log_activity,
+    log_status_change,
+)
+from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
+
+from api.routes.client import _encode_identity_hash
 
 bp = Blueprint('approver', __name__)
 
@@ -27,7 +37,7 @@ def options_pending_approvals():
 
 @bp.get("/proposals/pending_approval")
 @token_required
-def get_pending_approvals(username=None):
+def get_pending_approvals(username=None, user_id=None, email=None):
     """Get all proposals pending approval"""
     try:
         with get_db_connection() as conn:
@@ -139,6 +149,110 @@ def get_pending_approvals(username=None):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+
+@bp.get("/proposals/all")
+@token_required
+def get_all_proposals_for_admin(username=None, user_id=None, email=None):
+    """Get proposals across all users for admin/approver dashboards."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            resolved_user_id = user_id
+            if not resolved_user_id:
+                resolved_user_id = resolve_user_id(cursor, username or email)
+
+            requester_role = ''
+            if resolved_user_id:
+                cursor.execute('SELECT role FROM users WHERE id = %s', (resolved_user_id,))
+                role_row = cursor.fetchone()
+                if role_row:
+                    requester_role = (role_row.get('role') or '').strip().lower()
+
+            # Only admin/CEO/approver-style roles should be able to see all proposals.
+            if requester_role not in ['admin', 'ceo', 'approver']:
+                return {'detail': 'Admin access required'}, 403
+
+            # Detect actual proposals table schema so we can support multiple environments.
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            cols = cursor.fetchall() or []
+            existing_columns = [
+                (c['column_name'] if isinstance(c, dict) else c[0])
+                for c in cols
+            ]
+
+            if 'client' in existing_columns:
+                client_expr = 'client'
+            elif 'client_name' in existing_columns:
+                client_expr = 'client_name'
+            else:
+                client_expr = "NULL::text"
+
+            if 'client_email' in existing_columns:
+                client_email_expr = 'client_email'
+            else:
+                client_email_expr = "NULL::text"
+
+            if 'owner_id' in existing_columns:
+                owner_expr = 'owner_id'
+            elif 'user_id' in existing_columns:
+                owner_expr = 'user_id'
+            else:
+                owner_expr = "NULL::text"
+
+            if 'budget' in existing_columns:
+                budget_expr = 'budget'
+            else:
+                budget_expr = 'NULL::numeric'
+
+            query = f'''
+                SELECT
+                    id,
+                    title,
+                    content,
+                    {client_expr} AS client,
+                    {client_email_expr} AS client_email,
+                    {owner_expr} AS user_id,
+                    status,
+                    created_at,
+                    updated_at,
+                    {budget_expr} AS budget
+                FROM proposals
+                ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+            '''
+
+            cursor.execute(query)
+            rows = cursor.fetchall() or []
+            proposals = []
+            for row in rows:
+                proposals.append({
+                    'id': row.get('id'),
+                    'title': row.get('title'),
+                    'content': row.get('content'),
+                    'client': row.get('client') or 'Unknown',
+                    'client_name': row.get('client') or 'Unknown',
+                    'client_email': (row.get('client_email') or ''),
+                    'owner_id': row.get('user_id'),
+                    'user_id': row.get('user_id'),
+                    'status': row.get('status'),
+                    'budget': row.get('budget'),
+                    'created_at': row.get('created_at').isoformat() if row.get('created_at') else None,
+                    'updated_at': row.get('updated_at').isoformat() if row.get('updated_at') else None,
+                    'updatedAt': row.get('updated_at').isoformat() if row.get('updated_at') else None,
+                })
+
+            return {'proposals': proposals}, 200
+    except Exception as e:
+        print(f"❌ Error fetching all proposals for admin: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 @bp.post("/proposals/<int:proposal_id>/approve")
 @token_required
 def approve_proposal(username=None, proposal_id=None):
@@ -147,6 +261,13 @@ def approve_proposal(username=None, proposal_id=None):
         print(f"🟦 [APPROVE] approve_proposal called for proposal_id={proposal_id} by username={username}")
         data = request.get_json(force=True, silent=True) or {}
         comments = data.get('comments', '')
+        id_last4 = (data.get('id_last4') or data.get('last4') or '').strip()
+        if id_last4:
+            if len(id_last4) != 4 or not id_last4.isdigit():
+                return {
+                    'detail': 'id_last4 must be exactly 4 digits',
+                    'error': 'invalid_id_last4',
+                }, 400
         # Allow client_email override to be passed explicitly from the frontend
         # (e.g., for older proposals that were created before client_email
         # was consistently stored on the proposal record).
@@ -210,6 +331,7 @@ def approve_proposal(username=None, proposal_id=None):
                     p.title, 
                     {client_expr} AS client,
                     {owner_expr} AS user_id,
+                    p.status,
                     p.content,
                     {client_email_expr} AS client_email
                 FROM proposals p
@@ -220,6 +342,16 @@ def approve_proposal(username=None, proposal_id=None):
             
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
+
+            try:
+                compliance = evaluate_proposal_compliance(proposal_id=proposal_id)
+                if (compliance.get('status') or '').upper() == 'NON_COMPLIANT':
+                    return {
+                        'detail': 'Proposal is non-compliant and cannot be sent to client',
+                        'compliance': compliance,
+                    }, 403
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id} before approve: {comp_err}")
             
             title = proposal.get('title')
             client_name = proposal.get('client') or proposal.get('client_name') or 'Unknown'
@@ -340,6 +472,32 @@ def approve_proposal(username=None, proposal_id=None):
                 or approver_user.get('username')
                 or username
             ) if approver_user else (username or 'Approver')
+
+            old_status = proposal.get('status')
+
+            if id_last4:
+                try:
+                    proposal_cols = set(_get_table_columns('proposals'))
+                    if 'identity_last4_hash' not in proposal_cols:
+                        cursor.execute("ALTER TABLE proposals ADD COLUMN identity_last4_hash TEXT")
+                        conn.commit()
+                except Exception as schema_err:
+                    print(f"⚠️ Failed to ensure identity_last4_hash column exists: {schema_err}")
+
+                try:
+                    identity_hash = _encode_identity_hash(id_last4)
+                    cursor.execute(
+                        """UPDATE proposals SET identity_last4_hash = %s WHERE id = %s""",
+                        (identity_hash, proposal_id),
+                    )
+                    conn.commit()
+                except Exception as id_hash_err:
+                    print(f"❌ Failed to store identity_last4_hash for proposal {proposal_id}: {id_hash_err}")
+                    traceback.print_exc()
+                    return {
+                        'detail': 'Failed to configure identity verification for this proposal',
+                        'error': 'identity_config_failed',
+                    }, 500
             
             # Update status to Sent to Client
             cursor.execute(
@@ -354,14 +512,29 @@ def approve_proposal(username=None, proposal_id=None):
                 new_status = status_row['status']
                 print(f"[SUCCESS] Proposal {proposal_id} '{title}' approved and status updated")
 
-                # Notify proposal creator about approval
+                log_finance_audit_async(
+                    user_id=approver_user_id,
+                    username=username,
+                    entity_type='proposal',
+                    entity_id=str(proposal_id),
+                    action_type='FINANCE_APPROVE',
+                    changes=[{'field': 'status', 'old': old_status, 'new': new_status}],
+                )
+
+                try:
+                    evaluate_proposal_compliance(proposal_id=proposal_id)
+                except Exception as comp_err:
+                    print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id} after approve: {comp_err}")
+
+                # Notify proposal creator (manager) about approval
+                creator_id_resolved = None
                 try:
                     if creator:
-                        creator_id = resolve_user_id(cursor, creator)
-                        if not creator_id:
+                        creator_id_resolved = resolve_user_id(cursor, creator)
+                        if not creator_id_resolved:
                             raise RuntimeError(f"Could not resolve proposal creator identifier: {creator}")
                         create_notification(
-                            user_id=creator_id,
+                            user_id=creator_id_resolved,
                             notification_type='proposal_approved',
                             title='Proposal Approved',
                             message=f"Your proposal '{display_title}' for {client_name or 'Client'} has been approved by {approver_name}.",
@@ -370,6 +543,24 @@ def approve_proposal(username=None, proposal_id=None):
                         )
                 except Exception as notif_err:
                     print(f"[WARN] Failed to create approval notification for proposal {proposal_id}: {notif_err}")
+
+                # Also notify finance users so they know the proposal they worked on was approved
+                try:
+                    cursor.execute(
+                        "SELECT id FROM users WHERE role ILIKE '%finance%' AND id != %s",
+                        (creator_id_resolved or 0,),
+                    )
+                    for finance_row in cursor.fetchall():
+                        create_notification(
+                            user_id=finance_row['id'],
+                            notification_type='proposal_approved',
+                            title='Proposal Approved',
+                            message=f"Proposal '{display_title}' has been approved by {approver_name} and sent to the client.",
+                            proposal_id=proposal_id,
+                            metadata={'approver': approver_name},
+                        )
+                except Exception as finance_notif_err:
+                    print(f"[WARN] Failed to notify finance users of approval for proposal {proposal_id}: {finance_notif_err}")
 
                 # Send email to client
                 email_sent = False
@@ -498,8 +689,8 @@ def approve_proposal(username=None, proposal_id=None):
                                 client_email=client_email,
                             )
 
-                            # Return URL back to client view using the collaboration router
-                            return_url = f"{frontend_url}/#/collaborate?token={access_token}&signed=true"
+                            # Return URL back to client portal
+                            return_url = f"{frontend_url}/#/client/proposals?token={access_token}&signed=true"
 
                             envelope_result = create_docusign_envelope(
                                 proposal_id=proposal_id,
@@ -649,7 +840,7 @@ def approve_proposal(username=None, proposal_id=None):
                             print(f"\n⚠️  Continuing with approval despite DocuSign error")
                             print(f"   Client will receive email with proposal link, but DocuSign signing may not be available")
 
-                        client_link = f"{frontend_url}/#/collaborate?token={access_token}"
+                        client_link = f"{frontend_url}/#/client/proposals?token={access_token}"
 
                         sendgrid_configured = bool(
                             (os.getenv('SENDGRID_API_KEY') or '').strip()
@@ -672,15 +863,15 @@ def approve_proposal(username=None, proposal_id=None):
                         {get_logo_html()}
                         <h2>Your Proposal is Ready</h2>
                         <p>Dear {client_name or 'Client'},</p>
-                        <p>We're pleased to share your proposal: <strong>{display_title}</strong></p>
-                        <p>Click the link below to view and review your proposal:</p>
+                        <p>We’re pleased to share that your proposal is now ready for review.</p>
+                        <p>You can securely access the proposal using the link below. For your security, a one-time password (OTP) will be sent to you when you open the link.</p>
                         <p style="text-align: center; margin: 30px 0;">
                             <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>
                         </p>
-                        <p>Or copy and paste this link into your browser:</p>
+                        <p>If the button above does not work, you can copy and paste the following link into your browser:</p>
                         <p style="word-break: break-all; color: #666;"><a href="{client_link}" style="color: #0066cc; text-decoration: underline;">{client_link}</a></p>
-                        <p>If you have any questions, please don't hesitate to reach out.</p>
-                        <p>Best regards,<br>{approver_name}</p>
+                        <p>If you have any questions or need any clarification, please feel free to reach out — we’re happy to assist.</p>
+                        <p>Kind regards,<br>{approver_name}<br>Khonology Team</p>
                         """
                         
                         email_sent = send_email(effective_client_email, email_subject, email_body)
@@ -721,6 +912,302 @@ def approve_proposal(username=None, proposal_id=None):
         print(f"[ERROR] Error approving proposal: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
+
+@bp.route("/proposals/<int:proposal_id>/request-changes", methods=['OPTIONS'])
+def options_request_changes(proposal_id=None):
+    """Handle CORS preflight for request changes endpoint"""
+    return {}, 200
+
+@bp.post("/proposals/<int:proposal_id>/request-changes")
+@token_required
+def request_changes(username=None, proposal_id=None):
+    """Request changes from Manager or Finance"""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        target = (data.get('target') or '').strip()
+        comments = (data.get('comments') or '').strip()
+        
+        if target not in ['manager', 'finance']:
+            return {'detail': 'Invalid target. Must be "manager" or "finance"'}, 400
+            
+        if not comments:
+            return {'detail': 'Comments are required when requesting changes'}, 400
+        
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Determine ownership column (owner_id vs user_id) to support both schemas
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'proposals'
+                """
+            )
+            existing_columns = [row['column_name'] for row in cursor.fetchall()]
+
+            owner_col = None
+            if 'owner_id' in existing_columns:
+                owner_col = 'owner_id'
+            elif 'user_id' in existing_columns:
+                owner_col = 'user_id'
+
+            if not owner_col:
+                print("⚠️ No owner_id or user_id column found in proposals table when requesting changes")
+                return {
+                    'detail': 'Proposals table is missing owner column; cannot determine creator for change request.'
+                }, 500
+
+            # Get proposal details using resolved owner column
+            cursor.execute(
+                f"""
+                SELECT id, title, status, {owner_col} AS creator_id
+                FROM proposals 
+                WHERE id = %s
+                """,
+                (proposal_id,)
+            )
+            proposal = cursor.fetchone()
+            
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+            
+            # Update status to indicate changes are requested
+            cursor.execute(
+                """
+                    UPDATE proposals 
+                    SET status = 'Changes Requested', updated_at = NOW() 
+                    WHERE id = %s
+                """,
+                (proposal_id,)
+            )
+            
+            # Get creator/owner ID (ensure int for notifications)
+            try:
+                creator_id = proposal.get('creator_id')
+                if creator_id is not None:
+                    creator_id = int(creator_id)
+            except (TypeError, ValueError):
+                creator_id = None
+
+            # Look up manager/creator user details for history + response (work if full_name column missing)
+            manager_row = None
+            manager_name = None
+            manager_email = None
+            if creator_id:
+                try:
+                    cursor.execute(
+                        "SELECT id, username, email FROM users WHERE id = %s",
+                        (creator_id,),
+                    )
+                    manager_row = cursor.fetchone()
+                    if manager_row:
+                        manager_email = manager_row.get("email")
+                        manager_name = manager_row.get("username") or manager_email
+                    try:
+                        cursor.execute(
+                            "SELECT full_name FROM users WHERE id = %s",
+                            (creator_id,),
+                        )
+                        fn_row = cursor.fetchone()
+                        if fn_row and (fn_row.get("full_name") or "").strip():
+                            manager_name = (fn_row.get("full_name") or "").strip()
+                    except Exception:
+                        pass
+                except Exception as e:
+                    print(f"⚠️ Manager lookup failed: {e}")
+            
+            # Get approver info (work if full_name column missing)
+            try:
+                cursor.execute(
+                    "SELECT id, username FROM users WHERE username = %s",
+                    (username,),
+                )
+                approver = cursor.fetchone()
+                if approver:
+                    try:
+                        cursor.execute(
+                            "SELECT full_name FROM users WHERE id = %s",
+                            (approver["id"],),
+                        )
+                        fn_row = cursor.fetchone()
+                        if fn_row and (fn_row.get("full_name") or "").strip():
+                            approver = dict(approver)
+                            approver["full_name"] = (fn_row.get("full_name") or "").strip()
+                    except Exception:
+                        pass
+            except Exception as e:
+                print(f"⚠️ Approver lookup failed: {e}")
+                approver = None
+            approver_name = (approver.get('full_name') or approver.get('username') or username) if approver else (username or 'Admin')
+            approver_id = approver['id'] if approver else None
+            
+            proposal_title = proposal.get('title', f'Proposal {proposal_id}')
+            
+            # Notify based on target (wrap so missing tables/columns don't cause 500)
+            notifications_created = []
+            try:
+                if target == 'manager':
+                    # Get manager/creator user ID
+                    if creator_id:
+                        create_notification(
+                            user_id=creator_id,
+                            notification_type='changes_requested',
+                            title='Changes Requested - Coordination Required',
+                            message=f"Admin requested changes for '{proposal_title}'. Please coordinate with Finance Manager to update content and pricing.",
+                            proposal_id=proposal_id,
+                            metadata={
+                                'requested_by': approver_name,
+                                'target': 'manager',
+                                'comments': comments,
+                                'manager_id': creator_id,
+                                'manager_name': manager_name,
+                                'manager_email': manager_email,
+                            }
+                        )
+                        notifications_created.append('creator')
+                
+                    # Also notify finance if they exist as separate role
+                    cursor.execute(
+                        """
+                        SELECT id FROM users 
+                        WHERE role ILIKE '%finance%' OR role ILIKE '%manager%'
+                        LIMIT 1
+                        """
+                    )
+                    finance_user = cursor.fetchone()
+                    if finance_user:
+                        create_notification(
+                            user_id=finance_user['id'],
+                            notification_type='changes_requested',
+                            title='Changes Requested - Finance Coordination',
+                            message=f"Admin requested changes for '{proposal_title}'. Please coordinate with the proposal creator.",
+                            proposal_id=proposal_id,
+                            metadata={
+                                'requested_by': approver_name,
+                                'target': 'finance_coordination',
+                                'comments': comments,
+                                'manager_id': creator_id,
+                                'manager_name': manager_name,
+                                'manager_email': manager_email,
+                            }
+                        )
+                        notifications_created.append('finance')
+                    
+                elif target == 'finance':
+                    # Notify finance users
+                    cursor.execute(
+                        """
+                        SELECT id FROM users 
+                        WHERE role ILIKE '%finance%'
+                        """
+                    )
+                    finance_users = cursor.fetchall()
+                
+                    for finance_user in finance_users:
+                        create_notification(
+                            user_id=finance_user['id'],
+                            notification_type='changes_requested',
+                            title='Financial Changes Requested',
+                            message=f"Admin requested financial changes for '{proposal_title}'. Please update pricing and resubmit.",
+                            proposal_id=proposal_id,
+                            metadata={
+                                'requested_by': approver_name,
+                                'target': 'finance_only',
+                                'comments': comments,
+                                'manager_id': creator_id,
+                                'manager_name': manager_name,
+                                'manager_email': manager_email,
+                            }
+                        )
+                
+                    # Also notify creator so they know finance is working on it
+                    if creator_id:
+                        create_notification(
+                            user_id=creator_id,
+                            notification_type='changes_requested',
+                            title='Financial Changes Requested',
+                            message=f"Admin requested financial changes for '{proposal_title}'. Finance Manager will update pricing.",
+                            proposal_id=proposal_id,
+                            metadata={
+                                'requested_by': approver_name,
+                                'target': 'finance_only',
+                                'comments': comments,
+                                'manager_id': creator_id,
+                                'manager_name': manager_name,
+                                'manager_email': manager_email,
+                            }
+                        )
+                        notifications_created.extend(['finance', 'creator'])
+            
+                # Add comment to proposal for audit trail
+                if approver_id is not None:
+                    try:
+                        cursor.execute(
+                            """
+                            INSERT INTO document_comments 
+                            (proposal_id, comment_text, created_by, status)
+                            VALUES (%s, %s, %s, %s)
+                            """,
+                            (proposal_id, f"Changes requested from {target}: {comments}", approver_id, 'active')
+                        )
+                    except Exception as insert_err:
+                        print(f"⚠️ document_comments insert failed (non-fatal): {insert_err}")
+
+                # Log status change + activity for History / timeline
+                try:
+                    old_status = proposal.get('status') or 'Unknown'
+                    log_status_change(
+                        proposal_id=proposal_id,
+                        user_id=approver_id,
+                        old_status=old_status,
+                        new_status='Changes Requested',
+                    )
+                    desc_part = ""
+                    if manager_name or manager_email:
+                        desc_part = f" (sent to {manager_name or 'manager'}"
+                        if manager_email:
+                            desc_part += f" <{manager_email}>"
+                        desc_part += ")"
+                    activity_desc = f"{approver_name} requested changes from {target}{desc_part}"
+                    log_activity(
+                        proposal_id=proposal_id,
+                        user_id=approver_id,
+                        action_type='changes_requested',
+                        description=activity_desc,
+                        metadata={
+                            'target': target,
+                            'comments': comments,
+                            'manager_id': creator_id,
+                            'manager_name': manager_name,
+                            'manager_email': manager_email,
+                        },
+                    )
+                except Exception as activity_err:
+                    print(f"⚠️ Failed to log changes_requested activity: {activity_err}")
+            except Exception as notify_err:
+                print(f"⚠️ Request-changes notify/log failed (non-fatal): {notify_err}")
+
+            conn.commit()
+            
+            return {
+                'detail': f'Changes requested from {target}',
+                'target': target,
+                'notifications_sent': notifications_created,
+                'proposal_id': proposal_id,
+                'status': 'Changes Requested',
+                'manager': {
+                    'id': creator_id,
+                    'name': manager_name,
+                    'email': manager_email,
+                },
+            }, 200
+            
+    except Exception as e:
+        print(f"[ERROR] Error requesting changes: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 
 @bp.post("/proposals/<int:proposal_id>/reject")
 @token_required
@@ -766,6 +1253,10 @@ def reject_proposal(username=None, proposal_id=None):
                 return {'detail': 'Proposal not found'}, 404
 
             proposal_id_db, title, creator_user_id = proposal
+
+            cursor.execute('SELECT status FROM proposals WHERE id = %s', (proposal_id,))
+            old_status_row = cursor.fetchone()
+            old_status = old_status_row[0] if old_status_row else None
             
             # Update status to Draft
             cursor.execute(
@@ -774,7 +1265,21 @@ def reject_proposal(username=None, proposal_id=None):
             )
             conn.commit()
 
-            # Notify proposal creator about rejection
+            log_finance_audit_async(
+                user_id=None,
+                username=username,
+                entity_type='proposal',
+                entity_id=str(proposal_id),
+                action_type='FINANCE_REJECT',
+                changes=[{'field': 'status', 'old': old_status, 'new': 'Draft'}],
+            )
+
+            try:
+                evaluate_proposal_compliance(proposal_id=proposal_id)
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id} after reject: {comp_err}")
+
+            # Notify proposal creator (manager) about rejection
             try:
                 if creator_user_id:
                     rejection_message = f"Your proposal '{title}' was rejected by {username}."
@@ -791,6 +1296,27 @@ def reject_proposal(username=None, proposal_id=None):
                     )
             except Exception as notif_err:
                 print(f"[WARN] Failed to create rejection notification for proposal {proposal_id}: {notif_err}")
+
+            # Also notify finance users so they know the outcome
+            try:
+                cursor.execute(
+                    "SELECT id FROM users WHERE role ILIKE '%finance%' AND id != %s",
+                    (creator_user_id or 0,),
+                )
+                for finance_row in cursor.fetchall():
+                    finance_msg = f"Proposal '{title}' was rejected by {username} and returned to draft."
+                    if comments:
+                        finance_msg += f" Reason: {comments}"
+                    create_notification(
+                        user_id=finance_row[0] if isinstance(finance_row, (tuple, list)) else finance_row['id'],
+                        notification_type='proposal_rejected',
+                        title='Proposal Rejected',
+                        message=finance_msg,
+                        proposal_id=proposal_id,
+                        metadata={'comments': comments} if comments else None,
+                    )
+            except Exception as finance_notif_err:
+                print(f"[WARN] Failed to notify finance users of rejection for proposal {proposal_id}: {finance_notif_err}")
 
             # Add rejection comment if provided
             if comments:
@@ -811,28 +1337,6 @@ def reject_proposal(username=None, proposal_id=None):
     except Exception as e:
         print(f"[ERROR] Error rejecting proposal: {e}")
         traceback.print_exc()
-        return {'detail': str(e)}, 500
-
-@bp.patch("/proposals/<int:proposal_id>/status")
-@token_required
-def update_proposal_status(username=None, proposal_id=None):
-    """Update proposal status (for approvers)"""
-    try:
-        data = request.get_json()
-        status = data.get('status')
-        
-        if not status:
-            return {'detail': 'Status is required'}, 400
-        
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                '''UPDATE proposals SET status = %s, updated_at = NOW() WHERE id = %s''',
-                (status, proposal_id)
-            )
-            conn.commit()
-            return {'detail': 'Status updated'}, 200
-    except Exception as e:
         return {'detail': str(e)}, 500
 
 

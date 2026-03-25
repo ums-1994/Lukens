@@ -1,3 +1,5 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable
+
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
@@ -301,24 +303,49 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  static const Color _sidebarBase = Color(0xFF252525);
+  static const Color _sidebarAccent = Color(0xFFC10D00);
+
   Widget _buildSettingsSidebar() {
     return Container(
       width: 250,
       margin: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _sidebarBase,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 4,
-            offset: Offset(0, 2),
-          ),
-        ],
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.10),
+          width: 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: InkWell(
+              onTap: () => Navigator.of(context).maybePop(),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  color: _sidebarBase.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.10),
+                    width: 1,
+                  ),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.arrow_back, color: Colors.white, size: 20),
+                  ],
+                ),
+              ),
+            ),
+          ),
           const Padding(
             padding: EdgeInsets.all(20),
             child: Text(
@@ -326,7 +353,7 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF1E293B),
+                color: Colors.white,
               ),
             ),
           ),
@@ -388,34 +415,43 @@ class _SettingsPageState extends State<SettingsPage> {
         color: Colors.transparent,
         child: InkWell(
           onTap: () => setState(() => _selectedSettings = key),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
           child: Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFFF0F7FF) : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
+              color: isSelected
+                  ? _sidebarBase.withValues(alpha: 0.30)
+                  : _sidebarBase.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isSelected
+                    ? _sidebarAccent.withValues(alpha: 0.65)
+                    : Colors.white.withValues(alpha: 0.10),
+                width: 1,
+              ),
             ),
             child: Row(
               children: [
                 Icon(
                   icon,
                   size: 20,
-                  color: isSelected
-                      ? const Color(0xFF2563EB)
-                      : const Color(0xFF64748B),
+                  color: isSelected ? Colors.white : const Color(0xFFECF0F1),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight:
-                        isSelected ? FontWeight.w600 : FontWeight.normal,
-                    color: isSelected
-                        ? const Color(0xFF2563EB)
-                        : const Color(0xFF64748B),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.normal,
+                      color: isSelected ? Colors.white : const Color(0xFFECF0F1),
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (isSelected)
+                  const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
               ],
             ),
           ),

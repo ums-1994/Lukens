@@ -1,25 +1,36 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
+
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:convert';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
+import 'package:intl/intl.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'content_library_dialog.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/client_service.dart';
 import '../../services/asset_service.dart';
+import '../../services/role_service.dart';
+import '../../services/ai_assistant_api.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
 import '../../utils/html_content_parser.dart';
 import '../../widgets/header.dart';
 import 'governance_panel.dart';
+import '../../services/ai_analysis_service.dart';
 // Import models from document_editor
 import '../../document_editor/models/document_section.dart';
 import '../../document_editor/models/inline_image.dart';
 import '../../document_editor/models/document_table.dart';
+import '../../document_editor/models/positioned_pricing_table.dart';
+import '../../document_editor/models/document_format_models.dart';
 // Block-based section widget
 import '../../document_editor/widgets/section_widget.dart';
+import '../../document_editor/controllers/highlighting_text_controller.dart';
 
 class BlankDocumentEditorPage extends StatefulWidget {
   final String? proposalId;
@@ -31,6 +42,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
   final bool
       isCollaborator; // For collaborator mode - hide navigation, show only editor
   final bool requireVersionDescription;
+  final bool forceCommentsPanelOpen;
 
   const BlankDocumentEditorPage({
     super.key,
@@ -42,6 +54,7 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.readOnly = false, // Default to editable
     this.isCollaborator = false, // Default to false
     this.requireVersionDescription = false,
+    this.forceCommentsPanelOpen = false,
   });
 
   @override
@@ -63,7 +76,357 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String _selectedPanel = 'templates'; // templates, build, upload, signature
   int _selectedSectionIndex =
       0; // Track which section is selected for content insertion
+  /// Avoid registering Quill/listener hooks twice for the same section (e.g. AI init + auto-save setup).
+  final Set<String> _sectionRichListenersAttached = {};
   String _selectedCurrency = 'Rand (ZAR)';
+
+  Widget _buildPositionedPricingTable(
+    int sectionIndex,
+    int positionedIndex,
+    PositionedPricingTable positioned,
+  ) {
+    return Positioned(
+      left: positioned.x,
+      top: positioned.y,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          setState(() {
+            positioned.x = (positioned.x + details.delta.dx).clamp(0.0, 700.0);
+            positioned.y = (positioned.y + details.delta.dy).clamp(0.0, 1000.0);
+          });
+        },
+        child: SizedBox(
+          width: positioned.width,
+          child: Stack(
+            children: [
+              _buildTableContainer(
+                sectionIndex,
+                -1,
+                positioned.table,
+                _getCurrencySymbol(),
+              ),
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF00BCD4),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Icon(
+                    Icons.drag_indicator,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 6,
+                right: 6,
+                child: Material(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _sections[sectionIndex]
+                            .positionedPricingTables
+                            .removeAt(positionedIndex);
+                      });
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.close,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _scrollToCommentCard(int commentId) {
+    if (!_commentsScrollController.hasClients) return;
+
+    final rootComments =
+        _comments.where((c) => c['parent_id'] == null).toList();
+    final filteredRootComments = _commentFilterStatus == 'all'
+        ? rootComments
+        : rootComments
+            .where((c) => c['status'] == _commentFilterStatus)
+            .toList();
+
+    filteredRootComments.sort((a, b) {
+      final aTime =
+          DateTime.tryParse(a['timestamp']?.toString() ?? '') ?? DateTime.now();
+      final bTime =
+          DateTime.tryParse(b['timestamp']?.toString() ?? '') ?? DateTime.now();
+      return bTime.compareTo(aTime);
+    });
+
+    final index = filteredRootComments
+        .indexWhere((c) => c['id']?.toString() == commentId.toString());
+    if (index < 0) return;
+
+    const itemExtentEstimate = 170.0;
+    final target = (index * itemExtentEstimate)
+        .clamp(0.0, _commentsScrollController.position.maxScrollExtent);
+    _commentsScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  List<Widget> _buildRightGutterCommentBubbles({
+    required int sectionIndex,
+    required double pageContentWidth,
+  }) {
+    final section = _sections[sectionIndex];
+
+    final rootCommentsForSection = _comments
+        .where((c) =>
+            c['parent_id'] == null &&
+            (c['status']?.toString().toLowerCase() ?? 'open') != 'deleted' &&
+            c['block_id']?.toString() == section.id)
+        .toList();
+
+    if (rootCommentsForSection.isEmpty) return const <Widget>[];
+
+    // Estimate the y-position by measuring the content text and mapping the
+    // start_offset caret position to a dy. This doesn't perfectly account for
+    // the title field, but places bubbles next to the correct paragraph.
+    final contentText = section.controller.text;
+    final contentStyle = _getContentTextStyle();
+    final painter = TextPainter(
+      textDirection: ui.TextDirection.ltr,
+      text: TextSpan(text: contentText, style: contentStyle),
+      maxLines: null,
+    );
+
+    // Content TextField is inside a small padding; keep a small left/right
+    // gutter so line wrapping matches closely.
+    final textWidth = (pageContentWidth - 32).clamp(200.0, pageContentWidth);
+    painter.layout(maxWidth: textWidth);
+
+    const bubbleRightOutsidePage = -220.0; // place outside A4 card
+    const bubbleWidth = 200.0;
+    const baseYInSection = 86.0; // approx: title + spacers + padding
+
+    rootCommentsForSection.sort((a, b) {
+      final aStart = int.tryParse(a['start_offset']?.toString() ?? '') ?? 0;
+      final bStart = int.tryParse(b['start_offset']?.toString() ?? '') ?? 0;
+      return aStart.compareTo(bStart);
+    });
+
+    return rootCommentsForSection.map((c) {
+      final start = int.tryParse(c['start_offset']?.toString() ?? '') ?? 0;
+      final clamped = start.clamp(0, contentText.length);
+      final caretOffset = painter.getOffsetForCaret(
+        TextPosition(offset: clamped),
+        Rect.zero,
+      );
+
+      final top = baseYInSection + caretOffset.dy;
+      final name = c['commenter_name']?.toString() ?? 'User';
+      final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
+      final commentText = c['comment_text']?.toString() ?? '';
+      final timestampLabel = _formatTimestamp(c['timestamp']);
+
+      final replies = _comments
+          .where((r) => r['parent_id']?.toString() == c['id']?.toString())
+          .toList()
+        ..sort((a, b) {
+          final aTime = _tryParseTimestamp(a['timestamp']);
+          final bTime = _tryParseTimestamp(b['timestamp']);
+          if (aTime == null && bTime == null) return 0;
+          if (aTime == null) return -1;
+          if (bTime == null) return 1;
+          return aTime.compareTo(bTime);
+        });
+
+      final latestReply = replies.isNotEmpty ? replies.last : null;
+      final latestReplyText = latestReply?['comment_text']?.toString() ?? '';
+      final latestReplyAuthor =
+          latestReply?['commenter_name']?.toString().trim() ?? '';
+      final isResolved =
+          (c['status']?.toString().toLowerCase() ?? 'open') == 'resolved';
+
+      return Positioned(
+        right: bubbleRightOutsidePage,
+        top: top,
+        width: bubbleWidth,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (details) {
+            final id = int.tryParse(c['id']?.toString() ?? '');
+            if (id == null) return;
+            _showThreadOverlay(
+              rootCommentId: id,
+              globalPosition: details.globalPosition,
+            );
+          },
+          child: Opacity(
+            opacity: isResolved ? 0.7 : 1.0,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isResolved
+                      ? Colors.grey.shade300
+                      : const Color(0xFF00BCD4).withOpacity(0.35),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.10),
+                    blurRadius: 10,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 14,
+                    backgroundColor: const Color(0xFF00BCD4),
+                    child: Text(
+                      initial,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        if (timestampLabel.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            timestampLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        Text(
+                          commentText,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.25,
+                            color: Colors.grey.shade800,
+                          ),
+                        ),
+                        if (replies.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'Reply (${replies.length})',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                          if (latestReplyText.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              latestReplyAuthor.isNotEmpty
+                                  ? '$latestReplyAuthor: $latestReplyText'
+                                  : latestReplyText,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.25,
+                                color: Colors.grey.shade800,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  void _applyInlineHighlights() {
+    try {
+      final Map<String, List<HighlightRange>> rangesByBlock = {};
+
+      for (final c in _comments) {
+        final status = (c['status'] ?? 'open').toString().toLowerCase();
+        if (status != 'open' && status != 'resolved') continue;
+
+        // Root comments + replies both can have offsets; apply to all.
+        final blockId = c['block_id']?.toString();
+        if (blockId == null || blockId.isEmpty) continue;
+
+        final startRaw = c['start_offset'];
+        final endRaw = c['end_offset'];
+        final start = int.tryParse(startRaw?.toString() ?? '');
+        final end = int.tryParse(endRaw?.toString() ?? '');
+        if (start == null || end == null) continue;
+        if (end <= start) continue;
+
+        final color = status == 'open'
+            ? Colors.yellow.withOpacity(0.3)
+            : Colors.yellow.withOpacity(0.12);
+
+        rangesByBlock.putIfAbsent(blockId, () => <HighlightRange>[]).add(
+              HighlightRange(
+                start: start,
+                end: end,
+                color: color,
+                commentId: int.tryParse(c['id']?.toString() ?? ''),
+              ),
+            );
+      }
+
+      for (final section in _sections) {
+        final ranges = rangesByBlock[section.id] ?? const <HighlightRange>[];
+        section.controller.setHighlights(ranges);
+      }
+    } catch (e) {
+      print('⚠️ Error applying inline highlights: $e');
+    }
+  }
+
   List<String> _uploadedImages = [];
   List<Map<String, dynamic>> _libraryImages = [];
   bool _isLoadingLibraryImages = false;
@@ -85,12 +448,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Formatting state
   String _selectedTextStyle = 'Normal Text';
-  String _selectedFont = 'Plus Jakarta Sans';
-  String _selectedFontSize = '12px';
+  String _selectedFont = 'Arial';
+  String _selectedFontSize = '12';
   String _selectedAlignment = 'left';
+  String _selectedLineSpacing = '1.0';
   bool _isBold = false;
   bool _isItalic = false;
   bool _isUnderlined = false;
+  bool _isStrikethrough = false;
 
   // Sidebar state
   bool _isSidebarCollapsed = false;
@@ -105,11 +470,331 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   List<Map<String, dynamic>> _comments = [];
   late TextEditingController _commentController;
   final FocusNode _commentFocusNode = FocusNode();
+  final ScrollController _commentsScrollController = ScrollController();
+  OverlayEntry? _threadOverlay;
+  int? _activeThreadRootId;
+  late TextEditingController _threadReplyController;
+  final FocusNode _threadReplyFocusNode = FocusNode();
   String _commentFilterStatus = 'all';
   String _highlightedText = '';
   int? _selectedSectionForComment;
+  TextSelection? _currentSelection;
+  int? _selectionSectionIndex;
+  int? _draftSectionIndex;
+  String? _draftBlockId;
+  int? _draftStartOffset;
+  int? _draftEndOffset;
+  String _draftSelectedText = '';
+  Timer? _selectionSnackDebounce;
+  int? _lastSelectionHash;
+  final Map<String, int?> _lastSelectionHashBySectionId = {};
+  final Set<String> _selectionListenerAttachedSectionIds = {};
+  OverlayEntry? _addCommentOverlay;
+  Offset? _lastContentTapGlobalPosition;
+  int? _pendingScrollToCommentId;
   List<Map<String, dynamic>> _collaborators = [];
   bool _isCollaborating = false;
+
+  void _showSnack(SnackBar snackBar) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.clearSnackBars();
+    messenger.showSnackBar(snackBar);
+  }
+
+  void _removeAddCommentOverlay() {
+    _addCommentOverlay?.remove();
+    _addCommentOverlay = null;
+  }
+
+  void _removeThreadOverlay() {
+    _threadOverlay?.remove();
+    _threadOverlay = null;
+    _activeThreadRootId = null;
+  }
+
+  void _showThreadOverlay(
+      {required int rootCommentId, required Offset globalPosition}) {
+    _removeThreadOverlay();
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+
+    final root = _comments.firstWhere(
+      (c) => c['id']?.toString() == rootCommentId.toString(),
+      orElse: () => <String, dynamic>{},
+    );
+    if (root.isEmpty) return;
+
+    setState(() {
+      _activeThreadRootId = rootCommentId;
+      _draftSectionIndex =
+          int.tryParse(root['section_index']?.toString() ?? '');
+      _draftBlockId = root['block_id']?.toString();
+      _draftStartOffset = int.tryParse(root['start_offset']?.toString() ?? '');
+      _draftEndOffset = int.tryParse(root['end_offset']?.toString() ?? '');
+      _draftSelectedText = root['highlighted_text']?.toString() ?? '';
+    });
+
+    _threadOverlay = OverlayEntry(
+      builder: (context) {
+        final screen = MediaQuery.of(context).size;
+        final left = (globalPosition.dx + 12).clamp(8.0, screen.width - 360);
+        final top = (globalPosition.dy - 40).clamp(8.0, screen.height - 420);
+
+        final replies = _comments
+            .where(
+                (c) => c['parent_id']?.toString() == rootCommentId.toString())
+            .toList()
+          ..sort((a, b) {
+            final aTime = DateTime.tryParse(a['timestamp']?.toString() ?? '') ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            final bTime = DateTime.tryParse(b['timestamp']?.toString() ?? '') ??
+                DateTime.fromMillisecondsSinceEpoch(0);
+            return aTime.compareTo(bTime);
+          });
+
+        return Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 340,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.14),
+                    blurRadius: 18,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          root['commenter_name']?.toString() ?? 'User',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: _removeThreadOverlay,
+                        icon: const Icon(Icons.close, size: 18),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  if ((root['comment_text']?.toString() ?? '').isNotEmpty)
+                    Text(
+                      root['comment_text']?.toString() ?? '',
+                      style: const TextStyle(fontSize: 13, height: 1.35),
+                    ),
+                  if (replies.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 180),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: replies
+                              .map(
+                                (r) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      '${r['commenter_name'] ?? 'User'}: ${r['comment_text'] ?? ''}',
+                                      style: const TextStyle(
+                                          fontSize: 12, height: 1.35),
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _threadReplyController,
+                    focusNode: _threadReplyFocusNode,
+                    maxLines: 2,
+                    decoration: InputDecoration(
+                      hintText: 'Reply or add others with @',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: const BorderSide(
+                            color: Color(0xFF00BCD4), width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.all(10),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      ElevatedButton(
+                        onPressed: () async {
+                          if (_threadReplyController.text.trim().isEmpty)
+                            return;
+                          _commentController.text = _threadReplyController.text;
+                          await _addComment(parentId: rootCommentId);
+                          _threadReplyController.clear();
+                          if (!mounted) return;
+                          unawaited(
+                              _loadCommentsFromDatabase(_savedProposalId!));
+                          _threadOverlay?.markNeedsBuild();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00BCD4),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Reply'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_threadOverlay!);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _threadReplyFocusNode.requestFocus();
+    });
+  }
+
+  void _showAddCommentOverlay({required Offset globalPosition}) {
+    _removeAddCommentOverlay();
+
+    final overlay = Overlay.maybeOf(context);
+    if (overlay == null) return;
+
+    _addCommentOverlay = OverlayEntry(
+      builder: (context) {
+        final screenSize = MediaQuery.of(context).size;
+        final left = (globalPosition.dx + 8).clamp(8.0, screenSize.width - 160);
+        final top =
+            (globalPosition.dy - 44).clamp(8.0, screenSize.height - 120);
+
+        return Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            color: Colors.transparent,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: Colors.grey.shade300),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () {
+                  if (!mounted) return;
+                  final idx = _selectionSectionIndex;
+                  final sel = _currentSelection;
+                  if (idx == null || sel == null || sel.isCollapsed) return;
+
+                  final sectionText = _sections[idx].controller.text;
+                  final base = sel.baseOffset;
+                  final extent = sel.extentOffset;
+                  final start = base < extent ? base : extent;
+                  final end = base < extent ? extent : base;
+                  final clampedStart = start.clamp(0, sectionText.length);
+                  final clampedEnd = end.clamp(0, sectionText.length);
+                  final selectedText = clampedEnd > clampedStart
+                      ? sectionText.substring(clampedStart, clampedEnd)
+                      : '';
+
+                  final section = _sections[idx];
+
+                  setState(() {
+                    _selectedSectionForComment = idx;
+                    _highlightedText = selectedText;
+                    _draftSectionIndex = idx;
+                    _draftBlockId = section.id;
+                    _draftStartOffset = clampedStart;
+                    _draftEndOffset = clampedEnd;
+                    _draftSelectedText = selectedText;
+                    _showCommentsPanel = true;
+                  });
+
+                  if (_savedProposalId != null) {
+                    _loadCommentsFromDatabase(_savedProposalId!);
+                  }
+
+                  _removeAddCommentOverlay();
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!mounted) return;
+                    if (_commentsScrollController.hasClients) {
+                      _commentsScrollController.animateTo(
+                        0,
+                        duration: const Duration(milliseconds: 200),
+                        curve: Curves.easeOut,
+                      );
+                    }
+                    _commentFocusNode.requestFocus();
+                  });
+                },
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: const [
+                      Icon(Icons.add_comment,
+                          size: 16, color: Color(0xFF00BCD4)),
+                      SizedBox(width: 8),
+                      Text(
+                        'Add comment',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_addCommentOverlay!);
+  }
 
   // Auto-save and versioning
   Timer? _autoSaveTimer;
@@ -128,6 +813,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   String? _proposalStatus; // draft, Pending CEO Approval, Sent to Client, etc.
   Map<String, dynamic>?
       _proposalData; // Store full proposal data for GovernancePanel
+
+  // Governance and Risk Assessment state
+  Map<String, dynamic> _governanceResults = {};
+  Map<String, dynamic> _riskAssessment = {};
+  bool _isRunningGovernance = false;
+  bool _isRunningRiskAssessment = false;
+  bool _hasCompletedGovernanceCheck = false;
+  bool _hasCompletedRiskAssessment = false;
 
   @override
   void initState() {
@@ -151,9 +844,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _commentController = TextEditingController();
     _commentController.addListener(_handleCommentTextChanged);
     _commentFocusNode.addListener(_handleCommentFocusChange);
+    _threadReplyController = TextEditingController();
 
-    // Auto-show comments panel for collaborators
-    if (widget.isCollaborator) {
+    if (widget.forceCommentsPanelOpen) {
       _showCommentsPanel = true;
     }
 
@@ -173,11 +866,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         section.titleFocus.addListener(() => setState(() {}));
 
         // Add auto-save listeners
-        section.controller.addListener(_onContentChanged);
-        section.titleController.addListener(_onContentChanged);
+        _attachSectionListeners(section);
       });
 
       _selectedSectionIndex = 0; // Select first section
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _ensureSectionSelectionListeners();
+      });
     } else if (widget.proposalId == null) {
       // Only create initial section for new documents without AI content
       final initialSection = DocumentSection(
@@ -192,6 +888,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Add focus listeners for UI updates
       initialSection.contentFocus.addListener(() => setState(() {}));
       initialSection.titleFocus.addListener(() => setState(() {}));
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _ensureSectionSelectionListeners();
+      });
     }
 
     // Setup auto-save listeners
@@ -206,6 +907,166 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // Get auth token and load existing data if editing
     _initializeAuth();
+  }
+
+  Future<void> _sendToFinance() async {
+    // First save the document
+    if (_hasUnsavedChanges) {
+      await _saveToBackend();
+    }
+
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the document before sending to Finance'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Send to Finance'),
+        content: const Text(
+          'This will move the proposal to Pricing In Progress so Finance can add pricing and tables.\n\nDo you want to continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Send'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pricing In Progress',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pricing In Progress';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Sent to Finance for pricing'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/creator_dashboard',
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send to Finance: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  void _onContentSelectionChanged(
+      int sectionIndex, TextSelection selection, SelectionChangedCause? cause) {
+    if (selection.isCollapsed) {
+      _selectionSnackDebounce?.cancel();
+      _lastSelectionHash = null;
+      _removeAddCommentOverlay();
+      setState(() {
+        _currentSelection = null;
+        _selectionSectionIndex = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _currentSelection = selection;
+      _selectionSectionIndex = sectionIndex;
+    });
+
+    final base = selection.baseOffset;
+    final extent = selection.extentOffset;
+    final start = base < extent ? base : extent;
+    final end = base < extent ? extent : base;
+    if (start < 0 || end <= start) return;
+
+    final selectionHash = Object.hash(sectionIndex, start, end);
+    if (_lastSelectionHash == selectionHash) return;
+    _lastSelectionHash = selectionHash;
+
+    _selectionSnackDebounce?.cancel();
+    _selectionSnackDebounce = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      if (_currentSelection == null || _currentSelection!.isCollapsed) return;
+      if (_selectionSectionIndex != sectionIndex) return;
+
+      final anchor = _lastContentTapGlobalPosition ?? const Offset(24, 120);
+      _showAddCommentOverlay(globalPosition: anchor);
+    });
+  }
+
+  void _onContentTapUp(TapUpDetails details) {
+    _lastContentTapGlobalPosition = details.globalPosition;
+  }
+
+  Future<void> _startPricingFinance() async {
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please save the document before starting pricing'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pricing In Progress',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pricing In Progress';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Pricing started'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to start pricing: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   bool _isTruthy(dynamic value) {
@@ -262,6 +1123,83 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  Future<void> _submitForApprovalFinance() async {
+    // First save the document
+    if (_hasUnsavedChanges) {
+      await _saveToBackend();
+    }
+
+    if (_savedProposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('Please save the document before submitting for approval'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Submit for Approval'),
+        content: const Text(
+          'This will move the proposal to Pending Approval so Admin can review it.\n\nDo you want to continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2ECC71),
+            ),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final app = context.read<AppState>();
+      await app.updateProposalStatus(
+        _savedProposalId!.toString(),
+        'Pending Approval',
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _proposalStatus = 'Pending Approval';
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Submitted for admin approval'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        '/finance_dashboard',
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to submit for approval: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
   Future<void> _loadClients() async {
     if (_isLoadingClients) return;
 
@@ -280,9 +1218,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           final currentName = _clientNameController.text.trim();
           if (currentName.isNotEmpty) {
             for (final c in _clients) {
-              final name = (c['company_name'] ?? c['name'] ?? '').toString();
+              final name = _extractClientName(c);
               if (name.trim().toLowerCase() == currentName.toLowerCase()) {
                 _selectedClientId = _tryParseClientId(c);
+
+                final email = _extractClientEmail(c).trim();
+                if (email.isNotEmpty &&
+                    _clientEmailController.text.trim().isEmpty) {
+                  _clientEmailController.text = email;
+                }
                 break;
               }
             }
@@ -302,9 +1246,31 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return int.tryParse(raw?.toString() ?? '');
   }
 
+  String _extractClientName(Map<String, dynamic> client) {
+    return (client['company_name'] ??
+            client['companyName'] ??
+            client['name'] ??
+            client['client_name'] ??
+            client['clientName'] ??
+            '')
+        .toString();
+  }
+
+  String _extractClientEmail(Map<String, dynamic> client) {
+    return (client['email'] ??
+            client['email_address'] ??
+            client['client_email'] ??
+            client['clientEmail'] ??
+            client['client_contact_email'] ??
+            client['contact_email'] ??
+            client['contactEmail'] ??
+            '')
+        .toString();
+  }
+
   String _getClientDisplayName(Map<String, dynamic> client) {
-    final name = (client['company_name'] ?? client['name'] ?? '').toString();
-    final email = (client['email'] ?? '').toString();
+    final name = _extractClientName(client);
+    final email = _extractClientEmail(client);
     final cleanName = name.trim();
     if (cleanName.isNotEmpty) return cleanName;
     return email.trim().isNotEmpty ? email.trim() : 'Client';
@@ -330,9 +1296,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     if (selected == null) return;
 
-    final name =
-        (selected['company_name'] ?? selected['name'] ?? '').toString();
-    final email = (selected['email'] ?? '').toString();
+    final name = _extractClientName(selected);
+    final email = _extractClientEmail(selected);
 
     setState(() {
       _selectedClientId = clientId;
@@ -402,11 +1367,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Future<void> _loadLibraryImages() async {
     if (_isLoadingLibraryImages) return;
 
+    if (!mounted) return;
     setState(() => _isLoadingLibraryImages = true);
 
     try {
       final token = await _getAuthToken();
       if (token == null) {
+        if (mounted) setState(() => _isLoadingLibraryImages = false);
         print('⚠️ No token available for loading library images');
         return;
       }
@@ -419,6 +1386,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         },
       );
 
+      if (!mounted) return;
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         final List<dynamic> content = data is Map && data.containsKey('content')
@@ -457,11 +1425,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         print('✅ Loaded ${_libraryImages.length} images from library');
       } else {
         print('⚠️ Failed to load library images: ${response.statusCode}');
-        setState(() => _isLoadingLibraryImages = false);
+        if (mounted) setState(() => _isLoadingLibraryImages = false);
       }
     } catch (e) {
       print('❌ Error loading library images: $e');
-      setState(() => _isLoadingLibraryImages = false);
+      if (mounted) setState(() => _isLoadingLibraryImages = false);
     }
   }
 
@@ -523,38 +1491,73 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             (proposal['title'] ?? 'Untitled Document').toString();
       });
 
-      // Parse the content JSON
-      if (proposal['content'] != null) {
+      // Parse the content JSON (editor stores full doc in content; backend may also expose sections)
+      Map<String, dynamic>? contentData;
+      final dynamic rawContent = proposal['content'];
+      if (rawContent != null &&
+          (!(rawContent is String) ||
+              (rawContent as String).trim().isNotEmpty)) {
         try {
-          final dynamic rawContent = proposal['content'];
-          final dynamic contentData = rawContent is String
-              ? json.decode(rawContent)
-              : (rawContent is Map
-                  ? Map<String, dynamic>.from(rawContent)
-                  : null);
-
-          if (contentData == null) {
-            throw Exception('Unsupported content format');
+          contentData = rawContent is String
+              ? Map<String, dynamic>.from(json.decode(rawContent) as Map)
+              : Map<String, dynamic>.from(
+                  rawContent is Map ? rawContent as Map : <String, dynamic>{});
+        } catch (e) {
+          print('⚠️ Error parsing proposal content: $e');
+        }
+      }
+      // Fallback: build from proposal.sections when content is missing (e.g. legacy or alternate save path)
+      if (contentData == null ||
+          (contentData['sections'] as List?)?.isEmpty == true) {
+        final dynamic rawSections = proposal['sections'];
+        if (rawSections != null) {
+          List<dynamic> sectionList;
+          if (rawSections is List && rawSections.isNotEmpty) {
+            sectionList = rawSections;
+          } else if (rawSections is Map && (rawSections as Map).isNotEmpty) {
+            sectionList =
+                (rawSections as Map).entries.map<Map<String, dynamic>>((e) {
+              final v = e.value;
+              return {
+                'title': e.key.toString(),
+                'content': v is String ? v : (v != null ? v.toString() : ''),
+                'sectionType': 'content',
+                'isCoverPage': false,
+              };
+            }).toList();
+          } else {
+            sectionList = [];
           }
-
+          if (sectionList.isNotEmpty) {
+            contentData = <String, dynamic>{
+              'title': proposal['title'] ?? 'Untitled Document',
+              'sections': sectionList,
+            };
+          }
+        }
+      }
+      if (contentData != null && contentData.isNotEmpty) {
+        try {
+          final Map<String, dynamic> data = contentData!;
           setState(() {
             // Set title
-            _titleController.text = (contentData['title'] ??
-                    proposal['title'] ??
-                    'Untitled Document')
-                .toString();
+            _titleController.text =
+                (data['title'] ?? proposal['title'] ?? 'Untitled Document')
+                    .toString();
 
             // Clear existing sections
             for (var section in _sections) {
               section.controller.dispose();
+              section.richController.dispose();
               section.titleController.dispose();
               section.contentFocus.dispose();
               section.titleFocus.dispose();
             }
             _sections.clear();
+            _sectionRichListenersAttached.clear();
 
             // Load sections from content
-            final List<dynamic> savedSections = contentData['sections'] ?? [];
+            final List<dynamic> savedSections = data['sections'] ?? [];
             if (savedSections.isNotEmpty) {
               for (var sectionData in savedSections) {
                 final String sectionTypeRaw =
@@ -563,11 +1566,25 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     sectionTypeRaw.trim().toLowerCase();
                 final bool isCover = _isTruthy(sectionData['isCoverPage']) ||
                     sectionTypeNormalized == 'cover';
+                final String? sectionId =
+                    sectionData is Map ? (sectionData['id']?.toString()) : null;
+                final dynamic richDelta = sectionData['richContentDelta'];
                 final newSection = DocumentSection(
+                  id: sectionId,
                   title: (sectionData['title'] ??
                           (isCover ? '' : 'Untitled Section'))
                       .toString(),
                   content: sectionData['content'] ?? '',
+                  richDeltaJson:
+                      richDelta == null ? null : jsonEncode(richDelta),
+                  lineSpacing: (sectionData['lineSpacing'] ?? '1.0').toString(),
+                  paragraphAlignment:
+                      (sectionData['paragraphAlignment'] ?? 'left').toString(),
+                  richParagraphs:
+                      (sectionData['richParagraphs'] as List<dynamic>?)
+                              ?.map((p) => Map<String, dynamic>.from(p as Map))
+                              .toList() ??
+                          [],
                   backgroundColor: sectionData['backgroundColor'] != null
                       ? Color(sectionData['backgroundColor'] as int)
                       : Colors.white,
@@ -593,12 +1610,37 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         }
                       }).toList() ??
                       [],
+                  positionedPricingTables:
+                      (sectionData['positionedPricingTables'] as List<dynamic>?)
+                              ?.map((p) => PositionedPricingTable.fromJson(
+                                  p as Map<String, dynamic>))
+                              .toList() ??
+                          [],
                 );
+
+                // Migrate legacy price tables stored in tables[] into positionedPricingTables.
+                if (newSection.tables.isNotEmpty) {
+                  final legacyPriceTables = newSection.tables
+                      .where((t) => t.type == 'price')
+                      .toList();
+                  if (legacyPriceTables.isNotEmpty) {
+                    newSection.tables.removeWhere((t) => t.type == 'price');
+                    for (final t in legacyPriceTables) {
+                      newSection.positionedPricingTables.add(
+                        PositionedPricingTable(
+                          table: t,
+                          x: 0,
+                          y: 0,
+                          width: 700,
+                        ),
+                      );
+                    }
+                  }
+                }
                 _sections.add(newSection);
 
                 // Add listeners
-                newSection.controller.addListener(_onContentChanged);
-                newSection.titleController.addListener(_onContentChanged);
+                _attachSectionListeners(newSection);
 
                 // Add focus listeners for UI updates
                 newSection.contentFocus.addListener(() => setState(() {}));
@@ -611,8 +1653,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 content: '',
               );
               _sections.add(defaultSection);
-              defaultSection.controller.addListener(_onContentChanged);
-              defaultSection.titleController.addListener(_onContentChanged);
+              _attachSectionListeners(defaultSection);
 
               // Add focus listeners for UI updates
               defaultSection.contentFocus.addListener(() => setState(() {}));
@@ -620,8 +1661,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             }
 
             // Load metadata if available
-            if (contentData['metadata'] != null) {
-              final metadata = contentData['metadata'];
+            if (data['metadata'] != null) {
+              final metadata = data['metadata'];
               _selectedCurrency = metadata['currency'] ?? _selectedCurrency;
               _headerLogoUrl = metadata['headerLogoUrl'] as String?;
               _footerLogoUrl = metadata['footerLogoUrl'] as String?;
@@ -638,6 +1679,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             }
           });
 
+          _ensureSectionSelectionListeners();
+
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
@@ -647,19 +1690,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           setState(() {
             for (var section in _sections) {
               section.controller.dispose();
+              section.richController.dispose();
               section.titleController.dispose();
               section.contentFocus.dispose();
               section.titleFocus.dispose();
             }
             _sections.clear();
+            _sectionRichListenersAttached.clear();
 
             final fallbackSection = DocumentSection(
               title: 'Content',
               content: fallbackText,
             );
             _sections.add(fallbackSection);
-            fallbackSection.controller.addListener(_onContentChanged);
-            fallbackSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(fallbackSection);
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
@@ -673,11 +1717,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               content: '',
             );
             _sections.add(fallbackSection);
-            fallbackSection.controller.addListener(_onContentChanged);
-            fallbackSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(fallbackSection);
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
+
+          _ensureSectionSelectionListeners();
         }
       }
     } catch (e) {
@@ -696,6 +1741,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         proposalId: proposalId,
       );
 
+      if (!mounted) return;
       if (versions.isNotEmpty) {
         setState(() {
           _versionHistory.clear();
@@ -771,6 +1817,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         addCommentWithReplies(comment as Map<String, dynamic>);
       }
 
+      if (!mounted) return;
       // Always update state, even if empty (to clear old comments)
       setState(() {
         _comments.clear();
@@ -778,35 +1825,59 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           _comments.add({
             'id': comment['id'],
             'parent_id': comment['parent_id'],
+            'block_type': comment['block_type'],
+            'block_id': comment['block_id'],
             'commenter_name': comment['author_name'] ??
                 comment['author_username'] ??
                 comment['author_email'] ??
                 'User #${comment['created_by']}',
+            'created_by': comment['created_by'],
             'comment_text': comment['comment_text'],
             'section_index': comment['section_index'],
             'section_name': comment['section_name'],
-            'block_type': comment['block_type'],
-            'block_id': comment['block_id'],
             'highlighted_text': comment['highlighted_text'],
+            'start_offset': comment['start_offset'],
+            'end_offset': comment['end_offset'],
             'timestamp': comment['created_at'],
             'status': comment['status'] ?? 'open',
             'resolved_by': comment['resolved_by'],
             'resolved_at': comment['resolved_at'],
             'resolver_name': comment['resolver_name'],
             'replies': comment['replies'] ?? [],
+            'reactions': comment['reactions'] ?? [],
           });
         }
       });
+
+      // If a thread overlay is open, force it to rebuild so new replies appear.
+      _threadOverlay?.markNeedsBuild();
       print('✅ Loaded ${flatComments.length} comments (including replies)');
 
+      _applyInlineHighlights();
+
       if (mounted) {
-        try {
-          await context.read<AppState>().fetchNotifications();
-        } catch (e) {
-          print('⚠️ Error refreshing notifications: $e');
-        }
+        unawaited(() async {
+          try {
+            await context.read<AppState>().fetchNotifications();
+          } catch (e) {
+            print('⚠️ Error refreshing notifications: $e');
+          }
+        }());
       }
     } catch (e) {
+      if (e.toString().contains('unauthorized')) {
+        AuthService.logout();
+        if (mounted) {
+          _showSnack(
+            const SnackBar(
+              content: Text('Session expired. Please log in again.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
       print('⚠️ Error loading comments: $e');
     }
   }
@@ -956,16 +2027,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   @override
   void dispose() {
     _autoSaveTimer?.cancel();
+    _selectionSnackDebounce?.cancel();
+    _removeAddCommentOverlay();
+    _removeThreadOverlay();
+    _commentsScrollController.dispose();
+    _threadReplyController.dispose();
+    _threadReplyFocusNode.dispose();
     _titleController.dispose();
     _clientNameController.dispose();
     _clientEmailController.dispose();
-    _commentController.removeListener(_handleCommentTextChanged);
     _commentController.dispose();
     _commentFocusNode.removeListener(_handleCommentFocusChange);
     _commentFocusNode.dispose();
     _mentionDebounce?.cancel();
     for (var section in _sections) {
       section.controller.dispose();
+      section.richController.dispose();
       section.titleController.dispose();
       section.contentFocus.dispose();
       section.titleFocus.dispose();
@@ -982,8 +2059,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _sections.insert(afterIndex + 1, newSection);
 
       // Add listeners to new section
-      newSection.controller.addListener(_onContentChanged);
-      newSection.titleController.addListener(_onContentChanged);
+      _attachSectionListeners(newSection);
 
       // Add focus listeners for UI updates
       newSection.contentFocus.addListener(() => setState(() {}));
@@ -1018,13 +2094,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     setState(() {
       _sections.insert(index + 1, newSection);
       _selectedSectionIndex = index + 1;
-
-      newSection.controller.addListener(_onContentChanged);
-      newSection.titleController.addListener(_onContentChanged);
-
-      newSection.contentFocus.addListener(() => setState(() {}));
-      newSection.titleFocus.addListener(() => setState(() {}));
     });
+
+    _ensureSectionSelectionListeners();
   }
 
   void _deleteSection(int index) {
@@ -1054,7 +2126,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         (content.startsWith('http://') || content.startsWith('https://'));
 
     if (isUrl) {
-      await _handleImageForBranding(content as String);
+      await _handleImageForBranding(content);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1083,7 +2155,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         (content.startsWith('http://') || content.startsWith('https://'));
 
     if (isUrl) {
-      await _handleImageForBranding(content as String);
+      await _handleImageForBranding(content);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1249,6 +2321,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     });
   }
 
+  double _computePricingTotal() {
+    double total = 0;
+    for (final section in _sections) {
+      for (final table in section.tables) {
+        if (table.type == 'price') {
+          total += table.getTotal();
+        }
+      }
+
+      for (final positioned in section.positionedPricingTables) {
+        if (positioned.table.type == 'price') {
+          total += positioned.table.getTotal();
+        }
+      }
+    }
+    return total;
+  }
+
   void _addFromLibrary() {
     if (_sections.isEmpty || _selectedSectionIndex >= _sections.length) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1304,35 +2394,43 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
 
         setState(() {
-          // Insert at cursor position if available, otherwise append
-          final text = controller.text;
-          final selection = controller.selection;
+          final isFinanceRole = context.read<RoleService>().isFinance();
+          if (!isFinanceRole) {
+            // Insert at cursor position if available, otherwise append
+            final text = controller.text;
+            final selection = controller.selection;
 
-          if (selection.isValid &&
-              selection.start >= 0 &&
-              selection.start <= text.length) {
-            // Insert at cursor position
-            final before = text.substring(0, selection.start);
-            final after = text.substring(selection.end);
-            final separator =
-                before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
-            controller.text = '$before$separator$textToInsert$after';
-            // Set cursor after inserted content
-            final newPosition =
-                selection.start + separator.length + textToInsert.length;
-            controller.selection = TextSelection.collapsed(offset: newPosition);
-          } else {
-            // Append to end
-            if (text.isEmpty) {
-              controller.text = textToInsert;
+            if (selection.isValid &&
+                selection.start >= 0 &&
+                selection.start <= text.length) {
+              // Insert at cursor position
+              final before = text.substring(0, selection.start);
+              final after = text.substring(selection.end);
+              final separator =
+                  before.isNotEmpty && after.isNotEmpty ? '\n\n' : '';
+              controller.text = '$before$separator$textToInsert$after';
+              // Set cursor after inserted content
+              final newPosition =
+                  selection.start + separator.length + textToInsert.length;
+              controller.selection =
+                  TextSelection.collapsed(offset: newPosition);
             } else {
-              controller.text = '$text\n\n$textToInsert';
+              // Append to end
+              if (text.isEmpty) {
+                controller.text = textToInsert;
+              } else {
+                controller.text = '$text\n\n$textToInsert';
+              }
             }
           }
 
           // Add tables to the section's tables list
           if (tablesToInsert.isNotEmpty) {
-            currentSection.tables.addAll(tablesToInsert);
+            if (isFinanceRole) {
+              currentSection.tables.insertAll(0, tablesToInsert);
+            } else {
+              currentSection.tables.addAll(tablesToInsert);
+            }
           }
         });
 
@@ -1704,8 +2802,29 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             : 'Untitled Section')
         : null;
 
-    // Clear form
-    _commentController.clear();
+    final selectedIndex = _selectedSectionForComment;
+    final selection = _currentSelection;
+    final hasSelection =
+        selectedIndex != null && selection != null && !selection.isCollapsed;
+
+    String? blockId;
+    int? startOffset;
+    int? endOffset;
+    if (_draftBlockId != null &&
+        _draftStartOffset != null &&
+        _draftEndOffset != null &&
+        _draftEndOffset! > _draftStartOffset!) {
+      blockId = _draftBlockId;
+      startOffset = _draftStartOffset;
+      endOffset = _draftEndOffset;
+    } else if (hasSelection) {
+      final section = _sections[selectedIndex];
+      blockId = section.id;
+      final base = selection.baseOffset;
+      final extent = selection.extentOffset;
+      startOffset = base < extent ? base : extent;
+      endOffset = base < extent ? extent : base;
+    }
     _clearMentionState();
 
     // Save comment to database
@@ -1726,23 +2845,83 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         token: token,
         proposalId: _savedProposalId!,
         commentText: commentText,
+        createdBy: commenterName,
         sectionIndex: _selectedSectionForComment,
         sectionName: sectionName,
-        highlightedText: _highlightedText.isNotEmpty ? _highlightedText : null,
+        highlightedText: (_draftSelectedText.isNotEmpty
+                    ? _draftSelectedText
+                    : _highlightedText)
+                .isNotEmpty
+            ? (_draftSelectedText.isNotEmpty
+                ? _draftSelectedText
+                : _highlightedText)
+            : null,
         parentId: parentId,
-        blockType: null, // TODO: Add block type support
-        blockId: null, // TODO: Add block ID support
+        blockType: 'text',
+        blockId: blockId,
+        startOffset: startOffset,
+        endOffset: endOffset,
       );
 
       if (savedComment != null) {
-        // Reload comments from database to get updated structure
-        await _loadCommentsFromDatabase(_savedProposalId!);
+        final createdId = int.tryParse(savedComment['id']?.toString() ?? '');
+        if (createdId != null) {
+          _pendingScrollToCommentId = createdId;
+        }
 
-        // Clear form fields
+        final shouldOptimisticallyInsertRoot = parentId == null &&
+            (_commentFilterStatus == 'all' || _commentFilterStatus == 'open');
+
         setState(() {
+          _showCommentsPanel = true;
+          if (shouldOptimisticallyInsertRoot) {
+            _comments.insert(0, {
+              'id': savedComment['id'] ?? DateTime.now().millisecondsSinceEpoch,
+              'parent_id': parentId,
+              'block_type': 'text',
+              'block_id': blockId,
+              'commenter_name': commenterName,
+              'created_by': savedComment['created_by'],
+              'comment_text': commentText,
+              'section_index': _selectedSectionForComment,
+              'section_name': sectionName,
+              'highlighted_text': (_draftSelectedText.isNotEmpty
+                          ? _draftSelectedText
+                          : _highlightedText)
+                      .isNotEmpty
+                  ? (_draftSelectedText.isNotEmpty
+                      ? _draftSelectedText
+                      : _highlightedText)
+                  : null,
+              'start_offset': startOffset,
+              'end_offset': endOffset,
+              'timestamp': savedComment['created_at'] ??
+                  DateTime.now().toIso8601String(),
+              'status': 'open',
+              'resolved_by': null,
+              'resolved_at': null,
+              'resolver_name': null,
+              'replies': <dynamic>[],
+              'reactions': <dynamic>[],
+            });
+          }
+
+          // Clear form fields immediately for a snappy UX.
+          _commentController.clear();
           _highlightedText = '';
           _selectedSectionForComment = null;
+          _draftSectionIndex = null;
+          _draftBlockId = null;
+          _draftStartOffset = null;
+          _draftEndOffset = null;
+          _draftSelectedText = '';
         });
+
+        // Reconcile in background after a short delay to avoid
+        // "appear then disappear" flicker from immediate eventual-consistency reads.
+        unawaited(Future<void>.delayed(const Duration(milliseconds: 900), () {
+          return _loadCommentsFromDatabase(_savedProposalId!);
+        }));
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1755,24 +2934,48 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             ),
           );
 
-          try {
-            await context.read<AppState>().fetchNotifications();
-          } catch (e) {
-            print('⚠️ Error refreshing notifications after comment: $e');
-          }
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (_pendingScrollToCommentId == null) return;
+            _scrollToCommentCard(_pendingScrollToCommentId!);
+            _pendingScrollToCommentId = null;
+          });
+
+          unawaited(() async {
+            try {
+              await context.read<AppState>().fetchNotifications();
+            } catch (e) {
+              print('⚠️ Error refreshing notifications after comment: $e');
+            }
+          }());
         }
       } else {
         throw Exception('Failed to save comment');
       }
     } catch (e) {
+      if (e.toString().contains('unauthorized')) {
+        AuthService.logout();
+        if (mounted) {
+          _showSnack(
+            const SnackBar(
+              content: Text('Session expired. Please log in again.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
       print('⚠️ Error saving comment to database: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error saving comment: ${e.toString()}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not post comment. Try again.'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
     }
   }
 
@@ -2129,33 +3332,154 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     return _comments.where((c) => c['status'] == _commentFilterStatus).toList();
   }
 
-  String _formatTimestamp(dynamic timestamp) {
-    if (timestamp == null) return '';
-    try {
-      final DateTime dt = DateTime.parse(timestamp.toString());
-      final now = DateTime.now();
-      final difference = now.difference(dt);
+  DateTime? _tryParseTimestamp(dynamic timestamp) {
+    if (timestamp == null) return null;
 
-      if (difference.inMinutes < 1) {
-        return 'Just now';
-      } else if (difference.inHours < 1) {
-        return '${difference.inMinutes}m ago';
-      } else if (difference.inHours < 24) {
-        return '${difference.inHours}h ago';
-      } else if (difference.inDays < 7) {
-        return '${difference.inDays}d ago';
-      } else {
-        return '${dt.day}/${dt.month}/${dt.year}';
+    if (timestamp is DateTime) return timestamp;
+
+    if (timestamp is int) {
+      // Accept both seconds and milliseconds epoch.
+      final isMillis = timestamp.abs() > 100000000000;
+      return DateTime.fromMillisecondsSinceEpoch(
+        isMillis ? timestamp : timestamp * 1000,
+        isUtc: true,
+      );
+    }
+
+    final raw = timestamp.toString().trim();
+    if (raw.isEmpty) return null;
+
+    // Numeric string epoch.
+    final asInt = int.tryParse(raw);
+    if (asInt != null) {
+      final isMillis = asInt.abs() > 100000000000;
+      return DateTime.fromMillisecondsSinceEpoch(
+        isMillis ? asInt : asInt * 1000,
+        isUtc: true,
+      );
+    }
+
+    // Common Postgres format: 'YYYY-MM-DD HH:MM:SS[.ffffff][+TZ]'
+    // Convert the first space between date/time into 'T' so DateTime can parse.
+    String normalized = raw;
+    if (normalized.contains(' ') && !normalized.contains('T')) {
+      final firstSpace = normalized.indexOf(' ');
+      if (firstSpace > 0) {
+        normalized =
+            '${normalized.substring(0, firstSpace)}T${normalized.substring(firstSpace + 1)}';
       }
+    }
+
+    // If no timezone suffix exists, treat it as UTC from backend/storage.
+    final hasExplicitTimezone = normalized.endsWith('Z') ||
+        RegExp(r'[+\-]\d{2}:\d{2}$').hasMatch(normalized);
+    if (!hasExplicitTimezone) {
+      final naiveMatch = RegExp(
+        r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?$',
+      ).firstMatch(normalized);
+      if (naiveMatch != null) {
+        final year = int.parse(naiveMatch.group(1)!);
+        final month = int.parse(naiveMatch.group(2)!);
+        final day = int.parse(naiveMatch.group(3)!);
+        final hour = int.parse(naiveMatch.group(4)!);
+        final minute = int.parse(naiveMatch.group(5)!);
+        final second = int.tryParse(naiveMatch.group(6) ?? '0') ?? 0;
+        final fracRaw = naiveMatch.group(7) ?? '0';
+        final fracPadded = (fracRaw + '000000').substring(0, 6);
+        final microseconds = int.tryParse(fracPadded) ?? 0;
+        final millisecond = microseconds ~/ 1000;
+        final microsecond = microseconds % 1000;
+        return DateTime.utc(
+          year,
+          month,
+          day,
+          hour,
+          minute,
+          second,
+          millisecond,
+          microsecond,
+        );
+      }
+    }
+
+    final dt = DateTime.tryParse(normalized);
+    if (dt != null) {
+      return dt;
+    }
+
+    // RFC1123 / HTTP-date (often used by some JSON serializers)
+    // Example: "Mon, 09 Mar 2026 15:10:00 GMT"
+    try {
+      final parsed =
+          DateFormat("EEE, dd MMM yyyy HH:mm:ss 'GMT'", 'en_US').parseUtc(raw);
+      return parsed;
+    } catch (_) {
+      // ignore
+    }
+
+    // Variant without explicit GMT token
+    try {
+      final parsed =
+          DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').parseUtc(raw);
+      return parsed;
+    } catch (_) {
+      // ignore
+    }
+
+    return null;
+  }
+
+  DateTime _toSast(DateTime dt) {
+    // South Africa Standard Time is UTC+2 year-round.
+    return dt.toUtc().add(const Duration(hours: 2));
+  }
+
+  String _formatTimestamp(dynamic timestamp) {
+    final parsed = _tryParseTimestamp(timestamp);
+    if (parsed == null) return '';
+    try {
+      final DateTime dt = _toSast(parsed);
+      final now = _toSast(DateTime.now());
+
+      final timePart = DateFormat('HH:mm').format(dt);
+      final isSameDate =
+          dt.year == now.year && dt.month == now.month && dt.day == now.day;
+      if (isSameDate) {
+        return '$timePart Today';
+      }
+
+      final yesterday = now.subtract(const Duration(days: 1));
+      final isYesterday = dt.year == yesterday.year &&
+          dt.month == yesterday.month &&
+          dt.day == yesterday.day;
+      if (isYesterday) {
+        return '$timePart Yesterday';
+      }
+
+      final startOfToday = DateTime(now.year, now.month, now.day);
+      final startOfThatDay = DateTime(dt.year, dt.month, dt.day);
+      final daysAgo = startOfToday.difference(startOfThatDay).inDays;
+
+      if (daysAgo >= 2 && daysAgo < 7) {
+        final weekday = DateFormat('EEEE').format(dt);
+        return '$timePart $weekday';
+      }
+
+      final datePart = DateFormat('d MMM yyyy').format(dt);
+      return '$timePart $datePart';
     } catch (e) {
-      return 'Invalid date';
+      return '';
     }
   }
 
   // Status helper methods
   Color _getStatusColor(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return const Color(0xFFF39C12); // Orange
+    }
+    switch (s) {
+      case 'pending approval':
         return const Color(0xFFF39C12); // Orange
       case 'sent to client':
         return const Color(0xFF3498DB); // Blue
@@ -2169,8 +3493,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   IconData _getStatusIcon(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return Icons.pending;
+    }
+    switch (s) {
+      case 'pending approval':
         return Icons.pending;
       case 'sent to client':
         return Icons.send;
@@ -2184,14 +3512,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   String _getStatusLabel(String status) {
-    switch (status.toLowerCase()) {
-      case 'pending ceo approval':
+    final s = status.toLowerCase().trim();
+    if (s.contains('pending') && s.contains('ceo')) {
+      return 'Pending Approval';
+    }
+    switch (s) {
+      case 'pending approval':
         return 'Pending Approval';
       case 'sent to client':
         return 'Sent to Client';
       case 'approved':
         return 'Approved';
-      case 'rejected':
+      case 'signed':
         return 'Rejected';
       default:
         return status;
@@ -2298,6 +3630,153 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
+  /// Manager: resubmit a proposal that is in "Changes Requested" state.
+  /// Calls the same send-for-approval endpoint which sets status → Resubmitted.
+  Future<void> _resubmitChanges() async {
+    if (_hasUnsavedChanges) await _saveToBackend();
+    if (_savedProposalId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please save before resubmitting'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Resubmit Proposal'),
+        content: const Text(
+          'You are about to resubmit this proposal after making the requested changes. '
+          'The admin will be notified.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71)),
+            child: const Text('Resubmit'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final token = await _getAuthToken();
+      if (token == null) throw Exception('Not authenticated');
+      final response = await http.post(
+        Uri.parse(
+            '${ApiService.baseUrl}/api/proposals/$_savedProposalId/send-for-approval'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() => _proposalStatus = data['status']);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Changes resubmitted to admin successfully!'),
+              backgroundColor: Color(0xFF2ECC71),
+              duration: Duration(seconds: 2),
+            ),
+          );
+          Navigator.of(context)
+              .pushNamedAndRemoveUntil('/proposals', (r) => false);
+        }
+      } else {
+        throw Exception('Failed to resubmit: ${response.body}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  /// Finance: submit pricing changes back to admin after "Changes Requested".
+  Future<void> _financeSubmitChanges() async {
+    if (_hasUnsavedChanges) await _saveToBackend();
+    if (_savedProposalId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please save before submitting'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Submit Pricing Changes'),
+        content: const Text(
+          'You are about to submit your updated pricing back to the admin for review.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71)),
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final token = await _getAuthToken();
+      if (token == null) throw Exception('Not authenticated');
+      final response = await http.post(
+        Uri.parse(
+            '${ApiService.baseUrl}/api/proposals/$_savedProposalId/finance-resubmit'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        setState(() => _proposalStatus = data['status']);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Pricing changes submitted to admin!'),
+              backgroundColor: Color(0xFF2ECC71),
+              duration: Duration(seconds: 2),
+            ),
+          );
+          Navigator.of(context).pop();
+        }
+      } else {
+        throw Exception('Failed to submit changes: ${response.body}');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   Future<void> _sendForApproval() async {
     // First save the document
     if (_hasUnsavedChanges) {
@@ -2312,6 +3791,45 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ),
       );
       return;
+    }
+
+    // Check if governance and risk assessment are completed
+    if (!_hasCompletedGovernanceCheck || !_hasCompletedRiskAssessment) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Please complete the Review & Complete process (governance check and risk assessment) before sending for approval.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // If user already selected a client in the dropdown, ensure fields are filled
+    if (_selectedClientId != null &&
+        (_clientNameController.text.trim().isEmpty ||
+            _clientEmailController.text.trim().isEmpty)) {
+      Map<String, dynamic>? selected;
+      for (final c in _clients) {
+        final id = _tryParseClientId(c);
+        if (id == _selectedClientId) {
+          selected = c;
+          break;
+        }
+      }
+
+      if (selected != null) {
+        final name = _extractClientName(selected).trim();
+        final email = _extractClientEmail(selected).trim();
+
+        if (name.isNotEmpty && _clientNameController.text.trim().isEmpty) {
+          _clientNameController.text = name;
+        }
+        if (email.isNotEmpty && _clientEmailController.text.trim().isEmpty) {
+          _clientEmailController.text = email;
+        }
+      }
     }
 
     // Check if client information is provided
@@ -2409,21 +3927,78 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   // Auto-save and versioning methods
+  void _attachSectionListeners(DocumentSection section) {
+    if (_sectionRichListenersAttached.contains(section.id)) {
+      return;
+    }
+    _sectionRichListenersAttached.add(section.id);
+
+    // When the user focuses Quill directly, the outer SectionWidget onTap may not run;
+    // keep toolbar + _activeRichController() aligned with the section being edited.
+    section.contentFocus.addListener(() {
+      if (!section.contentFocus.hasFocus || !mounted) return;
+      final sectionIndex = _sections.indexOf(section);
+      if (sectionIndex < 0) return;
+      setState(() {
+        _selectedSectionIndex = sectionIndex;
+      });
+      _syncToolbarStateFromRichSelection();
+    });
+
+    section.richController.onSelectionChanged = (selection) {
+      if (!mounted) return;
+      final sectionIndex = _sections.indexOf(section);
+      if (sectionIndex < 0) return;
+      // Only respond when the editor has focus; avoids interfering with
+      // scroll/tap selection events elsewhere in the widget tree.
+      if (!section.contentFocus.hasFocus) return;
+      _onContentSelectionChanged(sectionIndex, selection, null);
+    };
+
+    section.controller.addListener(() {
+      // Keep rich document in sync when legacy plain-text flows update the controller.
+      section.syncRichFromPlainText();
+      _onContentChanged();
+    });
+    section.richController.addListener(() {
+      // Keep plain-text paths (comments/offset tooling) functional.
+      section.syncPlainTextFromRich();
+      _onContentChanged();
+      if (section.contentFocus.hasFocus) {
+        _syncToolbarStateFromRichSelection();
+      }
+    });
+    section.titleController.addListener(_onContentChanged);
+  }
+
   void _setupAutoSaveListeners() {
     // Listen to title changes
     _titleController.addListener(_onContentChanged);
 
     // Listen to all section changes
     for (var section in _sections) {
-      section.controller.addListener(_onContentChanged);
-      section.titleController.addListener(_onContentChanged);
+      _attachSectionListeners(section);
     }
   }
 
+  void _ensureSectionSelectionListeners() {
+    // Legacy selection wiring (plain TextField selection -> comments overlay).
+    // The live canvas is now Quill-based; selection events must come from
+    // `section.richController.onSelectionChanged`.
+  }
+
   void _onContentChanged() {
+    if (_selectedSectionIndex >= 0 &&
+        _selectedSectionIndex < _sections.length &&
+        _sections[_selectedSectionIndex].contentFocus.hasFocus) {
+      _syncToolbarStateFromRichSelection();
+    }
     setState(() {
       _hasUnsavedChanges = true;
     });
+
+    // Selection handling is driven by Quill selection events (see
+    // `_attachSectionListeners`). No need to attach legacy listeners.
 
     // Cancel existing timer
     _autoSaveTimer?.cancel();
@@ -2442,8 +4017,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       'title': _titleController.text,
       'sections': _sections
           .map((section) => {
+                'id': section.id,
                 'title': section.titleController.text,
                 'content': section.controller.text,
+                'richContentDelta': section.exportRichDelta(),
+                'lineSpacing': section.lineSpacing,
+                'paragraphAlignment': section.paragraphAlignment,
+                'richParagraphs': paragraphsFromQuillDelta(
+                  section.exportRichDelta(),
+                  defaultFontFamily: _selectedFont,
+                  defaultFontSize: double.tryParse(_selectedFontSize) ?? 12.0,
+                  defaultAlignment: section.paragraphAlignment,
+                  defaultLineSpacing: section.lineSpacing,
+                ).map((p) => p.toJson()).toList(),
                 'backgroundColor': section.backgroundColor.value,
                 'backgroundImageUrl': section.backgroundImageUrl,
                 'sectionType': section.sectionType,
@@ -2452,6 +4038,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     section.inlineImages.map((img) => img.toJson()).toList(),
                 'tables':
                     section.tables.map((table) => table.toJson()).toList(),
+                'positionedPricingTables': section.positionedPricingTables
+                    .map((p) => p.toJson())
+                    .toList(),
               })
           .toList(),
       'metadata': {
@@ -2478,6 +4067,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       // Save to backend
       await _saveToBackend();
 
+      if (!mounted) return;
       // For stricter approver sessions, auto-save should NOT create
       // a new version without an explicit description. Just persist
       // the latest content.
@@ -2590,6 +4180,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ? 'Untitled Document'
         : _titleController.text;
     final content = _serializeDocumentContent();
+    final isFinanceRole = context.read<RoleService>().isFinance();
+    final computedBudget = _computePricingTotal();
+    final clientName = _clientNameController.text.trim().isEmpty
+        ? 'Unknown Client'
+        : _clientNameController.text.trim();
 
     try {
       if (_savedProposalId == null) {
@@ -2599,9 +4194,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           token: token,
           title: title,
           content: content,
-          clientName: _clientNameController.text.trim().isEmpty
-              ? null
-              : _clientNameController.text.trim(),
+          clientName: clientName,
           clientEmail: _clientEmailController.text.trim().isEmpty
               ? null
               : _clientEmailController.text.trim(),
@@ -2638,13 +4231,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           id: _savedProposalId!,
           title: title,
           content: content,
-          clientName: _clientNameController.text.trim().isEmpty
-              ? null
-              : _clientNameController.text.trim(),
+          clientName: clientName,
           clientEmail: _clientEmailController.text.trim().isEmpty
               ? null
               : _clientEmailController.text.trim(),
           status: _proposalStatus ?? 'draft',
+          budget: isFinanceRole ? computedBudget : null,
         );
         print('✅ Proposal updated: $_savedProposalId');
         print('🔍 Update result: $result');
@@ -2681,6 +4273,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     section.inlineImages.map((img) => img.toJson()).toList(),
                 'tables':
                     section.tables.map((table) => table.toJson()).toList(),
+                'positionedPricingTables': section.positionedPricingTables
+                    .map((p) => p.toJson())
+                    .toList(),
               })
           .toList(),
       'change_description': changeDescription,
@@ -2728,11 +4323,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // Clear existing sections
     for (var section in _sections) {
       section.controller.dispose();
+      section.richController.dispose();
       section.titleController.dispose();
       section.contentFocus.dispose();
       section.titleFocus.dispose();
     }
     _sections.clear();
+    _sectionRichListenersAttached.clear();
 
     // Restore sections
     final List<dynamic> savedSections = version['sections'] ?? [];
@@ -2767,13 +4364,32 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               }
             }).toList() ??
             [],
+        positionedPricingTables: (sectionData['positionedPricingTables']
+                    as List<dynamic>?)
+                ?.map((p) =>
+                    PositionedPricingTable.fromJson(p as Map<String, dynamic>))
+                .toList() ??
+            [],
       );
+
+      if (newSection.tables.isNotEmpty) {
+        final legacyPriceTables =
+            newSection.tables.where((t) => t.type == 'price').toList();
+        if (legacyPriceTables.isNotEmpty) {
+          newSection.tables.removeWhere((t) => t.type == 'price');
+          for (final t in legacyPriceTables) {
+            newSection.positionedPricingTables.add(
+              PositionedPricingTable(table: t, x: 0, y: 0, width: 700),
+            );
+          }
+        }
+      }
       _sections.add(newSection);
     }
 
     // Setup listeners for new sections
     for (var section in _sections) {
-      section.controller.addListener(_onContentChanged);
+      _attachSectionListeners(section);
       section.titleController.addListener(_onContentChanged);
 
       // Add focus listeners for UI updates
@@ -3032,6 +4648,153 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
+  QuillController? _activeRichController() {
+    if (_sections.isEmpty) return null;
+    if (_selectedSectionIndex < 0 ||
+        _selectedSectionIndex >= _sections.length) {
+      return null;
+    }
+    return _sections[_selectedSectionIndex].richController;
+  }
+
+  /// Toolbar buttons can steal focus from Quill; put focus back before formatting.
+  void _ensureToolbarTargetEditorFocused() {
+    if (_selectedSectionIndex < 0 ||
+        _selectedSectionIndex >= _sections.length) {
+      return;
+    }
+    _sections[_selectedSectionIndex].contentFocus.requestFocus();
+  }
+
+  Attribute? _attributeForFont(String v) =>
+      Attribute.fromKeyValue(Attribute.font.key, v) ??
+      Attribute.clone(Attribute.font, v);
+
+  Attribute? _attributeForSize(String v) =>
+      Attribute.fromKeyValue(Attribute.size.key, v) ??
+      Attribute.clone(Attribute.size, v);
+
+  Attribute<String?> _alignmentToAttribute(String value) {
+    switch (value) {
+      case 'center':
+        return Attribute.centerAlignment;
+      case 'right':
+        return Attribute.rightAlignment;
+      case 'justify':
+        return Attribute.justifyAlignment;
+      case 'left':
+      default:
+        return Attribute.leftAlignment;
+    }
+  }
+
+  Attribute<double?> _lineSpacingToAttribute(String value) {
+    switch (value) {
+      case '1.5':
+        return LineHeightAttribute.lineHeightOneAndHalf;
+      case '2.0':
+        return LineHeightAttribute.lineHeightDouble;
+      case '1.0':
+      default:
+        return LineHeightAttribute.lineHeightNormal;
+    }
+  }
+
+  void _syncToolbarStateFromRichSelection() {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    final attrs = controller.getSelectionStyle().attributes;
+    setState(() {
+      _isBold = attrs.containsKey(Attribute.bold.key);
+      _isItalic = attrs.containsKey(Attribute.italic.key);
+      _isUnderlined = attrs.containsKey(Attribute.underline.key);
+      _isStrikethrough = attrs.containsKey(Attribute.strikeThrough.key);
+      _selectedAlignment =
+          (attrs[Attribute.align.key]?.value?.toString() ?? 'left');
+      final lineHeightRaw = attrs[Attribute.lineHeight.key]?.value;
+      if (lineHeightRaw == 1.5) {
+        _selectedLineSpacing = '1.5';
+      } else if (lineHeightRaw == 2 || lineHeightRaw == 2.0) {
+        _selectedLineSpacing = '2.0';
+      } else {
+        _selectedLineSpacing = '1.0';
+      }
+      final font = attrs[Attribute.font.key]?.value?.toString();
+      if (font != null && font.trim().isNotEmpty) {
+        _selectedFont = font;
+      }
+      final size = attrs[Attribute.size.key]?.value?.toString();
+      if (size != null && size.trim().isNotEmpty) {
+        _selectedFontSize = size;
+      }
+    });
+  }
+
+  void _applyInlineAttribute(Attribute attribute) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
+    controller.formatSelection(attribute);
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _toggleInlineAttribute(Attribute toggleAttr) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
+    final attrs = controller.getSelectionStyle().attributes;
+    final enabled = attrs.containsKey(toggleAttr.key);
+    controller
+        .formatSelection(Attribute.clone(toggleAttr, enabled ? null : true));
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _applyParagraphAlignment(String value) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
+    _selectedAlignment = value;
+    controller.formatSelection(_alignmentToAttribute(value));
+    if (_selectedSectionIndex >= 0 &&
+        _selectedSectionIndex < _sections.length) {
+      _sections[_selectedSectionIndex].paragraphAlignment = value;
+    }
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _applyLineSpacing(String value) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
+    _selectedLineSpacing = value;
+    controller.formatSelection(_lineSpacingToAttribute(value));
+    if (_selectedSectionIndex >= 0 &&
+        _selectedSectionIndex < _sections.length) {
+      _sections[_selectedSectionIndex].lineSpacing = value;
+    }
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
+  void _toggleList(String type) {
+    final controller = _activeRichController();
+    if (controller == null) return;
+    _ensureToolbarTargetEditorFocused();
+    final attrs = controller.getSelectionStyle().attributes;
+    final currentList = attrs[Attribute.list.key]?.value?.toString();
+    if (currentList == type) {
+      controller.formatSelection(Attribute.clone(Attribute.list, null));
+    } else {
+      controller
+          .formatSelection(type == 'ordered' ? Attribute.ol : Attribute.ul);
+    }
+    _syncToolbarStateFromRichSelection();
+    _onContentChanged();
+  }
+
   // Get font family name
   String _getFontFamily() {
     return _selectedFont;
@@ -3045,32 +4808,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   // Get content text style with all formatting applied
   TextStyle _getContentTextStyle() {
-    double fontSize = _getFontSize();
-
-    // Adjust font size based on text style
-    if (_selectedTextStyle == 'Heading 1') {
-      fontSize = 24.0;
-    } else if (_selectedTextStyle == 'Heading 2') {
-      fontSize = 20.0;
-    } else if (_selectedTextStyle == 'Heading 3') {
-      fontSize = 16.0;
-    } else if (_selectedTextStyle == 'Title') {
-      fontSize = 28.0;
-    }
-
     return TextStyle(
-      fontSize: fontSize,
-      fontFamily: _getFontFamily(),
-      fontWeight: _isBold ||
-              _selectedTextStyle.contains('Heading') ||
-              _selectedTextStyle == 'Title'
-          ? FontWeight.w700
-          : FontWeight.normal,
-      fontStyle: _isItalic ? FontStyle.italic : FontStyle.normal,
-      decoration:
-          _isUnderlined ? TextDecoration.underline : TextDecoration.none,
+      // Keep paragraph baseline neutral so per-span Quill formatting
+      // (font family/size/bold/italic/underline/strike) stays visible.
+      fontSize: 13,
+      fontFamily: 'Arial',
+      fontWeight: FontWeight.normal,
+      fontStyle: FontStyle.normal,
+      decoration: TextDecoration.none,
       color: const Color(0xFF1A1A1A),
-      height: 1.8,
+      height: 1.6,
       letterSpacing: 0.2,
     );
   }
@@ -3370,13 +5117,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     // In collaborator mode, hide navigation sidebar but allow editing
     final isCollaboratorMode = widget.isCollaborator;
+    final forceCommentsPanelOpen = widget.forceCommentsPanelOpen;
+    final _statusForSidebar = (_proposalStatus ?? '').toLowerCase().trim();
+    // Show the full sidebar to finance when the proposal is returned for changes
+    // so they can access Content Library and insert blocks like any other editor.
+    final hideLeftSidebar = context.watch<RoleService>().isFinance() &&
+        _statusForSidebar != 'changes requested';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       body: Row(
         children: [
           // Left Sidebar (hide in read-only mode AND collaborator mode)
-          if (!isReadOnly && !isCollaboratorMode) _buildLeftSidebar(),
+          if (!isReadOnly && !isCollaboratorMode && !hideLeftSidebar)
+            _buildLeftSidebar(),
           // Sections Sidebar (conditional, hide in read-only mode AND collaborator mode)
           if (!isReadOnly && !isCollaboratorMode && _showSectionsSidebar)
             _buildSectionsSidebar(),
@@ -3424,8 +5178,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             // Right sidebar (hide in read-only mode AND collaborator mode)
                             if (!isReadOnly && !isCollaboratorMode)
                               _buildRightSidebar(),
-                            // Comments panel (right-side, toggleable) - always show for collaborators
-                            if (_showCommentsPanel || isCollaboratorMode)
+                            if (_showCommentsPanel || forceCommentsPanelOpen)
                               _buildCommentsPanel(),
                           ],
                         ),
@@ -3731,13 +5484,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           : MainAxisAlignment.spaceBetween,
                       children: [
                         if (!_isSidebarCollapsed)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text(
-                              'Navigation',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
+                          Expanded(
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'Navigation',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
                           ),
@@ -4231,6 +5986,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildTopHeader() {
+    final isFinanceRole = context.watch<RoleService>().isFinance();
+    final isManagerRole = context.watch<RoleService>().isCreator();
+    final statusKey = (_proposalStatus ?? '').toString().toLowerCase().trim();
+    final isDraftStatus = statusKey.isEmpty || statusKey == 'draft';
+    final isPricingStatus = statusKey == 'pricing in progress';
+    final isChangesRequested = statusKey == 'changes requested';
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -4316,56 +6078,84 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           const SizedBox(width: 24),
           // Price
-          Row(
-            children: [
-              Text(
-                '${_getCurrencySymbol()} ',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A1A),
-                ),
-              ),
-              SizedBox(
-                width: 80,
-                child: TextField(
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  onChanged: (value) {
-                    // Price value input - ready for future use
-                    setState(() {});
-                  },
+          Flexible(
+            child: Row(
+              children: [
+                Text(
+                  '${_getCurrencySymbol()} ',
                   style: const TextStyle(
-                    fontSize: 14,
+                    fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF1A1A1A),
                   ),
-                  decoration: InputDecoration(
-                    hintText: '0.00',
-                    hintStyle: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[400],
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide:
-                          BorderSide(color: Colors.grey[300]!, width: 1),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(4),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF00BCD4),
-                        width: 1,
-                      ),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                  ),
                 ),
-              ),
-            ],
+                Flexible(
+                  child: isFinanceRole
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(
+                              color: Colors.grey[300]!,
+                              width: 1,
+                            ),
+                          ),
+                          child: Text(
+                            _computePricingTotal().toStringAsFixed(2),
+                            textAlign: TextAlign.left,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1A1A1A),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        )
+                      : TextField(
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          onChanged: (value) {
+                            // Price value input - ready for future use
+                            setState(() {});
+                          },
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                          decoration: InputDecoration(
+                            hintText: '0.00',
+                            hintStyle: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[400],
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: BorderSide(
+                                color: Colors.grey[300]!,
+                                width: 1,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(4),
+                              borderSide: const BorderSide(
+                                color: Color(0xFF00BCD4),
+                                width: 1,
+                              ),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 8,
+                            ),
+                          ),
+                        ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 16),
           // Save status with version info
@@ -4511,11 +6301,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           if (_proposalStatus != null && _proposalStatus != 'draft')
             const SizedBox(width: 12),
           // Send for Approval button
-          if (_proposalStatus == null || _proposalStatus == 'draft')
+          if (isManagerRole && isDraftStatus)
             ElevatedButton.icon(
-              onPressed: _sendForApproval,
+              onPressed: _sendToFinance,
               icon: const Icon(Icons.send, size: 16),
-              label: const Text('Send for Approval'),
+              label: const Text('Send to Finance'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF2ECC71),
                 foregroundColor: Colors.white,
@@ -4527,8 +6317,80 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 ),
               ),
             ),
-          if (_proposalStatus == null || _proposalStatus == 'draft')
-            const SizedBox(width: 12),
+          if (isManagerRole && isDraftStatus) const SizedBox(width: 12),
+
+          if (isFinanceRole && isDraftStatus)
+            ElevatedButton.icon(
+              onPressed: _startPricingFinance,
+              icon: const Icon(Icons.play_arrow, size: 16),
+              label: const Text('Start Pricing'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (isFinanceRole && isDraftStatus) const SizedBox(width: 12),
+
+          if (isFinanceRole && isPricingStatus)
+            ElevatedButton.icon(
+              onPressed: _submitForApprovalFinance,
+              icon: const Icon(Icons.send, size: 16),
+              label: const Text('Submit for Approval'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2ECC71),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          if (isFinanceRole && isPricingStatus) const SizedBox(width: 12),
+
+          // Manager: resubmit after "Changes Requested"
+          if (isManagerRole && isChangesRequested)
+            ElevatedButton.icon(
+              onPressed: _resubmitChanges,
+              icon: const Icon(Icons.replay, size: 16),
+              label: const Text('Resubmit Changes'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE67E22),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+          if (isManagerRole && isChangesRequested) const SizedBox(width: 12),
+
+          // Finance: submit pricing changes back to admin
+          if (isFinanceRole && isChangesRequested)
+            ElevatedButton.icon(
+              onPressed: _financeSubmitChanges,
+              icon: const Icon(Icons.check_circle_outline, size: 16),
+              label: const Text('Submit Changes'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2980B9),
+                foregroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+          if (isFinanceRole && isChangesRequested) const SizedBox(width: 12),
+
           // Action buttons
           OutlinedButton.icon(
             onPressed: _showPreview,
@@ -4568,7 +6430,202 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildToolbar() {
-    return const SizedBox.shrink();
+    final canEdit = !widget.readOnly;
+    if (!canEdit) return const SizedBox.shrink();
+
+    // ~50% larger controls; shifted slightly left vs centered row.
+    const double kToolbarScale = 1.5;
+    final double iconSz = 24 * kToolbarScale;
+    final double ddFont = 14 * kToolbarScale;
+    final double gapSm = 12 * kToolbarScale;
+    final double gapMd = 18 * kToolbarScale;
+
+    // Single toolbar instance bound to the active section (selectedSectionIndex).
+    // Formatting actions apply to current Quill selection/cursor.
+    return Container(
+      padding: EdgeInsets.only(
+        left: 8 * kToolbarScale,
+        right: 24 * kToolbarScale,
+        top: 16 * kToolbarScale,
+        bottom: 16 * kToolbarScale,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey[200]!, width: 1),
+        ),
+      ),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        descendantsAreFocusable: false,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Inline formatting
+                IconButton(
+                  icon: Icon(Icons.format_bold,
+                      color: _isBold ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.bold),
+                  tooltip: 'Bold',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_italic,
+                      color: _isItalic ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.italic),
+                  tooltip: 'Italic',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_underlined,
+                      color: _isUnderlined ? const Color(0xFF00BCD4) : null),
+                  onPressed: () => _toggleInlineAttribute(Attribute.underline),
+                  tooltip: 'Underline',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_strikethrough,
+                      color: _isStrikethrough ? const Color(0xFF00BCD4) : null),
+                  onPressed: () =>
+                      _toggleInlineAttribute(Attribute.strikeThrough),
+                  tooltip: 'Strikethrough',
+                  iconSize: iconSz,
+                ),
+                SizedBox(width: gapSm),
+                // Font family
+                DropdownButton<String>(
+                  value: _selectedFont,
+                  underline: const SizedBox(),
+                  style: TextStyle(
+                      fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    final attr = _attributeForFont(v);
+                    if (attr == null) return;
+                    setState(() => _selectedFont = v);
+                    _applyInlineAttribute(attr);
+                  },
+                  items: const [
+                    'Arial',
+                    'Times New Roman',
+                    'Georgia',
+                    'Calibri',
+                    'Verdana',
+                  ].map((font) {
+                    return DropdownMenuItem(
+                      value: font,
+                      child: Text(font, style: TextStyle(fontSize: ddFont)),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(width: gapSm),
+                // Font size
+                DropdownButton<String>(
+                  value: _selectedFontSize,
+                  underline: const SizedBox(),
+                  style: TextStyle(
+                      fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    final attr = _attributeForSize(v);
+                    if (attr == null) return;
+                    setState(() => _selectedFontSize = v);
+                    _applyInlineAttribute(attr);
+                  },
+                  items: const ['10', '12', '14', '16', '18', '24'].map((size) {
+                    return DropdownMenuItem(
+                      value: size,
+                      child: Text(size, style: TextStyle(fontSize: ddFont)),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(width: gapMd),
+
+                // Paragraph alignment
+                IconButton(
+                  icon: Icon(Icons.format_align_left,
+                      color: _selectedAlignment == 'left'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('left'),
+                  tooltip: 'Align Left',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_align_center,
+                      color: _selectedAlignment == 'center'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('center'),
+                  tooltip: 'Align Center',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_align_right,
+                      color: _selectedAlignment == 'right'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('right'),
+                  tooltip: 'Align Right',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_align_justify,
+                      color: _selectedAlignment == 'justify'
+                          ? const Color(0xFF00BCD4)
+                          : null),
+                  onPressed: () => _applyParagraphAlignment('justify'),
+                  tooltip: 'Justify',
+                  iconSize: iconSz,
+                ),
+                SizedBox(width: gapSm),
+
+                // Line spacing
+                DropdownButton<String>(
+                  value: _selectedLineSpacing,
+                  underline: const SizedBox(),
+                  style: TextStyle(
+                      fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  onChanged: (v) {
+                    if (v == null) return;
+                    _applyLineSpacing(v);
+                  },
+                  items: const ['1.0', '1.5', '2.0'].map((v) {
+                    final label =
+                        v == '1.0' ? 'Single' : (v == '1.5' ? '1.5' : 'Double');
+                    return DropdownMenuItem(
+                      value: v,
+                      child: Text(label, style: TextStyle(fontSize: ddFont)),
+                    );
+                  }).toList(),
+                ),
+                SizedBox(width: gapSm),
+
+                // Lists
+                IconButton(
+                  icon: Icon(Icons.format_list_bulleted),
+                  onPressed: () => _toggleList('bullet'),
+                  tooltip: 'Bullet List',
+                  iconSize: iconSz,
+                ),
+                IconButton(
+                  icon: Icon(Icons.format_list_numbered),
+                  onPressed: () => _toggleList('ordered'),
+                  tooltip: 'Numbered List',
+                  iconSize: iconSz,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildSmallDropdown(
@@ -4884,7 +6941,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     // A4 dimensions: 210mm x 297mm (aspect ratio 0.707)
     // Using larger width of 900px for better visibility
     // Height: 1273px (A4 aspect ratio maintained)
-    const double pageWidth = 900;
+    const double pageWidth = 700;
     const double pageHeight = 1273; // A4 aspect ratio
 
     return List.generate(
@@ -4945,12 +7002,37 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                     Expanded(
                       child: SingleChildScrollView(
+                        clipBehavior: Clip.none,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 60,
                             vertical: 24,
                           ),
-                          child: _buildSectionContent(index),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              minHeight: 1100,
+                            ),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                _buildSectionContent(index),
+                                ..._buildRightGutterCommentBubbles(
+                                  sectionIndex: index,
+                                  pageContentWidth: pageWidth - 120,
+                                ),
+                                ...section.positionedPricingTables
+                                    .asMap()
+                                    .entries
+                                    .map(
+                                        (entry) => _buildPositionedPricingTable(
+                                              index,
+                                              entry.key,
+                                              entry.value,
+                                            ))
+                                    .toList(),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -4982,8 +7064,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 _selectedSectionIndex = _sections.length - 1;
 
                 // Add listeners to new section
-                newSection.controller.addListener(_onContentChanged);
-                newSection.titleController.addListener(_onContentChanged);
+                _attachSectionListeners(newSection);
 
                 // Add focus listeners for UI updates
                 newSection.contentFocus.addListener(() => setState(() {}));
@@ -5030,12 +7111,28 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final section = _sections[index];
     final isHovered = _hoveredSectionIndex == index;
     final isSelected = _selectedSectionIndex == index;
+
+    final isFinanceRole = context.watch<RoleService>().isFinance();
+    final isManagerRole = context.watch<RoleService>().isCreator();
+
     return SectionWidget(
       section: section,
       isHovered: isHovered,
       isSelected: isSelected,
       readOnly: widget.readOnly,
-      canDelete: _sections.length > 1,
+      canDelete: (_sections.length > 1),
+      onContentTap: () {
+        // Keep track of which section selection belongs to.
+        setState(() {
+          _selectedSectionIndex = index;
+        });
+      },
+      onContentSelectionChanged: (selection, cause) {
+        _onContentSelectionChanged(index, selection, cause);
+      },
+      onContentTapUp: (details) {
+        _onContentTapUp(details);
+      },
       onHoverChanged: (hovered) {
         setState(() {
           _hoveredSectionIndex = hovered ? index : -1;
@@ -5062,6 +7159,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       getContentTextStyle: _getContentTextStyle,
       getTextAlignment: _getTextAlignment,
       onReorderTables: (int oldIndex, int newIndex) {
+        final canReorderTables = !(widget.readOnly || isManagerRole);
+
+        if (!canReorderTables) return;
+
         setState(() {
           if (newIndex > oldIndex) {
             newIndex -= 1;
@@ -5069,14 +7170,26 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           final table = section.tables.removeAt(oldIndex);
           section.tables.insert(newIndex, table);
         });
+        _onContentChanged();
       },
-      buildInteractiveTable: (int tableIndex, DocumentTable table) =>
-          _buildInteractiveTable(
-        index,
-        tableIndex,
-        table,
-        key: ValueKey('table_${index}_$tableIndex'),
-      ),
+      buildInteractiveTable: (int tableIndex, DocumentTable table) {
+        // Finance can edit pricing tables; Manager can view tables but not edit.
+        if (isFinanceRole) {
+          return _buildInteractiveTable(
+            index,
+            tableIndex,
+            table,
+          );
+        }
+        if (isManagerRole) {
+          return _buildReadOnlyTable(table);
+        }
+        return _buildInteractiveTable(
+          index,
+          tableIndex,
+          table,
+        );
+      },
       onRemoveInlineImage: (imageIndex) {
         setState(() {
           _sections[index].inlineImages.removeAt(imageIndex);
@@ -5272,6 +7385,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             tables.insert(draggedIndex, draggedTable);
           }
         });
+        _onContentChanged();
       },
       builder: (context, candidateData, rejectedData) {
         final isActive = candidateData.isNotEmpty;
@@ -5335,6 +7449,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   Widget _buildTableContainer(int sectionIndex, int tableIndex,
       DocumentTable table, String currencySymbol,
       {Key? key}) {
+    final isManagerRole = context.watch<RoleService>().isCreator();
+    final canReorderTables = !(widget.readOnly || isManagerRole);
+    final totalColIndex =
+        table.type == 'price' ? table.getResolvedPriceTotalColumnIndex() : -1;
+
     return Container(
       key: key,
       margin: const EdgeInsets.symmetric(vertical: 16),
@@ -5361,11 +7480,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 Row(
                   children: [
                     // Drag handle icon (for ReorderableListView)
-                    Icon(
-                      Icons.drag_handle,
-                      size: 18,
-                      color: Colors.grey[600],
-                    ),
+                    if (canReorderTables)
+                      ReorderableDragStartListener(
+                        index: tableIndex,
+                        child: Icon(
+                          Icons.drag_handle,
+                          size: 18,
+                          color: Colors.grey[600],
+                        ),
+                      )
+                    else
+                      Icon(
+                        Icons.drag_handle,
+                        size: 18,
+                        color: Colors.grey[600],
+                      ),
                     const SizedBox(width: 8),
                     Text(
                       '${table.type == 'price' ? 'Price' : 'Text'} Table',
@@ -5378,7 +7507,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   children: [
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, size: 18),
-                      onPressed: () => setState(() => table.addRow()),
+                      onPressed: () {
+                        setState(() => table.addRow());
+                        _onContentChanged();
+                      },
                       tooltip: 'Add Row',
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -5389,7 +7521,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       icon: const Icon(Icons.view_column, size: 18),
                       onPressed: table.type == 'price'
                           ? null
-                          : () => setState(() => table.addColumn()),
+                          : () {
+                              setState(() => table.addColumn());
+                              _onContentChanged();
+                            },
                       tooltip: table.type == 'price'
                           ? 'Price tables have fixed columns'
                           : 'Add Column',
@@ -5404,6 +7539,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         setState(() {
                           _sections[sectionIndex].tables.removeAt(tableIndex);
                         });
+                        _onContentChanged();
                       },
                       tooltip: 'Delete Table',
                       padding: EdgeInsets.zero,
@@ -5416,7 +7552,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
           // Table content
           Directionality(
-            textDirection: TextDirection.ltr,
+            textDirection: ui.TextDirection.ltr,
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
@@ -5429,7 +7565,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       child: Text(
                         table.cells[0][colIndex],
                         style: const TextStyle(fontWeight: FontWeight.bold),
-                        textDirection: TextDirection.ltr,
+                        textDirection: ui.TextDirection.ltr,
                       ),
                     ),
                   ),
@@ -5439,43 +7575,58 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   (rowIndex) => DataRow(
                     cells: List.generate(
                       table.cells[rowIndex + 1].length,
-                      (colIndex) => DataCell(
-                        Directionality(
-                          textDirection: TextDirection.ltr,
-                          child: TextField(
-                            textDirection: TextDirection.ltr,
-                            textAlign: TextAlign.left,
-                            controller: TextEditingController(
-                              text: table.cells[rowIndex + 1][colIndex],
+                      (colIndex) {
+                        final isPriceTotalCell =
+                            table.type == 'price' && colIndex == totalColIndex;
+
+                        if (isPriceTotalCell) {
+                          return DataCell(
+                            Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Text(
+                                table.cells[rowIndex + 1][colIndex],
+                                textDirection: ui.TextDirection.ltr,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  textBaseline: TextBaseline.alphabetic,
+                                ),
+                              ),
                             ),
-                            onChanged: (value) {
-                              setState(() {
-                                table.cells[rowIndex + 1][colIndex] = value;
-                                // Auto-calculate total for price tables
-                                if (table.type == 'price' && colIndex == 2 ||
-                                    colIndex == 3) {
-                                  final qty = double.tryParse(
-                                          table.cells[rowIndex + 1][2]) ??
-                                      0;
-                                  final price = double.tryParse(
-                                          table.cells[rowIndex + 1][3]) ??
-                                      0;
-                                  table.cells[rowIndex + 1][4] =
-                                      (qty * price).toStringAsFixed(2);
-                                }
-                              });
-                            },
-                            decoration: const InputDecoration(
-                              border: InputBorder.none,
-                              contentPadding: EdgeInsets.all(8),
-                            ),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              textBaseline: TextBaseline.alphabetic,
+                          );
+                        }
+
+                        return DataCell(
+                          Directionality(
+                            textDirection: ui.TextDirection.ltr,
+                            child: TextFormField(
+                              key: ValueKey(
+                                '${table.hashCode}-$rowIndex-$colIndex',
+                              ),
+                              textDirection: ui.TextDirection.ltr,
+                              textAlign: TextAlign.left,
+                              initialValue: table.cells[rowIndex + 1][colIndex],
+                              onChanged: (value) {
+                                setState(() {
+                                  table.cells[rowIndex + 1][colIndex] = value;
+                                  if (table.type == 'price') {
+                                    table
+                                        .recalculatePriceRowTotal(rowIndex + 1);
+                                  }
+                                });
+                                _onContentChanged();
+                              },
+                              decoration: const InputDecoration(
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.all(8),
+                              ),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                textBaseline: TextBaseline.alphabetic,
+                              ),
                             ),
                           ),
-                        ),
-                      ),
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -5844,25 +7995,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     width: 1,
                   ),
                 ),
-                child: TextField(
+                child: QuillEditor.basic(
+                  controller: section.richController,
                   focusNode: section.contentFocus,
-                  controller: section.controller,
-                  enabled: true,
-                  maxLines: null,
-                  textAlign: _getTextAlignment(),
-                  textAlignVertical: TextAlignVertical.top,
-                  style: _getContentTextStyle(),
-                  decoration: InputDecoration(
-                    hintText:
+                  config: QuillEditorConfig(
+                    placeholder:
                         'Click here to start typing or insert content from library...',
-                    hintStyle: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[400],
+                    customStyles: DefaultStyles(
+                      paragraph: DefaultTextBlockStyle(
+                        _getContentTextStyle(),
+                        const HorizontalSpacing(0, 0),
+                        const VerticalSpacing(0, 0),
+                        const VerticalSpacing(0, 0),
+                        null,
+                      ),
                     ),
-                    border: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.zero,
-                    isDense: true,
                   ),
                 ),
               ),
@@ -6023,7 +8170,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     setState(() {
       final section = _sections[_selectedSectionIndex];
       if (tableType == 'price') {
-        section.tables.add(DocumentTable.priceTable());
+        section.positionedPricingTables.add(
+          PositionedPricingTable(
+            table: DocumentTable.priceTable(),
+            x: 0,
+            y: 0,
+            width: 700,
+          ),
+        );
       } else {
         section.tables.add(DocumentTable());
       }
@@ -6091,6 +8245,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             Icons.cloud_upload_outlined, 'upload', 'Upload'),
                         _buildPanelTabIcon(
                             Icons.edit_note, 'signature', 'Signature'),
+                        _buildPanelTabIcon(
+                            Icons.verified, 'review', 'Review & Complete'),
                         _buildAIAnalysisIcon(),
                       ],
                     ),
@@ -6172,6 +8328,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         return _buildUploadPanel();
       case 'signature':
         return _buildSignaturePanel();
+      case 'review':
+        return _buildReviewPanel();
       default:
         return _buildTemplatesPanel();
     }
@@ -6449,9 +8607,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       builder: (BuildContext context) {
         return Dialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          child: SizedBox(
-            width: 400,
-            child: Padding(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: 400,
+              // Prevent bottom overflow on shorter viewports by allowing scroll.
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+            ),
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -6785,31 +8947,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         const SizedBox(height: 8),
         // Font dropdown
         _buildSmallDropdown(_selectedFont, [
-          'Plus Jakarta Sans',
           'Arial',
           'Times New Roman',
           'Georgia',
-          'Courier New'
+          'Calibri',
+          'Verdana'
         ], (value) {
           setState(() {
             _selectedFont = value!;
           });
+          final attr = _attributeForFont(_selectedFont);
+          if (attr != null) _applyInlineAttribute(attr);
         }),
         const SizedBox(height: 8),
         // Font size dropdown
-        _buildSmallDropdown(_selectedFontSize, [
-          '10px',
-          '12px',
-          '14px',
-          '16px',
-          '18px',
-          '20px',
-          '24px',
-          '28px'
-        ], (value) {
+        _buildSmallDropdown(
+            _selectedFontSize, ['10', '12', '14', '16', '18', '24'], (value) {
           setState(() {
             _selectedFontSize = value!;
           });
+          final attr = _attributeForSize(_selectedFontSize);
+          if (attr != null) _applyInlineAttribute(attr);
         }),
         const SizedBox(height: 12),
         // Alignment
@@ -6822,9 +8980,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ? const Color(0xFF00BCD4)
                       : null),
               onPressed: () {
-                setState(() {
-                  _selectedAlignment = 'left';
-                });
+                _applyParagraphAlignment('left');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -6836,9 +8992,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ? const Color(0xFF00BCD4)
                       : null),
               onPressed: () {
-                setState(() {
-                  _selectedAlignment = 'center';
-                });
+                _applyParagraphAlignment('center');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -6850,16 +9004,30 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       ? const Color(0xFF00BCD4)
                       : null),
               onPressed: () {
-                setState(() {
-                  _selectedAlignment = 'right';
-                });
+                _applyParagraphAlignment('right');
               },
               iconSize: 20,
               splashRadius: 20,
               tooltip: 'Align Right',
             ),
+            IconButton(
+              icon: Icon(Icons.format_align_justify,
+                  color: _selectedAlignment == 'justify'
+                      ? const Color(0xFF00BCD4)
+                      : null),
+              onPressed: () => _applyParagraphAlignment('justify'),
+              iconSize: 20,
+              splashRadius: 20,
+              tooltip: 'Justify',
+            ),
           ],
         ),
+        const SizedBox(height: 8),
+        _buildSmallDropdown(_selectedLineSpacing, const ['1.0', '1.5', '2.0'],
+            (value) {
+          if (value == null) return;
+          _applyLineSpacing(value);
+        }),
         const SizedBox(height: 12),
         const Text(
           'Text Formatting',
@@ -6876,9 +9044,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               icon: Icon(Icons.format_bold,
                   color: _isBold ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                setState(() {
-                  _isBold = !_isBold;
-                });
+                _toggleInlineAttribute(Attribute.bold);
               },
               iconSize: 20,
               splashRadius: 20,
@@ -6888,9 +9054,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               icon: Icon(Icons.format_italic,
                   color: _isItalic ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                setState(() {
-                  _isItalic = !_isItalic;
-                });
+                _toggleInlineAttribute(Attribute.italic);
               },
               iconSize: 20,
               splashRadius: 20,
@@ -6900,43 +9064,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               icon: Icon(Icons.format_underlined,
                   color: _isUnderlined ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                setState(() {
-                  _isUnderlined = !_isUnderlined;
-                });
+                _toggleInlineAttribute(Attribute.underline);
               },
               iconSize: 20,
               splashRadius: 20,
               tooltip: 'Underline',
             ),
             IconButton(
-              icon: const Icon(Icons.format_color_text),
+              icon: Icon(Icons.format_strikethrough,
+                  color: _isStrikethrough ? const Color(0xFF00BCD4) : null),
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Text color picker - Feature coming soon'),
-                    backgroundColor: Color(0xFF00BCD4),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
+                _toggleInlineAttribute(Attribute.strikeThrough);
               },
               iconSize: 20,
               splashRadius: 20,
-              tooltip: 'Text Color',
-            ),
-            IconButton(
-              icon: const Icon(Icons.link),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Insert link - Feature coming soon'),
-                    backgroundColor: Color(0xFF00BCD4),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
-              iconSize: 20,
-              splashRadius: 20,
-              tooltip: 'Link',
+              tooltip: 'Strikethrough',
             ),
           ],
         ),
@@ -6946,15 +9088,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             IconButton(
               icon: const Icon(Icons.format_list_bulleted),
               onPressed: () {
-                if (_sections.isNotEmpty &&
-                    _selectedSectionIndex < _sections.length) {
-                  setState(() {
-                    final section = _sections[_selectedSectionIndex];
-                    final currentText = section.controller.text;
-                    section.controller.text =
-                        currentText + '\n• Item 1\n• Item 2\n• Item 3';
-                  });
-                }
+                _toggleList('bullet');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -6963,15 +9097,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             IconButton(
               icon: const Icon(Icons.format_list_numbered),
               onPressed: () {
-                if (_sections.isNotEmpty &&
-                    _selectedSectionIndex < _sections.length) {
-                  setState(() {
-                    final section = _sections[_selectedSectionIndex];
-                    final currentText = section.controller.text;
-                    section.controller.text =
-                        currentText + '\n1. Item 1\n2. Item 2\n3. Item 3';
-                  });
-                }
+                _toggleList('ordered');
               },
               iconSize: 20,
               splashRadius: 20,
@@ -8058,6 +10184,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         .where((c) => c['status'] == 'resolved' && c['parent_id'] == null)
         .length;
 
+    final hasDraft = _draftBlockId != null && _showCommentsPanel;
+
     return Container(
       width: 400,
       color: Colors.white,
@@ -8166,7 +10294,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
           // Comments list
           Expanded(
-            child: filteredRootComments.isEmpty
+            child: (filteredRootComments.isEmpty && !hasDraft)
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -8197,182 +10325,190 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     ),
                   )
                 : ListView.builder(
+                    controller: _commentsScrollController,
                     padding: const EdgeInsets.all(12),
-                    itemCount: filteredRootComments.length,
+                    itemCount: filteredRootComments.length + (hasDraft ? 1 : 0),
                     itemBuilder: (context, index) {
-                      final comment = filteredRootComments[index];
+                      if (hasDraft && index == 0) {
+                        return _buildDraftCommentCard();
+                      }
+                      final comment =
+                          filteredRootComments[hasDraft ? index - 1 : index];
                       return _buildCommentCard(comment);
                     },
                   ),
           ),
 
-          // Add comment form
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              border: Border(top: BorderSide(color: Colors.grey[200]!)),
-              color: Colors.grey[50],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: _commentController,
-                  focusNode: _commentFocusNode,
-                  maxLines: 3,
-                  decoration: InputDecoration(
-                    hintText: 'Add a comment... (use @ to mention)',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: Colors.grey[300]!),
+          if (!hasDraft)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: Colors.grey[200]!)),
+                color: Colors.grey[50],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextField(
+                    controller: _commentController,
+                    focusNode: _commentFocusNode,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      hintText: 'Add a comment... (use @ to mention)',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[300]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                            color: Color(0xFF00BCD4), width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.all(12),
                     ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide:
-                          const BorderSide(color: Color(0xFF00BCD4), width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.all(12),
+                    onChanged: (text) {
+                      _handleCommentTextChanged();
+                    },
                   ),
-                  onChanged: (text) {
-                    // Handle @mentions detection
-                    _handleCommentTextChanged();
-                  },
-                ),
-                // @mentions autocomplete dropdown
-                if (_isSearchingMentions && _mentionQuery.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      const SizedBox(
-                          width: 12,
-                          height: 12,
-                          child: CircularProgressIndicator(strokeWidth: 2)),
+                      TextButton(
+                        onPressed: () {
+                          _commentController.clear();
+                          _clearMentionState();
+                        },
+                        child: const Text('Cancel'),
+                      ),
                       const SizedBox(width: 8),
-                      Text(
-                        'Searching teammates...',
-                        style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                      ElevatedButton(
+                        onPressed: () async {
+                          await _addComment();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF00BCD4),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: const Text('Post'),
                       ),
                     ],
                   ),
-                ] else if (_mentionSuggestions.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    constraints: const BoxConstraints(maxHeight: 150),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey[300]!),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: _mentionSuggestions.length,
-                      separatorBuilder: (_, __) =>
-                          Divider(height: 1, color: Colors.grey[200]),
-                      itemBuilder: (context, index) {
-                        final user = _mentionSuggestions[index];
-                        final name = user['full_name']?.toString() ??
-                            user['first_name']?.toString() ??
-                            user['email']?.toString() ??
-                            'User';
-                        final email = user['email']?.toString();
-                        final username = user['username']?.toString();
-                        return InkWell(
-                          onTap: () => _insertMention(user),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 14,
-                                  backgroundColor: const Color(0xFF00BCD4),
-                                  child: Text(
-                                    name.isNotEmpty
-                                        ? name[0].toUpperCase()
-                                        : '@',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        name,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      if (username != null || email != null)
-                                        Text(
-                                          [
-                                            if (username != null &&
-                                                username.isNotEmpty)
-                                              '@$username',
-                                            if (email != null &&
-                                                email.isNotEmpty)
-                                              email,
-                                          ].join(' • '),
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: Colors.grey[600],
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                const Icon(Icons.alternate_email,
-                                    size: 16, color: Color(0xFF00BCD4)),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
                 ],
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () {
-                        _commentController.clear();
-                        _clearMentionState();
-                      },
-                      child: const Text('Cancel'),
-                    ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed: () async {
-                        await _addComment();
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00BCD4),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: const Text('Post'),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDraftCommentCard() {
+    final selectedText = _draftSelectedText;
+    final sectionName = (_draftSectionIndex != null &&
+            _draftSectionIndex! >= 0 &&
+            _draftSectionIndex! < _sections.length)
+        ? (_sections[_draftSectionIndex!].titleController.text.isNotEmpty
+            ? _sections[_draftSectionIndex!].titleController.text
+            : 'Untitled Section')
+        : 'Selected text';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF00BCD4).withOpacity(0.06),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF00BCD4).withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.mode_comment_outlined,
+                  size: 16, color: Color(0xFF00BCD4)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  sectionName,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _draftSectionIndex = null;
+                    _draftBlockId = null;
+                    _draftStartOffset = null;
+                    _draftEndOffset = null;
+                    _draftSelectedText = '';
+                  });
+                  _commentController.clear();
+                  _clearMentionState();
+                },
+                child: const Text('Cancel'),
+              ),
+            ],
+          ),
+          if (selectedText.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Text(
+                selectedText.length > 160
+                    ? '${selectedText.substring(0, 160)}...'
+                    : selectedText,
+                style: const TextStyle(fontSize: 12, color: Color(0xFF1A1A1A)),
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          TextField(
+            controller: _commentController,
+            focusNode: _commentFocusNode,
+            maxLines: 3,
+            decoration: InputDecoration(
+              hintText: 'Reply or add others with @',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: Colors.grey[300]!),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide:
+                    const BorderSide(color: Color(0xFF00BCD4), width: 2),
+              ),
+              contentPadding: const EdgeInsets.all(12),
+            ),
+            onChanged: (text) {
+              _handleCommentTextChanged();
+            },
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              ElevatedButton(
+                onPressed: () async {
+                  await _addComment();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00BCD4),
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Post'),
+              ),
+            ],
           ),
         ],
       ),
@@ -8638,6 +10774,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ],
             ),
 
+          // Emoji reactions (for all comments - root and replies)
+          _buildCommentReactions(comment),
+
           // Replies section
           if (replies.isNotEmpty && !isReply) ...[
             const SizedBox(height: 12),
@@ -8648,6 +10787,182 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         ],
       ),
     );
+  }
+
+  static const List<String> _reactionEmojis = [
+    '👍',
+    '👎',
+    '👀',
+    '❤️',
+    '😄',
+    '😕',
+    '🎉'
+  ];
+
+  Widget _buildCommentReactions(Map<String, dynamic> comment) {
+    final reactions = (comment['reactions'] as List<dynamic>?) ?? [];
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          // Display existing reactions
+          ...reactions.map<Widget>((r) {
+            final emoji = r['emoji']?.toString() ?? '';
+            final count = (r['count'] as num?)?.toInt() ?? 0;
+            final reactedByMe = r['reacted_by_me'] == true;
+            if (emoji.isEmpty || count == 0) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: InkWell(
+                onTap: () => _toggleReaction(comment['id'], emoji),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: reactedByMe
+                        ? const Color(0xFF00BCD4).withOpacity(0.2)
+                        : Colors.grey[200],
+                    borderRadius: BorderRadius.circular(12),
+                    border: reactedByMe
+                        ? Border.all(color: const Color(0xFF00BCD4), width: 1)
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(emoji, style: const TextStyle(fontSize: 14)),
+                      if (count > 1) ...[
+                        const SizedBox(width: 4),
+                        Text(
+                          count.toString(),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[700],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+          // Add reaction button
+          PopupMenuButton<String>(
+            padding: EdgeInsets.zero,
+            offset: const Offset(0, -120),
+            icon: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey[300]!),
+              ),
+              child: Icon(Icons.add_reaction_outlined,
+                  size: 18, color: Colors.grey[600]),
+            ),
+            onSelected: (emoji) => _toggleReaction(comment['id'], emoji),
+            itemBuilder: (context) => _reactionEmojis
+                .map((emoji) => PopupMenuItem<String>(
+                      value: emoji,
+                      child: Text(emoji, style: const TextStyle(fontSize: 20)),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _toggleReaction(dynamic commentId, String emoji) async {
+    final id = commentId is int
+        ? commentId
+        : int.tryParse(commentId?.toString() ?? '');
+    if (id == null) return;
+    final token = await _getAuthToken();
+    if (token == null) return;
+
+    // Optimistic update: show reaction immediately
+    _applyReactionOptimistically(id, emoji);
+
+    final result = await ApiService.toggleCommentReaction(
+      token: token,
+      commentId: id,
+      emoji: emoji,
+    );
+
+    if (result != null && _savedProposalId != null && mounted) {
+      // Keep reaction updates instant; sync server state in background.
+      unawaited(_loadCommentsFromDatabase(_savedProposalId!));
+    } else if (mounted) {
+      // API failed - revert optimistic update and notify user
+      _revertReactionOptimistically(id, emoji);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Could not save reaction. Make sure the backend has been restarted.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  void _applyReactionOptimistically(int commentId, String emoji) {
+    setState(() {
+      for (var i = 0; i < _comments.length; i++) {
+        if (_comments[i]['id'] == commentId) {
+          final reactions = List<Map<String, dynamic>>.from(
+            (_comments[i]['reactions'] as List<dynamic>?)
+                    ?.map((r) => Map<String, dynamic>.from(r as Map)) ??
+                [],
+          );
+          final existingIdx = reactions.indexWhere((r) => r['emoji'] == emoji);
+          final reactedByMe = existingIdx >= 0 &&
+              reactions[existingIdx]['reacted_by_me'] == true;
+
+          if (reactedByMe) {
+            // Remove our reaction
+            final count =
+                ((reactions[existingIdx]['count'] as num?) ?? 1).toInt();
+            if (count <= 1) {
+              reactions.removeAt(existingIdx);
+            } else {
+              reactions[existingIdx] = {
+                ...reactions[existingIdx],
+                'count': count - 1,
+                'reacted_by_me': false,
+              };
+            }
+          } else if (existingIdx >= 0) {
+            // Add our reaction to existing emoji
+            final count =
+                ((reactions[existingIdx]['count'] as num?) ?? 0).toInt();
+            reactions[existingIdx] = {
+              ...reactions[existingIdx],
+              'count': count + 1,
+              'reacted_by_me': true,
+            };
+          } else {
+            // New emoji
+            reactions.add({
+              'emoji': emoji,
+              'count': 1,
+              'user_ids': [],
+              'reactor_names': [],
+              'reacted_by_me': true,
+            });
+          }
+          _comments[i] = {..._comments[i], 'reactions': reactions};
+          break;
+        }
+      }
+    });
+  }
+
+  void _revertReactionOptimistically(int commentId, String emoji) {
+    _applyReactionOptimistically(commentId, emoji); // Toggle again to revert
   }
 
   void _showPreview() {
@@ -8708,7 +11023,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               final section = entry.value;
 
                               // Match A4 layout used in _buildA4Pages
-                              const double pageWidth = 900;
+                              const double pageWidth = 700;
                               const double pageHeight = 1273;
                               final headerLogoWidget = _buildHeaderLogoWidget();
                               final isCover = section.isCoverPage ||
@@ -8797,8 +11112,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                     const SizedBox(height: 24),
                                                     // Section content
                                                     Text(
-                                                      section.controller.text
-                                                              .isEmpty
+                                                      (section.controller.text
+                                                                  .isEmpty &&
+                                                              section.tables
+                                                                  .isEmpty &&
+                                                              section
+                                                                  .positionedPricingTables
+                                                                  .isEmpty)
                                                           ? '(No content in this section)'
                                                           : section
                                                               .controller.text,
@@ -8817,6 +11137,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                           .map((table) =>
                                                               _buildReadOnlyTable(
                                                                   table))
+                                                          .toList(),
+                                                      const SizedBox(
+                                                          height: 12),
+                                                    ],
+                                                    if (section
+                                                        .positionedPricingTables
+                                                        .isNotEmpty) ...[
+                                                      ...section
+                                                          .positionedPricingTables
+                                                          .map((p) =>
+                                                              _buildReadOnlyTable(
+                                                                  p.table))
                                                           .toList(),
                                                       const SizedBox(
                                                           height: 12),
@@ -8929,11 +11261,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         if (mode == 'full' && sections != null) {
           for (var section in _sections) {
             section.controller.dispose();
+            section.richController.dispose();
             section.titleController.dispose();
             section.contentFocus.dispose();
             section.titleFocus.dispose();
           }
           _sections.clear();
+          _sectionRichListenersAttached.clear();
 
           sections.forEach((title, body) {
             final newSection = DocumentSection(
@@ -8941,8 +11275,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               content: body,
             );
             _sections.add(newSection);
-            newSection.controller.addListener(_onContentChanged);
-            newSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(newSection);
             newSection.contentFocus.addListener(() => setState(() {}));
             newSection.titleFocus.addListener(() => setState(() {}));
           });
@@ -8957,8 +11290,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               content: '',
             );
             _sections.add(newSection);
-            newSection.controller.addListener(_onContentChanged);
-            newSection.titleController.addListener(_onContentChanged);
+            _attachSectionListeners(newSection);
             newSection.contentFocus.addListener(() => setState(() {}));
             newSection.titleFocus.addListener(() => setState(() {}));
             _selectedSectionIndex = 0;
@@ -8993,6 +11325,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     showDialog(
       context: context,
       builder: (BuildContext context) {
+        bool dialogOpen = true;
+        bool cancelled = false;
+        String progressLabel = '';
+        int selectedMaxTokens = 192; // default, allow 256
+
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return Dialog(
@@ -9033,7 +11370,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             ),
                             const Spacer(),
                             IconButton(
-                              onPressed: () => Navigator.pop(context),
+                              onPressed: () {
+                                dialogOpen = false;
+                                cancelled = true;
+                                Navigator.pop(context);
+                              },
                               icon: const Icon(Icons.close),
                             ),
                           ],
@@ -9216,6 +11557,38 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         ),
 
                         const SizedBox(height: 20),
+
+                        // Token budget (kept small for speed; default 192 with optional 256)
+                        Row(
+                          children: [
+                            Text(
+                              'Max tokens',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey[700],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            DropdownButton<int>(
+                              value: selectedMaxTokens,
+                              items: const [
+                                DropdownMenuItem(
+                                    value: 192, child: Text('192')),
+                                DropdownMenuItem(
+                                    value: 256, child: Text('256')),
+                              ],
+                              onChanged: isGenerating
+                                  ? null
+                                  : (v) {
+                                      if (v == null) return;
+                                      setDialogState(
+                                          () => selectedMaxTokens = v);
+                                    },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
 
                         // Section type selector (only for single section generation)
                         if (selectedAction == 'generate') ...[
@@ -9478,6 +11851,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               onPressed: isGenerating
                                   ? null
                                   : () {
+                                      dialogOpen = false;
+                                      cancelled = true;
                                       resetGeneratedState();
                                       Navigator.pop(context);
                                     },
@@ -9508,6 +11883,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                       setDialogState(() {
                                         isGenerating = true;
                                         resetGeneratedState();
+                                        progressLabel = '';
                                       });
 
                                       try {
@@ -9518,117 +11894,157 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         }
 
                                         if (selectedAction == 'generate') {
-                                          final result = await ApiService
-                                              .generateAIContent(
+                                          // SECTION: generate ONLY for selected section using its title as section_name.
+                                          final selectedSection = (_sections
+                                                      .isNotEmpty &&
+                                                  _selectedSectionIndex <
+                                                      _sections.length)
+                                              ? _sections[_selectedSectionIndex]
+                                              : null;
+                                          final sectionTitle = (selectedSection
+                                                      ?.titleController.text
+                                                      .trim()
+                                                      .isNotEmpty ==
+                                                  true)
+                                              ? selectedSection!
+                                                  .titleController.text
+                                                  .trim()
+                                              : 'Untitled Section';
+
+                                          final existing = selectedSection
+                                                  ?.controller.text ??
+                                              '';
+                                          final proposalText = [
+                                            'User request:\n${promptController.text.trim()}',
+                                            if (existing.trim().isNotEmpty)
+                                              '\n\nExisting section text:\n${existing.trim()}',
+                                          ].join('');
+
+                                          final result = await AiAssistantApi
+                                              .generateSection(
                                             token: token,
-                                            prompt: promptController.text,
-                                            context: {
-                                              'document_title':
-                                                  _titleController.text,
-                                              'current_section':
-                                                  _selectedSectionIndex,
-                                            },
-                                            sectionType: selectedSectionType,
+                                            sectionName: sectionTitle,
+                                            proposalText: proposalText,
+                                            maxTokens: selectedMaxTokens,
                                           );
 
-                                          if (result != null &&
-                                              result['content'] != null) {
-                                            final generatedText =
-                                                (result['content'] as String)
-                                                    .trim();
-                                            if (generatedText.isEmpty) {
-                                              throw Exception(
-                                                  'AI returned an empty draft.');
-                                            }
-                                            setDialogState(() {
-                                              generatedController?.dispose();
-                                              generatedController =
-                                                  TextEditingController(
-                                                      text: generatedText);
-                                              if (generatedSectionControllers !=
-                                                  null) {
-                                                for (final controller
-                                                    in generatedSectionControllers!
-                                                        .values) {
-                                                  controller.dispose();
-                                                }
-                                              }
-                                              generatedSectionControllers =
-                                                  null;
-                                              generationMode = 'section';
-                                            });
-                                            ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              const SnackBar(
-                                                content: Text(
-                                                    'Draft ready. Review and edit below before inserting.'),
-                                                backgroundColor:
-                                                    Color(0xFF00BCD4),
-                                              ),
-                                            );
-                                          } else {
+                                          final generatedText =
+                                              (result['generated_text'] ??
+                                                      result['content'] ??
+                                                      result['result'] ??
+                                                      '')
+                                                  .toString()
+                                                  .trim();
+                                          if (generatedText.isEmpty) {
                                             throw Exception(
-                                                'Failed to generate content.');
+                                                'AI returned an empty draft.');
                                           }
+
+                                          // After await: ensure dialog still active
+                                          if (!mounted || !dialogOpen) return;
+
+                                          // Replace content in ONLY the selected section immediately.
+                                          setState(() {
+                                            if (selectedSection != null) {
+                                              selectedSection.controller.text =
+                                                  generatedText;
+                                              _hasUnsavedChanges = true;
+                                            }
+                                          });
+
+                                          // Keep preview available
+                                          setDialogState(() {
+                                            generatedController?.dispose();
+                                            generatedController =
+                                                TextEditingController(
+                                                    text: generatedText);
+                                            generatedSectionControllers = null;
+                                            generationMode = 'section';
+                                          });
                                         } else if (selectedAction ==
                                             'full_proposal') {
-                                          final result = await ApiService
-                                              .generateFullProposal(
-                                            token: token,
-                                            prompt: promptController.text,
-                                            context: {
-                                              'document_title':
-                                                  _titleController.text,
-                                            },
-                                          );
-
-                                          if (result != null &&
-                                              result['sections'] is Map) {
-                                            final Map<String, dynamic>
-                                                generatedSections =
-                                                Map<String, dynamic>.from(
-                                                    result['sections'] as Map<
-                                                        dynamic, dynamic>);
-                                            if (generatedSections.isEmpty) {
-                                              throw Exception(
-                                                  'AI did not return any sections.');
-                                            }
-                                            setDialogState(() {
-                                              generatedController?.dispose();
-                                              generatedController = null;
-                                              if (generatedSectionControllers !=
-                                                  null) {
-                                                for (final controller
-                                                    in generatedSectionControllers!
-                                                        .values) {
-                                                  controller.dispose();
-                                                }
-                                              }
-                                              generatedSectionControllers = {};
-                                              generatedSections
-                                                  .forEach((title, content) {
-                                                generatedSectionControllers![
-                                                        title] =
-                                                    TextEditingController(
-                                                        text: (content ?? '')
-                                                            .toString()
-                                                            .trim());
-                                              });
-                                              generationMode = 'full';
-                                            });
-                                            ScaffoldMessenger.of(rootContext)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                    'Draft proposal ready with ${generatedSections.length} sections. Review below.'),
-                                                backgroundColor:
-                                                    const Color(0xFF00BCD4),
-                                              ),
-                                            );
-                                          } else {
+                                          // FULL PROPOSAL: generate for ALL sections (sequential), progress + cancel.
+                                          final sectionsSnapshot = _sections
+                                              .where((s) =>
+                                                  s.sectionType
+                                                      .trim()
+                                                      .toLowerCase() ==
+                                                  'content')
+                                              .toList();
+                                          if (sectionsSnapshot.isEmpty) {
                                             throw Exception(
-                                                'Failed to generate full proposal.');
+                                                'No content sections found to generate.');
                                           }
+
+                                          for (var i = 0;
+                                              i < sectionsSnapshot.length;
+                                              i++) {
+                                            if (!mounted || !dialogOpen) return;
+                                            if (cancelled) return;
+
+                                            final s = sectionsSnapshot[i];
+                                            final title = (s
+                                                    .titleController.text
+                                                    .trim()
+                                                    .isNotEmpty)
+                                                ? s.titleController.text.trim()
+                                                : 'Untitled Section';
+
+                                            setDialogState(() {
+                                              progressLabel =
+                                                  'Generating ${i + 1}/${sectionsSnapshot.length}: $title';
+                                            });
+
+                                            final existing = s.controller.text;
+                                            final proposalText = [
+                                              'User request:\n${promptController.text.trim()}',
+                                              if (_titleController.text
+                                                  .trim()
+                                                  .isNotEmpty)
+                                                '\n\nDocument title: ${_titleController.text.trim()}',
+                                              if (existing.trim().isNotEmpty)
+                                                '\n\nExisting section text:\n${existing.trim()}',
+                                            ].join('');
+                                            if (proposalText.trim().isEmpty) {
+                                              continue;
+                                            }
+
+                                            final r = await AiAssistantApi
+                                                .generateSection(
+                                              token: token,
+                                              sectionName: title,
+                                              proposalText: proposalText,
+                                              maxTokens: 192,
+                                            );
+
+                                            final gen = (r['generated_text'] ??
+                                                    r['content'] ??
+                                                    r['result'] ??
+                                                    '')
+                                                .toString()
+                                                .trim();
+                                            if (gen.isEmpty) {
+                                              throw Exception(
+                                                  'AI returned empty content for "$title".');
+                                            }
+
+                                            if (!mounted || !dialogOpen) return;
+                                            if (cancelled) return;
+
+                                            setState(() {
+                                              s.controller.text = gen;
+                                              _hasUnsavedChanges = true;
+                                            });
+                                          }
+
+                                          if (!mounted || !dialogOpen) return;
+                                          setDialogState(() {
+                                            progressLabel = '';
+                                            generatedController?.dispose();
+                                            generatedController = null;
+                                            generatedSectionControllers = null;
+                                            generationMode = 'full';
+                                          });
                                         } else {
                                           if (_selectedSectionIndex >=
                                               _sections.length) {
@@ -9645,104 +12061,98 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                                 'Current section is empty. Nothing to improve.');
                                           }
 
+                                          final selectedSection =
+                                              _sections[_selectedSectionIndex];
+                                          final areaName = (selectedSection
+                                                  .titleController.text
+                                                  .trim()
+                                                  .isNotEmpty)
+                                              ? selectedSection
+                                                  .titleController.text
+                                                  .trim()
+                                              : 'General';
+
+                                          // If user typed instructions in the box, include them as a prefix (but preserve the exact target text).
+                                          final instructions =
+                                              promptController.text.trim();
+                                          final improveInput = instructions
+                                                  .isEmpty
+                                              ? currentContent
+                                              : 'Instructions:\n$instructions\n\nText:\n$currentContent';
+
                                           final result =
-                                              await ApiService.improveContent(
+                                              await AiAssistantApi.improveArea(
                                             token: token,
-                                            content: currentContent,
-                                            sectionType: selectedSectionType,
+                                            areaName: areaName,
+                                            proposalText: improveInput,
+                                            maxTokens: selectedMaxTokens,
                                           );
 
-                                          if (result != null &&
-                                              result['improved_version'] !=
-                                                  null) {
-                                            final improvedText =
-                                                (result['improved_version']
-                                                        as String)
-                                                    .trim();
-                                            if (improvedText.isEmpty) {
-                                              throw Exception(
-                                                  'AI returned an empty improvement.');
-                                            }
-
-                                            setDialogState(() {
-                                              generatedController?.dispose();
-                                              generatedController =
-                                                  TextEditingController(
-                                                      text: improvedText);
-                                              if (generatedSectionControllers !=
-                                                  null) {
-                                                for (final controller
-                                                    in generatedSectionControllers!
-                                                        .values) {
-                                                  controller.dispose();
-                                                }
-                                              }
-                                              generatedSectionControllers =
-                                                  null;
-                                              generationMode = 'improve';
-                                            });
-
-                                            if (result['summary'] != null) {
-                                              ScaffoldMessenger.of(rootContext)
-                                                  .showSnackBar(
-                                                SnackBar(
-                                                  content: Column(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    children: [
-                                                      const Text(
-                                                        'Improvements ready. Review below.',
-                                                        style: TextStyle(
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                      ),
-                                                      Text(result['summary']
-                                                          as String),
-                                                    ],
-                                                  ),
-                                                  backgroundColor:
-                                                      const Color(0xFF00BCD4),
-                                                  duration: const Duration(
-                                                      seconds: 4),
-                                                ),
-                                              );
-                                            } else {
-                                              ScaffoldMessenger.of(rootContext)
-                                                  .showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
-                                                      'Improvements ready. Review and edit below before applying.'),
-                                                  backgroundColor:
-                                                      Color(0xFF00BCD4),
-                                                ),
-                                              );
-                                            }
-                                          } else {
+                                          final improvedText = (result[
+                                                      'generated_text'] ??
+                                                  result['improved_version'] ??
+                                                  result['content'] ??
+                                                  result['result'] ??
+                                                  '')
+                                              .toString()
+                                              .trim();
+                                          if (improvedText.isEmpty) {
                                             throw Exception(
-                                                'Failed to improve content.');
+                                                'AI returned an empty improvement.');
                                           }
-                                        }
-                                      } catch (e) {
-                                        if (mounted) {
+
+                                          if (!mounted || !dialogOpen) return;
+
+                                          setDialogState(() {
+                                            generatedController?.dispose();
+                                            generatedController =
+                                                TextEditingController(
+                                                    text: improvedText);
+                                            generatedSectionControllers = null;
+                                            generationMode = 'improve';
+                                          });
+
                                           ScaffoldMessenger.of(rootContext)
                                               .showSnackBar(
-                                            SnackBar(
+                                            const SnackBar(
                                               content: Text(
-                                                  'Error: ${e.toString()}'),
-                                              backgroundColor: Colors.red,
+                                                  'Improvements ready. Review and edit below before applying.'),
+                                              backgroundColor:
+                                                  Color(0xFF00BCD4),
                                             ),
                                           );
                                         }
-                                      } finally {
-                                        if (mounted) {
-                                          setDialogState(() {
-                                            isGenerating = false;
-                                          });
+                                      } catch (e) {
+                                        if (!mounted || !dialogOpen) return;
+                                        final raw = e.toString();
+                                        String friendly;
+                                        if (raw.contains('504') ||
+                                            raw.contains('Gateway') ||
+                                            raw.contains('Timeout')) {
+                                          friendly =
+                                              'AI Assistant is taking longer than expected. Please retry.';
+                                        } else if (raw.contains('500') ||
+                                            raw.contains(
+                                                'Internal Server Error') ||
+                                            raw.contains('server error')) {
+                                          friendly =
+                                              'AI service error. Please try again in a moment.';
+                                        } else {
+                                          friendly = raw;
                                         }
+                                        ScaffoldMessenger.of(rootContext)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text('Error: $friendly'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      } finally {
+                                        if (!mounted || !dialogOpen) return;
+                                        setDialogState(() {
+                                          isGenerating = false;
+                                          progressLabel = '';
+                                        });
                                       }
                                     },
                               icon: isGenerating
@@ -9775,6 +12185,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             ),
                           ],
                         ),
+                        if (isGenerating && progressLabel.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Text(
+                            progressLabel,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF555555),
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -10196,5 +12616,885 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
       },
     );
+  }
+
+  // Run AI Governance Check
+  Future<void> _runGovernanceCheck() async {
+    setState(() => _isRunningGovernance = true);
+
+    try {
+      final app = context.read<AppState>();
+      if (app.authToken != null) {
+        AIAnalysisService.setAuthToken(app.authToken!);
+      }
+
+      final proposalData = _getProposalDataForAnalysis();
+
+      final analysis =
+          await AIAnalysisService.analyzeProposalContent(proposalData);
+
+      final String riskLevel =
+          analysis['risk_level']?.toString().toUpperCase() ?? 'UNKNOWN';
+      int riskScore = (analysis['risk_score'] as num?)?.toInt() ?? 0;
+      final recommendations =
+          List<String>.from(analysis['recommendations'] ?? const []);
+      final bool canRelease = analysis['can_release'] ?? false;
+
+      final issues = List<Map<String, dynamic>>.from(
+        analysis['issues'] ?? const [],
+      );
+
+      // HF can return issues=[] and risk_score=0 while still flagging missing
+      // sections/clauses in recommendations. Derive meaningful governance score.
+      int missingSections = 0;
+      int clauseIssues = 0;
+      if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+
+        missingSections = missingSectionsMatch != null
+            ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
+            : 0;
+        clauseIssues = clauseIssuesMatch != null
+            ? int.tryParse(clauseIssuesMatch.group(1) ?? '') ?? 0
+            : 0;
+
+        riskScore = ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
+      }
+
+      // Readiness score (higher is better) - MUST be based on the final riskScore
+      final int readinessScore = (100 - riskScore).clamp(0, 100).toInt();
+
+      // Treat recommendations as governance findings so the checklist reflects
+      // actionable guidance without duplicating the full list in the UI.
+      final derivedFindings = recommendations
+          .where((r) => r.trim().isNotEmpty)
+          .map<Map<String, dynamic>>((r) => {
+                'type': 'recommendation',
+                'title': r,
+                'label': r,
+                'description': r,
+                'priority': 'warning',
+              })
+          .toList();
+
+      final allFindings = [...issues, ...derivedFindings];
+
+      // Derive simple checklist from AI issues
+      final checks = allFindings.map((issue) {
+        final priority = issue['priority']?.toString() ?? 'info';
+        final isRequired = priority == 'critical' ||
+            priority == 'high' ||
+            priority == 'warning';
+
+        final type = (issue['type']?.toString() ?? '').trim();
+        final hasPassed = type != 'missing_section' &&
+            type != 'incomplete_content' &&
+            type != 'recommendation';
+
+        final label = (issue['label']?.toString().trim().isNotEmpty ?? false)
+            ? issue['label']?.toString() ?? ''
+            : (issue['title']?.toString() ?? 'Issue');
+
+        return {
+          'id': issue['type']?.toString() ?? 'ai_issue',
+          'label': label,
+          'required': isRequired,
+          'passed': hasPassed,
+        };
+      }).toList();
+
+      final bool hasActionableRecos =
+          recommendations.isNotEmpty || missingSections > 0 || clauseIssues > 0;
+      final String computedStatus = hasActionableRecos
+          ? 'At Risk'
+          : (canRelease
+              ? 'Ready'
+              : (riskLevel == 'HIGH' ||
+                      riskLevel == 'CRITICAL' ||
+                      riskLevel == 'BLOCK')
+                  ? 'Blocked'
+                  : 'At Risk');
+
+      setState(() {
+        _governanceResults = {
+          'status': computedStatus,
+          'score': readinessScore,
+          'checks': checks,
+          'issues': allFindings,
+        };
+        _isRunningGovernance = false;
+        _hasCompletedGovernanceCheck = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Governance check completed: ${analysis['status']}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      setState(() => _isRunningGovernance = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error running governance check: $e')),
+      );
+    }
+  }
+
+  // Run Risk Assessment
+  Future<void> _runRiskAssessment() async {
+    setState(() => _isRunningRiskAssessment = true);
+
+    try {
+      final app = context.read<AppState>();
+      if (app.authToken != null) {
+        AIAnalysisService.setAuthToken(app.authToken!);
+      }
+
+      final proposalData = _getProposalDataForAnalysis();
+
+      final analysis =
+          await AIAnalysisService.analyzeProposalRisks(proposalData);
+
+      String riskLevel =
+          analysis['risk_level']?.toString().toUpperCase() ?? 'UNKNOWN';
+      int riskScore = (analysis['risk_score'] as num?)?.toInt() ?? 0;
+      final issues =
+          List<Map<String, dynamic>>.from(analysis['issues'] ?? const []);
+      final recommendations =
+          List<String>.from(analysis['recommendations'] ?? const []);
+      final bool canRelease = analysis['can_release'] ?? false;
+      final int totalIssues = analysis['total_issues'] ?? 0;
+      final Map<String, int> priorityBreakdown =
+          Map<String, int>.from(analysis['priority_breakdown'] ?? const {});
+
+      // HF can return issues=[] and risk_score=0 while still flagging missing
+      // sections/clauses in recommendations. Derive a meaningful display.
+      if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+
+        final missingSections = missingSectionsMatch != null
+            ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
+            : 0;
+        final clauseIssues = clauseIssuesMatch != null
+            ? int.tryParse(clauseIssuesMatch.group(1) ?? '') ?? 0
+            : 0;
+
+        final derivedScore =
+            ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
+        riskScore = derivedScore;
+
+        if (riskLevel == 'LOW' || riskLevel == 'UNKNOWN') {
+          riskLevel = missingSections > 0 ? 'MEDIUM' : 'REVIEW';
+        }
+      }
+
+      // Convert risk points into a 0-100 score where higher is better
+      final double displayScore = (100 - riskScore).clamp(0, 100).toDouble();
+
+      final risks =
+          issues.map((issue) => issue['title']?.toString() ?? 'Issue').toList();
+
+      setState(() {
+        _riskAssessment = {
+          'risk_level': riskLevel,
+          'risk_score': riskScore,
+          'display_score': displayScore,
+          'risks': risks,
+          'recommendations': recommendations,
+          'issues': issues,
+          'can_release': canRelease,
+          'total_issues': totalIssues,
+          'priority_breakdown': priorityBreakdown,
+        };
+        _isRunningRiskAssessment = false;
+        _hasCompletedRiskAssessment = true;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Risk assessment completed: $riskLevel'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+    } catch (e) {
+      setState(() => _isRunningRiskAssessment = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error running risk assessment: $e')),
+      );
+    }
+  }
+
+  Map<String, dynamic> _getProposalDataForAnalysis() {
+    final data = <String, dynamic>{
+      // Include ID only if proposal is saved (not 'draft')
+      if (_savedProposalId != null) 'id': _savedProposalId.toString(),
+      'title': _titleController.text.isEmpty
+          ? 'Untitled Document'
+          : _titleController.text,
+      'opportunityName': _titleController.text.isEmpty
+          ? 'Untitled Document'
+          : _titleController.text,
+      'templateType': 'general',
+      'clientName': _clientNameController.text,
+      'clientEmail': _clientEmailController.text,
+      'status': _proposalStatus ?? 'draft',
+      // Add other proposal fields from _proposalData if available
+      ...?_proposalData,
+    };
+
+    // HF expects sections as a map of section_name -> content.
+    // Convert the editor sections into flat keys so AIAnalysisService can build
+    // the request properly.
+    for (int i = 0; i < _sections.length; i++) {
+      final section = _sections[i];
+      final title = section.titleController.text.trim().isNotEmpty
+          ? section.titleController.text.trim()
+          : (section.title.trim().isNotEmpty
+              ? section.title.trim()
+              : 'Section ${i + 1}');
+      final content = section.controller.text.trim().isNotEmpty
+          ? section.controller.text.trim()
+          : section.content.trim();
+      if (content.trim().isEmpty) continue;
+
+      // Normalize to stable keys for HF sections map.
+      final normalizedKey = title
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+          .replaceAll(RegExp(r'_+'), '_')
+          .replaceAll(RegExp(r'^_|_$'), '');
+      final key = normalizedKey.isEmpty ? 'section_${i + 1}' : normalizedKey;
+      data[key] = content;
+    }
+
+    return data;
+  }
+
+  // Review and Complete - runs both governance and risk assessment
+  Future<void> _reviewAndComplete() async {
+    // Show loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Running comprehensive analysis...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      // Run governance check first
+      await _runGovernanceCheck();
+
+      // Then run risk assessment
+      await _runRiskAssessment();
+
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      // Show flagged issues modal
+      _showFlaggedIssues();
+    } catch (e) {
+      // Close loading dialog
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error during analysis: $e')),
+      );
+    }
+  }
+
+  void _showFlaggedIssues() {
+    final List<Map<String, dynamic>> allIssues = [];
+    if (_governanceResults['issues'] != null) {
+      allIssues.addAll(
+          List<Map<String, dynamic>>.from(_governanceResults['issues']));
+    }
+    if (_riskAssessment['issues'] != null) {
+      allIssues
+          .addAll(List<Map<String, dynamic>>.from(_riskAssessment['issues']));
+    }
+
+    _openIssuesReviewSheet(allIssues);
+  }
+
+  void _openIssuesReviewSheet(List<Map<String, dynamic>> issues) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.65,
+          minChildSize: 0.35,
+          maxChildSize: 0.9,
+          builder: (context, controller) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Flagged issues',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${issues.length}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: issues.isEmpty
+                        ? Center(
+                            child: Text(
+                              'No flagged issues found',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: controller,
+                            itemCount: issues.length,
+                            itemBuilder: (context, index) {
+                              final issue = issues[index];
+                              final title =
+                                  issue['title']?.toString() ?? 'Issue';
+                              final description =
+                                  issue['description']?.toString() ?? '';
+                              final priority =
+                                  (issue['priority']?.toString() ?? 'info')
+                                      .toLowerCase()
+                                      .trim();
+
+                              Color priorityColor;
+                              if (priority == 'critical' ||
+                                  priority == 'high') {
+                                priorityColor = const Color(0xFFDC2626);
+                              } else if (priority == 'warning' ||
+                                  priority == 'medium') {
+                                priorityColor = const Color(0xFFF59E0B);
+                              } else {
+                                priorityColor = const Color(0xFF00BCD4);
+                              }
+
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                        color: Colors.grey[200]!, width: 1),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              title,
+                                              style: const TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF1A1A1A),
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            priority.toUpperCase(),
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w800,
+                                              color: priorityColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (description.isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          description,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildReviewPanel() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Review & Complete',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Description
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blue[200]!),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.blue[700], size: 16),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Comprehensive Analysis',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Run both governance check and risk assessment to ensure your proposal meets all requirements before completion.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+
+        // Governance Check Section
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.verified_user, color: Colors.blue[700], size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Governance Check',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                  if (_hasCompletedGovernanceCheck) ...[
+                    const Spacer(),
+                    Icon(
+                      _governanceResults['status'] == 'Ready'
+                          ? Icons.check_circle
+                          : Icons.warning,
+                      color: _governanceResults['status'] == 'Ready'
+                          ? Colors.green[700]
+                          : Colors.orange[700],
+                      size: 16,
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Validates proposal structure, required sections, and compliance standards.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+              if (_governanceResults.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _governanceResults['status'] == 'Ready'
+                        ? Colors.green[100]
+                        : Colors.orange[100],
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        _governanceResults['status'] == 'Ready'
+                            ? Icons.check_circle
+                            : Icons.warning,
+                        color: _governanceResults['status'] == 'Ready'
+                            ? Colors.green[700]
+                            : Colors.orange[700],
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Status: ${_governanceResults['status']}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Risk Assessment Section
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.analytics_outlined,
+                      color: Colors.orange[700], size: 20),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Risk Assessment',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                  if (_hasCompletedRiskAssessment) ...[
+                    const Spacer(),
+                    Icon(
+                      Icons.analytics,
+                      color: _getRiskAssessmentIconColor(),
+                      size: 16,
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Analyzes potential risks and provides mitigation recommendations.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+              if (_riskAssessment.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _getRiskAssessmentColor(),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.analytics,
+                        color: _getRiskAssessmentIconColor(),
+                        size: 16,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Risk Level: ${_riskAssessment['risk_level']}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // Main Action Button
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: (_isRunningGovernance || _isRunningRiskAssessment)
+                ? null
+                : _reviewAndComplete,
+            icon: (_isRunningGovernance || _isRunningRiskAssessment)
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.verified),
+            label: Text(_isRunningGovernance || _isRunningRiskAssessment
+                ? 'Analyzing...'
+                : 'Review & Complete'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF9C27B0),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Individual action buttons
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isRunningGovernance ? null : _runGovernanceCheck,
+                icon: _isRunningGovernance
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.blue),
+                        ),
+                      )
+                    : const Icon(Icons.verified_user, size: 16),
+                label: Text(
+                    _isRunningGovernance ? 'Running...' : 'Governance Only'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.blue[700],
+                  side: BorderSide(color: Colors.blue[300]!),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _isRunningRiskAssessment ? null : _runRiskAssessment,
+                icon: _isRunningRiskAssessment
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.orange),
+                        ),
+                      )
+                    : const Icon(Icons.analytics_outlined, size: 16),
+                label:
+                    Text(_isRunningRiskAssessment ? 'Running...' : 'Risk Only'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.orange[700],
+                  side: BorderSide(color: Colors.orange[300]!),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        // Results summary (if available)
+        if (_governanceResults.isNotEmpty || _riskAssessment.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Last Analysis Summary',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1A1A1A),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (_governanceResults.isNotEmpty) ...[
+                  Text(
+                      '• Governance: ${_governanceResults['status']} (${_governanceResults['score']}%)'),
+                ],
+                if (_riskAssessment.isNotEmpty) ...[
+                  Row(
+                    children: [
+                      Text(
+                          '• Risk: ${_riskAssessment['risk_level']} (${_riskAssessment['display_score']?.toInt()}%)'),
+                      const SizedBox(width: 12),
+                      TextButton.icon(
+                        onPressed: _isRunningRiskAssessment
+                            ? null
+                            : _runRiskAssessment,
+                        icon: _isRunningRiskAssessment
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.orange),
+                                ),
+                              )
+                            : const Icon(Icons.refresh, size: 16),
+                        label: Text(_isRunningRiskAssessment
+                            ? 'Re-running…'
+                            : 'Re-run Risk Gate'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.orange[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+
+                // Review Issues button
+                Builder(
+                  builder: (context) {
+                    final List<Map<String, dynamic>> allIssues = [];
+                    if (_governanceResults['issues'] != null) {
+                      allIssues.addAll(List<Map<String, dynamic>>.from(
+                          _governanceResults['issues']));
+                    }
+                    if (_riskAssessment['issues'] != null) {
+                      allIssues.addAll(List<Map<String, dynamic>>.from(
+                          _riskAssessment['issues']));
+                    }
+
+                    if (allIssues.isNotEmpty) {
+                      return SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _openIssuesReviewSheet(allIssues),
+                          icon: const Icon(Icons.list_alt, size: 16),
+                          label:
+                              Text('Review ${allIssues.length} Flagged Issues'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF9C27B0),
+                            side: const BorderSide(color: Color(0xFF9C27B0)),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                        ),
+                      );
+                    } else {
+                      return const SizedBox.shrink();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Color _getRiskAssessmentColor() {
+    final riskLevel = _riskAssessment['risk_level']?.toString() ?? 'Unknown';
+    switch (riskLevel.toLowerCase()) {
+      case 'low':
+        return Colors.green[100]!;
+      case 'medium':
+        return Colors.orange[100]!;
+      case 'high':
+        return Colors.red[100]!;
+      default:
+        return Colors.grey[100]!;
+    }
+  }
+
+  Color _getRiskAssessmentIconColor() {
+    final riskLevel = _riskAssessment['risk_level']?.toString() ?? 'Unknown';
+    switch (riskLevel.toLowerCase()) {
+      case 'low':
+        return Colors.green[700]!;
+      case 'medium':
+        return Colors.orange[700]!;
+      case 'high':
+        return Colors.red[700]!;
+      default:
+        return Colors.grey[700]!;
+    }
   }
 }

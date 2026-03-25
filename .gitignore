@@ -2,121 +2,13 @@
 node_modules/
 .packages
 .pub-cache/
-
-# Build outputs
-build/
-dist/
-.dart_tool/
-# Exception: Allow frontend_flutter/build/web for Render deployment
-!frontend_flutter/build/web/
-
-# Environment files
-.env
-.env.local
-.env.production
-
-# Database files
-*.db
-*.sqlite
-*.sqlite3
-
-# Auth tokens (session persistence)
-auth_tokens.json
-
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Flutter specific
-.flutter-plugins
-.flutter-plugins-dependencies
-.packages
-.pub-cache/
 .pub/
-build/
-# Exception: Allow frontend_flutter/build/web for Render deployment
-!frontend_flutter/build/web/
 
-# Logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Coverage directory used by tools like istanbul
-coverage/
-
-# nyc test coverage
-.nyc_output
-
-# Dependency directories
-jspm_packages/
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Optional REPL history
-.node_repl_history
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity
-
-# dotenv environment variables file
-.env
-
-# parcel-bundler cache (https://parceljs.org/)
-.cache
-.parcel-cache
-
-# next.js build output
-.next
-
-# nuxt.js build output
-.nuxt
-
-# vuepress build output
-.vuepress/dist
-
-# Serverless directories
-.serverless
-
-# FuseBox cache
-.fusebox/
-
-# DynamoDB Local files
-.dynamodb/
-
-# TernJS port file
-.tern-port
-
-# Firebase service account credentials
-firebase-service-account.json
-**/firebase-service-account.json
-
-# DocuSign RSA Keys (NEVER commit these!)
-docusign_private.key
-docusign_public.key
-backend/docusign_private.key
-backend/docusign_public.key
-generate_docusign_keys.py
+# Python virtualenvs
+.venv/
+venv/
+backend/.venv/
+**/.venv/
 
 # Python bytecode
 __pycache__/
@@ -124,4 +16,57 @@ __pycache__/
 *.pyo
 *.pyd
 .Python
-e
+
+# Build outputs
+build/
+dist/
+.dart_tool/
+.next/
+.nuxt/
+.vuepress/dist
+coverage/
+.nyc_output
+
+# Exception: Allow frontend_flutter/build/web for Render deployment
+!frontend_flutter/build/web/
+
+# Environment files
+.env
+.env.*
+backend/.env
+backend/.env.*
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE / OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Auth tokens (session persistence)
+auth_tokens.json
+backend/auth_tokens.json
+
+# Firebase service account credentials (NEVER commit)
+firebase-service-account.json
+**/firebase-service-account.json
+
+# DocuSign keys (NEVER commit)
+docusign_private.key
+docusign_public.key
+backend/docusign_private.key
+backend/docusign_public.key
+

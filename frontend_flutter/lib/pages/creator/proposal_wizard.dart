@@ -1,12 +1,13 @@
+// ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
+
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import '../../api.dart';
 import '../../services/ai_analysis_service.dart';
 import '../../services/client_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import 'content_library_dialog.dart';
@@ -64,11 +65,195 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
 
-  int _countIssuesByPriority(List<Map<String, dynamic>> issues, Set<String> priorities) {
+  bool _showEmailFailedBanner = false;
+  String? _lastEmailError;
+  String? _lastClientAccessToken;
+  bool _isRetryingEmail = false;
+
+  int _countIssuesByPriority(
+      List<Map<String, dynamic>> issues, Set<String> priorities) {
     return issues.where((i) {
       final p = (i['priority']?.toString() ?? '').toLowerCase().trim();
       return priorities.contains(p);
     }).length;
+  }
+
+  // Getters for form data
+  String get proposalTitle => _formData['proposalTitle'] ?? '';
+  String get clientName => _formData['clientName'] ?? '';
+  String get opportunityName => _formData['opportunityName'] ?? '';
+  List<Map<String, dynamic>> get kbCitations => [];
+  bool get _isClientSigned => false;
+  String get dateLabel => DateTime.now().toString().split(' ')[0];
+  Map<String, String> get moduleContents =>
+      Map<String, String>.from(_formData['moduleContents'] ?? {});
+
+  Future<void> _sendToClient() async {
+    // TODO: Implement send to client functionality
+    if (_proposalId == null || _proposalId!.toString().trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No proposal found to send.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final app = context.read<AppState>();
+      final result = await app.sendToClientWithStatus(
+        _proposalId!.toString(),
+      );
+      if (!mounted) return;
+      if (result['ok'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Sent to client successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        final emailSent = result['email_sent'];
+        final emailOk = (emailSent == true) || (emailSent == null);
+        setState(() {
+          _showEmailFailedBanner = !emailOk;
+          _lastEmailError = result['email_error']?.toString();
+          _lastClientAccessToken = result['access_token']?.toString();
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(result['detail']?.toString() ?? 'Send to client failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error sending to client: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _retryClientEmail() async {
+    if (_proposalId == null) return;
+    if (_isRetryingEmail) return;
+    setState(() => _isRetryingEmail = true);
+    try {
+      final app = context.read<AppState>();
+      final r = await app.resendClientEmail(
+        _proposalId!.toString(),
+        accessToken: _lastClientAccessToken,
+      );
+      if (!mounted) return;
+
+      final ok = r['ok'] == true;
+      final emailSent = r['email_sent'] == true;
+      if (ok && emailSent) {
+        setState(() {
+          _showEmailFailedBanner = false;
+          _lastEmailError = null;
+          _lastClientAccessToken = r['access_token']?.toString() ?? _lastClientAccessToken;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Email resent successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        setState(() {
+          _showEmailFailedBanner = true;
+          _lastEmailError = r['email_error']?.toString() ?? _lastEmailError;
+          _lastClientAccessToken = r['access_token']?.toString() ?? _lastClientAccessToken;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(r['detail']?.toString() ?? 'Email resend failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error retrying email: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isRetryingEmail = false);
+    }
+  }
+
+  // Missing methods
+  bool _isRiskGateBlockedWithoutOverride() {
+    return _riskGateStatusUpper() == 'BLOCK';
+  }
+
+  bool _hasRiskGateOverride() {
+    return false; // TODO: Implement override logic
+  }
+
+  Widget _buildClientSignature() {
+    return Container(); // TODO: Implement client signature
+  }
+
+  Map<String, dynamic> _parseAdditionalInfo(dynamic info) {
+    if (info == null) return {};
+
+    if (info is Map<String, dynamic>) {
+      return info;
+    }
+
+    if (info is String) {
+      try {
+        final decoded = json.decode(info);
+        if (decoded is Map<String, dynamic>) {
+          return decoded;
+        }
+      } catch (e) {
+        // If parsing fails, return empty map
+      }
+    }
+
+    return {};
+  }
+
+  String _mergePlaceholders(String content) {
+    if (content.isEmpty) return content;
+
+    final Map<String, String> replacements = {
+      'project name': _formData['opportunityName']?.toString() ?? '',
+      'client name': _formData['clientName']?.toString() ?? '',
+      'client': _formData['clientName']?.toString() ?? '',
+      'client email': _formData['clientEmail']?.toString() ?? '',
+      'timeline': _formData['timeline']?.toString() ?? '',
+      'estimated value': _formData['estimatedValue']?.toString() ?? '',
+    };
+
+    return content.replaceAllMapped(
+      RegExp(r'\{\{\s*([^}]+?)\s*\}\}', caseSensitive: false),
+      (match) {
+        final key = match.group(1)!.toLowerCase().trim();
+        final normalized = key.replaceAll('_', ' ');
+        final value = replacements[normalized];
+        if (value == null || value.isEmpty) {
+          return match.group(0)!; // leave placeholder as-is
+        }
+        return value;
+      },
+    );
   }
 
   void _openIssuesReviewSheet(List<Map<String, dynamic>> issues) {
@@ -93,7 +278,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     child: Row(
                       children: [
                         const Text(
@@ -135,36 +321,46 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                             itemCount: issues.length,
                             itemBuilder: (context, index) {
                               final issue = issues[index];
-                              final title = issue['title']?.toString() ?? 'Issue';
-                              final description = issue['description']?.toString() ?? '';
-                              final priority = (issue['priority']?.toString() ?? 'info')
-                                  .toLowerCase()
-                                  .trim();
+                              final title =
+                                  issue['title']?.toString() ?? 'Issue';
+                              final description =
+                                  issue['description']?.toString() ?? '';
+                              final priority =
+                                  (issue['priority']?.toString() ?? 'info')
+                                      .toLowerCase()
+                                      .trim();
                               final type = issue['type']?.toString();
-                              final sectionId = _mapSectionTitleToModuleId(title);
+                              final sectionId =
+                                  _mapSectionTitleToModuleId(title);
                               final bool canAutoAddModule =
-                                  (type == 'missing_section' || type == 'incomplete_content') &&
+                                  (type == 'missing_section' ||
+                                          type == 'incomplete_content') &&
                                       sectionId != null;
 
                               Color priorityColor;
-                              if (priority == 'critical' || priority == 'high') {
+                              if (priority == 'critical' ||
+                                  priority == 'high') {
                                 priorityColor = const Color(0xFFDC2626);
-                              } else if (priority == 'warning' || priority == 'medium') {
+                              } else if (priority == 'warning' ||
+                                  priority == 'medium') {
                                 priorityColor = const Color(0xFFF59E0B);
                               } else {
                                 priorityColor = const Color(0xFF00BCD4);
                               }
 
                               return Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
                                 child: Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.grey[200]!, width: 1),
+                                    border: Border.all(
+                                        color: Colors.grey[200]!, width: 1),
                                   ),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Row(
                                         children: [
@@ -201,22 +397,27 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                       if (canAutoAddModule) ...[
                                         const SizedBox(height: 10),
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.end,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.end,
                                           children: [
                                             TextButton(
                                               onPressed: () async {
                                                 Navigator.pop(context);
-                                                _ensureModuleSelected(sectionId);
-                                                await _openContentLibraryAndInsert(sectionId);
+                                                _ensureModuleSelected(
+                                                    sectionId);
+                                                await _openContentLibraryAndInsert(
+                                                    sectionId);
                                               },
                                               child: const Text('Add module'),
                                             ),
                                             const SizedBox(width: 8),
                                             ElevatedButton.icon(
                                               style: ElevatedButton.styleFrom(
-                                                backgroundColor: PremiumTheme.teal,
+                                                backgroundColor:
+                                                    PremiumTheme.teal,
                                                 foregroundColor: Colors.white,
-                                                padding: const EdgeInsets.symmetric(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
                                                   horizontal: 12,
                                                   vertical: 8,
                                                 ),
@@ -225,7 +426,9 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                                 Navigator.pop(context);
                                                 _addModuleWithAI(sectionId);
                                               },
-                                              icon: const Icon(Icons.auto_awesome, size: 16),
+                                              icon: const Icon(
+                                                  Icons.auto_awesome,
+                                                  size: 16),
                                               label: const Text('Add with AI'),
                                             ),
                                           ],
@@ -259,22 +462,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   final ScrollController _contentModulesScrollController = ScrollController();
   final ScrollController _projectDetailsScrollController = ScrollController();
 
-  // Persistent controllers for client fields to ensure they update correctly
-  final TextEditingController _clientNameController = TextEditingController();
-  final TextEditingController _clientEmailController = TextEditingController();
-  final TextEditingController _clientHoldingController =
-      TextEditingController();
-  final TextEditingController _clientAddressController =
-      TextEditingController();
-  final TextEditingController _clientContactNameController =
-      TextEditingController();
-  final TextEditingController _clientContactEmailController =
-      TextEditingController();
-  final TextEditingController _clientContactMobileController =
-      TextEditingController();
-  final TextEditingController _proposalTitleController =
-      TextEditingController();
-
   // Workflow steps matching the image
   final List<Map<String, String>> _workflowSteps = [
     {'number': '1', 'label': 'Compose'},
@@ -302,9 +489,16 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     },
     {
       'id': 'scope_deliverables',
-      'name': 'Scope & Deliverables',
+      'name': 'Scope of Work',
       'category': 'Project',
-      'description': 'Detailed project scope and deliverable specifications',
+      'description': 'Detailed project scope and boundaries',
+      'required': true,
+    },
+    {
+      'id': 'deliverables',
+      'name': 'Deliverables',
+      'category': 'Project',
+      'description': 'List of tangible outputs and milestones',
       'required': true,
     },
     {
@@ -340,6 +534,20 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       'name': 'Terms & Conditions',
       'category': 'Legal',
       'description': 'Standard legal terms and contract conditions',
+      'required': true,
+    },
+    {
+      'id': 'payment_terms',
+      'name': 'Payment Terms clause',
+      'category': 'Legal',
+      'description': 'Payment schedule, billing, and invoicing terms',
+      'required': true,
+    },
+    {
+      'id': 'termination_clause',
+      'name': 'Termination Clause',
+      'category': 'Legal',
+      'description': 'Conditions under which the agreement can be terminated',
       'required': true,
     },
   ];
@@ -401,74 +609,36 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       _useManualEntry = client == null;
 
       if (client != null) {
-        if (kDebugMode) {
-          try {
-            debugPrint(
-                'ProposalWizard selected client: ${json.encode(client)}');
-          } catch (e) {
-            debugPrint('ProposalWizard selected client (non-JSON): $client');
-            debugPrint('ProposalWizard selected client encode error: $e');
-          }
-        }
-
-        final additional = _parseAdditionalInfo(
-          client['additional_info'] ?? client['additionalInfo'],
-        );
+        final additional = _parseAdditionalInfo(client['additional_info']);
         // Auto-populate client details
         _formData['clientName'] =
             client['company_name'] ?? client['name'] ?? '';
         _formData['clientEmail'] = client['email'] ?? '';
         _formData['clientHolding'] = client['organization'] ??
             client['holding'] ??
-            client['holding_information'] ??
-            client['holdingInformation'] ??
-            client['holding_info'] ??
             additional['holding_information'] ??
             additional['holdingInformation'] ??
-            additional['holding_info'] ??
             '';
         _formData['clientAddress'] = client['location'] ??
             client['address'] ??
-            client['client_address'] ??
-            client['clientAddress'] ??
-            client['physical_address'] ??
             additional['address'] ??
-            additional['client_address'] ??
-            additional['clientAddress'] ??
             '';
         _formData['clientContactName'] = client['contact_person'] ??
             client['contact_name'] ??
-            client['client_contact_name'] ??
             additional['client_contact_name'] ??
             additional['clientContactName'] ??
             '';
         _formData['clientContactEmail'] = client['contact_email'] ??
-            client['client_contact_email'] ??
             additional['client_contact_email'] ??
             additional['clientContactEmail'] ??
             client['email'] ??
             '';
         _formData['clientContactMobile'] = client['phone'] ??
             client['mobile'] ??
-            client['client_contact_mobile'] ??
-            client['client_contact_number'] ??
             additional['client_contact_mobile'] ??
             additional['clientContactMobile'] ??
-            additional['client_contact_number'] ??
             '';
         _formData['clientId'] = client['id'];
-
-        // Update controllers
-        _clientNameController.text = _formData['clientName'] ?? '';
-        _clientEmailController.text = _formData['clientEmail'] ?? '';
-        _clientHoldingController.text = _formData['clientHolding'] ?? '';
-        _clientAddressController.text = _formData['clientAddress'] ?? '';
-        _clientContactNameController.text =
-            _formData['clientContactName'] ?? '';
-        _clientContactEmailController.text =
-            _formData['clientContactEmail'] ?? '';
-        _clientContactMobileController.text =
-            _formData['clientContactMobile'] ?? '';
       } else {
         // Clear fields when switching to manual entry
         _formData['clientName'] = '';
@@ -479,15 +649,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         _formData['clientContactEmail'] = '';
         _formData['clientContactMobile'] = '';
         _formData['clientId'] = null;
-
-        // Clear controllers
-        _clientNameController.clear();
-        _clientEmailController.clear();
-        _clientHoldingController.clear();
-        _clientAddressController.clear();
-        _clientContactNameController.clear();
-        _clientContactEmailController.clear();
-        _clientContactMobileController.clear();
       }
     });
   }
@@ -597,16 +758,6 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     _templateGridScrollController.dispose();
     _contentModulesScrollController.dispose();
     _projectDetailsScrollController.dispose();
-
-    _clientNameController.dispose();
-    _clientEmailController.dispose();
-    _clientHoldingController.dispose();
-    _clientAddressController.dispose();
-    _clientContactNameController.dispose();
-    _clientContactEmailController.dispose();
-    _clientContactMobileController.dispose();
-    _proposalTitleController.dispose();
-
     super.dispose();
   }
 
@@ -635,6 +786,31 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
+    }
+  }
+
+  String _riskGateStatusUpper() {
+    if (_riskAssessment.isEmpty) return 'UNKNOWN';
+
+    final String riskLevel =
+        (_riskAssessment['risk_level'] as String?)?.toUpperCase() ?? 'UNKNOWN';
+    final int riskScore = (_riskAssessment['risk_score'] as int?) ?? 0;
+
+    // Map risk levels to status
+    switch (riskLevel) {
+      case 'LOW':
+        return 'PASS';
+      case 'MEDIUM':
+      case 'REVIEW':
+        return 'REVIEW';
+      case 'HIGH':
+      case 'CRITICAL':
+        return 'BLOCK';
+      default:
+        // Fallback to score-based determination
+        if (riskScore >= 70) return 'READY';
+        if (riskScore >= 40) return 'AT_RISK';
+        return 'UNKNOWN';
     }
   }
 
@@ -1054,6 +1230,54 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       body: Stack(
         fit: StackFit.expand,
         children: [
+          if (_showEmailFailedBanner)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.12),
+                    border: Border(
+                      bottom: BorderSide(color: Colors.red.withOpacity(0.35)),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, color: Colors.red),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _lastEmailError == null || _lastEmailError!.trim().isEmpty
+                              ? 'Email failed to send – retry'
+                              : 'Email failed to send – ${_lastEmailError!}',
+                          style: const TextStyle(color: Colors.red),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: _isRetryingEmail ? null : _retryClientEmail,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                        ),
+                        child: Text(_isRetryingEmail ? 'Retrying…' : 'Retry'),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () => setState(() => _showEmailFailedBanner = false),
+                        icon: const Icon(Icons.close, color: Colors.red),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           // Background image
           Positioned.fill(
             child: Image.asset(
@@ -1223,6 +1447,15 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       case 'Scope & Deliverables':
       case 'Scope of Work':
         return 'scope_deliverables';
+      case 'Deliverables':
+        return 'deliverables';
+      case 'Payment Terms':
+      case 'Payment Terms clause':
+        return 'payment_terms';
+      case 'Termination Clause':
+        return 'termination_clause';
+      case 'Deliverables':
+        return 'deliverables';
       case 'Company Profile':
       case 'Appendix – Company Profile':
         return 'company_profile';
@@ -1443,7 +1676,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                 height: 3,
                                 width: 40,
                                 decoration: BoxDecoration(
-                                  color: PremiumTheme.teal.withValues(alpha: 0.9),
+                                  color:
+                                      PremiumTheme.teal.withValues(alpha: 0.9),
                                   borderRadius: BorderRadius.circular(999),
                                 ),
                               ),
@@ -1805,6 +2039,57 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.end,
                                 children: [
+                                  // FEATURE 1: Generate button
+                                  TextButton.icon(
+                                    onPressed: () => _generateSectionContent(
+                                      moduleId,
+                                      module['name'] ?? 'Section',
+                                      controller,
+                                    ),
+                                    icon: const Icon(
+                                      Icons.auto_awesome,
+                                      color: Color(0xFF9C27B0),
+                                    ),
+                                    label: Text(
+                                      'Generate',
+                                      style: PremiumTheme.bodyMedium.copyWith(
+                                        color: const Color(0xFF9C27B0),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // FEATURE 2: Improve button
+                                  TextButton.icon(
+                                    onPressed: controller.text
+                                            .trim()
+                                            .isEmpty
+                                        ? null
+                                        : () => _improveSectionContent(
+                                              moduleId,
+                                              module['name'] ?? 'Section',
+                                              controller,
+                                            ),
+                                    icon: Icon(
+                                      Icons.edit_note,
+                                      color: controller.text
+                                              .trim()
+                                              .isEmpty
+                                          ? Colors.grey
+                                          : PremiumTheme.teal,
+                                    ),
+                                    label: Text(
+                                      'Improve',
+                                      style:
+                                          PremiumTheme.bodyMedium.copyWith(
+                                        color: controller.text
+                                                .trim()
+                                                .isEmpty
+                                            ? Colors.grey
+                                            : PremiumTheme.teal,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
                                   TextButton.icon(
                                     onPressed: () =>
                                         _openContentLibraryAndInsert(moduleId),
@@ -2120,7 +2405,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         ),
         const SizedBox(height: 8),
         Text(
-          'Submit for internal review and approval',
+          'Send proposal to Finance for review',
           style: PremiumTheme.bodyMedium,
         ),
         const SizedBox(height: 24),
@@ -2326,6 +2611,20 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   }
 
   Widget _buildClientDetails() {
+    // Initialize controllers with current values and explicit LTR direction
+    final proposalTitleController = TextEditingController(
+        text: _formData['proposalTitle']?.toString() ?? '');
+    final clientNameController =
+        TextEditingController(text: _formData['clientName']?.toString() ?? '');
+    final clientEmailController =
+        TextEditingController(text: _formData['clientEmail']?.toString() ?? '');
+    final clientHoldingController = TextEditingController(
+        text: _formData['clientHolding']?.toString() ?? '');
+    final clientAddressController = TextEditingController(
+        text: _formData['clientAddress']?.toString() ?? '');
+    final clientContactMobileController = TextEditingController(
+        text: _formData['clientContactMobile']?.toString() ?? '');
+
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Builder(
@@ -2348,218 +2647,237 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 child: SingleChildScrollView(
                   controller: _clientDetailsScrollController,
                   physics: const AlwaysScrollableScrollPhysics(),
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 120),
-                    child: Column(
-                      children: [
-                        _buildTextField(
-                          'Proposal Title',
-                          'Enter proposal title',
-                          (value) => setState(
-                              () => _formData['proposalTitle'] = value),
-                          Icons.description_outlined,
-                          controller: _proposalTitleController,
+                  child: Column(
+                    children: [
+                      _buildTextField(
+                        'Proposal Title',
+                        'Enter proposal title',
+                        (value) =>
+                            setState(() => _formData['proposalTitle'] = value),
+                        Icons.description_outlined,
+                        controller: proposalTitleController,
+                      ),
+                      const SizedBox(height: 20),
+                      // Client Selection Dropdown (active clients only)
+                      _buildClientDropdown(),
+                      const SizedBox(height: 20),
+                      // Client Details Fields (auto-populated or manual)
+                      if (!_useManualEntry && _selectedClient != null) ...[
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: Colors.green.withOpacity(0.3)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.check_circle,
+                                  color: Colors.green, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Client details auto-filled from database. Update the client record in Client Management to change these values.',
+                                  style: TextStyle(
+                                      color: Colors.green.shade300,
+                                      fontSize: 12),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(height: 20),
-                        // Client Selection Dropdown (active clients only)
-                        _buildClientDropdown(),
-                        const SizedBox(height: 20),
-                        // Client Details Fields (auto-populated or manual)
-                        if (!_useManualEntry && _selectedClient != null) ...[
-                          if ((_formData['clientName']?.toString().isEmpty ??
-                                  true) ||
-                              (_formData['clientEmail']?.toString().isEmpty ??
-                                  true) ||
-                              (_formData['clientContactName']
-                                      ?.toString()
-                                      .isEmpty ??
-                                  true) ||
-                              (_formData['clientContactEmail']
-                                      ?.toString()
-                                      .isEmpty ??
-                                  true))
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                    color: Colors.orange.withOpacity(0.4)),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.warning_amber_rounded,
-                                      color: Colors.orange, size: 18),
-                                  const SizedBox(width: 8),
-                                  const Expanded(
-                                    child: Text(
-                                      'Some client details are missing. You can temporarily fill in the missing fields here (manual override).',
-                                      style: TextStyle(
-                                        color: Colors.orange,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                        if (_useManualEntry || _selectedClient == null) ...[
-                          Row(
-                            children: [
-                              Expanded(
-                                child: _buildTextField(
-                                  'Client Name',
-                                  'Company or contact name',
-                                  (value) => setState(
-                                      () => _formData['clientName'] = value),
-                                  Icons.business_outlined,
-                                  controller: _clientNameController,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: _buildTextField(
-                                  'Client Email',
-                                  'client@company.com',
-                                  (value) => setState(() {
-                                    _formData['clientEmail'] = value;
-                                    if ((_formData['clientContactEmail']
-                                            ?.toString()
-                                            .isEmpty ??
-                                        true)) {
-                                      _formData['clientContactEmail'] = value;
-                                    }
-                                  }),
-                                  Icons.email_outlined,
-                                  keyboardType: TextInputType.emailAddress,
-                                  controller: _clientEmailController,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ] else ...[
-                          // When a client is selected, keep populated fields read-only
-                          // but allow manual override for any missing core fields.
-                          Row(
-                            children: [
-                              Expanded(
-                                child: (_formData['clientName']
-                                            ?.toString()
-                                            .isEmpty ??
-                                        true)
-                                    ? _buildTextField(
-                                        'Client Name',
-                                        'Company or contact name',
-                                        (value) => setState(() =>
-                                            _formData['clientName'] = value),
-                                        Icons.business_outlined,
-                                        controller: _clientNameController,
-                                      )
-                                    : _buildReadOnlyField(
-                                        'Client Name',
-                                        _formData['clientName']?.toString() ??
-                                            '',
-                                        Icons.business_outlined,
-                                      ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: (_formData['clientEmail']
-                                            ?.toString()
-                                            .isEmpty ??
-                                        true)
-                                    ? _buildTextField(
-                                        'Client Email',
-                                        'client@company.com',
-                                        (value) => setState(() {
-                                          _formData['clientEmail'] = value;
-                                          if ((_formData['clientContactEmail']
-                                                  ?.toString()
-                                                  .isEmpty ??
-                                              true)) {
-                                            _formData['clientContactEmail'] =
-                                                value;
-                                          }
-                                        }),
-                                        Icons.email_outlined,
-                                        keyboardType:
-                                            TextInputType.emailAddress,
-                                        controller: _clientEmailController,
-                                      )
-                                    : _buildReadOnlyField(
-                                        'Client Email',
-                                        _formData['clientEmail']?.toString() ??
-                                            '',
-                                        Icons.email_outlined,
-                                      ),
-                              ),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(height: 20),
-                        if (_useManualEntry ||
-                            _selectedClient == null ||
-                            (_formData['clientContactMobile']
+                        const SizedBox(height: 12),
+                        if ((_formData['clientName']?.toString().isEmpty ??
+                                true) ||
+                            (_formData['clientEmail']?.toString().isEmpty ??
+                                true) ||
+                            (_formData['clientContactName']
+                                    ?.toString()
+                                    .isEmpty ??
+                                true) ||
+                            (_formData['clientContactEmail']
                                     ?.toString()
                                     .isEmpty ??
                                 true))
-                          _buildTextField(
-                            'Client Contact Mobile',
-                            'Mobile number',
-                            (value) => setState(
-                                () => _formData['clientContactMobile'] = value),
-                            Icons.phone_iphone,
-                            keyboardType: TextInputType.phone,
-                            controller: _clientContactMobileController,
-                          )
-                        else
-                          _buildReadOnlyField(
-                            'Client Contact Mobile',
-                            _formData['clientContactMobile']?.toString() ?? '',
-                            Icons.phone_iphone,
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: Colors.orange.withOpacity(0.4)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning_amber_rounded,
+                                    color: Colors.orange, size: 18),
+                                const SizedBox(width: 8),
+                                const Expanded(
+                                  child: Text(
+                                    'Some client details are missing. You can temporarily fill in the missing fields here (manual override).',
+                                    style: TextStyle(
+                                      color: Colors.orange,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        const SizedBox(height: 20),
-                        if (_useManualEntry ||
-                            _selectedClient == null ||
-                            (_formData['clientHolding']?.toString().isEmpty ??
-                                true))
-                          _buildTextField(
-                            'Client Holding / Group',
-                            'Parent company or group',
-                            (value) => setState(
-                                () => _formData['clientHolding'] = value),
-                            Icons.account_tree_outlined,
-                            controller: _clientHoldingController,
-                          )
-                        else
-                          _buildReadOnlyField(
-                            'Client Holding / Group',
-                            _formData['clientHolding']?.toString() ?? '',
-                            Icons.account_tree_outlined,
-                          ),
-                        const SizedBox(height: 20),
-                        if (_useManualEntry ||
-                            _selectedClient == null ||
-                            (_formData['clientAddress']?.toString().isEmpty ??
-                                true))
-                          _buildTextField(
-                            'Client Address',
-                            'Physical or postal address',
-                            (value) => setState(
-                                () => _formData['clientAddress'] = value),
-                            Icons.location_on_outlined,
-                            controller: _clientAddressController,
-                          )
-                        else
-                          _buildReadOnlyField(
-                            'Client Address',
-                            _formData['clientAddress']?.toString() ?? '',
-                            Icons.location_on_outlined,
-                          ),
-                        const SizedBox(height: 20), // Add this line
                       ],
-                    ),
+                      if (_useManualEntry || _selectedClient == null) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Name',
+                                'Company or contact name',
+                                (value) => setState(
+                                    () => _formData['clientName'] = value),
+                                Icons.business_outlined,
+                                controller: clientNameController,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildTextField(
+                                'Client Email',
+                                'client@company.com',
+                                (value) => setState(() {
+                                  _formData['clientEmail'] = value;
+                                  if ((_formData['clientContactEmail']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)) {
+                                    _formData['clientContactEmail'] = value;
+                                  }
+                                }),
+                                Icons.email_outlined,
+                                keyboardType: TextInputType.emailAddress,
+                                controller: clientEmailController,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        // When a client is selected, keep populated fields read-only
+                        // but allow manual override for any missing core fields.
+                        Row(
+                          children: [
+                            Expanded(
+                              child: (_formData['clientName']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)
+                                  ? _buildTextField(
+                                      'Client Name',
+                                      'Company or contact name',
+                                      (value) => setState(() =>
+                                          _formData['clientName'] = value),
+                                      Icons.business_outlined,
+                                      controller: clientNameController,
+                                    )
+                                  : _buildReadOnlyField(
+                                      'Client Name',
+                                      _formData['clientName']?.toString() ?? '',
+                                      Icons.business_outlined,
+                                    ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: (_formData['clientEmail']
+                                          ?.toString()
+                                          .isEmpty ??
+                                      true)
+                                  ? _buildTextField(
+                                      'Client Email',
+                                      'client@company.com',
+                                      (value) => setState(() {
+                                        _formData['clientEmail'] = value;
+                                        if ((_formData['clientContactEmail']
+                                                ?.toString()
+                                                .isEmpty ??
+                                            true)) {
+                                          _formData['clientContactEmail'] =
+                                              value;
+                                        }
+                                      }),
+                                      Icons.email_outlined,
+                                      keyboardType: TextInputType.emailAddress,
+                                      controller: clientEmailController,
+                                    )
+                                  : _buildReadOnlyField(
+                                      'Client Email',
+                                      _formData['clientEmail']?.toString() ??
+                                          '',
+                                      Icons.email_outlined,
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientHolding']?.toString().isEmpty ??
+                              true))
+                        _buildTextField(
+                          'Client Holding / Group',
+                          'Parent company or group',
+                          (value) => setState(
+                              () => _formData['clientHolding'] = value),
+                          Icons.account_tree_outlined,
+                          controller: clientHoldingController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Holding / Group',
+                          _formData['clientHolding']?.toString() ?? '',
+                          Icons.account_tree_outlined,
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientAddress']?.toString().isEmpty ??
+                              true))
+                        _buildTextField(
+                          'Client Address',
+                          'Physical or postal address',
+                          (value) => setState(
+                              () => _formData['clientAddress'] = value),
+                          Icons.location_on_outlined,
+                          controller: clientAddressController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Address',
+                          _formData['clientAddress']?.toString() ?? '',
+                          Icons.location_on_outlined,
+                        ),
+                      const SizedBox(height: 20),
+                      if (_useManualEntry ||
+                          _selectedClient == null ||
+                          (_formData['clientContactMobile']
+                                  ?.toString()
+                                  .isEmpty ??
+                              true))
+                        _buildTextField(
+                          'Client Contact Mobile',
+                          'Mobile number',
+                          (value) => setState(
+                              () => _formData['clientContactMobile'] = value),
+                          Icons.phone_iphone,
+                          keyboardType: TextInputType.phone,
+                          controller: clientContactMobileController,
+                        )
+                      else
+                        _buildReadOnlyField(
+                          'Client Contact Mobile',
+                          _formData['clientContactMobile']?.toString() ?? '',
+                          Icons.phone_iphone,
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -2818,6 +3136,210 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     );
   }
 
+  Future<void> _generateSectionContent(
+    String moduleId,
+    String sectionName,
+    TextEditingController controller,
+  ) async {
+    try {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✨ Generating content...'),
+          duration: Duration(minutes: 5),
+        ),
+      );
+
+      final token = AuthService.token;
+      if (token == null) throw Exception('Not authenticated');
+
+      final contextPayload = {
+        'proposal_title': _formData['proposalTitle'] ?? '',
+        'client_name': _formData['clientName'] ?? '',
+        'opportunity': _formData['opportunityName'] ?? '',
+        'project_type': _formData['projectType'] ?? '',
+      };
+
+      final result = await ApiService.generateAIContent(
+        token: token,
+        prompt:
+            'Generate content for the "$sectionName" section of a proposal about ${_formData['proposalTitle'] ?? ''}',
+        context: contextPayload,
+        sectionType: 'proposal_section',
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+
+      if (result == null || result['content'] == null) {
+        throw Exception('AI returned empty content');
+      }
+
+      controller.text = (result['content'] as String).trim();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Content generated'),
+          backgroundColor: Color(0xFF2ECC71),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  Future<void> _improveSectionContent(
+    String moduleId,
+    String sectionName,
+    TextEditingController controller,
+  ) async {
+    try {
+      if (controller.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please add content before improving'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  Color(0xFF9C27B0),
+                ),
+              ),
+              SizedBox(height: 16),
+              Text('Improving content...'),
+            ],
+          ),
+        ),
+      );
+
+      final token = AuthService.token;
+      if (token == null) throw Exception('Not authenticated');
+
+      final result = await ApiService.improveContent(
+        token: token,
+        content: controller.text,
+        sectionType: 'proposal_section',
+      );
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // close loading dialog
+
+      if (result == null || result['improved_version'] == null) {
+        throw Exception('Failed to improve content');
+      }
+
+      final improvedText = result['improved_version'] as String;
+      final summary = result['summary'] as String? ?? '';
+
+      final approved = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Improved Content'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (summary.isNotEmpty) ...[
+                  const Text(
+                    'Changes:',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    summary,
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  SizedBox(height: 16),
+                  Divider(),
+                  SizedBox(height: 16),
+                ],
+                const Text(
+                  'Improved Text:',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    improvedText,
+                    style: const TextStyle(fontSize: 12, height: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF9C27B0),
+              ),
+              child: const Text('Apply'),
+            ),
+          ],
+        ),
+      );
+
+      if (approved == true) {
+        controller.text = improvedText;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Content improved'),
+              backgroundColor: Color(0xFF2ECC71),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
   Widget _buildTextField(
     String label,
     String hint,
@@ -2960,7 +3482,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         Directionality(
           textDirection: TextDirection.ltr,
           child: DropdownButtonFormField<Map<String, dynamic>>(
-            value: _selectedClient,
+            initialValue: _selectedClient,
             style: PremiumTheme.bodyMedium.copyWith(
               color: PremiumTheme.textPrimary,
             ),
@@ -3012,25 +3534,33 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 final email = client['email'] ?? '';
                 return DropdownMenuItem<Map<String, dynamic>>(
                   value: client,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        name,
-                        style: PremiumTheme.bodyMedium.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      if (email.isNotEmpty)
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 40),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
                         Text(
-                          email,
+                          name,
                           style: PremiumTheme.bodyMedium.copyWith(
-                            color: PremiumTheme.textSecondary,
+                            fontWeight: FontWeight.w600,
                             fontSize: 12,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                    ],
+                        if (email.isNotEmpty)
+                          Text(
+                            email,
+                            style: PremiumTheme.bodyMedium.copyWith(
+                              color: PremiumTheme.textSecondary,
+                              fontSize: 10,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
                   ),
                 );
               }),
@@ -3150,7 +3680,13 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     final status = _governanceResults['status'] ?? 'PENDING';
     final score = _governanceResults['score'] ?? 0;
     final checks = _governanceResults['checks'] ?? [];
-    final issues = List.from(_governanceResults['issues'] ?? const []);
+    final rawIssues = List.from(_governanceResults['issues'] ?? const []);
+    // Governance step should NOT show the full AI recommendations list.
+    // Keep only actual issues here; recommendations are shown in Risk Assessment.
+    final issues = rawIssues.where((raw) {
+      if (raw is! Map<String, dynamic>) return true;
+      return (raw['type']?.toString() ?? '') != 'recommendation';
+    }).toList();
     final passed = status == 'Ready';
 
     Color statusColor = PremiumTheme.success;
@@ -3292,11 +3828,11 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             },
           ),
         ],
-        // Issues/Recommendations (Compact)
+        // Issues (Compact)
         if (issues.isNotEmpty) ...[
           const SizedBox(height: 12),
           Text(
-            'Issues & AI Recommendations',
+            'Issues',
             style: PremiumTheme.bodyMedium.copyWith(
               fontWeight: FontWeight.w600,
             ),
@@ -3410,7 +3946,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                 if (!canAutoAddModule) return;
                                 final targetSectionId = sectionId;
                                 _ensureModuleSelected(targetSectionId);
-                                await _openContentLibraryAndInsert(targetSectionId);
+                                await _openContentLibraryAndInsert(
+                                    targetSectionId);
                               },
                               child: const Text('Add module'),
                             ),
@@ -3491,18 +4028,34 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       );
     }
 
-    final status = _riskAssessment['status'] ?? 'PASS';
-    final riskLevel = status; // Map Risk Gate status to UI display
-    final riskScore = _riskAssessment['risk_score'] ?? 0;
-    final risks = _riskAssessment['risks'] ?? [];
-    final recommendations = _riskAssessment['recommendations'] ?? [];
+    final riskLevel =
+        _riskAssessment["risk_level"]?.toString().toUpperCase() ?? "UNKNOWN";
+    final riskScore = (_riskAssessment["risk_score"] as num?)?.toInt() ?? 0;
     final issues = List<Map<String, dynamic>>.from(
-      _riskAssessment['issues'] ?? const [],
+      _riskAssessment["issues"] ?? const [],
     );
+    final recommendations = List<String>.from(
+      _riskAssessment["recommendations"] ?? const [],
+    );
+    final canRelease = _riskAssessment["can_release"] ?? false;
+    final totalIssues = _riskAssessment["total_issues"] ?? 0;
+    final priorityBreakdown = Map<String, int>.from(
+      _riskAssessment["priority_breakdown"] ?? const {},
+    );
+    final summary = (_riskAssessment["summary"] ?? '').toString();
+    final isBlocked = riskLevel == "BLOCK" || canRelease == false;
+    final status = riskLevel;
 
-    Color riskColor = PremiumTheme.success;
-    if (riskLevel == 'REVIEW') riskColor = Colors.orange;
-    if (riskLevel == 'BLOCK') riskColor = PremiumTheme.error;
+    Color riskColor;
+    if (riskLevel == "BLOCK" ||
+        riskLevel == "CRITICAL" ||
+        riskLevel == "HIGH") {
+      riskColor = PremiumTheme.error;
+    } else if (riskLevel == "REVIEW" || riskLevel == "MEDIUM") {
+      riskColor = Colors.orange;
+    } else {
+      riskColor = PremiumTheme.success;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -3514,7 +4067,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: riskColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(999),
@@ -3537,15 +4091,25 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    'Critical: ${_countIssuesByPriority(issues, {'critical', 'high'})} · '
-                    'Warning: ${_countIssuesByPriority(issues, {'warning', 'medium'})} · '
-                    'Info: ${_countIssuesByPriority(issues, {'info', 'low'})}',
+                    'Critical: ${priorityBreakdown['critical'] ?? 0} · '
+                    'High: ${priorityBreakdown['high'] ?? 0} · '
+                    'Medium: ${priorityBreakdown['medium'] ?? 0} · '
+                    'Low: ${priorityBreakdown['low'] ?? 0}',
                     style: PremiumTheme.bodyMedium.copyWith(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
+                TextButton.icon(
+                  onPressed: _runRiskAssessment,
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Re-run Risk Gate'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: PremiumTheme.teal,
+                  ),
+                ),
+                const SizedBox(width: 8),
                 OutlinedButton(
                   onPressed: () => _openIssuesReviewSheet(issues),
                   child: const Text('Review'),
@@ -3570,7 +4134,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      Icons.warning_amber_rounded,
+                      isBlocked ? Icons.block : Icons.warning_amber_rounded,
                       color: riskColor,
                       size: 32,
                     ),
@@ -3581,50 +4145,136 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Risk Level: $riskLevel',
+                          'Risk Level: ${status.toString().toUpperCase()}',
                           style: PremiumTheme.titleMedium.copyWith(
                             color: riskColor,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Risk Score: ${riskScore.toStringAsFixed(0)}/100',
+                          'Risk Score: ${riskScore.toStringAsFixed(0)}%',
                           style: PremiumTheme.bodyMedium,
                         ),
                       ],
                     ),
                   ),
+                  if (_riskAssessment.isNotEmpty)
+                    TextButton.icon(
+                      onPressed: _isLoading ? null : _runRiskAssessment,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Re-run Risk Gate'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: PremiumTheme.teal,
+                      ),
+                    ),
                 ],
               ),
+              if (summary.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Risk Summary',
+                        style: PremiumTheme.bodyMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        summary,
+                        style: PremiumTheme.bodyMedium,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),
-        const SizedBox(height: 16),
+
+        if (recommendations.isNotEmpty) ...[
+          Text(
+            'AI Recommendations',
+            style: PremiumTheme.bodyLarge.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 12),
+          GlassContainer(
+            borderRadius: 16,
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: recommendations
+                  .where((r) => r.trim().isNotEmpty)
+                  .map<Widget>(
+                    (r) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.lightbulb_outline,
+                            size: 18,
+                            color: riskColor,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              r,
+                              style: PremiumTheme.bodyMedium,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
         if (issues.isNotEmpty) ...[
           Text(
-            'Flagged Issues',
+            'Detected Issues (${issues.length})',
             style: PremiumTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.w600,
             ),
           ),
           const SizedBox(height: 12),
           ...issues.map<Widget>((issue) {
-            final title = issue['title']?.toString() ??
-                issue['section']?.toString() ??
-                'Issue';
+            final title = issue["title"]?.toString() ??
+                issue["section"]?.toString() ??
+                "Issue";
+            final section = issue["section"]?.toString() ?? "";
             final description = issue['description']?.toString() ?? '';
-            final action = issue['recommendation']?.toString() ?? '';
+            final action = issue["recommendation"]?.toString() ?? "";
+            final category = issue["category"]?.toString() ?? "";
+            final type = category;
             final severity = issue['severity']?.toString().toLowerCase() ?? '';
 
-            final kbTitle = kbCitations.isNotEmpty
-                ? (kbCitations.first['title']?.toString() ?? '')
-                : '';
+            // KB Citations are now part of the issue itself if available
+            final kbTitle = issue['kb_citation']?.toString() ?? '';
 
             Color iconColor = PremiumTheme.info;
             if (severity == 'critical' || severity == 'high') {
               iconColor = PremiumTheme.error;
             } else if (severity == 'medium') {
               iconColor = Colors.orange;
+            }
+
+            IconData issueIcon = Icons.info_outline;
+            if (type == 'structural') {
+              issueIcon = Icons.build_outlined;
+            } else if (type == 'clause') {
+              issueIcon = Icons.gavel_outlined;
             }
 
             return Padding(
@@ -3638,10 +4288,17 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          Icons.flag_outlined,
-                          color: iconColor,
-                          size: 20,
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: iconColor.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(
+                            issueIcon,
+                            color: iconColor,
+                            size: 20,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -3654,6 +4311,15 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
+                              if (section.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  section,
+                                  style: PremiumTheme.bodyMedium.copyWith(
+                                    color: PremiumTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
                               if (description.isNotEmpty) ...[
                                 const SizedBox(height: 6),
                                 Text(
@@ -3661,142 +4327,27 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                   style: PremiumTheme.bodyMedium,
                                 ),
                               ],
-                              if (action.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Text(
-                                  'Recommendation:',
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  action,
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    color: PremiumTheme.textSecondary,
-                                  ),
-                                ),
-                              ],
-                              if (kbTitle.isNotEmpty) ...[
-                                const SizedBox(height: 10),
-                                Text(
-                                  'KB citation:',
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  kbTitle,
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    color: PremiumTheme.textSecondary,
-                                  ),
-                                ),
-                              ],
                             ],
                           ),
                         ),
-                        if (action.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          IconButton(
-                            tooltip: 'Copy fix',
-                            onPressed: () async {
-                              await Clipboard.setData(
-                                ClipboardData(text: action),
-                              );
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Fix copied'),
-                                  ),
-                                );
-                              }
-                            },
-                            icon: const Icon(Icons.copy, size: 18),
-                          ),
-                        ],
                       ],
                     ),
                   ],
                 ),
               ),
             );
-          }),
-          const SizedBox(height: 4),
-        ],
-        // KB Citations
-        if (kbCitations.isNotEmpty) ...[
-          Text(
-            'KB Citations',
-            style: PremiumTheme.bodyLarge.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...kbCitations.map<Widget>((citation) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: GlassContainer(
-                  borderRadius: 16,
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.library_books_outlined,
-                            color: PremiumTheme.info,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  citation['title']?.toString() ?? 'KB Clause',
-                                  style: PremiumTheme.bodyMedium.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Category: ${citation['category']?.toString() ?? ''}',
-                                  style: PremiumTheme.labelMedium.copyWith(
-                                    color: PremiumTheme.textSecondary,
-                                  ),
-                                ),
-                                if (citation['recommended_text']
-                                        ?.toString()
-                                        .isNotEmpty ==
-                                    true) ...[
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Recommended:',
-                                    style: PremiumTheme.labelMedium.copyWith(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    citation['recommended_text'],
-                                    style: PremiumTheme.bodyMedium,
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              )),
-          const SizedBox(height: 4),
+          }).toList(),
         ],
       ],
     );
+  }
+
+  String _formatSectionTitle(String section) {
+    return section
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
   }
 
   // Internal Approval Builder
@@ -3822,12 +4373,12 @@ class _ProposalWizardPageState extends State<ProposalWizard>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Submit for Internal Approval',
+                'Send to Finance',
                 style: PremiumTheme.titleMedium,
               ),
               const SizedBox(height: 16),
               Text(
-                'Before submitting, ensure:',
+                'Before sending to Finance, ensure:',
                 style: PremiumTheme.bodyMedium.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
@@ -3899,7 +4450,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          'Approved internally',
+                          'Sent to Finance for review',
                           style: PremiumTheme.bodyMedium.copyWith(
                             color: PremiumTheme.success,
                             fontWeight: FontWeight.w600,
@@ -3911,9 +4462,9 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                 )
               else
                 ElevatedButton.icon(
-                  onPressed: _submitForInternalApproval,
-                  icon: const Icon(Icons.send),
-                  label: const Text('Submit for Approval'),
+                  onPressed: _submitToFinance,
+                  icon: const Icon(Icons.account_balance),
+                  label: const Text('Send to Finance'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: PremiumTheme.teal,
                     foregroundColor: Colors.white,
@@ -3998,26 +4549,106 @@ class _ProposalWizardPageState extends State<ProposalWizard>
               ? _formData['templateId'].toString()
               : null,
         );
-        final createdId = created?['id']?.toString();
-        if (createdId == null || createdId.isEmpty) {
+        final rawId = created?['id'];
+        final createdId = rawId is int
+            ? rawId.toString()
+            : (rawId is num ? rawId.toInt().toString() : rawId?.toString());
+        final createdPid = createdId != null && createdId.isNotEmpty
+            ? int.tryParse(createdId.trim())
+            : null;
+        if (createdPid == null || createdPid <= 0) {
           throw Exception('Failed to create proposal');
         }
-        _proposalId = createdId;
+        _proposalId = createdPid.toString();
       }
 
+      final proposalData = _buildProposalDataForAI();
+      final payloadPid = int.tryParse(proposalData['proposal_id']?.toString() ?? '');
+      if (payloadPid == null || payloadPid <= 0) {
+        setState(() => _isLoading = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Proposal ID is missing or invalid. Save the proposal and try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      proposalData['proposal_id'] = payloadPid;
+      if (proposalData['id'] != null && int.tryParse(proposalData['id'].toString()) == null) {
+        proposalData.remove('id');
+      }
       final analysis =
-          await AIAnalysisService.analyzeProposalRisks(_proposalId!.toString());
+          await AIAnalysisService.analyzeProposalRisks(proposalData);
+
+      // Backend may return status (PASS/REVIEW/BLOCK) or risk_level; support both
+      String riskLevel =
+          analysis['risk_level']?.toString().toUpperCase().trim() ??
+          (analysis['status']?.toString().toUpperCase().trim() == 'PASS'
+              ? 'PASS'
+              : analysis['status']?.toString().toUpperCase().trim() == 'BLOCK'
+                  ? 'BLOCK'
+                  : 'REVIEW');
+      if (riskLevel.isEmpty) riskLevel = 'REVIEW';
+      int riskScore = (analysis['risk_score'] as num?)?.toInt() ?? 0;
+      final issues =
+          List<Map<String, dynamic>>.from(analysis['issues'] ?? const []);
+      final recommendations =
+          List<String>.from(analysis['recommendations'] ?? const []);
+      final bool canRelease = analysis['can_release'] ?? (riskLevel == 'PASS');
+      final int totalIssues = analysis['total_issues'] ?? issues.length;
+      final Map<String, int> priorityBreakdown =
+          Map<String, int>.from(analysis['priority_breakdown'] ?? const {});
+
+      // HF can return issues=[] and risk_score=0 while still flagging missing
+      // sections/clauses in recommendations. Derive a meaningful display.
+      if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+
+        final missingSections = missingSectionsMatch != null
+            ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
+            : 0;
+        final clauseIssues = clauseIssuesMatch != null
+            ? int.tryParse(clauseIssuesMatch.group(1) ?? '') ?? 0
+            : 0;
+
+        final derivedScore =
+            ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
+        riskScore = derivedScore;
+
+        if (riskLevel == 'LOW' || riskLevel == 'UNKNOWN') {
+          riskLevel = missingSections > 0 ? 'MEDIUM' : 'REVIEW';
+        }
+      }
+
+      final inferenceFailed = analysis['inference_status'] == 'failed';
 
       setState(() {
-        _riskAssessment = {
-          'risk_level': riskLevel,
-          'risk_score': displayScore,
-          'risks': risks,
-          'recommendations': recommendations,
-          'ai_status': analysis['status'] ?? 'Ready',
-          'ai_riskScore': rawRiskScore,
-          'issues': issues,
-        };
+        // SAFEGUARD: Do not overwrite a previous successful assessment when
+        // inference fails. Only replace stored results if this run is not a
+        // failure, or if we don't have any stored result yet.
+        if (!inferenceFailed || _riskAssessment.isEmpty) {
+          _riskAssessment = {
+            'risk_level': riskLevel,
+            'risk_score': riskScore,
+            'issues': issues,
+            'recommendations': recommendations,
+            'can_release': canRelease,
+            'total_issues': totalIssues,
+            'priority_breakdown': priorityBreakdown,
+            if (analysis['run_id'] != null) 'run_id': analysis['run_id'],
+            if (analysis['summary'] != null) 'summary': analysis['summary'],
+            if (analysis['inference_status'] != null)
+              'inference_status': analysis['inference_status'],
+          };
+        }
         _isLoading = false;
       });
     } catch (e) {
@@ -4034,11 +4665,17 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     final moduleContents =
         Map<String, String>.from(_formData['moduleContents'] ?? {});
 
+    final proposalIdInt = int.tryParse(_proposalId?.toString() ?? '');
     final data = <String, dynamic>{
       'id': _proposalId ?? 'draft',
+      if (proposalIdInt != null && proposalIdInt > 0) 'proposal_id': proposalIdInt,
       'title': _formData['proposalTitle']?.toString().isNotEmpty == true
           ? _formData['proposalTitle'].toString()
           : _formData['opportunityName']?.toString() ?? '',
+      'opportunityName': _formData['opportunityName'] ?? '',
+      'templateId': _formData['templateId'] ?? _formData['templateType'] ?? '',
+      'templateType':
+          _formData['templateType'] ?? _formData['templateId'] ?? '',
       'clientName': _formData['clientName'] ?? '',
       'clientEmail': _formData['clientEmail'] ?? '',
       'projectType': _formData['projectType'] ?? '',
@@ -4046,37 +4683,37 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       'timeline': _formData['timeline'] ?? '',
     };
 
-    for (final moduleId in selectedModules) {
-      data[moduleId] = moduleContents[moduleId] ?? '';
+    // IMPORTANT: proposals created from scratch can have content in moduleContents
+    // even if the user never explicitly selected modules.
+    final moduleIdsToSend = <String>{
+      ...selectedModules,
+      ...moduleContents.keys
+    };
+    for (final moduleId in moduleIdsToSend) {
+      final content = moduleContents[moduleId] ?? '';
+      if (content.trim().isEmpty) continue;
+      data[moduleId] = content;
     }
 
+    // Canonical keys for HF mapping on the backend. We only alias content,
+    // we don't attempt to split or transform it.
+    void setIfPresent(String moduleId, String key) {
+      final val = data[moduleId];
+      if (val is String && val.trim().isNotEmpty) {
+        data[key] = val;
+      }
+    }
+
+    setIfPresent('executive_summary', 'executive_summary');
+    // Legacy combined module id for Scope & Deliverables / Scope of Work.
+    // The backend will duplicate this content into both scope_of_work and
+    // deliverables when no dedicated Deliverables section exists.
+    setIfPresent('scope_deliverables', 'scope_deliverables');
+    setIfPresent('deliverables', 'deliverables');
+    setIfPresent('payment_terms', 'payment_terms');
+    setIfPresent('termination_clause', 'termination_clause');
+
     return data;
-  }
-
-  String _mergePlaceholders(String content) {
-    if (content.isEmpty) return content;
-
-    final Map<String, String> replacements = {
-      'project name': _formData['opportunityName']?.toString() ?? '',
-      'client name': _formData['clientName']?.toString() ?? '',
-      'client': _formData['clientName']?.toString() ?? '',
-      'client email': _formData['clientEmail']?.toString() ?? '',
-      'timeline': _formData['timeline']?.toString() ?? '',
-      'estimated value': _formData['estimatedValue']?.toString() ?? '',
-    };
-
-    return content.replaceAllMapped(
-      RegExp(r'\{\{\s*([^}]+?)\s*\}\}', caseSensitive: false),
-      (match) {
-        final key = match.group(1)!.toLowerCase().trim();
-        final normalized = key.replaceAll('_', ' ');
-        final value = replacements[normalized];
-        if (value == null || value.isEmpty) {
-          return match.group(0)!; // leave placeholder as-is
-        }
-        return value;
-      },
-    );
   }
 
   String _serializeWizardContentForBackend({required String title}) {
@@ -4134,43 +4771,160 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         AIAnalysisService.setAuthToken(app.authToken!);
       }
 
+      // Backend risk-gate requires proposal_id to be an integer (saved proposal).
+      // Create proposal if we don't have a valid id yet.
+      int? pid = int.tryParse(_proposalId?.toString().trim() ?? '');
+      if (pid == null || pid <= 0) {
+        final created = await app.createProposal(
+          (_formData['opportunityName']?.toString().isNotEmpty ?? false)
+              ? _formData['opportunityName'].toString()
+              : (_formData['proposalTitle']?.toString() ?? 'Untitled Proposal'),
+          (_formData['clientName']?.toString() ?? ''),
+          templateKey: _formData['templateId']?.toString().isNotEmpty == true
+              ? _formData['templateId'].toString()
+              : null,
+        );
+        final rawId = created?['id'];
+        final createdId = rawId is int
+            ? rawId.toString()
+            : (rawId is num
+                ? rawId.toInt().toString()
+                : rawId?.toString());
+        final createdPid = createdId != null && createdId.isNotEmpty
+            ? int.tryParse(createdId.trim())
+            : null;
+        if (createdPid == null || createdPid <= 0) {
+          setState(() => _isRunningGovernance = false);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Could not create proposal. Please try again.'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+          return;
+        }
+        setState(() => _proposalId = createdPid.toString());
+        pid = createdPid;
+      }
+
       final proposalData = _buildProposalDataForAI();
+      // Risk-gate backend requires proposal_id as integer; do not send non-integer id.
+      final payloadPid = int.tryParse(proposalData['proposal_id']?.toString() ?? '');
+      if (payloadPid == null || payloadPid <= 0) {
+        setState(() => _isRunningGovernance = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Proposal ID is missing or invalid. Save the proposal and try again.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+      proposalData['proposal_id'] = payloadPid;
+      if (proposalData['id'] != null && int.tryParse(proposalData['id'].toString()) == null) {
+        proposalData.remove('id');
+      }
 
       final analysis =
           await AIAnalysisService.analyzeProposalContent(proposalData);
 
-      final int rawRiskScore = (analysis['riskScore'] ?? 0) as int;
-      // Convert raw risk points into a readiness percentage (higher is better)
-      final int readinessScore = (100 - rawRiskScore).clamp(0, 100).toInt();
+      final String riskLevel =
+          analysis['risk_level']?.toString().toUpperCase() ?? 'UNKNOWN';
+      int riskScore = (analysis['risk_score'] as num?)?.toInt() ?? 0;
+      final recommendations =
+          List<String>.from(analysis['recommendations'] ?? const []);
+      final bool canRelease = analysis['can_release'] ?? false;
 
       final issues = List<Map<String, dynamic>>.from(
         analysis['issues'] ?? const [],
       );
 
+      // HF can return issues=[] and risk_score=0 while still flagging missing
+      // sections/clauses in recommendations. Derive meaningful governance score.
+      int missingSections = 0;
+      int clauseIssues = 0;
+      if (riskScore == 0 && issues.isEmpty && recommendations.isNotEmpty) {
+        final missingSectionsMatch =
+            RegExp(r'Add\s+(\d+)\s+missing\s+sections', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+        final clauseIssuesMatch =
+            RegExp(r'Fix\s+(\d+)\s+clause\s+issues', caseSensitive: false)
+                .firstMatch(recommendations.join(' '));
+
+        missingSections = missingSectionsMatch != null
+            ? int.tryParse(missingSectionsMatch.group(1) ?? '') ?? 0
+            : 0;
+        clauseIssues = clauseIssuesMatch != null
+            ? int.tryParse(clauseIssuesMatch.group(1) ?? '') ?? 0
+            : 0;
+
+        riskScore = ((missingSections * 10) + (clauseIssues * 5)).clamp(5, 100);
+      }
+
+      // Readiness score (higher is better) - MUST be based on the final riskScore
+      final int readinessScore = (100 - riskScore).clamp(0, 100).toInt();
+
+      // Treat recommendations as governance findings when issues list is empty
+      final derivedFindings = recommendations
+          .where((r) => r.trim().isNotEmpty)
+          .map<Map<String, dynamic>>((r) => {
+                'type': 'recommendation',
+                'title': r,
+                'label': r,
+                'description': r,
+                'priority': 'warning',
+              })
+          .toList();
+      final allFindings = [...issues, ...derivedFindings];
+
       // Derive simple checklist from AI issues
-      final checks = issues.map((issue) {
+      final checks = allFindings.map((issue) {
         final priority = issue['priority']?.toString() ?? 'info';
         final isRequired = priority == 'critical' ||
             priority == 'high' ||
             priority == 'warning';
-        final hasPassed =
-            (issue['type']?.toString() ?? '') != 'missing_section' &&
-                (issue['type']?.toString() ?? '') != 'incomplete_content';
+
+        // Recommendations and missing content should be treated as not passed
+        // until addressed.
+        final type = (issue['type']?.toString() ?? '').trim();
+        final hasPassed = type != 'missing_section' &&
+            type != 'incomplete_content' &&
+            type != 'recommendation';
+
+        final label = (issue['label']?.toString().trim().isNotEmpty ?? false)
+            ? issue['label']?.toString() ?? ''
+            : (issue['title']?.toString() ?? 'Issue');
 
         return {
           'id': issue['type']?.toString() ?? 'ai_issue',
-          'label': issue['title']?.toString() ?? 'Issue',
+          'label': label,
           'required': isRequired,
           'passed': hasPassed,
         };
       }).toList();
 
+      final bool hasActionableRecos =
+          recommendations.isNotEmpty || missingSections > 0 || clauseIssues > 0;
+      final String computedStatus = hasActionableRecos
+          ? 'At Risk'
+          : (canRelease
+              ? 'Ready'
+              : (riskLevel == 'HIGH' ||
+                      riskLevel == 'CRITICAL' ||
+                      riskLevel == 'BLOCK')
+                  ? 'Blocked'
+                  : 'At Risk');
+
       setState(() {
         _governanceResults = {
-          'status': analysis['status'] ?? 'PENDING',
+          'status': computedStatus,
           'score': readinessScore,
           'checks': checks,
-          'issues': issues,
+          'issues': allFindings,
         };
         _isRunningGovernance = false;
       });
@@ -4182,10 +4936,23 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     }
   }
 
-  Future<void> _submitForInternalApproval() async {
+  Future<void> _submitToFinance() async {
     setState(() => _isLoading = true);
 
     try {
+      // Check if Risk Gate has been run
+      if (_riskAssessment.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Risk Gate analysis must be completed before sending to Finance'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
       // Check if governance passed (AI Ready status)
       final governanceStatus =
           (_governanceResults['status'] as String?) ?? 'PENDING';
@@ -4194,7 +4961,7 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-                'Governance check must be Ready before submitting for approval'),
+                'Governance check must be Ready before sending to Finance'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -4202,27 +4969,41 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         return;
       }
 
-      // Simulate API call - replace with actual
-      await Future.delayed(const Duration(seconds: 1));
+      // Check Risk Gate blocking status
+      if (_isRiskGateBlockedWithoutOverride()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Cannot send to Finance: AI Risk Gate returned BLOCK and no override exists. Please go back to the AI Risk Gate step and submit an override to proceed.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Update proposal status to "Pending Finance Review"
+      final app = context.read<AppState>();
+      if (_proposalId != null) {
+        await app.updateProposalStatus(_proposalId!, 'Pending Finance Review');
+      }
 
       setState(() {
-        _isInternalApproved = true;
+        _isInternalApproved = true; // Keep this flag for UI state
         _isLoading = false;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Proposal submitted for internal approval'),
+          content: Text('Proposal sent to Finance for review'),
           backgroundColor: Colors.green,
         ),
       );
     } catch (e) {
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error submitting for approval: $e')),
+        SnackBar(content: Text('Error sending to Finance: $e')),
       );
     }
   }
-
-  
 }

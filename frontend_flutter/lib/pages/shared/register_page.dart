@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math' as math;
 import 'login_page.dart';
+import 'google_verify_email_pending_page.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -31,22 +32,17 @@ class _RegisterPageState extends State<RegisterPage>
   bool _passwordVisible = false;
   bool _confirmPasswordVisible = false;
   double _passwordStrength = 0.0;
-  Map<String, bool> _criteria = {
-    'minLength': false,
-    'uppercase': false,
-    'number': false,
-    'special': false,
-  };
 
   late final AnimationController _frameController;
   late final AnimationController _parallaxController;
   late final AnimationController _fadeInController;
 
   final List<String> _backgroundImages = [
-    'assets/images/Khonology Landing Page Animation Frame 1.jpg',
+    'assets/images/Background-Dark..png',
   ];
 
   int _currentFrameIndex = 0;
+  bool _framesPrecached = false;
 
   final List<String> _roles = ['Manager', 'Finance Manager', 'Admin'];
 
@@ -69,13 +65,28 @@ class _RegisterPageState extends State<RegisterPage>
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
 
-    _precacheFrames();
     _cycleBackgrounds();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // `precacheImage` depends on inherited widgets (e.g. MediaQuery), so it must
+    // not be called from `initState`.
+    if (_framesPrecached) return;
+    _framesPrecached = true;
+    _precacheFrames();
   }
 
   Future<void> _precacheFrames() async {
     for (final imagePath in _backgroundImages) {
-      await precacheImage(AssetImage(imagePath), context);
+      try {
+        await precacheImage(AssetImage(imagePath), context);
+      } catch (e) {
+        // Non-fatal: page can still render if precache fails.
+        // ignore: avoid_print
+        print('⚠️ Failed to precache image "$imagePath": $e');
+      }
     }
   }
 
@@ -117,12 +128,6 @@ class _RegisterPageState extends State<RegisterPage>
         .where((e) => e)
         .length;
     setState(() {
-      _criteria = {
-        'minLength': hasMinLength,
-        'uppercase': hasUppercase,
-        'number': hasNumber,
-        'special': hasSpecial,
-      };
       _passwordStrength = passed / 4.0;
     });
   }
@@ -134,6 +139,149 @@ class _RegisterPageState extends State<RegisterPage>
       return const Color(0xFFF59E0B); // Orange - Medium
     if (_passwordStrength > 0) return const Color(0xFFD72638); // Red - Weak
     return const Color(0xFF1A1A1A); // Dark - No password
+  }
+
+  /// Maps UI role to backend role string.
+  String _getBackendRole() {
+    if (_selectedRole == 'Finance Manager') return 'finance_manager';
+    if (_selectedRole == 'Admin') return 'admin';
+    return 'manager';
+  }
+
+  Future<void> _registerWithGoogle() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final UserCredential? firebaseCredential =
+          await FirebaseService.signInWithGoogle();
+
+      if (firebaseCredential == null || firebaseCredential.user == null) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Google sign-in was cancelled or failed.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final firebaseIdToken = await firebaseCredential.user!.getIdToken();
+      if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to get Firebase ID token.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final role = _getBackendRole();
+      final requestBody = {
+        'id_token': firebaseIdToken,
+        'role': role,
+      };
+
+      final response = await http.post(
+        Uri.parse('${AuthService.baseUrl}/api/firebase'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(requestBody),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        final body = json.decode(response.body);
+        final detail = body is Map
+            ? (body['detail'] ?? 'Backend registration failed')
+            : 'Backend registration failed';
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  detail is String ? detail : 'Backend registration failed'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final result = json.decode(response.body) as Map<String, dynamic>;
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      // Google sign-up requires email verification before full auth
+      if (result['verification_pending'] == true) {
+        final email = result['email'] as String? ?? '';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result['detail'] as String? ??
+                  'Please check your email and click the verification link.',
+            ),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => GoogleVerifyEmailPendingPage(email: email),
+          ),
+        );
+        return;
+      }
+
+      final userProfile = result['user'] as Map<String, dynamic>?;
+
+      if (userProfile != null) {
+        final appState = context.read<AppState>();
+        appState.authToken = firebaseIdToken;
+        appState.currentUser = userProfile;
+        AuthService.setUserData(userProfile, firebaseIdToken);
+
+        final roleService = context.read<RoleService>();
+        await roleService.initializeRoleFromUser(userProfile);
+        await appState.init();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Signed in with Google successfully.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Sign-in successful, but failed to get user profile. Please try again.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Google sign-in failed: ${e is Exception ? e.toString() : e}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _register() async {
@@ -148,14 +296,7 @@ class _RegisterPageState extends State<RegisterPage>
       final lastName = _lastNameController.text.trim();
       // Map role selection to backend role format
       String role;
-      if (_selectedRole == 'Finance Manager') {
-        // Use canonical backend role
-        role = 'finance_manager';
-      } else if (_selectedRole == 'Admin') {
-        role = 'admin';
-      } else {
-        role = 'manager'; // Default to manager
-      }
+      role = _getBackendRole();
       print('🔍 Selected role from UI: "$_selectedRole"');
       print('🔍 Mapped role for backend: "$role"');
 
@@ -299,39 +440,20 @@ class _RegisterPageState extends State<RegisterPage>
 
           await appState.init();
 
-          // Redirect based on user role using RoleService
-          final rawRole = userProfile['role']?.toString() ?? '';
-          final userRole = rawRole.toLowerCase().trim();
-          final currentRole = roleService.currentRole;
-
-          print('🔍 User role from backend: "$userRole"');
           print('🔍 Requested role: "$role"');
-          print('🔍 Frontend mapped role: $currentRole');
-
-          String dashboardRoute;
-
-          if (currentRole == UserRole.approver ||
-              currentRole == UserRole.admin) {
-            dashboardRoute = '/approver_dashboard';
-            print('✅ Routing to Admin/Approver Dashboard (from RoleService)');
-          } else if (currentRole == UserRole.finance) {
-            dashboardRoute = '/finance_dashboard';
-            print('✅ Routing to Finance Dashboard (from RoleService)');
-          } else {
-            dashboardRoute = '/creator_dashboard';
-            print('✅ Routing to Creator Dashboard (from RoleService)');
-          }
 
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Registration successful!'),
+              content: Text(
+                  'Registration successful! Please login with your new account.'),
               backgroundColor: Colors.green,
             ),
           );
 
+          // Redirect to login page after successful registration
           Navigator.pushNamedAndRemoveUntil(
             context,
-            dashboardRoute,
+            '/login',
             (route) => false,
           );
         } else {
@@ -383,39 +505,64 @@ class _RegisterPageState extends State<RegisterPage>
     final isMobile = size.width < 900;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: Stack(
-        fit: StackFit.expand,
         children: [
-          // Animated background
-          _buildBackgroundLayers(),
-
-          // Dark gradient overlay
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.black.withOpacity(0.5),
-                  Colors.black.withOpacity(0.7),
-                  Colors.black.withOpacity(0.6),
-                ],
+          // Background image with dark overlay
+          Positioned.fill(
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                Colors.black.withValues(alpha: 0.4),
+                BlendMode.darken,
               ),
+              child: _buildBackgroundLayers(),
             ),
           ),
 
-          // Floating shapes - desktop only
-          if (!isMobile) _buildFloatingShapes(),
+          // Main content with fixed header
+          Positioned.fill(
+            child: Column(
+              children: [
+                // FIXED HEADER SECTION (never scrolls)
+                const SizedBox(height: 48), // Top safe area/padding
+                Center(
+                  child: Image.asset(
+                    // LOGO - Fixed position
+                    'assets/images/2026.png',
+                    height: 160, // Fixed height
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Text(
+                        '✕ Khonology',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 80,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24), // Space after logo
 
-          // Floating registration card
-          Center(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 16 : 40,
-                vertical: 40,
-              ),
-              child: _buildRegistrationCard(isMobile),
+                // SCROLLABLE CONTENT SECTION
+                Expanded(
+                  // Takes remaining space
+                  child: SingleChildScrollView(
+                    // Scrollable area
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Register form content that scrolls
+                        _buildRegistrationCard(isMobile),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -449,7 +596,7 @@ class _RegisterPageState extends State<RegisterPage>
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Base background image
+        // Base background image (same as landing page)
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 1200),
           switchInCurve: Curves.easeInOut,
@@ -457,9 +604,16 @@ class _RegisterPageState extends State<RegisterPage>
           child: Image.asset(
             _backgroundImages[_currentFrameIndex],
             key: ValueKey<int>(_currentFrameIndex),
-            fit: BoxFit.cover,
+            fit: BoxFit.fill,
+            width: double.infinity,
+            height: double.infinity,
             errorBuilder: (context, error, stackTrace) {
-              return Container(color: Colors.black);
+              return Container(
+                color: const Color(0xFF000000),
+                child: const Center(
+                  child: Icon(Icons.error, color: Colors.white54, size: 48),
+                ),
+              );
             },
           ),
         ),
@@ -471,7 +625,7 @@ class _RegisterPageState extends State<RegisterPage>
             final darkness =
                 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+              color: Colors.black.withValues(alpha: darkness.clamp(0.0, 1.0)),
             );
           },
         ),
@@ -479,61 +633,19 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  Widget _buildFloatingShapes() {
-    return AnimatedBuilder(
-      animation: _parallaxController,
-      builder: (context, child) {
-        return Stack(
-          children: [
-            Positioned(
-              left: 120 +
-                  (math.sin(_parallaxController.value * 2 * math.pi) * 40),
-              top: 180 +
-                  (math.cos(_parallaxController.value * 2 * math.pi) * 30),
-              child: Transform.rotate(
-                angle: _parallaxController.value * 2 * math.pi,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
-                  size: const Size(70, 70),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 140 +
-                  (math.sin(_parallaxController.value * 2 * math.pi + 1.5) *
-                      50),
-              top: 220 +
-                  (math.cos(_parallaxController.value * 2 * math.pi + 1.5) *
-                      35),
-              child: Transform.rotate(
-                angle: -_parallaxController.value * 2 * math.pi * 0.8,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
-                  size: const Size(90, 90),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Widget _buildRegistrationCard(bool isMobile) {
     return Container(
       constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 500),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A).withOpacity(0.95),
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFE9293A).withOpacity(0.3),
+          color: const Color(0xFFE9293A).withValues(alpha: 0.3),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFE9293A).withOpacity(0.2),
+            color: const Color(0xFFE9293A).withValues(alpha: 0.2),
             blurRadius: 40,
             spreadRadius: 0,
           ),
@@ -546,34 +658,19 @@ class _RegisterPageState extends State<RegisterPage>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Logo with subtle breathing fade animation
+            // Create Your Account title
             Center(
-              child: FadeTransition(
-                opacity: Tween<double>(begin: 0.3, end: 1.0).animate(
-                  CurvedAnimation(
-                    parent: _fadeInController,
-                    curve: Curves.easeInOut,
-                  ),
-                ),
-                child: Image.asset(
-                  'assets/images/2026.png',
-                  height: 120,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Text(
-                      '✕ Khonology',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 56,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
+              child: const Text(
+                'CREATE YOUR ACCOUNT',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 32),
 
             // First & Last Name Row
             Row(
@@ -584,6 +681,10 @@ class _RegisterPageState extends State<RegisterPage>
                     label: 'First Name',
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Required' : null,
+                    onSubmitted: () {
+                      // Focus on last name field when first name is submitted
+                      FocusScope.of(context).nextFocus();
+                    },
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -593,6 +694,10 @@ class _RegisterPageState extends State<RegisterPage>
                     label: 'Last Name',
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Required' : null,
+                    onSubmitted: () {
+                      // Focus on email field when last name is submitted
+                      FocusScope.of(context).nextFocus();
+                    },
                   ),
                 ),
               ],
@@ -608,6 +713,10 @@ class _RegisterPageState extends State<RegisterPage>
                 if (v == null || v.isEmpty) return 'Email required';
                 if (!v.contains('@')) return 'Invalid email';
                 return null;
+              },
+              onSubmitted: () {
+                // Focus on password field when email is submitted
+                FocusScope.of(context).nextFocus();
               },
             ),
             const SizedBox(height: 12),
@@ -642,6 +751,10 @@ class _RegisterPageState extends State<RegisterPage>
                 }
                 return null;
               },
+              onSubmitted: () {
+                // Focus on confirm password field when password is submitted
+                FocusScope.of(context).nextFocus();
+              },
             ),
             const SizedBox(height: 12),
 
@@ -667,6 +780,12 @@ class _RegisterPageState extends State<RegisterPage>
                   return 'Passwords don\'t match';
                 return null;
               },
+              onSubmitted: () {
+                // Trigger registration when Enter is pressed in confirm password field
+                if (!_isLoading) {
+                  _register();
+                }
+              },
             ),
             const SizedBox(height: 20),
 
@@ -675,7 +794,7 @@ class _RegisterPageState extends State<RegisterPage>
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: const Color(0xFF2A2A2A),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(25),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -690,7 +809,7 @@ class _RegisterPageState extends State<RegisterPage>
                   ),
                   const SizedBox(height: 10),
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
+                    borderRadius: BorderRadius.circular(25),
                     child: LinearProgressIndicator(
                       value: _passwordStrength,
                       minHeight: 8,
@@ -708,7 +827,7 @@ class _RegisterPageState extends State<RegisterPage>
             // Register Button
             Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(25),
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -719,7 +838,7 @@ class _RegisterPageState extends State<RegisterPage>
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFE9293A).withOpacity(0.4),
+                    color: const Color(0xFFE9293A).withValues(alpha: 0.4),
                     blurRadius: 20,
                     spreadRadius: 2,
                   ),
@@ -733,7 +852,7 @@ class _RegisterPageState extends State<RegisterPage>
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(25),
                   ),
                   elevation: 0,
                 ),
@@ -747,7 +866,7 @@ class _RegisterPageState extends State<RegisterPage>
                         ),
                       )
                     : const Text(
-                        'Register',
+                        'REGISTER',
                         style: TextStyle(
                           fontFamily: 'Poppins',
                           fontSize: 16,
@@ -762,12 +881,40 @@ class _RegisterPageState extends State<RegisterPage>
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildSocialButton(Icons.g_mobiledata),
+                _buildSocialButton(
+                  'assets/images/Google_Icon.png',
+                  onPressed: _isLoading ? null : _registerWithGoogle,
+                ),
                 const SizedBox(width: 16),
-                _buildSocialButton(Icons.window),
+                _buildSocialButton('assets/images/mslogo.png'),
                 const SizedBox(width: 16),
-                _buildSocialButton(Icons.business),
+                _buildSocialButton('assets/images/github_icon_2.png'),
               ],
+            ),
+            const SizedBox(height: 24),
+
+            // Back button navigation
+            Center(
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  child: Image.asset(
+                    'assets/images/BackButton-Red.png',
+                    height: 24,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(
+                        Icons.arrow_back,
+                        color: Color(0xFFE9293A),
+                        size: 24,
+                      );
+                    },
+                  ),
+                ),
+              ),
             ),
             const SizedBox(height: 24),
 
@@ -778,7 +925,7 @@ class _RegisterPageState extends State<RegisterPage>
                 TextButton(
                   onPressed: () => Navigator.pushNamed(context, '/login'),
                   child: const Text(
-                    'Login',
+                    'LOGIN',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       color: Colors.white70,
@@ -787,11 +934,9 @@ class _RegisterPageState extends State<RegisterPage>
                   ),
                 ),
                 TextButton(
-                  onPressed: () {
-                    // TODO: Forgot password
-                  },
+                  onPressed: () => Navigator.pushNamed(context, '/login'),
                   child: const Text(
-                    'Forgot Password',
+                    'FORGOT PASSWORD',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       color: Color(0xFFE9293A),
@@ -815,6 +960,7 @@ class _RegisterPageState extends State<RegisterPage>
     void Function(String)? onChanged,
     String? Function(String?)? validator,
     Widget? suffixIcon,
+    VoidCallback? onSubmitted,
   }) {
     return TextFormField(
       controller: controller,
@@ -822,6 +968,7 @@ class _RegisterPageState extends State<RegisterPage>
       keyboardType: keyboardType,
       onChanged: onChanged,
       validator: validator,
+      onFieldSubmitted: (_) => onSubmitted?.call(),
       style: const TextStyle(
         fontFamily: 'Poppins',
         color: Colors.white,
@@ -837,23 +984,23 @@ class _RegisterPageState extends State<RegisterPage>
         filled: true,
         fillColor: const Color(0xFF2A2A2A),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Color(0xFFE9293A), width: 1),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
         contentPadding:
@@ -868,7 +1015,7 @@ class _RegisterPageState extends State<RegisterPage>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A2A),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(25),
       ),
       child: DropdownButtonFormField<String>(
         initialValue: _selectedRole,
@@ -904,7 +1051,7 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  Widget _buildSocialButton(IconData icon) {
+  Widget _buildSocialButton(String imagePath, {VoidCallback? onPressed}) {
     return Container(
       width: 48,
       height: 48,
@@ -913,10 +1060,20 @@ class _RegisterPageState extends State<RegisterPage>
         borderRadius: BorderRadius.circular(24),
       ),
       child: IconButton(
-        icon: Icon(icon, size: 28, color: Colors.black87),
-        onPressed: () {
-          // TODO: Social login
-        },
+        icon: Image.asset(
+          imagePath,
+          width: 24,
+          height: 24,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return const Icon(
+              Icons.error,
+              color: Colors.black54,
+              size: 24,
+            );
+          },
+        ),
+        onPressed: onPressed,
       ),
     );
   }

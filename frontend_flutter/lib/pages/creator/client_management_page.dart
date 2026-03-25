@@ -8,6 +8,7 @@ import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
 import '../../theme/premium_theme.dart';
 import '../../api.dart';
+import '../../widgets/app_side_nav.dart';
 import 'dart:ui';
 
 class ClientManagementPage extends StatefulWidget {
@@ -33,7 +34,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   void initState() {
     super.initState();
     _loadData();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRoute());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncRoute();
+      if (!mounted) return;
+      context.read<AppState>().setCurrentNavLabel('Client Management');
+    });
   }
 
   bool _canManageInvitations() {
@@ -524,231 +529,102 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     return Scaffold(
       body: Container(
         color: Colors.transparent,
-        child: Column(
+        child: Row(
           children: [
-            // Header
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withOpacity(0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Client Management',
-                      style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                    ),
-                    Row(
-                      children: [
-                        ClipOval(
-                          child: Image.asset(
-                            'assets/images/User_Profile.png',
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _getUserName(user),
-                              style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                            Text(
-                              userRole.toString(),
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 12),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          icon:
-                              const Icon(Icons.more_vert, color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'logout') {
-                              app.logout();
-                              AuthService.logout();
-                              Navigator.pushNamed(context, '/login');
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => const [
-                            PopupMenuItem<String>(
-                              value: 'logout',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+            Consumer<AppState>(
+              builder: (context, app, _) {
+                final user = AuthService.currentUser ?? app.currentUser;
+                final role = (user?['role'] ?? '').toString().toLowerCase().trim();
+                final isAdmin = role == 'admin' || role == 'ceo';
+                return AppSideNav(
+                  isCollapsed: app.isSidebarCollapsed,
+                  currentLabel: app.currentNavLabel,
+                  isAdmin: isAdmin,
+                  onToggle: app.toggleSidebar,
+                  onSelect: (label) {
+                    app.setCurrentNavLabel(label);
+                    _navigateToPage(context, label);
+                  },
+                );
+              },
             ),
-
-            // Main Content with Sidebar
             Expanded(
-              child: Row(
+              child: Column(
                 children: [
-                  // Collapsible Sidebar
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
+                  Container(
+                    height: 70,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
-                          Colors.black.withOpacity(0.3),
-                          Colors.black.withOpacity(0.2),
+                          Colors.black.withValues(alpha: 0.3),
+                          Colors.transparent,
                         ],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
                       ),
-                      border: Border(
-                        right: BorderSide(
-                          color: PremiumTheme.glassWhiteBorder,
-                          width: 1,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ClipOval(
+                              child: Image.asset(
+                                'assets/images/User_Profile.png',
+                                width: 48,
+                                height: 48,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _getUserName(user),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                Text(
+                                  userRole.toString(),
+                                  style: const TextStyle(
+                                      color: Colors.white70, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 10),
+                            PopupMenuButton<String>(
+                              icon: const Icon(Icons.more_vert, color: Colors.white),
+                              onSelected: (value) {
+                                if (value == 'logout') {
+                                  app.logout();
+                                  AuthService.logout();
+                                  Navigator.pushNamed(context, '/login');
+                                }
+                              },
+                              itemBuilder: (BuildContext context) => const [
+                                PopupMenuItem<String>(
+                                  value: 'logout',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.logout),
+                                      SizedBox(width: 8),
+                                      Text('Logout'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          // Toggle button
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(12),
-                              child: Container(
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: PremiumTheme.glassWhite,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: PremiumTheme.glassWhiteBorder,
-                                    width: 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 12),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal:
-                                              _isSidebarCollapsed ? 0 : 8),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          // Navigation items
-                          _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              _currentPage == 'Dashboard',
-                              context),
-                          if (!_isAdminUser()) // Only show for non-admin users
-                            _buildNavItem(
-                                'My Proposals',
-                                'assets/images/My_Proposals.png',
-                                _currentPage == 'My Proposals',
-                                context),
-                          _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Templates',
-                              context),
-                          _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              _currentPage == 'Content Library',
-                              context),
-                          _buildNavItem(
-                              'Client Management',
-                              'assets/images/collaborations.png',
-                              _currentPage == 'Client Management',
-                              context),
-                          _buildNavItem(
-                              'Approved Proposals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              _currentPage == 'Approved Proposals',
-                              context),
-                          if (!_isAdminUser()) // Only show for non-admin users
-                            _buildNavItem(
-                                'Analytics (My Pipeline)',
-                                'assets/images/analytics.png',
-                                _currentPage == 'Analytics (My Pipeline)',
-                                context),
-
-                          const SizedBox(height: 20),
-
-                          // Divider
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-
-                          const SizedBox(height: 12),
-
-                          // Logout button
-                          _buildNavItem(
-                              'Logout',
-                              'assets/images/Logout_KhonoBuzz.png',
-                              false,
-                              context),
-                          const SizedBox(height: 20),
-                        ],
-                      ),
-                    ),
                   ),
-
-                  // Content Area
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.all(20),
@@ -784,11 +660,10 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                       ),
                     ),
                   ),
+                  const Footer(),
                 ],
               ),
             ),
-
-            const Footer(),
           ],
         ),
       ),
@@ -1589,6 +1464,26 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
               ),
             ),
           ),
+          if (_canManageInvitations())
+            SizedBox(
+              width: 80,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.visibility, size: 18),
+                    color: PremiumTheme.cyan,
+                    onPressed: () => _showClientDetails(client),
+                    tooltip: 'View Details',
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.more_vert, size: 18),
+                    color: Colors.white,
+                    onPressed: () => _showClientMenu(client),
+                    tooltip: 'More Options',
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -1868,6 +1763,37 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     _showSnackBar('Client menu coming soon!');
   }
 
+  void _showClientDetails(Map<String, dynamic> client) {
+    final company = (client['company_name'] ?? client['name'] ?? 'Client')
+        .toString()
+        .trim();
+    final email = (client['email'] ?? '').toString().trim();
+    final contact = (client['contact_person'] ?? client['contact_name'] ?? '')
+        .toString()
+        .trim();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(company.isNotEmpty ? company : 'Client Details'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (email.isNotEmpty) Text('Email: $email'),
+            if (contact.isNotEmpty) Text('Contact: $contact'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<bool> _confirmAction({
     required String title,
     required String message,
@@ -1883,7 +1809,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: PremiumTheme.error.withOpacity(0.2),
+                color: PremiumTheme.error.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.delete_forever, color: Colors.white),

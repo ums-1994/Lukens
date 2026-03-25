@@ -3,18 +3,20 @@ import 'dart:convert';
 import 'dart:js_interop';
 import 'dart:math' as math;
 import 'dart:ui';
-
-import 'package:fl_chart/fl_chart.dart';
-import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
 import 'package:web/web.dart' as web;
 
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:http/http.dart' as http;
 import '../../api.dart';
-import '../../services/asset_service.dart';
 import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
+import '../../widgets/app_side_nav.dart';
+import '../creator/widgets/completion_rates_widget.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -41,20 +43,21 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   bool _isSidebarCollapsed = true;
   late AnimationController _animationController;
   final ScrollController _scrollController = ScrollController();
-  static const String _currencySymbol = 'R';
-  final NumberFormat _currencyFormatter =
-      NumberFormat.currency(symbol: _currencySymbol, decimalDigits: 0);
-  final NumberFormat _compactCurrencyFormatter =
-      NumberFormat.compactCurrency(symbol: _currencySymbol, decimalDigits: 1);
+  final _compactCurrencyFormatter = NumberFormat.compactCurrency(
+    decimalDigits: 0,
+    symbol: r'$',
+    locale: 'en_US',
+  );
+  final _currencyFormatter = NumberFormat.currency(
+    symbol: r'$',
+    decimalDigits: 0,
+    locale: 'en_US',
+  );
+  static const _currencySymbol = r'$';
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final app = context.read<AppState>();
       app.fetchProposals();
@@ -291,7 +294,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                                   ? ''
                                                   : (issues
                                                       .take(2)
-                                                      .join(' • ')),
+                                                      .join(' â€¢ ')),
                                               style: PremiumTheme.bodySmall
                                                   .copyWith(
                                                 color: Colors.white70,
@@ -1062,7 +1065,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
   @override
   void dispose() {
-    _animationController.dispose();
     _scrollController.dispose();
     _cycleTimeRefreshTimer?.cancel();
     _cycleTimeOwnerCtrl.dispose();
@@ -1791,7 +1793,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               ? proposal['title'].toString()
               : 'Untitled',
           value: budget > 0 ? budget : null,
-          valueLabel: budget > 0 ? _formatCurrency(budget) : '—',
+          valueLabel: budget > 0 ? _formatCurrency(budget) : 'â€”',
           status: statusLabel,
           daysOpen:
               updated != null ? DateTime.now().difference(updated).inDays : 0,
@@ -2214,7 +2216,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   bool _isAdminUser() {
     final user = AuthService.currentUser;
     final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
-    return backendRole == 'admin' || backendRole == 'ceo';
+    // Treat only true admin-style roles as admin here.
+    // Managers/creators should keep the creator sidebar; admins get admin view.
+    return backendRole == 'admin' ||
+        backendRole == 'ceo' ||
+        backendRole == 'finance_manager' ||
+        backendRole == 'financial manager';
   }
 
   String? _pipelineStageForStatus(String statusLower) {
@@ -2423,256 +2430,24 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final pipelineTotal =
         pipelineCounts.values.fold<int>(0, (sum, v) => sum + v);
     final signedCount = pipelineCounts['Signed'] ?? 0;
-    final userName = _getUserName(app.currentUser);
-    final userInitial = userName.isNotEmpty ? userName[0].toUpperCase() : 'U';
     final isAdminUser = _isAdminUser();
     return Scaffold(
       body: Container(
         color: Colors.transparent,
-        child: Column(
+        child: Row(
           children: [
-            Container(
-              height: 70,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Colors.black.withValues(alpha: 0.3),
-                    Colors.transparent,
-                  ],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
+            AppSideNav(
+              isCollapsed: _isSidebarCollapsed,
+              currentLabel:
+                  isAdminUser ? 'Analytics' : 'Analytics (My Pipeline)',
+              isAdmin: isAdminUser,
+              onToggle: () => setState(
+                () => _isSidebarCollapsed = !_isSidebarCollapsed,
               ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final compact = constraints.maxWidth < 720;
-                    final userWidget = Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 35,
-                          height: 35,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF3498DB),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Center(
-                            child: Text(
-                              userInitial,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Flexible(
-                          child: Text(
-                            userName,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        PopupMenuButton<String>(
-                          icon:
-                              const Icon(Icons.more_vert, color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'logout') {
-                              Navigator.pushNamed(context, '/login');
-                            }
-                          },
-                          itemBuilder: (BuildContext context) => [
-                            const PopupMenuItem<String>(
-                              value: 'logout',
-                              child: Row(
-                                children: [
-                                  Icon(Icons.logout),
-                                  SizedBox(width: 8),
-                                  Text('Logout'),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    );
-
-                    if (compact) {
-                      return Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              'Analytics Dashboard',
-                              overflow: TextOverflow.ellipsis,
-                              style: PremiumTheme.titleLarge
-                                  .copyWith(fontSize: 22),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Flexible(child: userWidget),
-                        ],
-                      );
-                    }
-
-                    return Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Analytics Dashboard',
-                          style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-                        ),
-                        userWidget,
-                      ],
-                    );
-                  },
-                ),
-              ),
+              onSelect: _navigatePage,
             ),
             Expanded(
-              child: Row(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    width: _isSidebarCollapsed ? 90.0 : 250.0,
-                    color: const Color(0xFF34495E),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8),
-                            child: InkWell(
-                              onTap: _toggleSidebar,
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF2C3E50),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: _isSidebarCollapsed
-                                      ? MainAxisAlignment.center
-                                      : MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    if (!_isSidebarCollapsed)
-                                      const Padding(
-                                        padding: EdgeInsets.symmetric(
-                                            horizontal: 12),
-                                        child: Text(
-                                          'Navigation',
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 12,
-                                          ),
-                                        ),
-                                      ),
-                                    Padding(
-                                      padding: EdgeInsets.symmetric(
-                                        horizontal: _isSidebarCollapsed ? 0 : 8,
-                                      ),
-                                      child: Icon(
-                                        _isSidebarCollapsed
-                                            ? Icons.keyboard_arrow_right
-                                            : Icons.keyboard_arrow_left,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          if (isAdminUser) ...[
-                            _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Approvals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Analytics',
-                              'assets/images/analytics.png',
-                              true,
-                              context,
-                            ),
-                          ] else ...[
-                            _buildNavItem(
-                              'Dashboard',
-                              'assets/images/Dahboard.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'My Proposals',
-                              'assets/images/My_Proposals.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Templates',
-                              'assets/images/content_library.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Content Library',
-                              'assets/images/content_library.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Client Management',
-                              'assets/images/collaborations.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Approved Proposals',
-                              'assets/images/Time Allocation_Approval_Blue.png',
-                              false,
-                              context,
-                            ),
-                            _buildNavItem(
-                              'Analytics (My Pipeline)',
-                              'assets/images/analytics.png',
-                              true,
-                              context,
-                            ),
-                          ],
-                          const SizedBox(height: 20),
-                          if (!_isSidebarCollapsed)
-                            Container(
-                              margin:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              height: 1,
-                              color: const Color(0xFF2C3E50),
-                            ),
-                          const SizedBox(height: 12),
-                          _buildNavItem(
-                            'Logout',
-                            'assets/images/Logout_KhonoBuzz.png',
-                            false,
-                            context,
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: CustomScrollbar(
+              child: CustomScrollbar(
                       controller: _scrollController,
                       child: SingleChildScrollView(
                         controller: _scrollController,
@@ -2870,45 +2645,28 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                                   pipelineData);
                                         }
 
-                                        Widget completionBody;
-                                        if (waiting) {
-                                          completionBody = const Center(
-                                            child: CircularProgressIndicator(),
-                                          );
-                                        } else if (hasError ||
-                                            completionData == null) {
-                                          completionBody = Center(
-                                            child: Text(
-                                              'Failed to load completion rates.',
-                                              style: PremiumTheme.bodyMedium
-                                                  .copyWith(
-                                                      color: Colors.white70),
-                                            ),
-                                          );
-                                        } else {
-                                          completionBody =
-                                              _buildCompletionRateGauge(
-                                                  completionData);
-                                        }
-
-                                        return Row(
+                                        return Column(
                                           crossAxisAlignment:
-                                              CrossAxisAlignment.start,
+                                              CrossAxisAlignment.stretch,
                                           children: [
-                                            Expanded(
-                                              flex: 2,
-                                              child: _buildGlassChartCard(
-                                                'Proposal Pipeline View',
-                                                pipelineBody,
-                                                height: 520,
-                                              ),
+                                            _buildGlassChartCard(
+                                              'Proposal Pipeline View',
+                                              pipelineBody,
+                                              height: 520,
                                             ),
-                                            const SizedBox(width: 20),
-                                            Expanded(
-                                              child: _buildGlassChartCard(
-                                                'Completion Rate',
-                                                completionBody,
-                                                height: 520,
+                                            const SizedBox(height: 32),
+                                            CompletionRatesWidget(
+                                              onOpenProposal:
+                                                  (id, status, title) =>
+                                                      Navigator.pushNamed(
+                                                context,
+                                                '/blank-document',
+                                                arguments: {
+                                                  'proposalId':
+                                                      id.toString(),
+                                                  'proposalTitle': title,
+                                                  'readOnly': false,
+                                                },
                                               ),
                                             ),
                                           ],
@@ -3050,121 +2808,53 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   ),
                 ],
               ),
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  Widget _buildNavItem(
-    String label,
-    String assetPath,
-    bool isActive,
-    BuildContext context,
-  ) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
+  Widget _buildHeroSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade400, Colors.blue.shade600],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.analytics,
+              color: Colors.white,
+              size: 28,
             ),
           ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
+          const SizedBox(width: 20),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Analytics Dashboard',
                   style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 13,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-              ),
-              if (isActive)
-                const Icon(Icons.arrow_forward_ios,
-                    size: 12, color: Colors.white),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -3206,47 +2896,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     _cycleTimeRefreshTick++;
                   });
                 },
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGlassButton(
-      String label, IconData icon, VoidCallback onPressed) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            border: Border.all(color: const Color(0x33FFFFFF)),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onPressed,
-              borderRadius: BorderRadius.circular(8),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                child: Row(
-                  children: [
-                    Icon(icon, color: Colors.white, size: 18),
-                    const SizedBox(width: 8),
-                    Text(
-                      label,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ),
           ),
@@ -4136,75 +3785,235 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     );
   }
 
-  void _navigateToPage(BuildContext context, String label) {
-    final isAdminUser = _isAdminUser();
-
-    if (isAdminUser) {
-      switch (label) {
-        case 'Dashboard':
-          Navigator.pushReplacementNamed(context, '/approver_dashboard');
-          break;
-        case 'Approvals':
-          Navigator.pushReplacementNamed(context, '/admin_approvals');
-          break;
-        case 'My Proposals':
-          Navigator.pushReplacementNamed(context, '/proposals');
-          break;
-        case 'Templates':
-          Navigator.pushReplacementNamed(context, '/templates');
-          break;
-        case 'Content Library':
-          Navigator.pushReplacementNamed(context, '/content_library');
-          break;
-        case 'Client Management':
-          Navigator.pushReplacementNamed(context, '/client_management');
-          break;
-        case 'Analytics':
-          // Already on analytics for admin
-          break;
-        case 'Approved Proposals':
-          Navigator.pushReplacementNamed(context, '/admin_approvals');
-          break;
-        case 'Analytics (My Pipeline)':
-          // Already here (legacy label)
-          break;
-        case 'Logout':
-          AuthService.logout();
-          Navigator.pushNamedAndRemoveUntil(
-              context, '/login', (Route<dynamic> route) => false);
-          break;
-      }
-    } else {
-      switch (label) {
-        case 'Dashboard':
-          Navigator.pushReplacementNamed(context, '/creator_dashboard');
-          break;
-        case 'My Proposals':
-          Navigator.pushReplacementNamed(context, '/proposals');
-          break;
-        case 'Templates':
-          Navigator.pushReplacementNamed(context, '/templates');
-          break;
-        case 'Content Library':
-          Navigator.pushReplacementNamed(context, '/content_library');
-          break;
-        case 'Client Management':
-          Navigator.pushReplacementNamed(context, '/client_management');
-          break;
-        case 'Approved Proposals':
-          Navigator.pushReplacementNamed(context, '/approved_proposals');
-          break;
-        case 'Analytics (My Pipeline)':
-          // Already here
-          break;
-        case 'Logout':
-          AuthService.logout();
-          Navigator.pushNamedAndRemoveUntil(
-              context, '/login', (Route<dynamic> route) => false);
-          break;
-      }
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'signed':
+      case 'approved':
+        return Colors.green;
+      case 'in review':
+      case 'pending':
+        return Colors.orange;
+      case 'draft':
+        return Colors.grey;
+      default:
+        return Colors.blue;
     }
   }
+
+  String _formatDate(DateTime? date) {
+    if (date == null) return 'No date';
+    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
+  void _navigatePage(String label) {
+    switch (label) {
+      case 'Dashboard':
+        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        break;
+      case 'My Proposals':
+        Navigator.pushReplacementNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        Navigator.pushReplacementNamed(context, '/templates');
+        break;
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/client_management');
+        break;
+      case 'Approved Proposals':
+      case 'Approvals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        break;
+      case 'Analytics':
+      case 'Analytics (My Pipeline)':
+        break; // already on this page
+      case 'Logout':
+        Navigator.pushReplacementNamed(context, '/login');
+        break;
+    }
+  }
+
+  Widget _buildGlassButton(
+    String label,
+    IconData icon,
+    VoidCallback onPressed,
+  ) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: InkWell(
+          onTap: onPressed,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border:
+                  Border.all(color: Colors.white.withValues(alpha: 0.15)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem(
+    String label,
+    String iconAsset,
+    bool isActive,
+    BuildContext context,
+  ) {
+    final collapsed = _isSidebarCollapsed;
+    return Tooltip(
+      message: collapsed ? label : '',
+      child: InkWell(
+        onTap: () {
+          switch (label) {
+            case 'Logout':
+              Navigator.pushReplacementNamed(context, '/login');
+              break;
+            case 'Dashboard':
+              Navigator.pushReplacementNamed(context, '/creator_dashboard');
+              break;
+            case 'My Proposals':
+              Navigator.pushReplacementNamed(context, '/proposals');
+              break;
+            case 'Templates':
+              Navigator.pushReplacementNamed(context, '/templates');
+              break;
+            case 'Content Library':
+              Navigator.pushReplacementNamed(context, '/content_library');
+              break;
+            case 'Client Management':
+              Navigator.pushReplacementNamed(context, '/client_management');
+              break;
+            case 'Approved Proposals':
+              Navigator.pushReplacementNamed(context, '/approved_proposals');
+              break;
+            case 'Approvals':
+              Navigator.pushReplacementNamed(context, '/approved_proposals');
+              break;
+            case 'Analytics':
+            case 'Analytics (My Pipeline)':
+              Navigator.pushReplacementNamed(context, '/analytics');
+              break;
+            default:
+              Navigator.pushReplacementNamed(context, '/creator_dashboard');
+          }
+        },
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          padding: EdgeInsets.symmetric(
+            horizontal: collapsed ? 10 : 14,
+            vertical: 10,
+          ),
+          decoration: BoxDecoration(
+            color: isActive
+                ? Colors.white.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Image.asset(
+                iconAsset,
+                width: 22,
+                height: 22,
+                color: isActive ? Colors.white : Colors.white70,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.circle,
+                  size: 20,
+                  color: isActive ? Colors.white : Colors.white70,
+                ),
+              ),
+              if (!collapsed) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    label,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isActive ? Colors.white : Colors.white70,
+                      fontSize: 13,
+                      fontWeight: isActive
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+} // end _AnalyticsPageState
+
+// ---------------------------------------------------------------------------
+// Data classes used by analytics charts / tables
+// ---------------------------------------------------------------------------
+
+class _MonthlyPoint {
+  final DateTime month;
+  double revenue;
+  int proposals;
+  int wins;
+  int losses;
+
+  _MonthlyPoint(this.month)
+      : revenue = 0,
+        proposals = 0,
+        wins = 0,
+        losses = 0;
+
+  String get label =>
+      DateFormat.MMM().format(month);
+}
+
+class _ProposalPerformanceRow {
+  final String title;
+  final double? value;
+  final String valueLabel;
+  final String status;
+  final int daysOpen;
+  final double probability;
+  final Color statusColor;
+  final DateTime? updatedAt;
+
+  const _ProposalPerformanceRow({
+    required this.title,
+    this.value,
+    required this.valueLabel,
+    required this.status,
+    required this.daysOpen,
+    required this.probability,
+    required this.statusColor,
+    this.updatedAt,
+  });
+
+  String get probabilityLabel =>
+      '${(probability * 100).toStringAsFixed(0)}%';
 }
 
 class _AnalyticsSnapshot {
@@ -4232,51 +4041,11 @@ class _AnalyticsSnapshot {
     required this.statusCounts,
     required this.monthlyPoints,
     required this.recentProposals,
-    required this.revenueChangePercent,
-    required this.activeChangePercent,
-    required this.conversionChangePercent,
-    required this.averageDealChangePercent,
+    this.revenueChangePercent,
+    this.activeChangePercent,
+    this.conversionChangePercent,
+    this.averageDealChangePercent,
   });
-}
-
-class _MonthlyPoint {
-  final DateTime month;
-  double revenue;
-  int proposals;
-  int wins;
-  int losses;
-
-  _MonthlyPoint(this.month)
-      : revenue = 0,
-        proposals = 0,
-        wins = 0,
-        losses = 0;
-
-  String get label => DateFormat('MMM').format(month);
-}
-
-class _ProposalPerformanceRow {
-  final String title;
-  final double? value;
-  final String valueLabel;
-  final String status;
-  final int daysOpen;
-  final double probability;
-  final Color statusColor;
-  final DateTime? updatedAt;
-
-  _ProposalPerformanceRow({
-    required this.title,
-    required this.value,
-    required this.valueLabel,
-    required this.status,
-    required this.daysOpen,
-    required this.probability,
-    required this.statusColor,
-    required this.updatedAt,
-  });
-
-  String get probabilityLabel => '${(probability * 100).round()}%';
 }
 
 class _MetricCardData {

@@ -128,6 +128,19 @@ class FirebaseService {
     }
   }
 
+  // Sign in with Google (web: signInWithPopup; other platforms would need google_sign_in + signInWithCredential)
+  static Future<UserCredential?> signInWithGoogle() async {
+    try {
+      final GoogleAuthProvider googleProvider = GoogleAuthProvider();
+      // Force account picker so user can choose which Google account to sign in with
+      googleProvider.setCustomParameters({'prompt': 'select_account'});
+      return await _auth.signInWithPopup(googleProvider);
+    } catch (e) {
+      print('Google sign-in error: $e');
+      return null;
+    }
+  }
+
   // Sign in with email and password
   static Future<UserCredential?> signInWithEmailAndPassword({
     required String email,
@@ -203,6 +216,33 @@ class FirebaseService {
 
       print('Error signing in: $errorMessage');
       return null;
+    }
+  }
+
+  // Send password reset email (forgot password)
+  /// Sends a password reset email to [email]. Returns null on success, or an error message on failure.
+  static Future<String?> sendPasswordResetEmail(String email) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) return 'Please enter your email address.';
+    try {
+      await _auth.sendPasswordResetEmail(email: trimmed);
+      return null; // success
+    } catch (e) {
+      String errorMessage = 'Could not send reset email. Please try again.';
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'invalid-email':
+            errorMessage = 'Invalid email address.';
+            break;
+          case 'user-not-found':
+            errorMessage = 'No account found with this email.';
+            break;
+          default:
+            errorMessage = e.message ?? errorMessage;
+        }
+      }
+      print('Send password reset error: $e');
+      return errorMessage;
     }
   }
 

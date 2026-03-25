@@ -8,6 +8,7 @@ import '../../config/app_constants.dart';
 import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'google_verify_email_pending_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -28,10 +29,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   late final AnimationController _fadeInController;
 
   final List<String> _backgroundImages = [
-    'assets/images/Khonology Landing Page Animation Frame 1.jpg',
+    'assets/images/Background-Dark..png',
   ];
 
   int _currentFrameIndex = 0;
+  bool _framesPrecached = false;
 
   @override
   void initState() {
@@ -52,13 +54,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       duration: const Duration(seconds: 4),
     )..repeat(reverse: true);
 
-    _precacheFrames();
     _cycleBackgrounds();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // `precacheImage` depends on inherited widgets (e.g. MediaQuery), so it must
+    // not be called from `initState`.
+    if (_framesPrecached) return;
+    _framesPrecached = true;
+    _precacheFrames();
   }
 
   Future<void> _precacheFrames() async {
     for (final imagePath in _backgroundImages) {
-      await precacheImage(AssetImage(imagePath), context);
+      try {
+        await precacheImage(AssetImage(imagePath), context);
+      } catch (e) {
+        // Non-fatal: page can still render if precache fails.
+        // ignore: avoid_print
+        print('⚠️ Failed to precache image "$imagePath": $e');
+      }
     }
   }
 
@@ -84,6 +101,143 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     _parallaxController.dispose();
     _fadeInController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loginWithGoogle() async {
+    setState(() => _isLoading = true);
+    try {
+      final firebaseCredential =
+          await FirebaseService.signInWithGoogle();
+
+      if (firebaseCredential == null || firebaseCredential.user == null) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Google sign-in was cancelled or failed.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final firebaseIdToken = await firebaseCredential.user!.getIdToken();
+      if (firebaseIdToken == null || firebaseIdToken.isEmpty) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to get Firebase ID token.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        return;
+      }
+
+      final response = await http.post(
+        Uri.parse('${AuthService.baseUrl}/api/firebase'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode({'id_token': firebaseIdToken}),
+      );
+
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        final error = json.decode(response.body);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error['detail'] ?? 'Backend authentication failed'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final result = json.decode(response.body) as Map<String, dynamic>;
+
+      // User exists but not yet verified - must verify email first
+      if (result['verification_pending'] == true) {
+        final email = result['email'] as String? ?? '';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result['detail'] as String? ??
+                  'Please verify your email. Check your inbox for the link.',
+            ),
+            backgroundColor: Colors.blue,
+          ),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => GoogleVerifyEmailPendingPage(email: email),
+          ),
+        );
+        return;
+      }
+
+      final userProfile = result['user'] as Map<String, dynamic>?;
+      if (userProfile != null) {
+        final appState = context.read<AppState>();
+        appState.authToken = firebaseIdToken;
+        appState.currentUser = userProfile;
+        AuthService.setUserData(userProfile, firebaseIdToken);
+
+        final roleService = context.read<RoleService>();
+        await roleService.initializeRoleFromUser(userProfile);
+        await appState.init();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Signed in with Google successfully.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        final rawRole = userProfile['role']?.toString() ?? '';
+        final userRole = rawRole.toLowerCase().trim();
+        final roleKey = userRole.replaceAll('-', '_');
+        final isAdmin = roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
+        final isFinance = roleKey.startsWith('finance') ||
+            roleKey == 'financial_manager' ||
+            roleKey == 'financial manager';
+
+        String dashboardRoute;
+        if (isAdmin) {
+          dashboardRoute = '/approver_dashboard';
+        } else if (isFinance) {
+          dashboardRoute = '/finance_dashboard';
+        } else {
+          dashboardRoute = '/creator_dashboard';
+        }
+
+        Navigator.pushNamedAndRemoveUntil(
+          context,
+          dashboardRoute,
+          (route) => false,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to get user profile from backend.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Google sign-in failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _login() async {
@@ -138,11 +292,17 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           '✅ Firebase ID token obtained: ${firebaseIdToken.substring(0, 20)}...');
 
       // Step 3: Send Firebase ID token to backend to create/update user in database
+      // Do NOT send persisted role from SharedPreferences - it can be from a previous
+      // session (e.g. another user or role) and would cause wrong dashboard (e.g. admin
+      // sent to finance dashboard). Backend uses DB role for existing users.
       print('📡 Sending Firebase token to backend...');
+
+      final requestBody = {'id_token': firebaseIdToken};
+
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id_token': firebaseIdToken}),
+        body: json.encode(requestBody),
       );
 
       if (response.statusCode != 200 && response.statusCode != 201) {
@@ -197,15 +357,16 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
           String dashboardRoute;
 
-          final isAdmin = userRole == 'admin' || userRole == 'ceo';
-          final isFinance = userRole == 'finance' ||
-              userRole == 'finance manager' ||
-              userRole == 'financial manager' ||
-              userRole == 'finance_manager' ||
-              userRole == 'financial_manager';
-          final isManager = userRole == 'manager' ||
-              userRole == 'creator' ||
-              userRole == 'user';
+          final roleKey = userRole.replaceAll('-', '_');
+          final isAdmin = roleKey == 'admin' ||
+              roleKey == 'ceo' ||
+              roleKey == 'approver';
+          final isFinance = roleKey.startsWith('finance') ||
+              roleKey == 'financial_manager' ||
+              roleKey == 'financial manager';
+          final isManager = roleKey == 'manager' ||
+              roleKey == 'creator' ||
+              roleKey == 'user';
 
           if (isAdmin) {
             dashboardRoute = '/approver_dashboard';
@@ -255,45 +416,107 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     }
   }
 
+  void _showForgotPasswordDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text(
+          'Reset password',
+          style: TextStyle(fontFamily: 'Poppins'),
+        ),
+        content: SingleChildScrollView(
+          child: _ForgotPasswordForm(
+            initialEmail: _emailController.text.trim(),
+            onSuccess: () {
+              Navigator.pop(ctx);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Check your email for a link to reset your password.',
+                    ),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            },
+            onError: (String message) {
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  SnackBar(content: Text(message), backgroundColor: Colors.red),
+                );
+              }
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
     final isMobile = size.width < 900;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Colors.transparent,
       body: Stack(
-        fit: StackFit.expand,
         children: [
-          // Animated background
-          _buildBackgroundLayers(),
-
-          // Dark gradient overlay
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.black.withOpacity(0.5),
-                  Colors.black.withOpacity(0.7),
-                  Colors.black.withOpacity(0.6),
-                ],
+          // Background image with dark overlay
+          Positioned.fill(
+            child: ColorFiltered(
+              colorFilter: ColorFilter.mode(
+                Colors.black.withValues(alpha: 0.4),
+                BlendMode.darken,
               ),
+              child: _buildBackgroundLayers(),
             ),
           ),
 
-          // Floating shapes - desktop only
-          if (!isMobile) _buildFloatingShapes(),
+          // Main content with fixed header
+          Positioned.fill(
+            child: Column(
+              children: [
+                // FIXED HEADER SECTION (never scrolls)
+                const SizedBox(height: 48), // Top safe area/padding
+                Center(
+                  child: Image.asset(
+                    // LOGO - Fixed position
+                    'assets/images/2026.png',
+                    height: 160, // Fixed height
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Text(
+                        '✕ Khonology',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 80,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24), // Space after logo
 
-          // Floating login card
-          Center(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.symmetric(
-                horizontal: isMobile ? 16 : 40,
-                vertical: 40,
-              ),
-              child: _buildLoginCard(isMobile),
+                // SCROLLABLE CONTENT SECTION
+                Expanded(
+                  // Takes remaining space
+                  child: SingleChildScrollView(
+                    // Scrollable area
+                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Login form content that scrolls
+                        _buildLoginCard(isMobile),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -327,7 +550,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Base background image
+        // Base background image (same as landing page)
         AnimatedSwitcher(
           duration: const Duration(milliseconds: 1200),
           switchInCurve: Curves.easeInOut,
@@ -335,9 +558,16 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           child: Image.asset(
             _backgroundImages[_currentFrameIndex],
             key: ValueKey<int>(_currentFrameIndex),
-            fit: BoxFit.cover,
+            fit: BoxFit.fill,
+            width: double.infinity,
+            height: double.infinity,
             errorBuilder: (context, error, stackTrace) {
-              return Container(color: Colors.black);
+              return Container(
+                color: const Color(0xFF000000),
+                child: const Center(
+                  child: Icon(Icons.error, color: Colors.white54, size: 48),
+                ),
+              );
             },
           ),
         ),
@@ -349,7 +579,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             final darkness =
                 0.4 - (math.sin(_parallaxController.value * 2 * math.pi) * 0.2);
             return Container(
-              color: Colors.black.withOpacity(darkness.clamp(0.0, 1.0)),
+              color: Colors.black.withValues(alpha: darkness.clamp(0.0, 1.0)),
             );
           },
         ),
@@ -357,61 +587,19 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildFloatingShapes() {
-    return AnimatedBuilder(
-      animation: _parallaxController,
-      builder: (context, child) {
-        return Stack(
-          children: [
-            Positioned(
-              left: 120 +
-                  (math.sin(_parallaxController.value * 2 * math.pi) * 40),
-              top: 180 +
-                  (math.cos(_parallaxController.value * 2 * math.pi) * 30),
-              child: Transform.rotate(
-                angle: _parallaxController.value * 2 * math.pi,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.04)),
-                  size: const Size(70, 70),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 140 +
-                  (math.sin(_parallaxController.value * 2 * math.pi + 1.5) *
-                      50),
-              top: 220 +
-                  (math.cos(_parallaxController.value * 2 * math.pi + 1.5) *
-                      35),
-              child: Transform.rotate(
-                angle: -_parallaxController.value * 2 * math.pi * 0.8,
-                child: CustomPaint(
-                  painter:
-                      TrianglePainter(color: Colors.white.withOpacity(0.05)),
-                  size: const Size(90, 90),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Widget _buildLoginCard(bool isMobile) {
     return Container(
       constraints: BoxConstraints(maxWidth: isMobile ? double.infinity : 500),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A).withOpacity(0.95),
+        color: const Color(0xFF1A1A1A).withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: const Color(0xFFE9293A).withOpacity(0.3),
+          color: const Color(0xFFE9293A).withValues(alpha: 0.3),
           width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFE9293A).withOpacity(0.2),
+            color: const Color(0xFFE9293A).withValues(alpha: 0.2),
             blurRadius: 40,
             spreadRadius: 0,
           ),
@@ -424,44 +612,52 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Logo with subtle breathing fade animation
+            // Welcome message
             Center(
-              child: FadeTransition(
-                opacity: Tween<double>(begin: 0.3, end: 1.0).animate(
-                  CurvedAnimation(
-                    parent: _fadeInController,
-                    curve: Curves.easeInOut,
-                  ),
-                ),
-                child: Image.asset(
-                  'assets/images/2026.png',
-                  height: 120,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Text(
-                      '✕ Khonology',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 56,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
+              child: const Text(
+                'WELCOME BACK',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 8),
+            // Catchy quote
+            Center(
+              child: const Text(
+                'Sign in to manage your proposals and collaborate with your team',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 14,
+                  color: Colors.white70,
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 32),
 
             // Email
             _buildTextField(
               controller: _emailController,
               label: 'Email',
               keyboardType: TextInputType.emailAddress,
-              validator: (v) {
-                if (v == null || v.isEmpty) return 'Email required';
-                if (!v.contains('@')) return 'Invalid email';
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your email';
+                }
+                if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
+                    .hasMatch(value)) {
+                  return 'Please enter a valid email';
+                }
                 return null;
+              },
+              onSubmitted: () {
+                // Focus on password field when email is submitted
+                FocusScope.of(context).nextFocus();
               },
             ),
             const SizedBox(height: 12),
@@ -484,13 +680,19 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 if (v == null || v.isEmpty) return 'Password required';
                 return null;
               },
+              onSubmitted: () {
+                // Trigger login when Enter is pressed in password field
+                if (!_isLoading) {
+                  _login();
+                }
+              },
             ),
             const SizedBox(height: 24),
 
             // Login Button
             Container(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(25),
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -501,7 +703,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFE9293A).withOpacity(0.4),
+                    color: const Color(0xFFE9293A).withValues(alpha: 0.4),
                     blurRadius: 20,
                     spreadRadius: 2,
                   ),
@@ -515,7 +717,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(25),
                   ),
                   elevation: 0,
                 ),
@@ -529,7 +731,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                         ),
                       )
                     : const Text(
-                        'Login',
+                        'LOGIN',
                         style: TextStyle(
                           fontFamily: 'Poppins',
                           fontSize: 16,
@@ -544,12 +746,40 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _buildSocialButton(Icons.g_mobiledata),
+                _buildSocialButton(
+                  'assets/images/Google_Icon.png',
+                  onPressed: _isLoading ? null : _loginWithGoogle,
+                ),
                 const SizedBox(width: 16),
-                _buildSocialButton(Icons.window),
+                _buildSocialButton('assets/images/mslogo.png'),
                 const SizedBox(width: 16),
-                _buildSocialButton(Icons.business),
+                _buildSocialButton('assets/images/github_icon_2.png'),
               ],
+            ),
+            const SizedBox(height: 24),
+
+            // Back button navigation
+            Center(
+              child: GestureDetector(
+                onTap: () => Navigator.of(context).pop(),
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  child: Image.asset(
+                    'assets/images/BackButton-Red.png',
+                    height: 24,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(
+                        Icons.arrow_back,
+                        color: Color(0xFFE9293A),
+                        size: 24,
+                      );
+                    },
+                  ),
+                ),
+              ),
             ),
             const SizedBox(height: 24),
 
@@ -560,7 +790,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 TextButton(
                   onPressed: () => Navigator.pushNamed(context, '/register'),
                   child: const Text(
-                    'Register',
+                    'REGISTER',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       color: Colors.white70,
@@ -569,16 +799,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   ),
                 ),
                 TextButton(
-                  onPressed: () {
-                    // TODO: Forgot password
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Forgot password feature coming soon'),
-                      ),
-                    );
-                  },
+                  onPressed: _showForgotPasswordDialog,
                   child: const Text(
-                    'Forgot Password',
+                    'FORGOT PASSWORD',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       color: Color(0xFFE9293A),
@@ -601,12 +824,14 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     TextInputType? keyboardType,
     String? Function(String?)? validator,
     Widget? suffixIcon,
+    VoidCallback? onSubmitted,
   }) {
     return TextFormField(
       controller: controller,
       obscureText: obscureText,
       keyboardType: keyboardType,
       validator: validator,
+      onFieldSubmitted: (_) => onSubmitted?.call(),
       style: const TextStyle(
         fontFamily: 'Poppins',
         color: Colors.white,
@@ -622,23 +847,23 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         filled: true,
         fillColor: const Color(0xFF2A2A2A),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Color(0xFFE9293A), width: 1),
         ),
         errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
         focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(25),
           borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
         contentPadding:
@@ -648,7 +873,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildSocialButton(IconData icon) {
+  Widget _buildSocialButton(String imagePath, {VoidCallback? onPressed}) {
     return Container(
       width: 48,
       height: 48,
@@ -657,10 +882,119 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         borderRadius: BorderRadius.circular(24),
       ),
       child: IconButton(
-        icon: Icon(icon, size: 28, color: Colors.black87),
-        onPressed: () {
-          // TODO: Social login
-        },
+        icon: Image.asset(
+          imagePath,
+          width: 24,
+          height: 24,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) {
+            return const Icon(
+              Icons.error,
+              color: Colors.black54,
+              size: 24,
+            );
+          },
+        ),
+        onPressed: onPressed,
+      ),
+    );
+  }
+}
+
+class _ForgotPasswordForm extends StatefulWidget {
+  final String initialEmail;
+  final VoidCallback onSuccess;
+  final void Function(String message) onError;
+
+  const _ForgotPasswordForm({
+    required this.initialEmail,
+    required this.onSuccess,
+    required this.onError,
+  });
+
+  @override
+  State<_ForgotPasswordForm> createState() => _ForgotPasswordFormState();
+}
+
+class _ForgotPasswordFormState extends State<_ForgotPasswordForm> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _emailController;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _emailController = TextEditingController(text: widget.initialEmail);
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendResetLink() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _loading = true);
+    final error = await FirebaseService.sendPasswordResetEmail(
+      _emailController.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() => _loading = false);
+    if (error == null) {
+      widget.onSuccess();
+    } else {
+      widget.onError(error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Enter your email and we\'ll send you a link to reset your password.',
+            style: TextStyle(fontFamily: 'Poppins', fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _emailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'Email',
+              border: OutlineInputBorder(),
+            ),
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return 'Enter your email';
+              return null;
+            },
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: _loading ? null : () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              const SizedBox(width: 8),
+              FilledButton(
+                onPressed: _loading ? null : _sendResetLink,
+                child: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Send reset link'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

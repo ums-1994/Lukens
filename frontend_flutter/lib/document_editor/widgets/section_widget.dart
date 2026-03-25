@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import '../models/document_section.dart';
 import '../models/document_table.dart';
 import '../models/inline_image.dart';
@@ -10,6 +11,11 @@ class SectionWidget extends StatelessWidget {
   final bool isSelected;
   final bool readOnly;
   final bool canDelete;
+
+  final VoidCallback? onContentTap;
+  final ValueChanged<TapUpDetails>? onContentTapUp;
+  final void Function(TextSelection selection, SelectionChangedCause? cause)?
+      onContentSelectionChanged;
 
   final ValueChanged<bool> onHoverChanged;
   final VoidCallback onTap;
@@ -34,6 +40,9 @@ class SectionWidget extends StatelessWidget {
     required this.isSelected,
     required this.readOnly,
     required this.canDelete,
+    this.onContentTap,
+    this.onContentTapUp,
+    this.onContentSelectionChanged,
     required this.onHoverChanged,
     required this.onTap,
     required this.onInsertBelow,
@@ -175,38 +184,86 @@ class SectionWidget extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               // Clean content area - text field for writing
-              TextField(
-                focusNode: section.contentFocus,
-                controller: section.controller,
-                maxLines: null,
-                minLines: 15,
-                enabled: !readOnly, // Disable editing in read-only mode
-                style: getContentTextStyle(),
-                textAlign: getTextAlignment(),
-                textAlignVertical: TextAlignVertical.top,
-                decoration: InputDecoration(
-                  hintText: readOnly
-                      ? '' // No hint in read-only mode
-                      : 'Start writing your content here...',
-                  hintStyle: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFFBDC3C7),
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Listener(
+                  onPointerDown: (event) {
+                    if (onContentTapUp == null) return;
+                    onContentTapUp!(
+                      TapUpDetails(
+                        globalPosition: event.position,
+                        kind: event.kind,
+                      ),
+                    );
+                  },
+                  onPointerMove: (event) {
+                    if (onContentTapUp == null) return;
+                    onContentTapUp!(
+                      TapUpDetails(
+                        globalPosition: event.position,
+                        kind: event.kind,
+                      ),
+                    );
+                  },
+                  onPointerUp: (event) {
+                    if (onContentTapUp == null) return;
+                    onContentTapUp!(
+                      TapUpDetails(
+                        globalPosition: event.position,
+                        kind: event.kind,
+                      ),
+                    );
+                  },
+                  behavior: HitTestBehavior.deferToChild,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Stack children don't get forced width; Quill must have
+                      // a definite horizontal bound to avoid vertical glyph wrapping.
+                      final width = constraints.maxWidth.isFinite
+                          ? constraints.maxWidth
+                          : double.infinity;
+                      section.richController.readOnly = readOnly;
+                      return SizedBox(
+                        width: width,
+                        child: QuillEditor.basic(
+                          controller: section.richController,
+                          focusNode: section.contentFocus,
+                          config: QuillEditorConfig(
+                            placeholder: readOnly
+                                ? ''
+                                : 'Start writing your content here...',
+                            customStyles: DefaultStyles(
+                              paragraph: DefaultTextBlockStyle(
+                                getContentTextStyle(),
+                                HorizontalSpacing.zero,
+                                VerticalSpacing.zero,
+                                VerticalSpacing.zero,
+                                null,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                  border: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  contentPadding: const EdgeInsets.all(8),
                 ),
               ),
               // Display tables below text (with drag and drop)
               if (section.tables.isNotEmpty)
                 ReorderableListView(
+                  padding: EdgeInsets.zero,
+                  primary: false,
+                  buildDefaultDragHandles: false,
                   shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
+                  physics: const ClampingScrollPhysics(),
                   onReorder: onReorderTables,
                   children: section.tables.asMap().entries.map((entry) {
                     final tableIndex = entry.key;
                     final table = entry.value;
-                    return buildInteractiveTable(tableIndex, table);
+                    return KeyedSubtree(
+                      key: ObjectKey(table),
+                      child: buildInteractiveTable(tableIndex, table),
+                    );
                   }).toList(),
                 )
               else

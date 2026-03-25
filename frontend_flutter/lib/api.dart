@@ -1,41 +1,17 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:convert';
-import 'dart:js' as js;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'services/auth_service.dart';
+import 'services/api_service.dart';
 import 'config/api_config.dart';
 
-// Get API URL from JavaScript config or use AuthService.baseUrl/Render default
+// Get API URL: always use Render production backend
 String get baseUrl {
-  // Prefer explicit config injected into the web page when available
-  if (kIsWeb) {
-    try {
-      // Try to get from window.APP_CONFIG.API_URL
-      final config = js.context['APP_CONFIG'];
-      if (config != null) {
-        final configObj = config as js.JsObject;
-        final apiUrl = configObj['API_URL'];
-        if (apiUrl != null && apiUrl.toString().isNotEmpty) {
-          return apiUrl.toString().replaceAll('"', '');
-        }
-      }
-      // Fallback: try window.REACT_APP_API_URL
-      final envUrl = js.context['REACT_APP_API_URL'];
-      if (envUrl != null && envUrl.toString().isNotEmpty) {
-        return envUrl.toString().replaceAll('"', '');
-      }
-    } catch (e) {
-      print('⚠️ Could not read API URL from config: $e');
-    }
-  }
-
-  // Default URLs based on environment
-  if (kDebugMode) {
-    return 'https://lukens-wp8w.onrender.com';
-  }
-  // Production default (Render backend URL)
-  return 'https://lukens-wp8w.onrender.com';
+  final url = ApiService.baseUrl;
+  print('🌐 API: Using API URL: $url');
+  return url;
 }
 
 class AppState extends ChangeNotifier {
@@ -46,6 +22,47 @@ class AppState extends ChangeNotifier {
   Map<String, dynamic> dashboardCounts = {};
   List<dynamic> notifications = [];
   int unreadNotifications = 0;
+
+  // Theme mode state
+  bool _isLightMode = false;
+  bool get isLightMode => _isLightMode;
+  void toggleThemeMode() {
+    _isLightMode = !_isLightMode;
+    notifyListeners();
+  }
+
+  // Admin navigation/sidebar state
+  bool _isAdminSidebarCollapsed = false;
+  bool get isAdminSidebarCollapsed => _isAdminSidebarCollapsed;
+  void setAdminSidebarCollapsed(bool value) {
+    _isAdminSidebarCollapsed = value;
+    notifyListeners();
+  }
+
+  void toggleAdminSidebar() {
+    _isAdminSidebarCollapsed = !_isAdminSidebarCollapsed;
+    notifyListeners();
+  }
+
+  String _adminNavLabel = 'Dashboard';
+  String get adminNavLabel => _adminNavLabel;
+  void setAdminNavLabel(String label) {
+    _adminNavLabel = label;
+    notifyListeners();
+  }
+
+  // Finance navigation/sidebar state
+  bool _isFinanceSidebarCollapsed = false;
+  bool get isFinanceSidebarCollapsed => _isFinanceSidebarCollapsed;
+  void setFinanceSidebarCollapsed(bool value) {
+    _isFinanceSidebarCollapsed = value;
+    notifyListeners();
+  }
+
+  void toggleFinanceSidebar() {
+    _isFinanceSidebarCollapsed = !_isFinanceSidebarCollapsed;
+    notifyListeners();
+  }
 
   String get _apiBaseUrl => '$baseUrl/api';
 
@@ -107,9 +124,16 @@ class AppState extends ChangeNotifier {
         print('🔄 Synced token from AuthService in fetchContent');
       }
 
-      final r = await http.get(
+      final r = await http
+          .get(
         Uri.parse("$baseUrl/api/content"),
         headers: _headers,
+      )
+          .timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw Exception('fetchContent timed out');
+        },
       );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
@@ -123,11 +147,9 @@ class AppState extends ChangeNotifier {
         }
       } else {
         print('Error fetching content: ${r.statusCode} - ${r.body}');
-        contentBlocks = [];
       }
     } catch (e) {
       print('Error fetching content: $e');
-      contentBlocks = [];
     }
   }
 
@@ -325,7 +347,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> fetchNotifications() async {
-    if (authToken == null) {
+    // Use effective token (synced authToken or AuthService.token) so Firebase users always fetch
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) {
       notifications = [];
       unreadNotifications = 0;
       notifyListeners();
@@ -333,9 +357,16 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      final response = await http.get(
+      final response = await http
+          .get(
         Uri.parse("$baseUrl/api/notifications"),
         headers: _headers,
+      )
+          .timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw Exception('fetchNotifications timed out');
+        },
       );
 
       if (response.statusCode == 200) {
@@ -348,12 +379,22 @@ class AppState extends ChangeNotifier {
         unreadNotifications = data is Map && data['unread_count'] is int
             ? data['unread_count'] as int
             : 0;
+        // Debug: confirm API response for notification bell
+        final uid = (currentUser is Map<String, dynamic>)
+            ? (currentUser as Map<String, dynamic>)['id']
+            : null;
+        print(
+            'Dashboard - Notifications API: ${response.statusCode}, count: ${rawNotifications.length}, unread: $unreadNotifications (user_id: $uid)');
       } else {
         print(
             'Error fetching notifications: ${response.statusCode} - ${response.body}');
+        notifications = [];
+        unreadNotifications = 0;
       }
     } catch (e) {
       print('Error fetching notifications: $e');
+      notifications = [];
+      unreadNotifications = 0;
     }
 
     notifyListeners();
@@ -401,37 +442,51 @@ class AppState extends ChangeNotifier {
 
   Future<void> fetchProposals() async {
     try {
-      final r = await http.get(
+      final r = await http
+          .get(
         Uri.parse("$baseUrl/api/proposals"),
         headers: _headers,
+      )
+          .timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw Exception('fetchProposals timed out');
+        },
       );
       if (r.statusCode == 200) {
         final data = jsonDecode(r.body);
-        proposals = List<dynamic>.from(data);
+        proposals = data is List ? List<dynamic>.from(data) : [];
 
         // Calculate dashboard counts from real data
         _updateDashboardCounts();
+        notifyListeners();
       } else {
         print('Error fetching proposals: ${r.statusCode} - ${r.body}');
-        proposals = [];
       }
     } catch (e) {
       print('Error fetching proposals: $e');
-      proposals = [];
     }
   }
 
   String _normalizeStatus(String? status) {
     if (status == null || status.isEmpty) return 'Draft';
 
-    final lowerStatus = status.toLowerCase().trim();
+    final lowerStatus = status.toLowerCase().trim().replaceAll('_', ' ');
 
     // Map common status variations to standard format
     if (lowerStatus == 'draft') return 'Draft';
+    if (lowerStatus.contains('pricing')) return 'Draft';
+    if (lowerStatus.contains('in progress')) return 'Draft';
     if (lowerStatus.contains('pending') && lowerStatus.contains('ceo'))
-      return 'Pending CEO Approval';
+      return 'Request for Change';
+    if (lowerStatus.contains('pending') && lowerStatus.contains('approval'))
+      return 'Request for Change';
+    if (lowerStatus == 'submitted') return 'Request for Change';
+    if (lowerStatus == 'in review') return 'Request for Change';
     if (lowerStatus.contains('sent') && lowerStatus.contains('client'))
       return 'Sent to Client';
+    if (lowerStatus.contains('released')) return 'Sent to Client';
+    if (lowerStatus == 'sent') return 'Sent to Client';
     if (lowerStatus == 'signed' ||
         lowerStatus == 'approved' ||
         lowerStatus == 'client signed' ||
@@ -451,6 +506,14 @@ class AppState extends ChangeNotifier {
       final rawStatus = proposal['status']?.toString() ?? 'Draft';
       final status = _normalizeStatus(rawStatus);
       counts[status] = (counts[status] ?? 0) + 1;
+    }
+
+    // Backwards-compat key: creator dashboard expects this exact label.
+    if (counts.containsKey('Request for Change')) {
+      counts['Pending Approval'] = counts['Request for Change'] ?? 0;
+      if (!counts.containsKey('Pending CEO Approval')) {
+        counts['Pending CEO Approval'] = counts['Request for Change'] ?? 0;
+      }
     }
     dashboardCounts = counts;
   }
@@ -492,7 +555,7 @@ class AppState extends ChangeNotifier {
       String proposalId, Map<String, dynamic> data) async {
     try {
       final r = await http.put(
-        Uri.parse("$baseUrl/proposals/$proposalId"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId"),
         headers: _headers,
         body: jsonEncode(data),
       );
@@ -508,16 +571,21 @@ class AppState extends ChangeNotifier {
   Future<void> updateProposalStatus(String proposalId, String status) async {
     try {
       final r = await http.patch(
-        Uri.parse("$baseUrl/proposals/$proposalId/status"),
+        Uri.parse("$baseUrl/api/proposals/$proposalId/status"),
         headers: _headers,
         body: jsonEncode({"status": status}),
       );
-      if (r.statusCode == 200) {
-        await fetchProposals();
-        notifyListeners();
+      if (r.statusCode != 200) {
+        throw Exception(
+          'Failed to update proposal status (${r.statusCode}): ${r.body}',
+        );
       }
+
+      await fetchProposals();
+      notifyListeners();
     } catch (e) {
       print('Error updating proposal status: $e');
+      rethrow;
     }
   }
 
@@ -576,6 +644,8 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -588,8 +658,11 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
+          if (department != null && department.isNotEmpty)
+            'department': department,
         },
       );
 
@@ -609,11 +682,19 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
     String? stage,
+    String? stageFilter,
   }) async {
     try {
+      final resolvedStage = (stage != null && stage.isNotEmpty)
+          ? stage
+          : (stageFilter != null && stageFilter.isNotEmpty)
+              ? stageFilter
+              : null;
       final uri = Uri.parse("$baseUrl/api/analytics/proposal-pipeline").replace(
         queryParameters: {
           if (startDate != null) 'start_date': startDate,
@@ -622,9 +703,14 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty) 'department': department,
-          if (stage != null && stage.isNotEmpty) 'stage': stage,
+          if (department != null && department.isNotEmpty)
+            'department': department,
+          if (resolvedStage != null) 'stage': resolvedStage,
+          if (stageFilter != null && stageFilter.isNotEmpty)
+            'stage_filter': stageFilter,
         },
       );
 
@@ -645,6 +731,7 @@ class AppState extends ChangeNotifier {
     String? proposalType,
     String? client,
     String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -658,6 +745,7 @@ class AppState extends ChangeNotifier {
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
           if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -680,6 +768,8 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -693,6 +783,8 @@ class AppState extends ChangeNotifier {
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
           if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -716,31 +808,40 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
     int? limit,
   }) async {
     try {
-      final uri = Uri.parse("$baseUrl/api/risk-gate/proposals").replace(
-        queryParameters: {
-          'risk_status': riskStatus,
-          if (startDate != null) 'start_date': startDate,
-          if (endDate != null) 'end_date': endDate,
-          if (owner != null && owner.isNotEmpty) 'owner': owner,
-          if (proposalType != null && proposalType.isNotEmpty)
-            'proposal_type': proposalType,
-          if (client != null && client.isNotEmpty) 'client': client,
-          if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty)
-            'department': department,
-          if (limit != null) 'limit': limit.toString(),
-        },
-      );
+      final queryParameters = <String, String>{
+        'risk_status': riskStatus,
+        if (startDate != null) 'start_date': startDate,
+        if (endDate != null) 'end_date': endDate,
+        if (owner != null && owner.isNotEmpty) 'owner': owner,
+        if (proposalType != null && proposalType.isNotEmpty)
+          'proposal_type': proposalType,
+        if (client != null && client.isNotEmpty) 'client': client,
+        if (region != null && region.isNotEmpty) 'region': region,
+        if (industry != null && industry.isNotEmpty) 'industry': industry,
+        if (scope != null && scope.isNotEmpty) 'scope': scope,
+        if (department != null && department.isNotEmpty)
+          'department': department,
+        if (limit != null) 'limit': limit.toString(),
+      };
 
-      final r = await http.get(uri, headers: _headers);
-      if (r.statusCode == 200) {
-        return jsonDecode(r.body);
-      }
+      final analyticsUri =
+          Uri.parse("$baseUrl/api/analytics/risk-gate-proposals")
+              .replace(queryParameters: queryParameters);
+      final legacyUri = Uri.parse("$baseUrl/api/risk-gate/proposals")
+          .replace(queryParameters: queryParameters);
+
+      final r1 = await http.get(analyticsUri, headers: _headers);
+      if (r1.statusCode == 200) return jsonDecode(r1.body);
+
+      final r2 = await http.get(legacyUri, headers: _headers);
+      if (r2.statusCode == 200) return jsonDecode(r2.body);
     } catch (e) {
       print('Error fetching risk gate proposals: $e');
     }
@@ -753,28 +854,38 @@ class AppState extends ChangeNotifier {
     String? owner,
     String? proposalType,
     String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
     try {
-      final uri = Uri.parse("$baseUrl/api/risk-gate/summary").replace(
-        queryParameters: {
-          if (startDate != null) 'start_date': startDate,
-          if (endDate != null) 'end_date': endDate,
-          if (owner != null && owner.isNotEmpty) 'owner': owner,
-          if (proposalType != null && proposalType.isNotEmpty)
-            'proposal_type': proposalType,
-          if (client != null && client.isNotEmpty) 'client': client,
-          if (scope != null && scope.isNotEmpty) 'scope': scope,
-          if (department != null && department.isNotEmpty)
-            'department': department,
-        },
-      );
+      final queryParameters = <String, String>{
+        if (startDate != null) 'start_date': startDate,
+        if (endDate != null) 'end_date': endDate,
+        if (owner != null && owner.isNotEmpty) 'owner': owner,
+        if (proposalType != null && proposalType.isNotEmpty)
+          'proposal_type': proposalType,
+        if (client != null && client.isNotEmpty) 'client': client,
+        if (region != null && region.isNotEmpty) 'region': region,
+        if (industry != null && industry.isNotEmpty) 'industry': industry,
+        if (scope != null && scope.isNotEmpty) 'scope': scope,
+        if (department != null && department.isNotEmpty)
+          'department': department,
+      };
 
-      final r = await http.get(uri, headers: _headers);
-      if (r.statusCode == 200) {
-        return jsonDecode(r.body);
-      }
+      final legacyUri = Uri.parse("$baseUrl/api/risk-gate/summary")
+          .replace(queryParameters: queryParameters);
+      final analyticsUri = Uri.parse("$baseUrl/api/analytics/risk-gate-summary")
+          .replace(queryParameters: queryParameters);
+
+      // The backend exposes this as /api/risk-gate/summary.
+      // /api/analytics/risk-gate-summary may not exist (and can return 405).
+      final rLegacy = await http.get(legacyUri, headers: _headers);
+      if (rLegacy.statusCode == 200) return jsonDecode(rLegacy.body);
+
+      final rAnalytics = await http.get(analyticsUri, headers: _headers);
+      if (rAnalytics.statusCode == 200) return jsonDecode(rAnalytics.body);
     } catch (e) {
       print('Error fetching risk gate summary: $e');
     }
@@ -842,12 +953,21 @@ class AppState extends ChangeNotifier {
   }
 
   // RBAC Methods
-  Future<String?> approveProposal(String proposalId,
-      {String comments = ""}) async {
+  Future<String?> approveProposal(
+    String proposalId, {
+    String comments = "",
+    String? idLast4,
+  }) async {
     try {
+      if (idLast4 == null || idLast4.trim().isEmpty) {
+        return "ID last 4 digits are required";
+      }
       final r = await http.post(
         Uri.parse("$baseUrl/proposals/$proposalId/approve?comments=$comments"),
         headers: _headers,
+        body: jsonEncode({
+          'id_last4': idLast4.trim(),
+        }),
       );
       if (r.statusCode >= 400) {
         final data = jsonDecode(r.body);
@@ -882,11 +1002,19 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<String?> sendToClient(String proposalId) async {
+  Future<String?> sendToClient(
+    String proposalId, {
+    String? idLast4,
+  }) async {
     try {
+      final cleanLast4 = idLast4?.trim();
       final r = await http.post(
         Uri.parse("$baseUrl/proposals/$proposalId/send_to_client"),
         headers: _headers,
+        body: jsonEncode({
+          if (cleanLast4 != null && cleanLast4.isNotEmpty)
+            'id_last4': cleanLast4,
+        }),
       );
       if (r.statusCode >= 400) {
         final data = jsonDecode(r.body);
@@ -899,6 +1027,79 @@ class AppState extends ChangeNotifier {
     } catch (e) {
       return "Error sending to client: $e";
     }
+  }
+
+  Future<Map<String, dynamic>> sendToClientWithStatus(
+    String proposalId, {
+    String? idLast4,
+  }) async {
+    final cleanLast4 = idLast4?.trim();
+    final r = await http.post(
+      Uri.parse("$baseUrl/proposals/$proposalId/send_to_client"),
+      headers: _headers,
+      body: jsonEncode({
+        if (cleanLast4 != null && cleanLast4.isNotEmpty) 'id_last4': cleanLast4,
+      }),
+    );
+
+    Map<String, dynamic> data = {};
+    try {
+      data = jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (_) {
+      data = {};
+    }
+
+    if (r.statusCode >= 400) {
+      return {
+        'ok': false,
+        'detail': data['detail'] ?? 'Send to client failed',
+        'email_sent': data['email_sent'],
+        'email_error': data['email_error'],
+        'access_token': data['access_token'],
+      };
+    }
+
+    await fetchProposals();
+    await fetchDashboard();
+    notifyListeners();
+
+    return {
+      'ok': true,
+      'detail': data['detail'],
+      'email_sent': data['email_sent'],
+      'email_error': data['email_error'],
+      'access_token': data['access_token'],
+    };
+  }
+
+  Future<Map<String, dynamic>> resendClientEmail(
+    String proposalId, {
+    String? accessToken,
+    String? clientEmail,
+  }) async {
+    final r = await http.post(
+      Uri.parse("$baseUrl/api/proposals/$proposalId/resend-client-email"),
+      headers: _headers,
+      body: jsonEncode({
+        if (accessToken != null && accessToken.trim().isNotEmpty)
+          'access_token': accessToken.trim(),
+        if (clientEmail != null && clientEmail.trim().isNotEmpty)
+          'client_email': clientEmail.trim(),
+      }),
+    );
+
+    Map<String, dynamic> data = {};
+    try {
+      data = jsonDecode(r.body) as Map<String, dynamic>;
+    } catch (_) {
+      data = {};
+    }
+
+    return {
+      'ok': r.statusCode < 400,
+      'status_code': r.statusCode,
+      ...data,
+    };
   }
 
   Future<String?> clientDeclineProposal(String proposalId,
@@ -1086,17 +1287,20 @@ class AppState extends ChangeNotifier {
   // Proposal Analytics
   Future<Map<String, dynamic>?> getProposalAnalytics(String proposalId) async {
     try {
-      final r = await http.get(
+      final response = await http.get(
         Uri.parse("$baseUrl/api/proposals/$proposalId/analytics"),
         headers: _headers,
       );
-      if (r.statusCode == 200) {
-        return jsonDecode(r.body);
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        print('Error fetching analytics: ${response.statusCode}');
+        return null;
       }
     } catch (e) {
-      print('Error fetching proposal analytics: $e');
+      print('Error fetching analytics: $e');
+      return null;
     }
-    return null;
   }
 
   // Cycle Time Analytics
@@ -1106,6 +1310,9 @@ class AppState extends ChangeNotifier {
     String? status,
     String? owner,
     String? proposalType,
+    String? client,
+    String? region,
+    String? industry,
     String? scope,
     String? department,
   }) async {
@@ -1118,6 +1325,9 @@ class AppState extends ChangeNotifier {
           if (owner != null && owner.isNotEmpty) 'owner': owner,
           if (proposalType != null && proposalType.isNotEmpty)
             'proposal_type': proposalType,
+          if (client != null && client.isNotEmpty) 'client': client,
+          if (region != null && region.isNotEmpty) 'region': region,
+          if (industry != null && industry.isNotEmpty) 'industry': industry,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (department != null && department.isNotEmpty)
             'department': department,
@@ -1454,6 +1664,23 @@ class AppState extends ChangeNotifier {
     // IMPORTANT: Sync logout with AuthService
     AuthService.logout();
 
+    notifyListeners();
+  }
+
+  // Navigation and sidebar state management
+  bool _isSidebarCollapsed = false;
+  String _currentNavLabel = 'Dashboard';
+
+  bool get isSidebarCollapsed => _isSidebarCollapsed;
+  String get currentNavLabel => _currentNavLabel;
+
+  void toggleSidebar() {
+    _isSidebarCollapsed = !_isSidebarCollapsed;
+    notifyListeners();
+  }
+
+  void setCurrentNavLabel(String label) {
+    _currentNavLabel = label;
     notifyListeners();
   }
 }

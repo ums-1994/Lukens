@@ -27,9 +27,33 @@ except ImportError:
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
-from api.utils.ai_safety import AISafetyError
+from api.utils.ai_safety import enforce_safe_for_external_ai, AISafetyError
+from api.utils.finance_audit import log_finance_audit_async, evaluate_proposal_compliance
+try:
+    from hf_ai_assistant_service import HFAIAssistantError
+except ImportError:
+    HFAIAssistantError = type("HFAIAssistantError", (Exception,), {})
+
+from api.routes.client import _encode_identity_hash
 
 bp = Blueprint('creator', __name__, url_prefix='')
+
+
+def _ensure_invitation_email_tracking_schema(cursor):
+    """Best-effort: add columns used to track email send attempts for invitations."""
+    try:
+        cursor.execute(
+            """
+            ALTER TABLE collaboration_invitations
+            ADD COLUMN IF NOT EXISTS last_email_sent_at TIMESTAMPTZ,
+            ADD COLUMN IF NOT EXISTS last_email_status TEXT,
+            ADD COLUMN IF NOT EXISTS last_email_error TEXT,
+            ADD COLUMN IF NOT EXISTS last_email_attempts INTEGER DEFAULT 0
+            """
+        )
+    except Exception as e:
+        # Do not fail core flow if schema migrations are not permitted.
+        print(f"⚠️ Failed to ensure invitation email tracking columns: {e}")
 
 
 def _build_upload_base_url():
@@ -509,6 +533,20 @@ def get_content():
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+
+@bp.get("/proposals/completion-rates")
+@token_required
+def proposals_completion_rates(username=None, user_id=None, email=None):
+    """
+    Backwards-compatible alias for the completion-rates analytics endpoint.
+    The Flutter completion-rates widget calls /api/proposals/completion-rates,
+    while the newer analytics page uses /api/analytics/completion-rates.
+    Delegate to the shared implementation in the pipeline blueprint so both
+    creator and admin views see consistent data.
+    """
+    from api.routes.pipeline import completion_rates as _completion_rates
+    return _completion_rates(username=username, user_id=user_id, email=email)
+
 @bp.post("/content")
 def create_content():
     """Create a new content item (no auth for content library)"""
@@ -749,33 +787,167 @@ def send_for_approval(username=None, proposal_id=None, user_id=None, email=None)
                     'detail': 'Proposals table is missing owner column; cannot verify ownership'
                 }, 500
 
-            # Check if proposal exists and belongs to user (cast owner column to text for type safety)
+            # Check if proposal exists and belongs to user, and get current status
             cursor.execute(
-                f"SELECT id FROM proposals WHERE id = %s AND {owner_col}::text = %s",
+                f"SELECT id, status FROM proposals WHERE id = %s AND {owner_col}::text = %s",
                 (proposal_id, str(user_id)),
             )
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
             
-            # Update status to "Pending CEO Approval" (more descriptive than "In Review")
+            current_status = proposal[1] if len(proposal) > 1 else None
+            is_resubmission = current_status and 'changes requested' in str(current_status).lower()
+            
+            # Determine new status: "Resubmitted" if previously "Changes Requested", otherwise "Pending CEO Approval"
+            new_status = 'Resubmitted' if is_resubmission else 'Pending CEO Approval'
+            
+            # Update status
             cursor.execute(
-                '''UPDATE proposals SET status = 'Pending CEO Approval', updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
-                (proposal_id,)
+                f'''UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s''',
+                (new_status, proposal_id)
             )
+            
+            # If resubmission, notify admin users
+            if is_resubmission:
+                from api.utils.helpers import create_notification
+                
+                # Get proposal title for notification
+                cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
+                proposal_title_row = cursor.fetchone()
+                proposal_title = proposal_title_row[0] if proposal_title_row else f'Proposal {proposal_id}'
+                
+                # Get all admin users
+                cursor.execute(
+                    "SELECT id FROM users WHERE role ILIKE '%admin%' OR role ILIKE '%ceo%'"
+                )
+                admin_users = cursor.fetchall()
+                
+                # Notify each admin
+                for admin_row in admin_users:
+                    admin_id = admin_row[0]
+                    create_notification(
+                        user_id=admin_id,
+                        notification_type='proposal_resubmitted',
+                        title='Proposal Resubmitted',
+                        message=f"Proposal '{proposal_title}' has been resubmitted after changes were requested.",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'previous_status': current_status,
+                            'new_status': new_status,
+                            'resubmitted_by': user_id
+                        }
+                    )
+            
             conn.commit()
-            return {'detail': 'Proposal sent for approval', 'status': 'Pending CEO Approval'}, 200
+            return {'detail': 'Proposal sent for approval', 'status': new_status}, 200
     except Exception as e:
         print(f"❌ Error sending proposal for approval: {e}")
         import traceback
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
+@bp.post("/proposals/<int:proposal_id>/finance-resubmit")
+@token_required
+def finance_resubmit(username=None, proposal_id=None, user_id=None, email=None):
+    """
+    Finance manager submits updated pricing back to admin after a 'Changes Requested' action.
+    Unlike send_for_approval, this does NOT require proposal ownership.
+    Requires: role = finance_manager (or admin/ceo).
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            # Resolve user identity
+            effective_user_id = user_id
+            if not effective_user_id and username:
+                cursor.execute("SELECT id, role FROM users WHERE username = %s", (username,))
+                row = cursor.fetchone()
+                if row:
+                    effective_user_id = row['id']
+                    user_role = (row.get('role') or '').lower()
+                else:
+                    return {'detail': 'User not found'}, 404
+            else:
+                cursor.execute("SELECT role FROM users WHERE id = %s", (effective_user_id,))
+                row = cursor.fetchone()
+                user_role = (row['role'] or '').lower() if row else ''
+
+            allowed_roles = {'finance_manager', 'finance', 'admin', 'ceo', 'approver'}
+            if user_role not in allowed_roles:
+                return {'detail': 'Finance Manager access required'}, 403
+
+            # Fetch proposal – no ownership check for finance
+            cursor.execute("SELECT id, title, status, user_id FROM proposals WHERE id = %s", (proposal_id,))
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+
+            current_status = (proposal.get('status') or '').strip()
+            if 'changes requested' not in current_status.lower():
+                return {
+                    'detail': f'Proposal is not in "Changes Requested" state (current: {current_status})'
+                }, 400
+
+            # Update status to Resubmitted
+            cursor.execute(
+                "UPDATE proposals SET status = 'Resubmitted', updated_at = NOW() WHERE id = %s",
+                (proposal_id,)
+            )
+
+            proposal_title = proposal.get('title') or f'Proposal {proposal_id}'
+
+            # Notify admins
+            from api.utils.helpers import create_notification
+            cursor.execute(
+                "SELECT id FROM users WHERE LOWER(role) IN ('admin', 'ceo', 'approver')"
+            )
+            admin_users = cursor.fetchall()
+            for admin_row in admin_users:
+                try:
+                    create_notification(
+                        user_id=admin_row['id'],
+                        notification_type='proposal_resubmitted',
+                        title='Finance Changes Submitted',
+                        message=(
+                            f"Finance Manager has submitted updated pricing for "
+                            f"'{proposal_title}'. Please review the changes."
+                        ),
+                        proposal_id=proposal_id,
+                        metadata={
+                            'previous_status': current_status,
+                            'new_status': 'Resubmitted',
+                            'resubmitted_by': effective_user_id,
+                            'resubmitted_by_role': user_role,
+                        },
+                    )
+                except Exception:
+                    pass
+
+            conn.commit()
+            return {'detail': 'Changes submitted to admin', 'status': 'Resubmitted'}, 200
+    except Exception as e:
+        import traceback
+        print(f"❌ Error in finance_resubmit: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
 @bp.post("/proposals/<int:proposal_id>/send_to_client")
 @token_required
 def send_to_client(username=None, proposal_id=None):
     """Send proposal to client"""
     try:
+        data = request.get_json(force=True, silent=True) or {}
+        id_last4 = (data.get('id_last4') or data.get('last4') or '').strip()
+        if id_last4:
+            if len(id_last4) != 4 or not id_last4.isdigit():
+                return {
+                    'detail': 'id_last4 must be exactly 4 digits',
+                    'error': 'invalid_id_last4',
+                }, 400
+
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
@@ -816,6 +988,7 @@ def send_to_client(username=None, proposal_id=None):
                 f"""
                 SELECT id,
                        title,
+                       status,
                        {client_expr} as client_name,
                        {client_email_expr} as client_email,
                        {owner_expr} as user_id
@@ -827,6 +1000,16 @@ def send_to_client(username=None, proposal_id=None):
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
+
+            try:
+                compliance = evaluate_proposal_compliance(proposal_id=proposal_id)
+                if (compliance.get('status') or '').upper() == 'NON_COMPLIANT':
+                    return {
+                        'detail': 'Proposal is non-compliant and cannot be sent to client',
+                        'compliance': compliance,
+                    }, 403
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id} before send: {comp_err}")
             # Run compound risk gate check
             risk_result = evaluate_compound_risk(dict(proposal))
             if risk_result.get('blocked'):
@@ -847,15 +1030,56 @@ def send_to_client(username=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
             
             # Update status
+            old_status = proposal.get('status')
             new_status = 'Sent to Client'
+
+            if id_last4:
+                try:
+                    if 'identity_last4_hash' not in proposal_cols:
+                        cursor.execute("ALTER TABLE proposals ADD COLUMN identity_last4_hash TEXT")
+                        proposal_cols.add('identity_last4_hash')
+                except Exception as schema_err:
+                    print(f"⚠️ Failed to ensure identity_last4_hash column exists: {schema_err}")
+
+                try:
+                    identity_hash = _encode_identity_hash(id_last4)
+                    cursor.execute(
+                        """UPDATE proposals SET identity_last4_hash = %s WHERE id = %s""",
+                        (identity_hash, proposal_id),
+                    )
+                except Exception as id_hash_err:
+                    print(f"❌ Failed to store identity_last4_hash for proposal {proposal_id}: {id_hash_err}")
+                    traceback.print_exc()
+                    return {
+                        'detail': 'Failed to configure identity verification for this proposal',
+                        'error': 'identity_config_failed',
+                    }, 500
+
             cursor.execute(
                 """UPDATE proposals SET status = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s""",
                 (new_status, proposal_id)
             )
             conn.commit()
+
+            log_finance_audit_async(
+                user_id=sender.get('id'),
+                username=username,
+                entity_type='proposal',
+                entity_id=str(proposal_id),
+                action_type='SEND_TO_CLIENT',
+                changes=[{'field': 'status', 'old': old_status, 'new': new_status}],
+            )
+
+            try:
+                evaluate_proposal_compliance(proposal_id=proposal_id)
+            except Exception as comp_err:
+                print(f"[COMPLIANCE] Failed to evaluate compliance for proposal {proposal_id} after send: {comp_err}")
             
             # Send email to client
             email_sent = False
+            email_error_message = None
+            access_token = None
+            invitation_row_id = None
             client_email = proposal.get('client_email')
             client_name = proposal.get('client_name', 'Client')
             proposal_title = proposal.get('title', 'Proposal')
@@ -919,6 +1143,23 @@ def send_to_client(username=None, proposal_id=None):
                                 tuple(insert_vals),
                             )
                             conn.commit()
+
+                            # Retrieve the invitation row so we can track email status and enable retries.
+                            try:
+                                cursor.execute(
+                                    """
+                                    SELECT id
+                                    FROM collaboration_invitations
+                                    WHERE proposal_id = %s AND lower(invited_email) = lower(%s) AND access_token = %s
+                                    ORDER BY invited_at DESC
+                                    LIMIT 1
+                                    """,
+                                    (proposal_id, client_email.strip(), access_token),
+                                )
+                                inv_row = cursor.fetchone()
+                                invitation_row_id = inv_row.get('id') if isinstance(inv_row, dict) else (inv_row[0] if inv_row else None)
+                            except Exception:
+                                invitation_row_id = None
                         else:
                             print(
                                 "⚠️ collaboration_invitations schema missing required columns; skipping invitation insert"
@@ -927,7 +1168,7 @@ def send_to_client(username=None, proposal_id=None):
                         print(f"⚠️ Failed to insert collaboration invitation: {inv_err}")
                         traceback.print_exc()
 
-                    client_link = f"{frontend_url}/#/collaborate?token={access_token}"
+                    client_link = f"{frontend_url}/#/client/proposals?token={access_token}"
                     
                     sender_name = sender.get('full_name') or sender.get('username') or 'Your Team'
                     
@@ -936,15 +1177,15 @@ def send_to_client(username=None, proposal_id=None):
                     {get_logo_html()}
                     <h2>Your Proposal is Ready</h2>
                     <p>Dear {client_name},</p>
-                    <p>We're pleased to share your proposal: <strong>{proposal_title}</strong></p>
-                    <p>Click the link below to view and review your proposal:</p>
+                    <p>We’re pleased to share that your proposal is now ready for review.</p>
+                    <p>You can securely access the proposal using the link below. For your security, a one-time password (OTP) will be sent to you when you open the link.</p>
                     <p style="text-align: center; margin: 30px 0;">
                         <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>
                     </p>
-                    <p>Or copy and paste this link into your browser:</p>
+                    <p>If the button above does not work, you can copy and paste the following link into your browser:</p>
                     <p style="word-break: break-all; color: #666;"><a href="{client_link}" style="color: #0066cc; text-decoration: underline;">{client_link}</a></p>
-                    <p>If you have any questions, please don't hesitate to reach out.</p>
-                    <p>Best regards,<br>{sender_name}</p>
+                    <p>If you have any questions or need any clarification, please feel free to reach out — we’re happy to assist.</p>
+                    <p>Kind regards,<br>{sender_name}<br>Khonology Team</p>
                     """
                     
                     email_sent = send_email(client_email, email_subject, email_body)
@@ -954,7 +1195,31 @@ def send_to_client(username=None, proposal_id=None):
                         print(f"[EMAIL] Failed to send proposal email to {client_email}")
                 except Exception as email_error:
                     print(f"[EMAIL] Error sending proposal email: {email_error}")
+                    email_error_message = str(email_error)
                     traceback.print_exc()
+
+                # Persist send status on invitation row if possible.
+                try:
+                    _ensure_invitation_email_tracking_schema(cursor)
+                    if invitation_row_id:
+                        cursor.execute(
+                            """
+                            UPDATE collaboration_invitations
+                            SET last_email_sent_at = NOW(),
+                                last_email_status = %s,
+                                last_email_error = %s,
+                                last_email_attempts = COALESCE(last_email_attempts, 0) + 1
+                            WHERE id = %s
+                            """,
+                            (
+                                'sent' if email_sent else 'failed',
+                                None if email_sent else (email_error_message or 'send_email returned false'),
+                                invitation_row_id,
+                            ),
+                        )
+                        conn.commit()
+                except Exception as track_err:
+                    print(f"⚠️ Failed to store invitation email send status: {track_err}")
             else:
                 if client_email is None:
                     print(f"[EMAIL] No client_email column available on proposals table for proposal {proposal_id}")
@@ -964,10 +1229,142 @@ def send_to_client(username=None, proposal_id=None):
             return {
                 'detail': 'Proposal sent to client',
                 'status': new_status,
-                'email_sent': email_sent
+                'email_sent': email_sent,
+                'email_error': email_error_message,
+                'access_token': access_token,
             }, 200
     except Exception as e:
         print(f"❌ Error sending proposal to client: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.post('/api/proposals/<int:proposal_id>/resend-client-email')
+@bp.post('/proposals/<int:proposal_id>/resend-client-email')
+@token_required
+def resend_client_email(username=None, proposal_id=None, user_id=None, email=None):
+    """Retry sending the client proposal email without generating a new access token."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        override_email = (payload.get('client_email') or payload.get('clientEmail') or '').strip()
+        override_token = (payload.get('access_token') or payload.get('token') or '').strip()
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            _ensure_invitation_email_tracking_schema(cursor)
+            conn.commit()
+
+            # Load proposal basics
+            cursor.execute(
+                """
+                SELECT id, title, client_name, client_email
+                FROM proposals
+                WHERE id = %s
+                """,
+                (proposal_id,),
+            )
+            proposal = cursor.fetchone()
+            if not proposal:
+                return {'detail': 'Proposal not found'}, 404
+
+            effective_email = (override_email or (proposal.get('client_email') or '')).strip()
+            if not effective_email or '@' not in effective_email:
+                return {
+                    'detail': 'Cannot resend: missing or invalid client email',
+                    'error': 'missing_client_email',
+                }, 400
+
+            # Find the invitation row to reuse token
+            if override_token:
+                cursor.execute(
+                    """
+                    SELECT id, access_token, invited_email
+                    FROM collaboration_invitations
+                    WHERE proposal_id = %s AND access_token = %s
+                    ORDER BY invited_at DESC
+                    LIMIT 1
+                    """,
+                    (proposal_id, override_token),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT id, access_token, invited_email
+                    FROM collaboration_invitations
+                    WHERE proposal_id = %s AND lower(invited_email) = lower(%s)
+                    ORDER BY invited_at DESC
+                    LIMIT 1
+                    """,
+                    (proposal_id, effective_email),
+                )
+
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {
+                    'detail': 'No existing client invitation token found to resend',
+                    'error': 'missing_invitation',
+                }, 404
+
+            access_token = invitation.get('access_token')
+            invitation_id = invitation.get('id')
+
+            try:
+                from api.utils.email import send_email, get_logo_html
+                from api.utils.helpers import get_frontend_url
+                frontend_url = get_frontend_url()
+
+                client_name = (proposal.get('client_name') or 'Client').strip() or 'Client'
+                proposal_title = (proposal.get('title') or 'Proposal').strip() or 'Proposal'
+                client_link = f"{frontend_url}/#/client/proposals?token={access_token}"
+
+                email_subject = f"Proposal: {proposal_title}"
+                email_body = f"""
+                {get_logo_html()}
+                <h2>Your Proposal is Ready</h2>
+                <p>Dear {client_name},</p>
+                <p>We're pleased to share your proposal: <strong>{proposal_title}</strong></p>
+                <p>Click the link below to view and review your proposal:</p>
+                <p style="text-align: center; margin: 30px 0;">
+                    <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>
+                </p>
+                <p>Or copy and paste this link into your browser:</p>
+                <p style="word-break: break-all; color: #666;"><a href="{client_link}" style="color: #0066cc; text-decoration: underline;">{client_link}</a></p>
+                """
+
+                ok = send_email(effective_email, email_subject, email_body)
+                err_msg = None if ok else 'send_email returned false'
+
+            except Exception as e:
+                ok = False
+                err_msg = str(e)
+
+            try:
+                cursor.execute(
+                    """
+                    UPDATE collaboration_invitations
+                    SET last_email_sent_at = NOW(),
+                        last_email_status = %s,
+                        last_email_error = %s,
+                        last_email_attempts = COALESCE(last_email_attempts, 0) + 1
+                    WHERE id = %s
+                    """,
+                    ('sent' if ok else 'failed', err_msg, invitation_id),
+                )
+                conn.commit()
+            except Exception as track_err:
+                print(f"⚠️ Failed to update resend status: {track_err}")
+
+            return {
+                'detail': 'Email resent' if ok else 'Email resend failed',
+                'email_sent': bool(ok),
+                'email_error': err_msg,
+                'access_token': access_token,
+                'invitation_id': invitation_id,
+            }, (200 if ok else 502)
+
+    except Exception as e:
+        print(f"❌ Error resending proposal email: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
@@ -1298,10 +1695,15 @@ def ai_status(username=None):
 @token_required
 def ai_check_compliance(username=None):
     try:
-        data = request.get_json() or {}
-        proposal_id = data.get("proposal_id")
-        if not proposal_id:
+        data = request.get_json(force=True, silent=True) or {}
+        proposal_id = data.get("proposal_id") or data.get("proposalId") or data.get("id")
+        if proposal_id is None or str(proposal_id).strip() == "":
             return {"detail": "proposal_id is required"}, 400
+
+        try:
+            proposal_id = int(str(proposal_id).strip())
+        except Exception:
+            return {"detail": "proposal_id must be an integer"}, 400
 
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -1327,56 +1729,60 @@ def ai_generate_content(username=None):
     """Generate proposal content using AI"""
     import time
     start_time = time.time()
-    
+
     try:
         data = request.get_json()
-        prompt = data.get('prompt', '')
-        context = data.get('context', {})
-        section_type = data.get('section_type', 'general')
-        
+        prompt = data.get("prompt", "")
+        context = data.get("context", {})
+        section_type = data.get("section_type", "general")
+
         if not prompt:
-            return {'detail': 'Prompt is required'}, 400
-        
+            return {"detail": "Prompt is required"}, 400
+
+        # Enforce AI safety guardrails
+        safe_prompt = enforce_safe_for_external_ai(prompt)
+        safe_context = enforce_safe_for_external_ai(context) if isinstance(context, dict) else {}
+
         # Import AI service
         from ai_service import ai_service
-        
-        # Create enhanced prompt with context
+
+        # Create enhanced prompt with sanitized context
         full_context = {
-            'user_request': prompt,
-            'section_type': section_type,
-            **context
+            "user_request": safe_prompt,
+            "section_type": section_type,
+            **(safe_context if isinstance(safe_context, dict) else {})
         }
-        
+
         # Generate content
         generated_content = ai_service.generate_proposal_section(section_type, full_context)
-        
+
         # Track AI usage
         response_time_ms = int((time.time() - start_time) * 1000)
         try:
             with get_db_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
-                    INSERT INTO ai_usage (username, endpoint, prompt_text, section_type, 
+                    INSERT INTO ai_usage (username, endpoint, prompt_text, section_type,
                                          response_tokens, response_time_ms)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     RETURNING id
-                """, (username, 'generate', prompt[:500], section_type, 
+                """, (username, "generate", prompt[:500], section_type,
                       len(generated_content.split()), response_time_ms))
                 conn.commit()
                 print(f"📊 AI usage tracked for {username}")
         except Exception as track_error:
             print(f"⚠️ Failed to track AI usage: {track_error}")
-        
+
         return {
-            'content': generated_content,
-            'section_type': section_type
+            "content": generated_content,
+            "section_type": section_type
         }, 200
-        
+
     except AISafetyError as e:
         return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
     except Exception as e:
         print(f"❌ Error generating AI content: {e}")
-        return {'detail': str(e)}, 500
+        return {"detail": str(e)}, 500
 
 @bp.post("/ai/improve")
 @token_required
@@ -1396,7 +1802,7 @@ def ai_improve_content(username=None):
         # Import AI service
         from ai_service import ai_service
         
-        # Get improvement suggestions
+        # Get improvement suggestions (always returns improved_version + summary)
         result = ai_service.improve_content(content, section_type)
         
         # Track AI usage
@@ -1415,11 +1821,24 @@ def ai_improve_content(username=None):
                 print(f"📊 AI improve tracked for {username}")
         except Exception as track_error:
             print(f"⚠️ Failed to track AI usage: {track_error}")
-        
-        return result, 200
+
+        # Respond with a minimal, well-defined payload for the frontend.
+        return {
+            "improved_version": result.get("improved_version", content),
+            "summary": result.get("summary", ""),
+            # Keep the full analysis available if frontend wants it.
+            "analysis": {k: v for k, v in result.items() if k not in ("improved_version", "summary")},
+        }, 200
         
     except AISafetyError as e:
         return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
+    except HFAIAssistantError as e:
+        print(f"❌ HF AI Assistant error: {e}")
+        body = {"detail": str(e), "blocked": bool(getattr(e, "reasons", None))}
+        if getattr(e, "reasons", None):
+            body["reasons"] = e.reasons
+        status = 401 if getattr(e, "status_code", None) == 401 else 400
+        return body, status
     except Exception as e:
         print(f"❌ Error improving content: {e}")
         return {
@@ -1640,7 +2059,7 @@ def get_proposal_analytics(username=None, proposal_id=None):
             
             # Verify proposal exists and user has access
             cursor.execute("""
-                SELECT id, title, status, client, '' as client_email
+                SELECT id, title, status, client_id
                 FROM proposals 
                 WHERE id = %s OR id::text = %s
             """, (proposal_id, str(proposal_id)))

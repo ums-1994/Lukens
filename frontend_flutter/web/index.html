@@ -5,6 +5,14 @@
   <meta name='viewport' content='width=device-width, initial-scale=1.0'>
   <base href="$FLUTTER_BASE_HREF">
   <title>Proposal & SOW Builder v2</title>
+  <!-- Use Render backend by default. Set window.USE_LOCAL_API=true in console to use local backend when running on localhost -->
+  <script>
+    (function () {
+      var h = (window.location && window.location.hostname) ? window.location.hostname : '';
+      // Default to false so we use Render URL even when running app on localhost
+      window.USE_LOCAL_API = false;
+    })();
+  </script>
   <!-- App Configuration - Load before Flutter app -->
   <script src="config.js"></script>
 </head>

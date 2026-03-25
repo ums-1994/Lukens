@@ -1,10 +1,20 @@
 import 'dart:convert';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'api_service.dart';
+import 'auth_service.dart';
 
 class AIAnalysisService {
   static String get _baseUrl => ApiService.baseUrl;
   static String? _authToken;
+
+  static String? get _effectiveToken {
+    final token = _authToken;
+    if (token != null && token.trim().isNotEmpty) return token.trim();
+    final authToken = AuthService.token;
+    if (authToken != null && authToken.trim().isNotEmpty) return authToken.trim();
+    return null;
+  }
 
   // Set authentication token
   static void setAuthToken(String token) {
@@ -15,43 +25,33 @@ class AIAnalysisService {
     required int runId,
     required String overrideReason,
   }) async {
-    final reason = overrideReason.trim();
-    if (reason.isEmpty) {
-      throw Exception('overrideReason is required');
+    final token = _effectiveToken;
+    if (token == null) {
+      throw Exception('No auth token available for risk gate override');
     }
-
-    final headers = {
-      'Content-Type': 'application/json',
-      if (_authToken != null) 'Authorization': 'Bearer $_authToken',
-    };
 
     final response = await http.post(
       Uri.parse('$_baseUrl/api/risk-gate/override'),
-      headers: headers,
-      body: jsonEncode({'run_id': runId, 'override_reason': reason}),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'run_id': runId,
+        'override_reason': overrideReason,
+      }),
     );
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
-      if (data is! Map<String, dynamic>) {
-        throw Exception('Unexpected override response');
+      if (data is Map<String, dynamic>) {
+        return data;
       }
-      return data;
+      throw Exception('Unexpected override response: ${response.body}');
     }
 
-    String detail = 'Risk Gate override failed';
-    try {
-      final parsed = jsonDecode(response.body);
-      if (parsed is Map<String, dynamic> && parsed['detail'] != null) {
-        detail = parsed['detail'].toString();
-      } else {
-        detail = response.body;
-      }
-    } catch (_) {
-      detail = response.body;
-    }
-
-    throw Exception(detail);
+    throw Exception(
+        'Risk gate override failed (${response.statusCode}): ${response.body}');
   }
 
   // Check if AI is configured (check backend status)
@@ -70,39 +70,42 @@ class AIAnalysisService {
 
   // AI-powered risk analysis (Wildcard Challenge) via Risk Gate endpoint
   static Future<Map<String, dynamic>> analyzeProposalRisks(
-      String proposalId) async {
+      Map<String, dynamic> proposalData) async {
     try {
-      final headers = {
-        'Content-Type': 'application/json',
-        if (_authToken != null) 'Authorization': 'Bearer $_authToken',
-      };
+      final token = _effectiveToken;
+      if (token == null) {
+        throw Exception('No auth token available for risk analysis');
+      }
 
       final response = await http.post(
         Uri.parse('$_baseUrl/api/risk-gate/analyze'),
-        headers: headers,
-        body: jsonEncode({'proposal_id': proposalId}),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(proposalData),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data is! Map<String, dynamic>) {
-          throw Exception('Unexpected risk analysis response');
+        if (data is Map<String, dynamic>) {
+          return data;
         }
+        throw Exception('Unexpected risk analysis response: ${response.body}');
+      }
 
-        // Risk Gate returns: status, risk_score, issues, kb_citations, redaction_summary
-        return data;
-      } else if (response.statusCode == 400) {
-        // Risk Gate may return 400 with BLOCK payload; parse it
+      // Risk Gate may return 400 with a valid BLOCK payload
+      if (response.statusCode == 400) {
         final data = jsonDecode(response.body);
         if (data is Map<String, dynamic> && data['status'] == 'BLOCK') {
           return data;
         }
-        throw Exception('Risk analysis failed: ${response.body}');
-      } else {
-        throw Exception('Risk analysis failed: ${response.body}');
       }
+
+      throw Exception(
+          'Risk analysis failed (${response.statusCode}): ${response.body}');
     } catch (e) {
-      print('Risk analysis error: $e');
+      debugPrint('❌ Risk analysis error: $e');
       rethrow;
     }
   }
@@ -225,77 +228,8 @@ class AIAnalysisService {
   // Legacy method for backward compatibility
   static Future<Map<String, dynamic>> analyzeProposalContent(
       Map<String, dynamic> proposalData) async {
-    // If proposal has an ID and it's not 'draft', use the new risk analysis
-    if (proposalData.containsKey('id') &&
-        proposalData['id'] != null &&
-        proposalData['id'].toString() != 'draft') {
-      try {
-        return await analyzeProposalRisks(proposalData['id'].toString());
-      } catch (e) {
-        print('AI Risk Analysis failed, falling back to basic analysis: $e');
-        // Fall through to basic analysis
-      }
-    }
-
-    // For unsaved proposals or when API fails, use basic analysis
-    return _getMockAnalysis(proposalData);
-  }
-
-  // Convert backend AI response to UI format
-  static Map<String, dynamic> _convertToUIFormat(
-      Map<String, dynamic> analysis) {
-    final issues = <Map<String, dynamic>>[];
-
-    // Convert backend issues to UI format
-    if (analysis['issues'] != null) {
-      for (final issue in analysis['issues']) {
-        issues.add({
-          'type': issue['category'] ?? 'ai_analysis',
-          'title': issue['section'] ?? 'Issue',
-          'description': issue['description'] ?? '',
-          'points': _severityToPoints(issue['severity']),
-          'priority': issue['severity'] ?? 'info',
-          'action': issue['recommendation'] ?? 'Review and fix',
-        });
-      }
-    }
-
-    // Calculate risk score
-    int riskScore = analysis['risk_score'] ?? 0;
-
-    // Determine status
-    String status;
-    if (analysis['can_release'] == true) {
-      status = 'Ready';
-    } else if (riskScore <= 30) {
-      status = 'At Risk';
-    } else {
-      status = 'Blocked';
-    }
-
-    return {
-      'riskScore': riskScore,
-      'status': status,
-      'issues': issues,
-      'summary': analysis['summary'] ?? '',
-      'required_actions': analysis['required_actions'] ?? [],
-      'kb_recommendations': analysis['kb_recommendations'] ?? {},
-    };
-  }
-
-  static int _severityToPoints(String? severity) {
-    switch (severity) {
-      case 'critical':
-        return 10;
-      case 'high':
-        return 7;
-      case 'medium':
-        return 5;
-      case 'low':
-        return 3;
-      default:
-        return 5;
-    }
+    // Always use the real-time risk analysis endpoint
+    return analyzeProposalRisks(proposalData);
   }
 
   // Mock analysis (fallback when AI is not configured)
@@ -474,7 +408,13 @@ class AIAnalysisService {
       case 'executive_summary':
         return 'Executive Summary';
       case 'scope_deliverables':
-        return 'Scope & Deliverables';
+        return 'Scope of Work';
+      case 'deliverables':
+        return 'Deliverables';
+      case 'payment_terms':
+        return 'Payment Terms clause';
+      case 'termination_clause':
+        return 'Termination Clause';
       case 'company_profile':
         return 'Company Profile';
       case 'terms_conditions':

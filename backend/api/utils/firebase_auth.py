@@ -2,6 +2,8 @@
 Firebase Authentication utilities
 Verifies Firebase ID tokens from the frontend
 """
+import base64
+import json
 import os
 import firebase_admin
 from firebase_admin import credentials, auth
@@ -98,6 +100,28 @@ def verify_firebase_token(id_token):
         return decoded_token
     except auth.InvalidIdTokenError as e:
         print(f"[FIREBASE] ERROR: Invalid Firebase ID token: {str(e)}")
+        # Local dev: accept token when aud mismatch (e.g. frontend project vs backend project)
+        if os.getenv('LOCAL_ACCEPT_FRONTEND_FIREBASE_TOKEN', '').strip().lower() in ('1', 'true', 'yes'):
+            try:
+                parts = id_token.split('.')
+                if len(parts) >= 2:
+                    payload_b64 = parts[1]
+                    payload_b64 += '=' * (4 - len(payload_b64) % 4)
+                    payload_json = base64.urlsafe_b64decode(payload_b64)
+                    payload = json.loads(payload_json)
+                    uid = payload.get('user_id') or payload.get('sub')
+                    email = payload.get('email')
+                    if uid or email:
+                        print("[FIREBASE] [DEV] Accepting token (LOCAL_ACCEPT_FRONTEND_FIREBASE_TOKEN); no signature verification.")
+                        return {
+                            'uid': uid or (email and email.replace('@', '_at_')),
+                            'email': email or '',
+                            'name': payload.get('name'),
+                            'email_verified': payload.get('email_verified', False),
+                            'firebase_claims': payload,
+                        }
+            except Exception as local_err:
+                print(f"[FIREBASE] [DEV] Local accept decode failed: {local_err}")
         return None
     except auth.ExpiredIdTokenError as e:
         print(f"[FIREBASE] ERROR: Expired Firebase ID token: {str(e)}")

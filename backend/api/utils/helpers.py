@@ -5,6 +5,7 @@ import os
 import json
 import html
 import traceback
+import sys
 from datetime import datetime, timedelta
 import psycopg2.extras
 
@@ -19,14 +20,26 @@ try:
     from reportlab.lib.pagesizes import letter, A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Paragraph,
+        Spacer,
+        PageBreak,
+        Table as PdfTable,
+        TableStyle,
+    )
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
+    from reportlab.lib import colors
     from reportlab.pdfgen import canvas
     from reportlab.lib.utils import ImageReader
     from io import BytesIO
     PDF_AVAILABLE = True
-except ImportError:
-    pass
+except ImportError as e:
+    PDF_AVAILABLE = False
+    print(
+        "⚠️ ReportLab import failed (api.utils.helpers). "
+        f"Error: {e} | Python: {sys.executable}"
+    )
 
 try:
     from docusign_esign import (
@@ -90,14 +103,46 @@ def resolve_user_id(cursor, identifier):
     return None
 
 
-def get_frontend_url():
-    """
-    Get the frontend URL from environment variables with proper fallback.
-    Returns production URL by default, not localhost.
+def get_frontend_url(origin: str | None = None):
+    """Get the frontend base URL.
+
+    - Prefers an explicit browser origin when provided (e.g. http://localhost:57680)
+      so locally-triggered actions generate locally-usable links.
+    - Falls back to FRONTEND_URL env var.
     """
     import os
-    frontend_url = os.getenv('FRONTEND_URL') or os.getenv('REACT_APP_API_URL') or 'https://sowbuilders.netlify.app'
-    # Remove trailing slash and ensure it's the base URL (not API URL)
+
+    try:
+        from flask import has_request_context, request
+    except Exception:
+        has_request_context = None
+        request = None
+
+    if has_request_context and request is not None and has_request_context():
+        hdr_origin = (request.headers.get('Origin') or '').strip()
+        hdr_referer = (request.headers.get('Referer') or '').strip()
+
+        if not origin:
+            origin = hdr_origin
+
+        if not origin and hdr_referer:
+            try:
+                ref_uri = __import__('urllib.parse').parse.urlparse(hdr_referer)
+                if ref_uri.scheme and ref_uri.netloc:
+                    origin = f"{ref_uri.scheme}://{ref_uri.netloc}"
+            except Exception:
+                pass
+
+    if origin and isinstance(origin, str):
+        o = origin.strip().rstrip('/')
+        if o.startswith('http://localhost') or o.startswith('http://127.0.0.1'):
+            return o
+
+    frontend_url = (
+        os.getenv('FRONTEND_URL')
+        or os.getenv('REACT_APP_API_URL')
+        or 'https://sowbuilders.netlify.app'
+    )
     frontend_url = frontend_url.rstrip('/').replace('/api', '').replace('/backend', '')
     return frontend_url
 
@@ -123,6 +168,16 @@ def log_activity(proposal_id, user_id, action_type, description, metadata=None):
             conn.commit()
     except Exception as e:
         print(f"⚠️ Failed to log activity: {e}")
+
+
+def log_status_change(proposal_id, user_id, from_status, to_status):
+    log_activity(
+        proposal_id,
+        user_id,
+        "status_changed",
+        f"Status changed: {from_status} → {to_status}",
+        {"from": from_status, "to": to_status},
+    )
 
 
 def create_notification(
@@ -199,6 +254,8 @@ def create_notification(
                 add_column('proposal_id', proposal_id)
             if 'metadata' in column_names:
                 add_column('metadata', metadata_json)
+            if 'is_read' in column_names:
+                add_column('is_read', False)
 
             placeholders = ', '.join(['%s'] * len(columns))
             columns_sql = ', '.join(columns)
@@ -248,6 +305,7 @@ def create_notification(
 
     except Exception as e:
         print(f"⚠️ Failed to create notification: {e}")
+        traceback.print_exc()
 
 
 def notify_proposal_collaborators(
@@ -601,6 +659,119 @@ def generate_proposal_pdf(
         'value',
     )
 
+    def _parse_num(v):
+        if v is None:
+            return 0.0
+        if isinstance(v, (int, float)):
+            return float(v)
+        try:
+            s = str(v)
+            cleaned = ''.join(ch for ch in s if (ch.isdigit() or ch in '.-'))
+            return float(cleaned) if cleaned else 0.0
+        except Exception:
+            return 0.0
+
+    def _table_subtotal_from_cells(cells):
+        if not isinstance(cells, list) or not cells:
+            return 0.0
+        header = cells[0] if isinstance(cells[0], list) else []
+        def _find_header_idx(needles, fallback):
+            for i, h in enumerate(header):
+                hs = str(h).strip().lower()
+                for n in needles:
+                    if hs == n or n in hs:
+                        return i
+            return fallback
+        total_col = _find_header_idx(['total', 'amount', 'line total'], 4)
+        qty_col = _find_header_idx(['quantity', 'qty'], 2)
+        unit_col = _find_header_idx(['unit price', 'price', 'unit'], 3)
+
+        subtotal = 0.0
+        for row in cells[1:]:
+            if not isinstance(row, list):
+                continue
+            row_total = 0.0
+            if 0 <= total_col < len(row):
+                row_total = _parse_num(row[total_col])
+            if row_total == 0.0:
+                qty = _parse_num(row[qty_col]) if 0 <= qty_col < len(row) else 0.0
+                unit = _parse_num(row[unit_col]) if 0 <= unit_col < len(row) else 0.0
+                row_total = qty * unit
+            subtotal += row_total
+        return subtotal
+
+    def _render_tables(elements, section_dict, *, style_normal, style_heading):
+        if not isinstance(section_dict, dict):
+            return
+
+        def _render_single_table(table_dict):
+            if not isinstance(table_dict, dict):
+                return
+            cells = table_dict.get('cells')
+            if not isinstance(cells, list) or not cells:
+                return
+            # Ensure 2D list of strings
+            data = []
+            for r in cells:
+                if not isinstance(r, list):
+                    continue
+                data.append([str(c) if c is not None else '' for c in r])
+            if not data:
+                return
+
+            elements.append(Spacer(1, 0.08 * inch))
+            elements.append(Paragraph('Table', style_heading))
+
+            tbl = PdfTable(data, repeatRows=1)
+            tbl.setStyle(
+                TableStyle(
+                    [
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#EAEAEA')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 8),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CCCCCC')),
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+                        ('TOPPADDING', (0, 0), (-1, -1), 3),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                    ]
+                )
+            )
+            elements.append(tbl)
+
+            ttype = str(table_dict.get('type') or '').strip().lower()
+            if ttype == 'price':
+                vat_rate = _parse_num(table_dict.get('vatRate'))
+                subtotal = _table_subtotal_from_cells(cells)
+                vat = subtotal * vat_rate if vat_rate > 0 else 0.0
+                total = subtotal + vat
+                elements.append(Spacer(1, 0.08 * inch))
+                elements.append(
+                    Paragraph(
+                        f"Subtotal: R{subtotal:.2f}<br/>VAT ({int(vat_rate*100)}%): R{vat:.2f}<br/><b>Total: R{total:.2f}</b>",
+                        style_normal,
+                    )
+                )
+
+        # Legacy tables
+        tables_any = section_dict.get('tables')
+        if isinstance(tables_any, list):
+            for t in tables_any:
+                if isinstance(t, dict):
+                    _render_single_table(t)
+
+        # Positioned tables: { table: {...}, x, y, width }
+        positioned_any = section_dict.get('positionedPricingTables')
+        if isinstance(positioned_any, list):
+            for p in positioned_any:
+                if not isinstance(p, dict):
+                    continue
+                t = p.get('table')
+                if isinstance(t, dict):
+                    _render_single_table(t)
+
     def _extract_text(value, *, depth: int = 0, max_depth: int = 6):
         if value is None:
             return ""
@@ -793,13 +964,8 @@ def generate_proposal_pdf(
     if sections:
         for idx, section in enumerate(sections[:max_sections]):
             if isinstance(section, dict):
-                section_title = (
-                    section.get("title")
-                    or section.get("name")
-                    or section.get("label")
-                    or section.get("id")
-                    or "Section"
-                )
+                raw_title = section.get("title") or section.get("name") or section.get("label")
+                section_title = raw_title or "Section"
                 body = None
                 if "body" in section:
                     body = section.get("body")
@@ -819,6 +985,21 @@ def generate_proposal_pdf(
                 body = section
 
             section_title = str(section_title).replace("_", " ").strip() or "Section"
+            # Guard against accidentally using internal IDs (often long numeric strings)
+            # as visible headings in the PDF.
+            try:
+                _t = section_title.replace(" ", "")
+                _t = _t[1:] if _t.startswith("#") else _t
+                _t = _t.replace("-", "")
+                if _t.isdigit() and len(_t) >= 10:
+                    # If the builder stored an internal numeric ID but no user-friendly
+                    # title, skip rendering this section entirely so numbering matches
+                    # the visible content.
+                    if not raw_title:
+                        continue
+                    section_title = "Section"
+            except Exception:
+                pass
             numbered_title = f"{idx + 1}. {section_title}".strip()
             elements.append(Paragraph(html.escape(numbered_title), heading_style))
 
@@ -839,6 +1020,24 @@ def generate_proposal_pdf(
                     _render_body(elements, sub_body, content_style, bullet_style)
             else:
                 _render_body(elements, body, content_style, bullet_style)
+
+            # Render any tables associated with this section (legacy + positioned)
+            if isinstance(section, dict):
+                _render_tables(
+                    elements,
+                    section,
+                    style_normal=content_style,
+                    style_heading=subheading_style,
+                )
+
+            # Some content shapes nest tables inside the section body/content dict.
+            if isinstance(body, dict):
+                _render_tables(
+                    elements,
+                    body,
+                    style_normal=content_style,
+                    style_heading=subheading_style,
+                )
 
             elements.append(Spacer(1, 0.15 * inch))
         if len(sections) > max_sections:
@@ -867,11 +1066,6 @@ def generate_proposal_pdf(
         )
     )
     elements.append(Spacer(1, 0.6 * inch))
-    elements.append(Paragraph("Name: ________________________________", content_style))
-    elements.append(Spacer(1, 0.15 * inch))
-    elements.append(Paragraph("Title: _________________________________", content_style))
-    elements.append(Spacer(1, 0.15 * inch))
-    elements.append(Paragraph("Date: _________________________________", content_style))
 
     has_cover_page = bool(cover_bytes)
     header_title = (title or "Proposal").strip() or "Proposal"

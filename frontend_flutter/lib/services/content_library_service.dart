@@ -22,6 +22,104 @@ class ContentLibraryService {
     };
   }
 
+  // ---------------------------------------------------------------------------
+  // Versioned content modules (/api/content-modules)
+  // ---------------------------------------------------------------------------
+
+  Future<List<Map<String, dynamic>>> getVersionedModules({
+    String? category,
+    String? query,
+    String? token,
+  }) async {
+    try {
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
+      final params = <String, String>{
+        'include_body': 'false',
+        if (category != null && category.isNotEmpty) 'category': category,
+        if (query != null && query.isNotEmpty) 'q': query,
+      };
+
+      final uri = Uri.parse('${ApiConfig.backendBaseUrl}/api/content-modules')
+          .replace(queryParameters: params);
+
+      final response = await http.get(
+        uri,
+        headers: _getHeaders(token: effectiveToken),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final modules = (data['modules'] as List?) ?? const [];
+        return modules
+            .whereType<Map>()
+            .map((m) => m.map((key, value) => MapEntry(key.toString(), value)))
+            .toList()
+            .cast<Map<String, dynamic>>();
+      }
+    } catch (e) {
+      print('Error fetching versioned modules: $e');
+    }
+    return [];
+  }
+
+  Future<List<Map<String, dynamic>>> getModuleVersions(
+    int moduleId, {
+    String? token,
+  }) async {
+    try {
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
+      final uri = Uri.parse(
+          '${ApiConfig.backendBaseUrl}/api/content-modules/$moduleId/versions');
+      final response = await http.get(
+        uri,
+        headers: _getHeaders(token: effectiveToken),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final versions = (data['versions'] as List?) ?? const [];
+        return versions
+            .whereType<Map>()
+            .map((v) => v
+                .map((key, value) => MapEntry(key.toString(), value)))
+            .toList()
+            .cast<Map<String, dynamic>>();
+      }
+    } catch (e) {
+      print('Error fetching module versions: $e');
+    }
+    return [];
+  }
+
+  Future<Map<String, dynamic>?> getModuleVersionSnapshot(
+    int moduleId,
+    int version, {
+    String? token,
+  }) async {
+    try {
+      final effectiveToken =
+          (token != null && token.isNotEmpty) ? token : AuthService.token;
+
+      final uri = Uri.parse(
+          '${ApiConfig.backendBaseUrl}/api/content-modules/$moduleId/versions/$version');
+      final response = await http.get(
+        uri,
+        headers: _getHeaders(token: effectiveToken),
+      );
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return (data as Map).map((k, v) => MapEntry(k.toString(), v))
+            as Map<String, dynamic>;
+      }
+    } catch (e) {
+      print('Error fetching module version snapshot: $e');
+    }
+    return null;
+  }
+
   // Get all content modules from the content library
   Future<List<Map<String, dynamic>>> getContentModules({
     String? category,
@@ -45,11 +143,11 @@ class ContentLibraryService {
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
 
-        // Backend returns {'content': [array]} format
-        final List<dynamic> data =
-            responseData is Map && responseData.containsKey('content')
-                ? responseData['content']
-                : (responseData is List ? responseData : []);
+        // Backend may return {'content': [array]} or {'covers': [array]} for consistency
+        final raw = responseData is Map
+            ? (responseData['content'] ?? responseData['covers'])
+            : responseData;
+        final List<dynamic> data = raw is List ? raw : [];
 
         return data
             .map((item) => {

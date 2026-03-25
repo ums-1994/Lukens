@@ -96,6 +96,79 @@ def _map_score_to_status(score: int, issues: list) -> str:
     return "PASS"
 
 
+def _normalize_proposal_sections_from_content(proposal_dict: dict) -> None:
+    """
+    Set proposal_dict["sections"] from proposal.content.sections so the Risk Gate
+    analyzer receives the editor-stored sections (proposal.content.sections) instead
+    of the legacy top-level proposal.sections. Handles content as JSON string or dict.
+    """
+    content = proposal_dict.get("content")
+    if content is None:
+        return
+    if isinstance(content, str):
+        content = content.strip()
+        if not content:
+            return
+        try:
+            content = json.loads(content)
+        except (TypeError, json.JSONDecodeError):
+            return
+    if not isinstance(content, dict):
+        return
+    sections = content.get("sections")
+    if sections is None:
+        return
+    proposal_dict["sections"] = sections
+
+
+# Top-level keys that are metadata, not section content.
+_BODY_META_KEYS = frozenset({
+    "id", "proposal_id", "proposalId", "title", "opportunityName", "templateType",
+    "clientName", "client_email", "client_name", "clientEmail", "status", "metadata",
+    "content", "sections",
+})
+
+
+def _merge_request_sections_into_proposal(proposal_dict: dict, body: dict) -> None:
+    """
+    When the client sends content or sections in the request body (e.g. current
+    editor state), use those for analysis so results reflect the latest content
+    instead of stale DB-only data.
+    """
+    # Prefer body["content"]["sections"] (editor JSON)
+    body_content = body.get("content")
+    if body_content is not None:
+        if isinstance(body_content, str):
+            body_content = body_content.strip()
+            if body_content:
+                try:
+                    body_content = json.loads(body_content)
+                except (TypeError, json.JSONDecodeError):
+                    body_content = None
+        if isinstance(body_content, dict):
+            body_sections = body_content.get("sections")
+            if body_sections is not None:
+                proposal_dict["sections"] = body_sections
+                proposal_dict["content"] = body_content
+                return
+    # Else prefer body["sections"] (list or dict)
+    body_sections = body.get("sections")
+    if body_sections is not None:
+        proposal_dict["sections"] = body_sections
+        return
+    # Build sections from flat keys in body (e.g. document editor sends section_key -> content)
+    sections_from_body = []
+    for key, val in body.items():
+        if key in _BODY_META_KEYS or not isinstance(val, str) or not val.strip():
+            continue
+        sections_from_body.append({"title": key.replace("_", " ").title(), "content": val})
+    if sections_from_body:
+        proposal_dict["sections"] = sections_from_body
+        for key, val in body.items():
+            if key not in _BODY_META_KEYS and isinstance(val, str) and val.strip():
+                proposal_dict[key] = val
+
+
 def _build_kb_citations(conn, issues: list) -> list:
     """Return list of KB citations with doc_id + clause_id."""
     if not issues:
@@ -150,10 +223,19 @@ def _build_kb_citations(conn, issues: list) -> list:
 def analyze(username=None):
     """Risk Gate analyze endpoint (persists a run for override/audit support)."""
     try:
-        data = request.get_json()
-        proposal_id = data.get("proposal_id")
-        if not proposal_id:
+        data = request.get_json(force=True, silent=True) or {}
+        proposal_id = (
+            data.get("proposal_id")
+            or data.get("proposalId")
+            or data.get("id")
+        )
+        if proposal_id is None or str(proposal_id).strip() == "":
             return {"detail": "proposal_id is required"}, 400
+
+        try:
+            proposal_id = int(str(proposal_id).strip())
+        except Exception:
+            return {"detail": "proposal_id must be an integer"}, 400
 
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -163,6 +245,8 @@ def analyze(username=None):
                 return {"detail": "Proposal not found"}, 404
 
             proposal_dict = dict(proposal)
+            _normalize_proposal_sections_from_content(proposal_dict)
+            _merge_request_sections_into_proposal(proposal_dict, data)
 
             # Sanitize + block check
             safety_result = sanitize_for_external_ai(proposal_dict)
@@ -206,31 +290,41 @@ def analyze(username=None):
             # Run AI analysis
             from ai_service import ai_service
 
+            ai_analysis = None
             try:
                 ai_analysis = ai_service.analyze_proposal_risks(proposal_dict)
-                issues = ai_analysis.get("issues", [])
-                risk_score = ai_analysis.get("risk_score", 0)
             except Exception as exc:
                 # If the AI provider is unavailable/rate-limited, do not 500.
-                # Return a safe REVIEW result and persist the run so override/audit
-                # flows can still proceed.
-                issues = [
-                    {
-                        "category": "analysis_error",
-                        "section": "AI Analysis",
-                        "severity": "medium",
-                        "description": "AI analysis temporarily unavailable",
-                        "recommendation": "Manual review required",
-                        "error": str(exc),
-                    }
-                ]
-                risk_score = 50
+                # Delegate to the fallback response from ai_service.
+                ai_analysis = {
+                    "risk_level": "unknown",
+                    "risk_score": None,
+                    "issues": [],
+                    "recommendations": [],
+                    "inference_status": "failed",
+                    "error": str(exc),
+                }
+
+            # If the Hugging Face integration failed, do NOT create a new
+            # risk_gate_runs row. This preserves any previous successful
+            # analysis results and simply surfaces a temporary failure.
+            if ai_analysis.get("inference_status") == "failed":
+                return {
+                    "risk_level": "unknown",
+                    "risk_score": None,
+                    "issues": [],
+                    "recommendations": [],
+                    "inference_status": "failed",
+                }, 200
+
+            issues = ai_analysis.get("issues", []) or []
+            risk_score = ai_analysis.get("risk_score", 0) or 0
 
             # KB citations
             kb_citations = _build_kb_citations(conn, issues)
 
             # Decision
-            status = _map_score_to_status(risk_score, issues)
+            status = _map_score_to_status(int(risk_score or 0), issues)
 
             # Redaction summary
             redaction_summary = {
@@ -260,11 +354,26 @@ def analyze(username=None):
             run_id = cursor.fetchone()["id"]
             conn.commit()
 
+            # Frontend expects risk_level, recommendations, can_release, total_issues, priority_breakdown (e.g. from HF)
+            risk_level = (
+                ai_analysis.get("risk_level")
+                or ("BLOCK" if status == "BLOCK" else "REVIEW" if status == "REVIEW" else "PASS")
+            )
+            recommendations = ai_analysis.get("recommendations", []) or []
+            can_release = ai_analysis.get("can_release", status == "PASS")
+            total_issues = ai_analysis.get("total_issues", len(issues))
+            priority_breakdown = ai_analysis.get("priority_breakdown", {}) or {}
+
             return {
                 "run_id": run_id,
                 "status": status,
+                "risk_level": risk_level,
                 "risk_score": risk_score,
                 "issues": issues,
+                "recommendations": recommendations,
+                "can_release": can_release,
+                "total_issues": total_issues,
+                "priority_breakdown": priority_breakdown,
                 "kb_citations": kb_citations,
                 "redaction_summary": redaction_summary,
             }, 200

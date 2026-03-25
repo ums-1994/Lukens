@@ -387,7 +387,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.black.withValues(alpha: 0.05),
                   blurRadius: 10,
                   offset: const Offset(0, 2),
                 ),
@@ -451,7 +451,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -557,7 +557,7 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -595,7 +595,13 @@ class _EnhancedComposePageState extends State<EnhancedComposePage>
       case 'company_profile':
         return 'Company Profile';
       case 'scope_deliverables':
-        return 'Scope & Deliverables';
+        return 'Scope of Work';
+      case 'deliverables':
+        return 'Deliverables';
+      case 'payment_terms':
+        return 'Payment Terms clause';
+      case 'termination_clause':
+        return 'Termination Clause';
       case 'delivery_approach':
         return 'Delivery Approach';
       case 'case_studies':

@@ -60,7 +60,7 @@ except ImportError:
     # DocuSign SDK missing: warn user (emoji-friendly message)
     print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
-from flask import Flask, request, jsonify, send_file, Response, send_from_directory
+from flask import Flask, request, jsonify, send_file, Response, send_from_directory, has_request_context
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -70,37 +70,97 @@ from asgiref.wsgi import WsgiToAsgi
 import openai
 from dotenv import load_dotenv
 from api.utils.ai_safety import AISafetyError
+from api.utils.decorators import token_required as firebase_token_required
+try:
+    from hf_ai_assistant_service import HFAIAssistantError
+except ImportError:
+    HFAIAssistantError = type("HFAIAssistantError", (Exception,), {})  # no-op if module missing
 
 # Load environment variables
 load_dotenv(dotenv_path=Path(__file__).resolve().with_name('.env'), override=True)
 
-app = Flask(__name__)
-CORS(
-    app,
-    supports_credentials=True,
-    resources={
-        r"/*": {
-            "origins": ["*"],
-            "allow_headers": ["Content-Type", "Authorization", "X-Requested-With", "Accept"],
-            "methods": ["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
-            "expose_headers": ["Content-Type", "Authorization"],
-        }
-    },
+def _mask_env_secret(value: str) -> str:
+    token = (value or "").strip()
+    if not token:
+        return "<EMPTY>"
+    if len(token) <= 8:
+        return "*" * len(token)
+    return f"{token[:4]}...{token[-4:]}"
+
+_ai_base_url = (os.getenv("AI_ASSISTANT_HF_URL") or "").strip()
+_ai_api_key = (os.getenv("AI_ASSISTANT_API_KEY") or "").strip()
+print(
+    "[Startup] AI Assistant config "
+    f"base_url={_ai_base_url or '<EMPTY>'} "
+    f"api_key={_mask_env_secret(_ai_api_key)} "
+    f"has_key={bool(_ai_api_key)}"
 )
 
-@app.route("/", methods=["OPTIONS"])
-@app.route("/<path:remaining>", methods=["OPTIONS"])
-def handle_options_preflight(remaining=None):
-    resp = Response("", status=200)
-    origin = request.headers.get('Origin')
-    if origin:
-        resp.headers['Access-Control-Allow-Origin'] = origin
-    resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
-    resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept'
-    resp.headers['Access-Control-Allow-Credentials'] = 'true'
-    return resp
+app = Flask(__name__)
 
-# Register API blueprints
+# Flask-Cors origin matching is strict unless you provide regex objects.
+# Use compiled regexes so localhost dev ports (Flutter web) are allowed.
+_cors_origins = [
+    "https://proposals2025.netlify.app",
+    # Render production frontend
+    "https://lukens-1.onrender.com",
+    # Allow Flutter web dev server ports (e.g. http://localhost:56886)
+    re.compile(r"^http://localhost(:\d+)?$"),
+    re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
+    # Common local dev ports (explicit so CORS is always sent even on 5xx)
+    "http://localhost:5173",
+    "http://localhost:5000",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+    "http://localhost:8081",
+    "http://localhost:50478",  # Add your specific port
+]
+
+# Also allow a configured frontend origin (Render/Netlify/custom domain).
+# FRONTEND_URL may contain a path; CORS needs just the origin.
+try:
+    _frontend_url = (os.getenv("FRONTEND_URL") or "").strip()
+    if _frontend_url:
+        parsed_frontend = urlparse(_frontend_url)
+        if parsed_frontend.scheme and parsed_frontend.netloc:
+            _cors_origins.append(f"{parsed_frontend.scheme}://{parsed_frontend.netloc}")
+except Exception:
+    # Never fail app startup due to CORS parsing.
+    pass
+
+
+def _is_allowed_origin(origin: str) -> bool:
+    if not origin:
+        return False
+    for allowed in _cors_origins:
+        try:
+            if isinstance(allowed, str) and origin == allowed:
+                return True
+            if hasattr(allowed, "match") and allowed.match(origin):
+                return True
+        except Exception:
+            continue
+    return False
+
+CORS(
+    app,
+    origins=_cors_origins,
+    supports_credentials=True,
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Accept",
+        "X-AI-Request-ID",
+        "X-Client-Device-Id",
+        "X-Client-Session-Token",
+        "X-Device-Id",
+    ],
+    methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
+    expose_headers=["Content-Type", "Authorization"],
+)
+
+# Register API blueprints first so GET/OPTIONS on /api/finance/export/* match blueprint, not catch-all
 from api.routes.auth import bp as auth_bp
 from api.routes.proposals import bp as proposals_bp
 from api.routes.creator import bp as creator_bp
@@ -112,6 +172,11 @@ from api.routes.approver import bp as approver_bp
 from api.routes.cycle_time import bp as cycle_time_bp
 from api.routes.pipeline import bp as pipeline_bp
 from api.routes.risk_gate import bp as risk_gate_bp
+from api.routes.finance_export import bp as finance_export_bp
+from api.routes.finance_audit import bp as finance_audit_bp
+from api.routes.finance_analytics import bp as finance_analytics_bp
+from api.routes.ai_assistant_proxy import bp as ai_assistant_proxy_bp
+from api.routes.client import bp as client_bp
 
 app.register_blueprint(auth_bp, url_prefix='/api')
 app.register_blueprint(proposals_bp, url_prefix='/api')
@@ -124,6 +189,53 @@ app.register_blueprint(approver_bp, url_prefix='/api')
 app.register_blueprint(cycle_time_bp, url_prefix='/api')
 app.register_blueprint(pipeline_bp, url_prefix='/api')
 app.register_blueprint(risk_gate_bp)
+app.register_blueprint(finance_export_bp, url_prefix='/api')
+app.register_blueprint(finance_audit_bp, url_prefix='/api')
+app.register_blueprint(finance_analytics_bp, url_prefix='/api')
+app.register_blueprint(ai_assistant_proxy_bp, url_prefix='/api')
+app.register_blueprint(client_bp)
+
+@app.route("/", methods=["GET", "HEAD"])
+def root():
+    return {
+        "status": "ok",
+        "service": "lukens-backend",
+    }, 200
+
+@app.route("/health", methods=["GET", "HEAD"])
+def health():
+    return {"status": "ok"}, 200
+
+# Catch-all OPTIONS after blueprints so specific routes (e.g. finance export) handle their path first
+@app.route("/", methods=["OPTIONS"])
+@app.route("/<path:remaining>", methods=["OPTIONS"])
+def handle_options_preflight(remaining=None):
+    resp = Response("", status=200)
+    origin = request.headers.get('Origin')
+    if origin and _is_allowed_origin(origin):
+        resp.headers['Access-Control-Allow-Origin'] = origin
+    resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
+    resp.headers['Access-Control-Allow-Headers'] = (
+        'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID, '
+        'X-Client-Device-Id, X-Client-Session-Token, X-Device-Id'
+    )
+    resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    return resp
+
+
+@app.after_request
+def _add_cors_headers(resp):
+    origin = request.headers.get('Origin')
+    if origin and _is_allowed_origin(origin):
+        resp.headers['Access-Control-Allow-Origin'] = origin
+        resp.headers['Vary'] = 'Origin'
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Methods'] = 'GET, HEAD, POST, OPTIONS, PUT, PATCH, DELETE'
+        resp.headers['Access-Control-Allow-Headers'] = (
+            'Content-Type, Authorization, X-Requested-With, Accept, X-AI-Request-ID, '
+            'X-Client-Device-Id, X-Client-Session-Token, X-Device-Id'
+        )
+    return resp
 
 # Wrap Flask app with ASGI adapter for Uvicorn compatibility
 asgi_app = WsgiToAsgi(app)
@@ -139,7 +251,10 @@ limiter = Limiter(
             "default_limits": (
                 ["1000000 per day", "100000 per hour"]
                 if os.getenv("DEV_BYPASS_AUTH", "false").lower() in ("1", "true", "yes")
-                else ["200 per day", "50 per hour"]
+                else [
+                    os.getenv("RATE_LIMIT_PER_DAY", "5000 per day"),
+                    os.getenv("RATE_LIMIT_PER_HOUR", "500 per hour"),
+                ]
             ),
             **(
                 {"request_filter": (lambda: request.method == "OPTIONS")}
@@ -184,13 +299,52 @@ _pg_pool = None
 
 
 def _build_db_config_from_env():
+    prefer_local = os.getenv('DB_PREFER_LOCAL', 'false').lower() == 'true'
+    if prefer_local:
+        local_config = {
+            'host': os.getenv('LOCAL_DB_HOST', 'localhost'),
+            'database': os.getenv('LOCAL_DB_NAME', os.getenv('DB_NAME', 'proposal_db')),
+            'user': os.getenv('LOCAL_DB_USER', os.getenv('DB_USER', 'postgres')),
+            'password': os.getenv('LOCAL_DB_PASSWORD', os.getenv('DB_PASSWORD', '')),
+            'port': int(os.getenv('LOCAL_DB_PORT', os.getenv('DB_PORT', '5432'))),
+        }
+        local_sslmode = os.getenv('LOCAL_DB_SSLMODE')
+        if local_sslmode:
+            local_config['sslmode'] = local_sslmode
+        return local_config
+
     database_url = os.getenv('DATABASE_URL')
     if database_url:
         from urllib.parse import urlparse, parse_qs
 
         parsed = urlparse(database_url)
-        if parsed.scheme not in ('postgres', 'postgresql'):
-            raise ValueError('DATABASE_URL must start with postgres:// or postgresql://')
+        host = (parsed.hostname or '').strip()
+        # Render "Internal" URL host looks like dpg-xxx-a (no domain). It only works on Render.
+        # From your PC we must use the External URL. Prefer DATABASE_URL_EXTERNAL, else DB_HOST if it has a domain.
+        if host.startswith('dpg-') and '.' not in host:
+            external_url = os.getenv('DATABASE_URL_EXTERNAL')
+            if external_url:
+                database_url = external_url
+                parsed = urlparse(database_url)
+                host = (parsed.hostname or '').strip()
+            elif os.getenv('DB_HOST') and '.' in (os.getenv('DB_HOST') or ''):
+                return {
+                    'host': os.getenv('DB_HOST').strip(),
+                    'database': os.getenv('DB_NAME') or (parsed.path or '').lstrip('/') or 'proposal_db',
+                    'user': os.getenv('DB_USER') or parsed.username,
+                    'password': os.getenv('DB_PASSWORD') or parsed.password,
+                    'port': int(os.getenv('DB_PORT') or str(parsed.port or 5432)),
+                    'sslmode': os.getenv('DB_SSLMODE') or 'require',
+                }
+        # Accept common Postgres URL scheme variants.
+        scheme = (parsed.scheme or '').lower()
+        if scheme.startswith('postgresql+'):
+            scheme = 'postgresql'
+        if scheme not in ('postgres', 'postgresql'):
+            raise ValueError(
+                'DATABASE_URL must start with postgres:// or postgresql:// '
+                '(optionally with a driver like postgresql+psycopg2://)'
+            )
 
         db_config = {
             'host': parsed.hostname,
@@ -235,6 +389,18 @@ def get_pg_pool():
         import psycopg2.pool
         try:
             db_config = _build_db_config_from_env()
+            # Helpful hint for a common Render misconfiguration:
+            # Render "Internal Database URL" hosts often look like "dpg-xxxx-a" (no dots).
+            # That value won't resolve outside Render's internal network; in that case you
+            # must use the External Database URL / full host like "dpg-xxxx-a.<region>-postgres.render.com".
+            host = (db_config.get('host') or '').strip()
+            if host.startswith('dpg-') and '.' not in host:
+                print(
+                    "[WARN] DB host looks like a Render internal hostname without a domain "
+                    f"({host!r}). If this service is not on Render's private network, "
+                    "set DATABASE_URL to the External Database URL (with a full *.render.com hostname) "
+                    "or set DB_HOST to the full hostname."
+                )
             if 'sslmode' in db_config:
                 print(f"[*] Using SSL mode: {db_config['sslmode']} for external connection")
             print(f"[*] Connecting to PostgreSQL: {db_config['host']}:{db_config['port']}/{db_config['database']}")
@@ -341,6 +507,138 @@ def init_pg_schema():
         FOREIGN KEY (owner_id) REFERENCES users(id)
         )''')
 
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS finance_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER,
+            username VARCHAR(255),
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(64) NOT NULL,
+            field_name VARCHAR(255) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            action_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_entity
+               ON finance_audit_logs(entity_type, entity_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_user
+               ON finance_audit_logs(user_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_compliance (
+            proposal_id INTEGER PRIMARY KEY,
+            status VARCHAR(20) NOT NULL,
+            reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_compliance_status
+               ON proposal_compliance(status, evaluated_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS finance_audit_logs (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER,
+            username VARCHAR(255),
+            entity_type VARCHAR(50) NOT NULL,
+            entity_id VARCHAR(64) NOT NULL,
+            field_name VARCHAR(255) NOT NULL,
+            old_value TEXT,
+            new_value TEXT,
+            action_type VARCHAR(50) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_entity
+               ON finance_audit_logs(entity_type, entity_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_finance_audit_logs_user
+               ON finance_audit_logs(user_id, created_at DESC)'''
+        )
+
+        cursor.execute(
+            '''CREATE TABLE IF NOT EXISTS proposal_compliance (
+            proposal_id INTEGER PRIMARY KEY,
+            status VARCHAR(20) NOT NULL,
+            reasons JSONB NOT NULL DEFAULT '[]'::jsonb,
+            evaluated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (proposal_id) REFERENCES proposals(id) ON DELETE CASCADE
+            )'''
+        )
+
+        cursor.execute(
+            '''CREATE INDEX IF NOT EXISTS idx_proposal_compliance_status
+               ON proposal_compliance(status, evaluated_at DESC)'''
+        )
+
+        # Ensure the status CHECK constraint supports the full workflow.
+        # This is critical for production (Render) where the constraint may already exist.
+        try:
+            cursor.execute("""
+                ALTER TABLE proposals
+                DROP CONSTRAINT IF EXISTS proposals_status_check;
+            """)
+
+            cursor.execute("""
+                ALTER TABLE proposals
+                ADD CONSTRAINT proposals_status_check
+                CHECK (
+                    status IN (
+                        'draft',
+                        'Draft',
+                        'submitted',
+                        'Submitted',
+                        'approved',
+                        'Approved',
+                        'rejected',
+                        'Rejected',
+                        'archived',
+                        'Archived',
+                        'Pending CEO Approval',
+                        'Pending Approval',
+                        'Pricing In Progress',
+                        'Priced',
+                        'Changes Requested',
+                        'changes requested',
+                        'Resubmitted',
+                        'resubmitted',
+                        'Sent to Client',
+                        'Sent for Signature',
+                        'In Review',
+                        'Signed',
+                        'signed',
+                        'Client Signed',
+                        'Client Approved',
+                        'Client Declined'
+                    ) OR status IS NULL
+                );
+            """)
+        except Exception as e:
+            print(f"[WARN] Could not update proposals_status_check constraint: {e}")
+            # If this ALTER TABLE fails it can leave the transaction in an
+            # aborted state. Roll back so subsequent DDL statements for the
+            # rest of the schema can still run successfully.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
         # Risk Gate runs + override audit trail
         cursor.execute(
             '''CREATE TABLE IF NOT EXISTS risk_gate_runs (
@@ -425,7 +723,13 @@ def init_pg_schema():
         created_by INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         section_index INTEGER,
+        section_name TEXT,
         highlighted_text TEXT,
+        start_offset INTEGER,
+        end_offset INTEGER,
+        parent_id INTEGER,
+        block_type VARCHAR(50),
+        block_id TEXT,
         status VARCHAR(50) DEFAULT 'open',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         resolved_by INTEGER,
@@ -434,7 +738,33 @@ def init_pg_schema():
         FOREIGN KEY (created_by) REFERENCES users(id),
         FOREIGN KEY (resolved_by) REFERENCES users(id)
         )''')
-        
+        # Migrations for document_comments (add columns if missing on existing DBs).
+        # IMPORTANT: if any ALTER fails, roll back that statement so the transaction
+        # is not left in an aborted state (which would break later DDL).
+        for col_sql in [
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS section_name TEXT',
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS start_offset INTEGER',
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS end_offset INTEGER',
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS parent_id INTEGER',
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS block_type VARCHAR(50)',
+            'ALTER TABLE document_comments ADD COLUMN IF NOT EXISTS block_id TEXT',
+        ]:
+            try:
+                cursor.execute(col_sql)
+            except Exception:
+                # Column may already exist or other benign error; ensure we clear the
+                # failed statement so the rest of the migration can continue.
+                conn.rollback()
+                cursor = conn.cursor()
+        try:
+            cursor.execute('''ALTER TABLE document_comments ADD CONSTRAINT document_comments_parent_id_fkey
+                FOREIGN KEY (parent_id) REFERENCES document_comments(id) ON DELETE CASCADE''')
+        except Exception:
+            # Constraint likely already exists; roll back this single statement
+            # so subsequent schema initialization can continue normally.
+            conn.rollback()
+            cursor = conn.cursor()
+
         # Collaboration invitations table
         cursor.execute('''CREATE TABLE IF NOT EXISTS collaboration_invitations (
         id SERIAL PRIMARY KEY,
@@ -536,6 +866,20 @@ def init_pg_schema():
         cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_mentions_user 
                          ON comment_mentions(mentioned_user_id, is_read, created_at DESC)''')
         
+        # Comment reactions table (emoji reactions like Google Docs)
+        cursor.execute('''CREATE TABLE IF NOT EXISTS comment_reactions (
+        id SERIAL PRIMARY KEY,
+        comment_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        emoji VARCHAR(20) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(comment_id, user_id, emoji),
+        FOREIGN KEY (comment_id) REFERENCES document_comments(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )''')
+        cursor.execute('''CREATE INDEX IF NOT EXISTS idx_comment_reactions_comment 
+                         ON comment_reactions(comment_id)''')
+        
         # DocuSign signatures table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposal_signatures (
         id SERIAL PRIMARY KEY,
@@ -577,6 +921,16 @@ def init_pg_schema():
 def init_db():
     """Initialize PostgreSQL schema on first request"""
     global _db_initialized
+    # If someone calls init_db() manually (e.g., from __main__ or a script),
+    # Flask's request proxy won't be available. Handle that gracefully.
+    if not has_request_context():
+        if _db_initialized:
+            return
+        print("[*] Initializing PostgreSQL schema (no request context)...")
+        init_pg_schema()
+        _db_initialized = True
+        print("[OK] Database schema initialized successfully")
+        return
     # Skip initialization for CORS preflight requests to avoid non-2xx responses
     # which will cause browsers to block the request due to failed preflight.
     if request.method == 'OPTIONS':
@@ -1552,8 +1906,8 @@ def get_user_profile(username):
 
 @app.get("/api/content")
 @app.get("/content")
-@token_required
-def get_content(username):
+@firebase_token_required
+def get_content(username=None):
     try:
         conn = _pg_conn()
         cursor = conn.cursor()
@@ -2462,7 +2816,7 @@ def get_client_dashboard_stats(username):
     except Exception as e:
         return {'detail': str(e)}, 500
 
-@app.post("/api/comments/document/<int:proposal_id>")
+@app.post("/api/_legacy/comments/document/<int:proposal_id>")
 @token_required
 def create_comment(username, proposal_id):
     """Create a new comment on a document"""
@@ -2543,55 +2897,56 @@ def create_comment(username, proposal_id):
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
-@app.route("/api/comments/proposal/<int:proposal_id>", methods=['GET', 'OPTIONS'])
-def get_proposal_comments(proposal_id):
-    """Get all comments for a proposal"""
+@app.get("/api/_legacy/comments/document/<int:proposal_id>")
+def get_document_comments(proposal_id):
+    """
+    Get all comments for a proposal document for the admin/manager review screens.
+    Uses Firebase-aware token validation (accepts Firebase JWT or legacy token).
+    """
+    # --- auth: accept Firebase JWT or legacy token ---
+    from api.utils.firebase_auth import verify_firebase_token
+    auth_header = request.headers.get('Authorization', '')
+    token = auth_header.split(' ')[-1] if auth_header else None
+    if not token:
+        return {'detail': 'Token is missing'}, 401
+    username = None
+    decoded = verify_firebase_token(token)
+    if decoded:
+        username = decoded.get('email') or decoded.get('name') or 'firebase_user'
+    else:
+        username = verify_token(token)
+    if not username:
+        return {'detail': 'Invalid or expired token'}, 401
+    # --- end auth ---
     try:
-        with _pg_conn() as conn:
-            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(
-                    """SELECT 
-                           dc.id, dc.proposal_id, dc.comment_text, dc.created_by, dc.created_at,
-                           dc.section_index, dc.highlighted_text, dc.status, dc.updated_at, 
-                           dc.resolved_by, dc.resolved_at,
-                           u.email as created_by_email,
-                           u.full_name as created_by_name,
-                           r.email as resolved_by_email,
-                           r.full_name as resolved_by_name
-                       FROM document_comments dc
-                       LEFT JOIN users u ON dc.created_by = u.id
-                       LEFT JOIN users r ON dc.resolved_by = r.id
-                       WHERE dc.proposal_id = %s
-                       ORDER BY dc.created_at DESC""",
-                    (proposal_id,)
-                )
-                rows = cur.fetchall()
-                
-                # Convert timestamps to ISO format
-                comments = []
-                for row in rows:
-                    comments.append({
-                        "id": row["id"],
-                        "proposal_id": row["proposal_id"],
-                        "comment_text": row["comment_text"],
-                        "created_by": row["created_by"],
-                        "created_by_email": row["created_by_email"],
-                        "created_by_name": row["created_by_name"],
-                        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
-                        "section_index": row["section_index"],
-                        "highlighted_text": row["highlighted_text"],
-                        "status": row["status"],
-                        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
-                        "resolved_by": row["resolved_by"],
-                        "resolved_by_email": row["resolved_by_email"],
-                        "resolved_by_name": row["resolved_by_name"],
-                        "resolved_at": row["resolved_at"].isoformat() if row["resolved_at"] else None
-                    })
-                return comments
-    except HTTPException:
-        raise
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            cursor.execute(
+                """
+                SELECT 
+                    dc.id,
+                    dc.proposal_id,
+                    dc.comment_text,
+                    dc.created_at,
+                    u.full_name AS author_name,
+                    u.username AS author_username,
+                    u.email AS author_email
+                FROM document_comments dc
+                LEFT JOIN users u ON dc.created_by = u.id
+                WHERE dc.proposal_id = %s
+                ORDER BY dc.created_at DESC
+                """,
+                (proposal_id,),
+            )
+            comments = cursor.fetchall()
+            return {
+                "comments": [dict(c) for c in comments],
+                "total": len(comments),
+            }, 200
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"❌ Error getting document comments: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
 
 # Proposal Versions endpoints
 @app.post("/legacy/proposals/<int:proposal_id>/versions")
@@ -2738,8 +3093,8 @@ def get_version(username, proposal_id, version_number):
 # ============================================================
 
 @app.post("/ai/generate")
-@token_required
-def ai_generate_content(username):
+@firebase_token_required
+def ai_generate_content(username=None):
     """Generate proposal content using AI"""
     import time
     start_time = time.time()
@@ -2788,13 +3143,31 @@ def ai_generate_content(username):
             'section_type': section_type
         }, 200
         
+    except HFAIAssistantError as e:
+        print(f"❌ HF AI Assistant error: {e}")
+        body = {"detail": str(e)}
+        if getattr(e, "reasons", None):
+            body["reasons"] = e.reasons
+        upstream_status = getattr(e, "status_code", None)
+        if isinstance(upstream_status, int):
+            body["upstream_status"] = upstream_status
+            if 500 <= upstream_status <= 599:
+                # Upstream service failure: surface as gateway/service unavailable to frontend
+                return body, 503
+            return body, upstream_status
+        return body, 502
     except Exception as e:
         print(f"❌ Error generating AI content: {e}")
-        return {'detail': str(e)}, 500
+        detail = str(e)
+        if "rate limit" in detail.lower() or "429" in detail:
+            return {'detail': detail}, 503
+        if "temporarily unavailable" in detail.lower() or "server error" in detail.lower():
+            return {'detail': detail}, 503
+        return {'detail': detail}, 500
 
 @app.post("/ai/improve")
-@token_required
-def ai_improve_content(username):
+@firebase_token_required
+def ai_improve_content(username=None):
     """Improve existing content using AI"""
     import time
     start_time = time.time()
@@ -2834,16 +3207,31 @@ def ai_improve_content(username):
         
     except AISafetyError as e:
         return {"detail": str(e), "blocked": True, "reasons": e.reasons}, 400
+    except HFAIAssistantError as e:
+        print(f"❌ HF AI Assistant error: {e}")
+        body = {"detail": str(e), "blocked": bool(getattr(e, "reasons", None))}
+        if getattr(e, "reasons", None):
+            body["reasons"] = e.reasons
+        upstream_status = getattr(e, "status_code", None)
+        if isinstance(upstream_status, int):
+            body["upstream_status"] = upstream_status
+            if 500 <= upstream_status <= 599:
+                return body, 503
+            return body, upstream_status
+        return body, 502
     except Exception as e:
         print(f"❌ Error improving content: {e}")
+        detail = str(e)
+        if "rate limit" in detail.lower() or "429" in detail:
+            return {"detail": detail, "blocked": False}, 503
         return {
             "detail": "Upstream AI provider error",
             "blocked": False,
         }, 502
 
 @app.post("/ai/generate-full-proposal")
-@token_required
-def ai_generate_full_proposal(username):
+@firebase_token_required
+def ai_generate_full_proposal(username=None):
     """Generate a complete multi-section proposal"""
     import time
     start_time = time.time()
@@ -2895,7 +3283,10 @@ def ai_generate_full_proposal(username):
         
     except Exception as e:
         print(f"❌ Error generating full proposal: {e}")
-        return {'detail': str(e)}, 500
+        detail = str(e)
+        if "rate limit" in detail.lower() or "429" in detail:
+            return {'detail': detail}, 503
+        return {'detail': detail}, 500
 
 @app.post("/ai/analyze-risks")
 @token_required
@@ -6813,7 +7204,12 @@ def initialize_database():
 if __name__ == '__main__':
     # When running with 'python app.py'
     try:
-        init_db()  # Initialize database before running
+        # Initialize schema up-front for local runs. Don't call init_db() here
+        # because it expects a Flask request context.
+        print("[*] Initializing PostgreSQL schema (startup)...")
+        init_pg_schema()
+        _db_initialized = True
+        print("[OK] Database schema initialized successfully")
     except Exception as e:
         print(f"Warning: Database initialization failed: {e}")
     import os

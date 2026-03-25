@@ -20,6 +20,84 @@ from werkzeug.security import check_password_hash
 
 bp = Blueprint('auth', __name__)
 
+# Keep role normalization in one place so registration/login stay consistent.
+def _normalize_role(raw_role, default='manager'):
+    role_key = (raw_role or '').strip().lower().replace('-', '_').replace(' ', '_')
+
+    if role_key in {'admin', 'ceo', 'approver'}:
+        return 'admin'
+    if role_key.startswith('finance'):
+        return 'finance_manager'
+    if role_key in {'manager', 'creator', 'user'}:
+        return 'manager'
+    return default
+
+def _select_firebase_user(cursor, email, uid):
+    """
+    Resolve a Firebase-authenticated user deterministically.
+    Prefer firebase_uid match (authoritative), then email fallback.
+    This avoids role drift when duplicate email rows exist.
+    """
+    # 1) Preferred path: exact firebase UID match
+    try:
+        cursor.execute(
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users
+               WHERE firebase_uid = %s
+               ORDER BY
+                   CASE
+                       WHEN lower(coalesce(role, '')) IN ('admin', 'ceo', 'approver') THEN 0
+                       WHEN lower(coalesce(role, '')) LIKE 'finance%%' THEN 1
+                       WHEN lower(coalesce(role, '')) IN ('manager', 'creator', 'user') THEN 2
+                       ELSE 3
+                   END,
+                   id DESC
+               LIMIT 1''',
+            (uid,)
+        )
+        user = cursor.fetchone()
+        if user:
+            return user
+    except psycopg2.ProgrammingError:
+        # firebase_uid column may not exist in older schemas
+        cursor.connection.rollback()
+
+    # 2) Fallback path: email (prefer rows already linked to a firebase_uid)
+    try:
+        cursor.execute(
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users
+               WHERE email = %s
+               ORDER BY
+                   CASE
+                       WHEN firebase_uid = %s THEN 0
+                       WHEN firebase_uid IS NOT NULL THEN 1
+                       ELSE 2
+                   END,
+                   CASE
+                       WHEN lower(coalesce(role, '')) IN ('admin', 'ceo', 'approver') THEN 0
+                       WHEN lower(coalesce(role, '')) LIKE 'finance%%' THEN 1
+                       WHEN lower(coalesce(role, '')) IN ('manager', 'creator', 'user') THEN 2
+                       ELSE 3
+                   END,
+                   id DESC
+               LIMIT 1''',
+            (email, uid)
+        )
+        return cursor.fetchone()
+    except psycopg2.ProgrammingError:
+        # Column fallback for very old schema
+        cursor.connection.rollback()
+        cursor.execute(
+            '''SELECT id, username, email, full_name, role, department, is_active
+               FROM users
+               WHERE email = %s
+               ORDER BY id DESC
+               LIMIT 1''',
+            (email,)
+        )
+        return cursor.fetchone()
+
 # Initialize Firebase on module load (with error handling to prevent import failures)
 try:
     print("[AUTH] Initializing Firebase Admin SDK...")
@@ -388,10 +466,10 @@ def firebase_auth():
         id_token = data.get('idToken') or data.get('id_token')
         if not id_token:
             return {'detail': 'Firebase ID token required'}, 400
-        
-        # Get role from request (for new registrations)
+
+        # Get role from request (for new registrations and potential upgrades)
         requested_role = data.get('role', 'user')
-        
+
         # Verify Firebase token
         decoded_token = verify_firebase_token(id_token)
         if not decoded_token:
@@ -405,41 +483,106 @@ def firebase_auth():
         uid = firebase_user['uid']
         email = firebase_user['email']
         name = firebase_user.get('name') or email.split('@')[0]  # Use email prefix if no name
-        
+
+        # ------------------------------------------------------------------
+        # DEV SHORT-CIRCUIT: allow Firebase auth without Postgres
+        # ------------------------------------------------------------------
+        # When DEV_BYPASS_DB_FOR_FIREBASE=true, we skip all database access
+        # and return a synthetic user object. This is handy for local UI
+        # work when the cloud Postgres instance is unreachable.
+        if os.getenv("DEV_BYPASS_DB_FOR_FIREBASE", "false").lower() == "true":
+            username = email.split("@")[0]
+            backend_token = generate_token(username)
+            save_tokens(get_valid_tokens())
+
+            # Map requested role to the normalized roles used on the frontend.
+            normalized_role = _normalize_role(requested_role, default='manager')
+
+            return {
+                "token": id_token,
+                "backend_token": backend_token,
+                "user": {
+                    "id": 0,
+                    "username": username,
+                    "email": email,
+                    "full_name": name,
+                    "role": normalized_role,
+                    "department": None,
+                    "firebase_uid": uid,
+                },
+            }, 200
+
+        # ------------------------------------------------------------------
+        # Normal path: use PostgreSQL for user lookup / creation
+        # ------------------------------------------------------------------
+
         # Check if user exists in database
         conn = _pg_conn()
         cursor = conn.cursor()
         
         try:
-            # Try to find user by email or create firebase_uid column if needed
-            cursor.execute(
-                '''SELECT id, username, email, full_name, role, department, is_active
-                   FROM users WHERE email = %s''',
-                (email,)
-            )
-            user = cursor.fetchone()
+            # Resolve user by firebase_uid first, then email fallback.
+            user = _select_firebase_user(cursor, email, uid)
             
             if user:
                 # User exists, update Firebase UID if needed
                 user_id = user[0]
                 username = user[1]
                 user_role = user[4]  # Get role from database
-                
+
                 # Normalize role: map variations to standardized roles
                 # Supported normalized roles: 'admin', 'manager', 'finance_manager'
-                role_lower = user_role.lower().strip() if user_role else 'user'
-                if role_lower in ['admin', 'ceo']:
-                    normalized_role = 'admin'
-                elif role_lower in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager']:
-                    # Preserve a distinct finance manager role so frontend can route to finance dashboard
-                    normalized_role = 'finance_manager'
-                elif role_lower in ['manager', 'creator', 'user']:
-                    normalized_role = 'manager'
-                else:
-                    # Default to manager for unknown roles but log it for visibility
-                    normalized_role = 'manager'
+                normalized_role = _normalize_role(user_role, default='manager')
+                if normalized_role == 'manager' and (user_role or '').strip():
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
-                
+
+                # SECURITY: Never upgrade stored roles based on a client-provided "role" during login.
+                # This is an escalation vector (e.g. if the frontend persists a stale role locally).
+                # Allow it only when explicitly enabled server-side for local development/testing.
+                allow_client_role_upgrade = (os.getenv("ALLOW_CLIENT_ROLE_UPGRADE") or "").lower() in (
+                    "1",
+                    "true",
+                    "yes",
+                )
+                if allow_client_role_upgrade:
+                    try:
+                        requested_role_lower = requested_role.lower().strip() if requested_role else ''
+                    except Exception:
+                        requested_role_lower = ''
+
+                    if requested_role_lower:
+                        if requested_role_lower in ['admin', 'ceo'] and normalized_role != 'admin':
+                            try:
+                                cursor.execute(
+                                    '''UPDATE users SET role = 'admin' WHERE id = %s''',
+                                    (user_id,),
+                                )
+                                conn.commit()
+                                user_role = 'admin'
+                                normalized_role = 'admin'
+                                print(f'🔐 Upgraded user {email} to admin based on requested_role="{requested_role_lower}"')
+                            except Exception as upgrade_err:
+                                conn.rollback()
+                                print(f'⚠️ Failed to upgrade role to admin for {email}: {upgrade_err}')
+                        elif requested_role_lower in [
+                            'financial manager',
+                            'finance manager',
+                            'finance_manager',
+                            'financial_manager',
+                            'finance',
+                        ] and normalized_role not in ['admin', 'finance_manager']:
+                            try:
+                                cursor.execute(
+                                    '''UPDATE users SET role = 'finance_manager' WHERE id = %s''',
+                                    (user_id,),
+                                )
+                                conn.commit()
+                                user_role = 'finance_manager'
+                                normalized_role = 'finance_manager'
+                                print(f'🔐 Upgraded user {email} to finance_manager based on requested_role="{requested_role_lower}"')
+                            except Exception as upgrade_err:
+                                conn.rollback()
+                                print(f'⚠️ Failed to upgrade role to finance_manager for {email}: {upgrade_err}')
                 print(f'🔍 Login: User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"')
                 
                 # Check if firebase_uid column exists, if not we'll skip updating it
@@ -472,6 +615,43 @@ def firebase_auth():
                 }, 200
             else:
                 # User doesn't exist, create new user
+                # Guard against concurrent /api/firebase calls creating duplicate rows.
+                cursor.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', (email,))
+                user_after_lock = _select_firebase_user(cursor, email, uid)
+                if user_after_lock:
+                    user = user_after_lock
+                    user_id = user[0]
+                    username = user[1]
+                    user_role = user[4]
+                    normalized_role = _normalize_role(user_role, default='manager')
+                    if normalized_role == 'manager' and (user_role or '').strip():
+                        print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
+                    print(f'🔍 Login (post-lock): User found - email={email}, role from DB="{user_role}", normalized="{normalized_role}"')
+                    try:
+                        cursor.execute(
+                            '''UPDATE users SET firebase_uid = %s WHERE id = %s''',
+                            (uid, user_id)
+                        )
+                        conn.commit()
+                    except psycopg2.ProgrammingError:
+                        conn.rollback()
+
+                    backend_token = generate_token(username)
+                    save_tokens(get_valid_tokens())
+                    return {
+                        'token': id_token,
+                        'backend_token': backend_token,
+                        'user': {
+                            'id': user[0],
+                            'username': user[1],
+                            'email': user[2],
+                            'full_name': user[3],
+                            'role': normalized_role,
+                            'department': user[5],
+                            'firebase_uid': uid
+                        }
+                    }, 200
+
                 username = email.split('@')[0]  # Use email prefix as username
                 
                 # Make username unique if needed
@@ -486,17 +666,9 @@ def firebase_auth():
                 
                 # Use requested role if provided, otherwise default to 'manager'
                 # Supported roles: 'admin', 'manager', 'finance_manager'
-                normalized_role = requested_role.lower().strip() if requested_role else 'manager'
-                if normalized_role in ['admin', 'ceo']:
-                    role_to_use = 'admin'
-                elif normalized_role in ['financial manager', 'finance manager', 'finance_manager', 'financial_manager', 'finance']:
-                    # Preserve a distinct finance manager role so frontend can route to finance dashboard
-                    role_to_use = 'finance_manager'
-                elif normalized_role in ['manager', 'creator', 'user']:
-                    role_to_use = 'manager'
-                else:
-                    # Default to manager for unknown roles
-                    role_to_use = 'manager'
+                role_to_use = _normalize_role(requested_role, default='manager')
+                normalized_role = (requested_role or '').lower().strip()
+                if role_to_use == 'manager' and (requested_role or '').strip():
                     print(f'⚠️ Unknown role "{requested_role}", defaulting to "manager"')
                 
                 print(f'🔍 Registration: requested_role="{requested_role}", normalized="{normalized_role}", using="{role_to_use}"')

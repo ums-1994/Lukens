@@ -38,8 +38,8 @@ class LeftSidebar extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Colors.black.withOpacity(0.3),
-              Colors.black.withOpacity(0.2),
+              Colors.black.withValues(alpha: 0.3),
+              Colors.black.withValues(alpha: 0.2),
             ],
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,

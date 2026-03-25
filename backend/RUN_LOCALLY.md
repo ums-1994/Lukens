@@ -8,11 +8,11 @@ You can use your Render database credentials. Create `backend/.env` with:
 
 ```env
 # Database Configuration (using Render database)
-DB_HOST=dpg-d4iq5fa4d50c73d9m3n0-a.oregon-postgres.render.com
+DB_HOST=dpg-d6n7nqjh46gs73c4bd9g-a.oregon-postgres.render.com
 DB_PORT=5432
-DB_NAME=proposal_sow_builder
-DB_USER=proposal_sow_builder_user
-DB_PASSWORD=LTpIcMC2QUY3bd4DezTU4lmWroOxr8ez
+DB_NAME=sowbuilder_b88j
+DB_USER=sowbuilder_b88j_user
+DB_PASSWORD=F0aStJeARRclMbzSod8GNrbt3KHgboX9
 DB_SSLMODE=require
 
 # Firebase (if you have these)

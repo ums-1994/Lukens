@@ -31,7 +31,8 @@ class _FinanceClientManagementPageState
     final contactNameController = TextEditingController(
         text: (client['contact_person'] ?? '').toString());
     final contactEmailController = TextEditingController(
-        text: (client['client_contact_email'] ?? '').toString());
+        text: (client['client_contact_email'] ?? client['email'] ?? '')
+            .toString());
     final contactMobileController = TextEditingController(
         text: (client['client_contact_mobile'] ?? client['phone'] ?? '')
             .toString());
@@ -211,94 +212,102 @@ class _FinanceClientManagementPageState
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          'Client Management',
-          style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
-        ),
-        const SizedBox(height: 12),
-        _buildAddClientCard(context),
-        const SizedBox(height: 16),
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              color: PremiumTheme.darkBg2.withOpacity(0.9),
-              border: Border.all(color: Colors.white.withOpacity(0.06)),
-            ),
-            child: _loading
-                ? const Center(
-                    child: CircularProgressIndicator(color: PremiumTheme.teal),
-                  )
-                : _clients.isEmpty
-                    ? Center(
-                        child: Text(
-                          'No clients yet.',
-                          style: PremiumTheme.bodyMedium
-                              .copyWith(color: Colors.white70),
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: _clients.length,
-                        separatorBuilder: (_, __) => Divider(
-                          color: Colors.white.withOpacity(0.08),
-                          height: 20,
-                        ),
-                        itemBuilder: (context, index) {
-                          final c = _clients[index];
-                          final name = (c['company_name'] ?? c['name'] ?? '')
-                              .toString()
-                              .trim();
-                          final email = (c['email'] ?? '').toString().trim();
-                          final contact =
-                              (c['contact_person'] ?? '').toString().trim();
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Client Management',
+                style: PremiumTheme.titleLarge.copyWith(fontSize: 22),
+              ),
+              const SizedBox(height: 12),
+              _buildAddClientCard(context),
+              const SizedBox(height: 16),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(24),
+                    color: PremiumTheme.darkBg2.withOpacity(0.9),
+                    border: Border.all(color: Colors.white.withOpacity(0.06)),
+                  ),
+                  child: _loading
+                      ? const Center(
+                          child: CircularProgressIndicator(color: PremiumTheme.teal),
+                        )
+                      : _clients.isEmpty
+                          ? Center(
+                              child: Text(
+                                'No clients yet.',
+                                style: PremiumTheme.bodyMedium
+                                    .copyWith(color: Colors.white70),
+                              ),
+                            )
+                          : ListView.separated(
+                              itemCount: _clients.length,
+                              separatorBuilder: (_, __) => Divider(
+                                color: Colors.white.withOpacity(0.08),
+                                height: 20,
+                              ),
+                              itemBuilder: (context, index) {
+                                final c = _clients[index];
+                                final name = (c['company_name'] ?? c['name'] ?? '')
+                                    .toString()
+                                    .trim();
+                                final email = (c['email'] ?? '').toString().trim();
+                                final contact =
+                                    (c['contact_person'] ?? '').toString().trim();
 
-                          return ListTile(
-                            title: Text(
-                              name.isNotEmpty
-                                  ? name
-                                  : (email.isNotEmpty ? email : 'Client'),
-                              style: PremiumTheme.bodyLarge
-                                  .copyWith(color: Colors.white),
-                            ),
-                            subtitle: Text(
-                              [
-                                if (email.isNotEmpty) email,
-                                if (contact.isNotEmpty) contact,
-                              ].join(' • '),
-                              style: PremiumTheme.bodyMedium
-                                  .copyWith(color: Colors.white70),
-                            ),
-                            trailing: PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_vert,
-                                  color: Colors.white70),
-                              onSelected: (value) async {
-                                if (value == 'edit') {
-                                  await _editClient(c);
-                                } else if (value == 'delete') {
-                                  await _deleteClient(c);
-                                }
+                                return ListTile(
+                                  title: Text(
+                                    name.isNotEmpty
+                                        ? name
+                                        : (email.isNotEmpty ? email : 'Client'),
+                                    style: PremiumTheme.bodyLarge
+                                        .copyWith(color: Colors.white),
+                                  ),
+                                  subtitle: Text(
+                                    [
+                                      if (email.isNotEmpty) email,
+                                      if (contact.isNotEmpty) contact,
+                                    ].join(' • '),
+                                    style: PremiumTheme.bodyMedium
+                                        .copyWith(color: Colors.white70),
+                                  ),
+                                  trailing: PopupMenuButton<String>(
+                                    icon: const Icon(Icons.more_vert,
+                                        color: Colors.white70),
+                                    onSelected: (value) async {
+                                      if (value == 'edit') {
+                                        await _editClient(c);
+                                      } else if (value == 'delete') {
+                                        await _deleteClient(c);
+                                      }
+                                    },
+                                    itemBuilder: (ctx) => const [
+                                      PopupMenuItem(
+                                        value: 'edit',
+                                        child: Text('Edit'),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'delete',
+                                        child: Text('Delete'),
+                                      ),
+                                    ],
+                                  ),
+                                );
                               },
-                              itemBuilder: (ctx) => const [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text('Edit'),
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text('Delete'),
-                                ),
-                              ],
                             ),
-                          );
-                        },
-                      ),
+                ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 

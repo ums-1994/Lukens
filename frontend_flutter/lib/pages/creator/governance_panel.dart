@@ -60,7 +60,8 @@ class _GovernancePanelState extends State<GovernancePanel>
               child: Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
                     child: Row(
                       children: [
                         const Text(
@@ -93,7 +94,9 @@ class _GovernancePanelState extends State<GovernancePanel>
                     child: issues.isEmpty
                         ? Center(
                             child: Text(
-                              _isAnalyzing ? 'Analyzing...' : 'No flagged issues found',
+                              _isAnalyzing
+                                  ? 'Analyzing...'
+                                  : 'No flagged issues found',
                               style: TextStyle(color: Colors.grey[600]),
                             ),
                           )
@@ -102,11 +105,14 @@ class _GovernancePanelState extends State<GovernancePanel>
                             itemCount: issues.length,
                             itemBuilder: (context, index) {
                               final issue = issues[index];
-                              final title = issue['title']?.toString() ?? 'Issue';
-                              final description = issue['description']?.toString() ?? '';
-                              final priority = (issue['priority']?.toString() ?? 'info')
-                                  .toLowerCase()
-                                  .trim();
+                              final title =
+                                  issue['title']?.toString() ?? 'Issue';
+                              final description =
+                                  issue['description']?.toString() ?? '';
+                              final priority =
+                                  (issue['priority']?.toString() ?? 'info')
+                                      .toLowerCase()
+                                      .trim();
 
                               return ListTile(
                                 title: Text(
@@ -131,9 +137,11 @@ class _GovernancePanelState extends State<GovernancePanel>
                                   style: TextStyle(
                                     fontSize: 10,
                                     fontWeight: FontWeight.w800,
-                                    color: priority == 'critical' || priority == 'high'
+                                    color: priority == 'critical' ||
+                                            priority == 'high'
                                         ? const Color(0xFFDC2626)
-                                        : priority == 'warning' || priority == 'medium'
+                                        : priority == 'warning' ||
+                                                priority == 'medium'
                                             ? const Color(0xFFF59E0B)
                                             : const Color(0xFF00BCD4),
                                   ),
@@ -367,7 +375,13 @@ class _GovernancePanelState extends State<GovernancePanel>
       case 'executive_summary':
         return 'Executive Summary';
       case 'scope_deliverables':
-        return 'Scope & Deliverables';
+        return 'Scope of Work';
+      case 'deliverables':
+        return 'Deliverables';
+      case 'payment_terms':
+        return 'Payment Terms clause';
+      case 'termination_clause':
+        return 'Termination Clause';
       case 'company_profile':
         return 'Company Profile';
       case 'terms_conditions':
@@ -467,7 +481,8 @@ class _GovernancePanelState extends State<GovernancePanel>
                 children: [
                   if (_issues.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8FAFC),
                         borderRadius: BorderRadius.circular(10),
@@ -476,14 +491,16 @@ class _GovernancePanelState extends State<GovernancePanel>
                       child: Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
                               color: _getStatusColor().withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(999),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.flag_outlined, size: 14, color: _getStatusColor()),
+                                Icon(Icons.flag_outlined,
+                                    size: 14, color: _getStatusColor()),
                                 const SizedBox(width: 6),
                                 Text(
                                   _isAnalyzing
@@ -503,12 +520,22 @@ class _GovernancePanelState extends State<GovernancePanel>
                             child: _isAnalyzing
                                 ? Text(
                                     'Analyzing flagged issues...',
-                                    style: TextStyle(color: Colors.grey[700], fontSize: 12),
+                                    style: TextStyle(
+                                        color: Colors.grey[700], fontSize: 12),
                                   )
                                 : Text(
-                                    'Flagged: ${_countIssuesByPriority({'critical', 'high'})} critical, '
-                                    '${_countIssuesByPriority({'warning', 'medium'})} warning, '
-                                    '${_countIssuesByPriority({'info', 'low'})} info',
+                                    'Flagged: ${_countIssuesByPriority({
+                                          'critical',
+                                          'high'
+                                        })} critical, '
+                                    '${_countIssuesByPriority({
+                                          'warning',
+                                          'medium'
+                                        })} warning, '
+                                    '${_countIssuesByPriority({
+                                          'info',
+                                          'low'
+                                        })} info',
                                     style: const TextStyle(
                                       color: Color(0xFF1A1A1A),
                                       fontSize: 12,
@@ -518,7 +545,8 @@ class _GovernancePanelState extends State<GovernancePanel>
                           ),
                           const SizedBox(width: 12),
                           OutlinedButton(
-                            onPressed: _isAnalyzing ? null : _openIssuesReviewSheet,
+                            onPressed:
+                                _isAnalyzing ? null : _openIssuesReviewSheet,
                             child: const Text('Review'),
                           ),
                         ],
@@ -529,10 +557,10 @@ class _GovernancePanelState extends State<GovernancePanel>
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: _getStatusColor().withValues(alpha: 0.1),
+                      color: _getStatusColor().withAlpha(25),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: _getStatusColor().withValues(alpha: 0.3),
+                        color: _getStatusColor().withAlpha(51),
                         width: 2,
                       ),
                     ),
@@ -687,12 +715,17 @@ class _GovernancePanelState extends State<GovernancePanel>
       }
     }
     // AI checks
-    final timeline = widget.proposalData['timeline']?.toString().toLowerCase() ?? '';
-    if (timeline.contains('half') || timeline.contains('quick') || timeline.contains('urgent')) {
+    final timeline =
+        widget.proposalData['timeline']?.toString().toLowerCase() ?? '';
+    if (timeline.contains('half') ||
+        timeline.contains('quick') ||
+        timeline.contains('urgent')) {
       maxScore += 8;
     }
     final scope = widget.proposalData['scope']?.toString().toLowerCase() ?? '';
-    if (scope.contains('and other') || scope.contains('etc') || scope.contains('various')) {
+    if (scope.contains('and other') ||
+        scope.contains('etc') ||
+        scope.contains('various')) {
       maxScore += 6;
     }
     if (!_hasContent('assumptions') && !_hasContent('assumptions_risks')) {
@@ -706,7 +739,8 @@ class _GovernancePanelState extends State<GovernancePanel>
 
   Widget _buildRiskMeter() {
     final maxScore = _maxPossibleRiskScore;
-    final percentage = maxScore == 0 ? 0.0 : (_riskScore / maxScore).clamp(0.0, 1.0);
+    final percentage =
+        maxScore == 0 ? 0.0 : (_riskScore / maxScore).clamp(0.0, 1.0);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

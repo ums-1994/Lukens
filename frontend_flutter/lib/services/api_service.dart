@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:convert';
 import 'dart:js' as js;
 import 'package:flutter/foundation.dart';
@@ -5,28 +7,58 @@ import 'package:http/http.dart' as http;
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 
+import 'ai_assistant_api.dart';
+
 class ApiService {
   // Get API URL from JavaScript config or use default
   static String get baseUrl {
     if (kIsWeb) {
       try {
+        final hostname = html.window.location.hostname;
+
+        // Honor USE_LOCAL_API first (set in index.html for local dev)
+        final useLocal = js.context['USE_LOCAL_API'];
+        if (useLocal == true || useLocal.toString().toLowerCase() == 'true') {
+          print(
+              '🌐 ApiService: Using local API URL (USE_LOCAL_API): http://127.0.0.1:5000');
+          return 'http://127.0.0.1:5000';
+        }
+        // If the user explicitly overrides the API URL for local dev, honor it.
+        final explicitAppUrl = js.context['APP_API_URL'];
+        if (explicitAppUrl != null &&
+            explicitAppUrl.toString().trim().isNotEmpty) {
+          final url = explicitAppUrl.toString().replaceAll('"', '').trim();
+          print('🌐 ApiService: Using API URL from APP_API_URL: $url');
+          return url;
+        }
+
+        final explicitEnvUrl = js.context['REACT_APP_API_URL'];
+        if (explicitEnvUrl != null &&
+            explicitEnvUrl.toString().trim().isNotEmpty) {
+          final url = explicitEnvUrl.toString().replaceAll('"', '').trim();
+          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
+          return url;
+        }
+
+        // For local web development, prefer local backend by default.
+        // This prevents stale/cached APP_CONFIG values from forcing Render
+        // and causing CORS failures from http://localhost:* origins.
+        if (hostname == 'localhost' || hostname == '127.0.0.1') {
+          print(
+              '🌐 ApiService: Using local API URL (localhost default): http://127.0.0.1:5000');
+          return 'http://127.0.0.1:5000';
+        }
+
         // Try to get from window.APP_CONFIG.API_URL
         final config = js.context['APP_CONFIG'];
         if (config != null) {
           final configObj = config as js.JsObject;
           final apiUrl = configObj['API_URL'];
-          if (apiUrl != null && apiUrl.toString().isNotEmpty) {
+          if (apiUrl != null && apiUrl.toString().trim().isNotEmpty) {
             final url = apiUrl.toString().replaceAll('"', '').trim();
             print('🌐 ApiService: Using API URL from APP_CONFIG: $url');
             return url;
           }
-        }
-        // Fallback: try window.REACT_APP_API_URL
-        final envUrl = js.context['REACT_APP_API_URL'];
-        if (envUrl != null && envUrl.toString().isNotEmpty) {
-          final url = envUrl.toString().replaceAll('"', '').trim();
-          print('🌐 ApiService: Using API URL from REACT_APP_API_URL: $url');
-          return url;
         }
       } catch (e) {
         print('⚠️ ApiService: Could not read API URL from config: $e');
@@ -35,19 +67,20 @@ class ApiService {
     // Check if we're in production (not localhost)
     if (kIsWeb) {
       final hostname = html.window.location.hostname;
-      if (hostname != null) {
-        final isProduction = hostname.contains('netlify.app') ||
-            hostname.contains('onrender.com') ||
-            !hostname.contains('localhost');
-
-        if (isProduction) {
-          print(
-              '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
-          return 'https://lukens-wp8w.onrender.com';
-        }
+      if (hostname != null &&
+          (hostname.contains('netlify.app') ||
+              hostname.contains('onrender.com'))) {
+        print(
+            '🌐 ApiService: Using production API URL: https://lukens-wp8w.onrender.com');
+        return 'https://lukens-wp8w.onrender.com';
+      }
+      // When on localhost with no override, use Render backend (same as production)
+      if (hostname == 'localhost' || hostname == '127.0.0.1') {
+        print(
+            '🌐 ApiService: Using local API URL (localhost): http://127.0.0.1:5000');
+        return 'http://127.0.0.1:5000';
       }
     }
-    // Default to Render backend (production)
     print(
         '🌐 ApiService: Using Render API URL: https://lukens-wp8w.onrender.com');
     return 'https://lukens-wp8w.onrender.com';
@@ -202,6 +235,7 @@ class ApiService {
     String? clientName,
     String? clientEmail,
     String? status,
+    double? budget,
   }) async {
     try {
       final response = await http.put(
@@ -213,6 +247,7 @@ class ApiService {
           'client_name': clientName,
           'client_email': clientEmail,
           'status': status,
+          if (budget != null) 'budget': budget,
         }),
       );
 
@@ -495,6 +530,8 @@ class ApiService {
     int? parentId, // For threaded replies
     String? blockType, // 'text', 'table', 'image'
     String? blockId, // Identifier for the block
+    int? startOffset,
+    int? endOffset,
     List<String>? taggedUsers,
   }) async {
     try {
@@ -506,6 +543,8 @@ class ApiService {
           'section_index': sectionIndex,
           'section_name': sectionName,
           'highlighted_text': highlightedText,
+          'start_offset': startOffset,
+          'end_offset': endOffset,
           'parent_id': parentId,
           'block_type': blockType,
           'block_id': blockId,
@@ -517,12 +556,15 @@ class ApiService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         return json.decode(response.body);
       }
+      if (response.statusCode == 401) {
+        throw Exception('unauthorized');
+      }
       print(
           'Error creating comment: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
       print('Error creating comment: $e');
-      return null;
+      rethrow;
     }
   }
 
@@ -553,10 +595,13 @@ class ApiService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
+      if (response.statusCode == 401) {
+        throw Exception('unauthorized');
+      }
       return {'comments': [], 'total': 0, 'open_count': 0, 'resolved_count': 0};
     } catch (e) {
       print('Error fetching comments: $e');
-      return {'comments': [], 'total': 0, 'open_count': 0, 'resolved_count': 0};
+      rethrow;
     }
   }
 
@@ -591,6 +636,29 @@ class ApiService {
     } catch (e) {
       print('Error reopening comment: $e');
       return false;
+    }
+  }
+
+  /// Toggle emoji reaction on a comment. If user already reacted with that emoji, removes it.
+  static Future<Map<String, dynamic>?> toggleCommentReaction({
+    required String token,
+    required int commentId,
+    required String emoji,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/comments/$commentId/reactions'),
+        headers: _getHeaders(token),
+        body: json.encode({'emoji': emoji}),
+      );
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      }
+      return null;
+    } catch (e) {
+      print('Error toggling comment reaction: $e');
+      return null;
     }
   }
 
@@ -687,25 +755,33 @@ class ApiService {
     String sectionType = 'general',
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/ai/generate'),
-        headers: _getHeaders(token),
-        body: json.encode({
-          'prompt': prompt,
-          'context': context ?? {},
-          'section_type': sectionType,
-        }),
+      // New minimal proxy path: backend forwards to HF Space using server-side env vars.
+      // HF expects: { section_name, proposal_text }
+      final String proposalText = [
+        prompt.trim(),
+        if (context != null && context.isNotEmpty)
+          '\n\nContext (JSON):\n${json.encode(context)}',
+      ].where((s) => s.trim().isNotEmpty).join('');
+
+      final data = await AiAssistantApi.generateSection(
+        token: token,
+        sectionName: sectionType,
+        proposalText: proposalText,
       );
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      print(
-          'Error generating AI content: ${response.statusCode} - ${response.body}');
-      return null;
+      // Upstream should return { generated_text: ... } (or similar). Normalize to {content: ...}
+      final generated = (data['generated_text'] ??
+              data['content'] ??
+              data['result'] ??
+              '')
+          .toString();
+      return {
+        ...data,
+        'content': generated,
+      };
     } catch (e) {
       print('Error generating AI content: $e');
-      return null;
+      rethrow;
     }
   }
 
@@ -715,21 +791,21 @@ class ApiService {
     String sectionType = 'general',
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/ai/improve'),
-        headers: _getHeaders(token),
-        body: json.encode({
-          'content': content,
-          'section_type': sectionType,
-        }),
+      // HF expects: { area_name, proposal_text }
+      final data = await AiAssistantApi.improveArea(
+        token: token,
+        areaName: sectionType,
+        proposalText: content,
       );
 
-      if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      print(
-          'Error improving content: ${response.statusCode} - ${response.body}');
-      return null;
+      // Normalize to the shape existing UI expects
+      final improved =
+          (data['generated_text'] ?? data['improved_version'] ?? data['content'])
+              ?.toString();
+      return {
+        ...data,
+        if (improved != null) 'improved_version': improved,
+      };
     } catch (e) {
       print('Error improving content: $e');
       return null;
@@ -738,30 +814,64 @@ class ApiService {
 
   static Future<Map<String, dynamic>?> analyzeRisks({
     required String token,
-    required int proposalId,
+    required Map<String, dynamic> proposalData,
   }) async {
     try {
+      // HF Space OpenAPI expects:
+      // proposal_title, client_name, opportunity_name, template_type, sections (map)
+      final sections = <String, String>{};
+      proposalData.forEach((key, value) {
+        if (value == null) return;
+        final str = value.toString();
+        if (str.isEmpty) return;
+        if (key == 'id' || key == 'title') return;
+
+        if ([
+          'clientName',
+          'clientEmail',
+          'projectType',
+          'estimatedValue',
+          'timeline',
+          'selectedModules',
+          'moduleContents'
+        ].contains(key)) {
+          return;
+        }
+        sections[key] = str;
+      });
+
+      final proposalRequest = <String, dynamic>{
+        'proposal_title': proposalData['title']?.toString() ?? 'Proposal',
+        'client_name': proposalData['clientName']?.toString() ?? '',
+        'opportunity_name': proposalData['opportunityName']?.toString() ??
+            proposalData['title']?.toString() ??
+            'Opportunity',
+        'template_type': proposalData['templateType']?.toString() ??
+            proposalData['templateId']?.toString() ??
+            'general',
+        'sections': sections,
+      };
+
       final response = await http.post(
-        Uri.parse('$baseUrl/api/risk-gate/analyze'),
+        Uri.parse('https://lorde01v-v3.hf.space/analyze-proposal'),
         headers: _getHeaders(token),
-        body: json.encode({
-          'proposal_id': proposalId,
-        }),
+        body: json.encode(proposalRequest),
       );
 
       if (response.statusCode == 200) {
-        return json.decode(response.body);
-      }
-      if (response.statusCode == 400) {
         final data = json.decode(response.body);
-        if (data is Map<String, dynamic> && data['status'] == 'BLOCK') {
-          return data;
+        if (data is Map<String, dynamic>) {
+          // If HF already returns the risk gate shape, just pass it through.
+          if (data.containsKey('risk_score') ||
+              data.containsKey('risk_level') ||
+              data.containsKey('issues')) {
+            return data;
+          }
         }
       }
-      print('Error analyzing risks: ${response.statusCode} - ${response.body}');
       return null;
     } catch (e) {
-      print('Error analyzing risks: $e');
+      print('Risk analysis error: $e');
       return null;
     }
   }
@@ -784,12 +894,18 @@ class ApiService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       }
-      print(
-          'Error generating full proposal: ${response.statusCode} - ${response.body}');
-      return null;
+      String detail = 'Error generating full proposal';
+      try {
+        final body = json.decode(response.body);
+        if (body is Map && body['detail'] != null) {
+          detail = body['detail'].toString();
+        }
+      } catch (_) {}
+      print('Error generating full proposal: ${response.statusCode} - $detail');
+      throw Exception(detail);
     } catch (e) {
       print('Error generating full proposal: $e');
-      return null;
+      rethrow;
     }
   }
 }

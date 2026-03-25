@@ -23,8 +23,13 @@ window.APP_CONFIG = {
     }
     // Default based on runtime hostname
     const hostname = (window.location && window.location.hostname) ? window.location.hostname : '';
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      const localUrl = 'http://127.0.0.1:5000';
+      console.log('🌐 Using default local API URL (localhost):', localUrl);
+      return localUrl;
+    }
     const defaultUrl = 'https://lukens-wp8w.onrender.com';
-    console.log('🌐 Using default API URL:', defaultUrl);
+    console.log('🌐 Using default production API URL:', defaultUrl);
     return defaultUrl;
   })(),
 };
