@@ -1177,16 +1177,15 @@ def send_to_client(username=None, proposal_id=None):
                     {get_logo_html()}
                     <h2>Your Proposal is Ready</h2>
                     <p>Dear {client_name},</p>
-                    <p>We're pleased to share your proposal: <strong>{proposal_title}</strong></p>
-                    <p><strong>Security notice:</strong> You will be asked to enter the last 4 digits of your ID to unlock access.</p>
-                    <p>Click the link below to view and review your proposal:</p>
+                    <p>We’re pleased to share that your proposal is now ready for review.</p>
+                    <p>You can securely access the proposal using the link below. For your security, a one-time password (OTP) will be sent to you when you open the link.</p>
                     <p style="text-align: center; margin: 30px 0;">
                         <a href="{client_link}" style="background-color: #27AE60; color: white; padding: 14px 32px; text-decoration: none; border-radius: 8px; display: inline-block; font-size: 16px; font-weight: 600;">View Proposal</a>
                     </p>
-                    <p>Or copy and paste this link into your browser:</p>
+                    <p>If the button above does not work, you can copy and paste the following link into your browser:</p>
                     <p style="word-break: break-all; color: #666;"><a href="{client_link}" style="color: #0066cc; text-decoration: underline;">{client_link}</a></p>
-                    <p>If you have any questions, please don't hesitate to reach out.</p>
-                    <p>Best regards,<br>{sender_name}</p>
+                    <p>If you have any questions or need any clarification, please feel free to reach out — we’re happy to assist.</p>
+                    <p>Kind regards,<br>{sender_name}<br>Khonology Team</p>
                     """
                     
                     email_sent = send_email(client_email, email_subject, email_body)
