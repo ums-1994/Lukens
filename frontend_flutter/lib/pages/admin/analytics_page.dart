@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/app_side_nav.dart';
@@ -40,7 +41,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   final TextEditingController _globalRegionCtrl = TextEditingController();
   final TextEditingController _globalOwnerCtrl = TextEditingController();
   final TextEditingController _globalProposalTypeCtrl = TextEditingController();
-final ScrollController _scrollController = ScrollController();
+  Map<String, dynamic>? _selectedOwner;
+  List<Map<String, dynamic>> _ownerSuggestions = const [];
+  Timer? _ownerSearchDebounce;
+  bool _isSidebarCollapsed = false;
+  late AnimationController _animationController;
+  final ScrollController _scrollController = ScrollController();
   bool _performanceExpanded = true;
   bool _pipelineFlowExpanded = false;
   bool _riskReadinessExpanded = false;
@@ -234,7 +240,6 @@ final ScrollController _scrollController = ScrollController();
     });
   }
 
-
   Future<Map<String, dynamic>?> _fetchClientEngagement() async {
     try {
       final now = DateTime.now();
@@ -382,6 +387,504 @@ final ScrollController _scrollController = ScrollController();
     }
   }
 
+  Widget _buildMiniKpiRow(List<Map<String, dynamic>> items) {
+    final safeItems = items.where((e) => (e['label'] ?? '').toString().trim().isNotEmpty);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const spacing = 12.0;
+        final maxWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.of(context).size.width;
+
+        final tileCount = math.max(safeItems.length, 1);
+        final raw = (maxWidth - (spacing * (tileCount - 1))) / tileCount;
+        final tileWidth = raw.clamp(120.0, 180.0);
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: safeItems.map((item) {
+            final accent = (item['accent'] is Color)
+                ? item['accent'] as Color
+                : Colors.white.withValues(alpha: 0.70);
+            final iconData = item['icon'] is IconData
+                ? item['icon'] as IconData
+                : Icons.analytics_outlined;
+
+            return ConstrainedBox(
+              constraints: BoxConstraints.tightFor(width: tileWidth),
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      accent.withValues(alpha: 0.14),
+                      Colors.white.withValues(alpha: 0.05),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: accent.withValues(alpha: 0.20),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: accent.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: accent.withValues(alpha: 0.25),
+                            ),
+                          ),
+                          child: Icon(
+                            iconData,
+                            size: 16,
+                            color: Colors.white.withValues(alpha: 0.90),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            (item['label'] ?? '').toString(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: PremiumTheme.bodySmall.copyWith(
+                              color: Colors.white70,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      (item['value'] ?? '--').toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: PremiumTheme.displayMedium.copyWith(
+                        fontSize: 26,
+                        height: 1.1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildKeyValueList({
+    required String title,
+    required List<Map> items,
+    required String labelKey,
+    required String valueKey,
+    int maxItems = 6,
+  }) {
+    final rows = items.take(maxItems).toList();
+    final maxValue = rows.fold<int>(0, (m, r) {
+      final raw = r[valueKey];
+      final v = (raw is num)
+          ? raw.toInt()
+          : (int.tryParse((raw ?? '0').toString()) ?? 0);
+      return v > m ? v : m;
+    });
+
+    if (rows.isEmpty) {
+      return Text(
+        'No data for selected filters.',
+        style: PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+      );
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: PremiumTheme.bodyMedium.copyWith(
+              color: Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final r in rows)
+            Builder(
+              builder: (context) {
+                final raw = r[valueKey];
+                final v = (raw is num)
+                    ? raw.toInt()
+                    : (int.tryParse((raw ?? '0').toString()) ?? 0);
+                final ratio = maxValue <= 0 ? 0.0 : (v / maxValue).clamp(0.0, 1.0);
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              (r[labelKey] ?? '').toString(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: PremiumTheme.bodySmall
+                                  .copyWith(color: Colors.white70),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.12),
+                              ),
+                            ),
+                            child: Text(
+                              v.toString(),
+                              style: PremiumTheme.bodySmall.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: SizedBox(
+                          height: 6,
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: Container(
+                                  color: Colors.white.withValues(alpha: 0.08),
+                                ),
+                              ),
+                              FractionallySizedBox(
+                                widthFactor: ratio,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      colors: [
+                                        PremiumTheme.info
+                                            .withValues(alpha: 0.85),
+                                        PremiumTheme.info
+                                            .withValues(alpha: 0.35),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildApprovalsCard(
+    Map<String, dynamic>? summary,
+    Map<String, dynamic>? bottlenecks,
+  ) {
+    final totals = (summary?['totals'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final pending = (totals['pending'] is num) ? (totals['pending'] as num).toInt() : 0;
+    final approved = (totals['approved'] is num) ? (totals['approved'] as num).toInt() : 0;
+    final avgHoursRaw = totals['avg_approval_hours'];
+    final avgHours = (avgHoursRaw is num) ? avgHoursRaw.toDouble() : double.nan;
+
+    final aging = (bottlenecks?['aging_buckets'] as List?) ?? const [];
+    final topAging = aging.whereType<Map>().toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildMiniKpiRow([
+          {
+            'label': 'Pending',
+            'value': pending.toString(),
+            'icon': Icons.hourglass_top_rounded,
+            'accent': PremiumTheme.warning,
+          },
+          {
+            'label': 'Approved',
+            'value': approved.toString(),
+            'icon': Icons.verified_rounded,
+            'accent': PremiumTheme.success,
+          },
+          {
+            'label': 'Avg approval (hrs)',
+            'value': avgHours.isNaN ? '--' : avgHours.toStringAsFixed(1),
+            'icon': Icons.schedule_rounded,
+            'accent': PremiumTheme.info,
+          },
+        ]),
+        const SizedBox(height: 16),
+        _buildKeyValueList(
+          title: 'Aging buckets',
+          items: topAging,
+          labelKey: 'bucket',
+          valueKey: 'count',
+          maxItems: 6,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReadinessGovernanceCard(Map<String, dynamic>? data) {
+    final totals = (data?['totals'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final blocked = (totals['blocked'] is num) ? (totals['blocked'] as num).toInt() : 0;
+    final passRate = (totals['pass_rate'] is num) ? (totals['pass_rate'] as num).toInt() : 0;
+    final missing = (data?['missing_sections'] as List?) ?? const [];
+    final topMissing = missing.whereType<Map>().toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildMiniKpiRow([
+          {
+            'label': 'Pass rate',
+            'value': '$passRate%',
+            'icon': Icons.insights_rounded,
+            'accent': PremiumTheme.info,
+          },
+          {
+            'label': 'Blocked',
+            'value': blocked.toString(),
+            'icon': Icons.block_rounded,
+            'accent': PremiumTheme.error,
+          },
+        ]),
+        const SizedBox(height: 16),
+        _buildKeyValueList(
+          title: 'Top missing sections',
+          items: topMissing,
+          labelKey: 'section',
+          valueKey: 'count',
+          maxItems: 6,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRiskGateDetailsCard(Map<String, dynamic>? data) {
+    final counts = (data?['counts'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final pass = (counts['PASS'] is num) ? (counts['PASS'] as num).toInt() : 0;
+    final review = (counts['REVIEW'] is num) ? (counts['REVIEW'] as num).toInt() : 0;
+    final block = (counts['BLOCK'] is num) ? (counts['BLOCK'] as num).toInt() : 0;
+    final none = (counts['NONE'] is num) ? (counts['NONE'] as num).toInt() : 0;
+
+    final issues = (data?['issues_histogram'] as List?) ?? const [];
+    final topIssues = issues.whereType<Map>().toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildMiniKpiRow([
+          {
+            'label': 'PASS',
+            'value': pass.toString(),
+            'icon': Icons.check_circle_rounded,
+            'accent': PremiumTheme.success,
+          },
+          {
+            'label': 'REVIEW',
+            'value': review.toString(),
+            'icon': Icons.report_rounded,
+            'accent': PremiumTheme.warning,
+          },
+          {
+            'label': 'BLOCK',
+            'value': block.toString(),
+            'icon': Icons.cancel_rounded,
+            'accent': PremiumTheme.error,
+          },
+          {
+            'label': 'NONE',
+            'value': none.toString(),
+            'icon': Icons.help_outline_rounded,
+            'accent': Colors.white.withValues(alpha: 0.65),
+          },
+        ]),
+        const SizedBox(height: 16),
+        _buildKeyValueList(
+          title: 'Top risk issues',
+          items: topIssues,
+          labelKey: 'issue',
+          valueKey: 'count',
+          maxItems: 6,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStageAgingCard(Map<String, dynamic>? data) {
+    final byStage = (data?['by_stage'] as List?) ?? const [];
+    final rows = byStage.take(6).whereType<Map>().toList();
+
+    if (rows.isEmpty) {
+      return Text(
+        'No stage aging data for selected filters.',
+        style: PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final r in rows)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    (r['stage'] ?? '').toString(),
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'stale ${(r['stale'] is num) ? (r['stale'] as num).toInt() : 0}',
+                  style: PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '/ ${(r['total'] is num) ? (r['total'] as num).toInt() : 0}',
+                  style: PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '${(r['threshold_days'] is num) ? (r['threshold_days'] as num).toInt() : 0}d',
+                  style: PremiumTheme.bodySmall.copyWith(color: Colors.white70),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+
+  Map<String, int> _pipelineCountsFromResponse(Map<String, dynamic>? data) {
+    final counts = <String, int>{
+      'Draft': 0,
+      'In Review': 0,
+      'Released': 0,
+      'Signed': 0,
+      'Archived': 0,
+    };
+    final stages = (data?['stages'] as List?) ?? [];
+    for (final s in stages) {
+      if (s is! Map) continue;
+      final stageName = (s['stage'] ?? '').toString();
+      final cnt = (s['count'] is num) ? (s['count'] as num).toInt() : 0;
+      if (counts.containsKey(stageName)) {
+        counts[stageName] = cnt;
+      }
+    }
+    return counts;
+  }
+
+  Future<void> _showCompletionRatesDialog(Map<String, dynamic>? data) async {
+    try {
+      final low = (data?['low_proposals'] as List?) ?? [];
+      await showDialog(
+        context: context,
+        builder: (context) {
+          return Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding:
+                const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                child: Container(
+                  constraints:
+                      const BoxConstraints(maxWidth: 980, maxHeight: 720),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withValues(alpha: 0.12),
+                        Colors.white.withValues(alpha: 0.06),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: PremiumTheme.glassWhiteBorder,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Completion Rates: Low Readiness',
+                              style: PremiumTheme.titleLarge
+                                  .copyWith(color: Colors.white),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: const Icon(Icons.close, color: Colors.white),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      if (low.isEmpty)
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              'All proposals are passing mandatory section checks under the current filters.',
+                              style: PremiumTheme.bodyMedium,
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        )
                       else
                         Expanded(
                           child: ListView.separated(
@@ -1293,6 +1796,17 @@ final ScrollController _scrollController = ScrollController();
     _globalOwnerCtrl.dispose();
     _globalProposalTypeCtrl.dispose();
     super.dispose();
+  }
+
+  void _toggleSidebar() {
+    setState(() {
+      _isSidebarCollapsed = !_isSidebarCollapsed;
+      if (_isSidebarCollapsed) {
+        _animationController.forward();
+      } else {
+        _animationController.reverse();
+      }
+    });
   }
 
   void _exportAsCSV() {
@@ -2578,6 +3092,17 @@ final ScrollController _scrollController = ScrollController();
     return parts.isEmpty ? 'Draft' : parts.join(' ');
   }
 
+  String _getUserName(Map<String, dynamic>? user) {
+    if (user == null) return 'User';
+
+    String? name = user['full_name'] ??
+        user['first_name'] ??
+        user['name'] ??
+        user['email']?.split('@')[0];
+
+    return name ?? 'User';
+  }
+
   bool _isAdminUser() {
     final user = AuthService.currentUser;
     final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
@@ -2632,28 +3157,196 @@ final ScrollController _scrollController = ScrollController();
     return counts;
   }
 
+  Widget _buildProposalPipelineFunnel(Map<String, int> counts) {
+    final stages = const ['Draft', 'In Review', 'Released', 'Signed'];
+    final maxCount = counts.values.fold<int>(0, (m, v) => v > m ? v : m);
+    final safeMax = math.max(maxCount, 1);
+
+    Color stageColor(String stage) {
+      switch (stage) {
+        case 'Signed':
+          return PremiumTheme.success;
+        case 'Released':
+          return PremiumTheme.info;
+        case 'In Review':
+          return PremiumTheme.warning;
+        default:
+          return PremiumTheme.orange;
+      }
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Column(
+          children: [
+            for (final stage in stages)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 110,
+                        child: Text(
+                          stage,
+                          overflow: TextOverflow.ellipsis,
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [
+                            Container(
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                            FractionallySizedBox(
+                              widthFactor: (counts[stage] ?? 0) / safeMax,
+                              child: Container(
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color:
+                                      stageColor(stage).withValues(alpha: 0.75),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      SizedBox(
+                        width: 44,
+                        child: Text(
+                          (counts[stage] ?? 0).toString(),
+                          textAlign: TextAlign.right,
+                          style: PremiumTheme.bodyMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCompletionRateGauge(Map<String, dynamic>? data) {
+    final totals = (data?['totals'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+    final total =
+        (totals['total'] is num) ? (totals['total'] as num).toInt() : 0;
+    final passed =
+        (totals['passed'] is num) ? (totals['passed'] as num).toInt() : 0;
+    final passRate =
+        (totals['pass_rate'] is num) ? (totals['pass_rate'] as num).toInt() : 0;
+    final ratio = total <= 0 ? 0.0 : (passed / total).clamp(0.0, 1.0);
+
+    return Center(
+      child: InkWell(
+        onTap: () => _showCompletionRatesDialog(data),
+        child: SizedBox(
+          width: 180,
+          height: 180,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox(
+                width: 180,
+                height: 180,
+                child: CircularProgressIndicator(
+                  value: ratio,
+                  strokeWidth: 12,
+                  backgroundColor: Colors.white.withValues(alpha: 0.10),
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    passRate >= 90
+                        ? PremiumTheme.success
+                        : passRate >= 60
+                            ? PremiumTheme.warning
+                            : PremiumTheme.error,
+                  ),
+                ),
+              ),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$passRate%',
+                    style: PremiumTheme.displayMedium.copyWith(fontSize: 34),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '$passed of $total passing',
+                    style: PremiumTheme.bodyMedium.copyWith(
+                      color: PremiumTheme.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Tap to drill down',
+                    style: PremiumTheme.bodySmall.copyWith(
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
-    final sidebarCollapsed = app.isAdminSidebarCollapsed;
     final filtered = _filterProposals(app.proposals);
     final analytics = _calculateAnalytics(filtered);
     final metrics = _buildMetricCards(analytics);
-    _calculatePipelineCounts(filtered);
+    final pipelineCounts = _calculatePipelineCounts(filtered);
+    final pipelineTotal =
+        pipelineCounts.values.fold<int>(0, (sum, v) => sum + v);
+    final signedCount = pipelineCounts['Signed'] ?? 0;
     final isAdminUser = _isAdminUser();
     return Scaffold(
       body: Container(
         color: Colors.transparent,
         child: Row(
           children: [
-AppSideNav(
-              isCollapsed: sidebarCollapsed,
-              currentLabel:
-                  isAdminUser ? 'Analytics' : 'Analytics (My Pipeline)',
-              isAdmin: isAdminUser,
-              onToggle: () => app.toggleAdminSidebar(),
-              onSelect: _navigatePage,
-            ),
+            if (isAdminUser)
+              Material(
+                child: AdminSidebar(
+                  isCollapsed: _isSidebarCollapsed,
+                  currentPage: 'Analytics',
+                  onToggle: () => setState(
+                    () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                  ),
+                  onSelect: _navigatePage,
+                ),
+              )
+            else
+              AppSideNav(
+                isCollapsed: _isSidebarCollapsed,
+                currentLabel: 'Analytics (My Pipeline)',
+                isAdmin: false,
+                onToggle: () => setState(
+                  () => _isSidebarCollapsed = !_isSidebarCollapsed,
+                ),
+                onSelect: _navigatePage,
+              ),
             Expanded(
               child: CustomScrollbar(
                       controller: _scrollController,
@@ -2887,41 +3580,26 @@ AppSideNav(
                                       ),
                                       const SizedBox(height: 24),
                                     ],
-);
-                                },
-                              ),
-                              const SizedBox(height: 32),
-                              _buildGlassChartCard(
-                                'Revenue Analytics',
-                                _buildRevenueChart(analytics.monthlyPoints),
-                                height: 350,
-                              ),
-                              const SizedBox(height: 32),
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: FutureBuilder<Map<String, dynamic>?>(
-                                      key: ValueKey(
-                                          'pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
-                                      future: _fetchPipelineBundle(),
-                                      builder: (context, snapshot) {
-                                        final waiting =
-                                            snapshot.connectionState ==
-                                                ConnectionState.waiting;
-                                        final hasError = snapshot.hasError;
-                                        final bundle = snapshot.data;
-                                        final pipelineData =
-                                            (bundle?['pipeline'] as Map?)
-                                                ?.cast<String, dynamic>();
-                                        (bundle?['completion_rates']
-                                                    as Map?)
-                                                ?.cast<String, dynamic>();
-
-                                        Widget pipelineBody;
-                                        if (waiting) {
-                                          pipelineBody = const Center(
-                                            child: CircularProgressIndicator(),
+                                    LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        final compact = constraints.maxWidth < 900;
+                                        if (compact) {
+                                          return Column(
+                                            children: [
+                                              for (int i = 0;
+                                                  i < metrics.length;
+                                                  i++) ...[
+                                                _buildGlassMetricCard(
+                                                  metrics[i].title,
+                                                  metrics[i].value,
+                                                  metrics[i].change,
+                                                  metrics[i].isPositive,
+                                                  metrics[i].subtitle,
+                                                ),
+                                                if (i != metrics.length - 1)
+                                                  const SizedBox(height: 20),
+                                              ],
+                                            ],
                                           );
                                         }
 
@@ -3268,6 +3946,53 @@ AppSideNav(
                   ),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _buildHeroSection() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.blue.shade400, Colors.blue.shade600],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.analytics,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+          const SizedBox(width: 20),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Analytics Dashboard',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4199,8 +4924,21 @@ AppSideNav(
     );
   }
 
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'signed':
+      case 'approved':
+        return Colors.green;
+      case 'in review':
+      case 'pending':
+        return Colors.orange;
+      case 'draft':
+        return Colors.grey;
+      default:
+        return Colors.blue;
+    }
+  }
 
-  // ignore: unused_element
   String _formatDate(DateTime? date) {
     if (date == null) return 'No date';
     return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
@@ -4284,14 +5022,13 @@ AppSideNav(
     );
   }
 
-  // ignore: unused_element
   Widget _buildNavItem(
     String label,
     String iconAsset,
     bool isActive,
     BuildContext context,
   ) {
-    final collapsed = context.watch<AppState>().isAdminSidebarCollapsed;
+    final collapsed = _isSidebarCollapsed;
     return Tooltip(
       message: collapsed ? label : '',
       child: InkWell(

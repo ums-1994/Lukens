@@ -1083,6 +1083,7 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
   @override
   Widget build(BuildContext context) {
+    final appState = context.read<AppState>();
     context.watch<AppState>();
     final role = (AuthService.currentUser?['role'] ?? '')
         .toString()
