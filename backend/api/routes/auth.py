@@ -587,15 +587,6 @@ def firebase_auth():
                 if normalized_role == 'manager' and (user_role or '').strip():
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
 
-                # If the client is registering/logging in with a finance role but the DB still
-                # has manager/user, upgrade ONLY to finance_manager (never to admin) and only
-                # when we can safely bind it to this Firebase identity.
-                if normalized_role == 'manager' and _is_finance_requested(requested_role):
-                    if _try_upgrade_to_finance_manager(cursor, conn, user_id, uid, email):
-                        user_role = 'finance_manager'
-                        normalized_role = 'finance_manager'
-                        print(f'🔐 Upgraded user {email} to finance_manager (safe Firebase-bound upgrade)')
-
                 # SECURITY: Never upgrade stored roles based on a client-provided "role" during login.
                 # This is an escalation vector (e.g. if the frontend persists a stale role locally).
                 # Allow it only when explicitly enabled server-side for local development/testing.
@@ -604,6 +595,14 @@ def firebase_auth():
                     "true",
                     "yes",
                 )
+
+                # If role upgrades are explicitly enabled for local testing, allow a finance upgrade
+                # when we can safely bind it to this Firebase identity.
+                if allow_client_role_upgrade and normalized_role == 'manager' and _is_finance_requested(requested_role):
+                    if _try_upgrade_to_finance_manager(cursor, conn, user_id, uid, email):
+                        user_role = 'finance_manager'
+                        normalized_role = 'finance_manager'
+                        print(f'🔐 Upgraded user {email} to finance_manager (safe Firebase-bound upgrade)')
                 if allow_client_role_upgrade:
                     try:
                         requested_role_lower = requested_role.lower().strip() if requested_role else ''

@@ -42,6 +42,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   String _searchQuery = '';
   bool _initialArgsApplied = false;
 
+  int? _staleDays;
+  double? _minRiskScore;
+
   bool _isSidebarCollapsed = false;
   String _currentPage = 'Approvals';
 
@@ -124,6 +127,15 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           _currentPage = filter == 'approved' ? 'History' : 'Approvals';
         });
       }
+
+      final staleRaw = args['staleDays'];
+      final riskRaw = args['minRiskScore'];
+      final stale = staleRaw is int ? staleRaw : int.tryParse(staleRaw?.toString() ?? '');
+      final minRisk = riskRaw is num ? riskRaw.toDouble() : double.tryParse(riskRaw?.toString() ?? '');
+      setState(() {
+        _staleDays = stale;
+        _minRiskScore = minRisk;
+      });
     }
   }
 
@@ -968,21 +980,49 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         source = _allProposals;
     }
 
-    if (_searchQuery.isEmpty) {
-      return List<Map<String, dynamic>>.from(source);
-    }
-
     final query = _searchQuery.toLowerCase();
+    final now = DateTime.now();
+
     return source.where((proposal) {
-      final id = proposal['id']?.toString().toLowerCase() ?? '';
-      final title = proposal['title']?.toString().toLowerCase() ?? '';
-      final client = (proposal['client_name'] ?? proposal['client'] ?? '')
-          .toString()
-          .toLowerCase();
-      return id.contains(query) ||
-          title.contains(query) ||
-          client.contains(query);
+      if (query.isNotEmpty) {
+        final id = proposal['id']?.toString().toLowerCase() ?? '';
+        final title = proposal['title']?.toString().toLowerCase() ?? '';
+        final client = (proposal['client_name'] ?? proposal['client'] ?? '')
+            .toString()
+            .toLowerCase();
+        final matches = id.contains(query) || title.contains(query) || client.contains(query);
+        if (!matches) return false;
+      }
+
+      if (_minRiskScore != null) {
+        final risk = _parseDouble(proposal['risk_score'] ?? proposal['riskScore']);
+        if (risk == null || risk < _minRiskScore!) return false;
+      }
+
+      if (_staleDays != null && _staleDays! > 0) {
+        final updatedAt = _parseDate(proposal['updated_at'] ?? proposal['updatedAt']);
+        if (updatedAt == null) return false;
+        if (now.difference(updatedAt).inDays < _staleDays!) return false;
+      }
+
+      return true;
     }).toList();
+  }
+
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    final s = value.toString();
+    if (s.isEmpty) return null;
+    return DateTime.tryParse(s);
+  }
+
+  double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    final s = value.toString().trim();
+    if (s.isEmpty) return null;
+    return double.tryParse(s);
   }
 
   Widget _buildApprovalsTable() {

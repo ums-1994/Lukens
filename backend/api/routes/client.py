@@ -2247,13 +2247,13 @@ def client_sign_proposal_token(proposal_id=None):
             # identity_last4 check.
             bypass_identity = os.getenv("DEV_BYPASS_CLIENT_IDENTITY", "false").lower() == "true"
             if not bypass_identity:
-                configured, err_or_hash, status = _require_identity_configured(cursor, int(proposal_id))
-                if not configured:
-                    return err_or_hash, status
-
-                allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, int(proposal_id))
-                if not allowed:
-                    return err_payload, status
+                expected_hash = _proposal_identity_hash(cursor, int(proposal_id))
+                if expected_hash:
+                    allowed, err_payload, status = _require_unlocked_for_invitation(
+                        cursor, invitation_token, int(proposal_id)
+                    )
+                    if not allowed:
+                        return err_payload, status
 
             signer_email = (invitation.get('invited_email') or '').strip() or None
 

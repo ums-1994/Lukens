@@ -68,13 +68,11 @@ String _clientPortalUrlWithDeviceSession(String url) {
 class ClientProposalViewer extends StatefulWidget {
   final int proposalId;
   final String accessToken;
-  final int initialTab;
 
   const ClientProposalViewer({
     super.key,
     required this.proposalId,
     required this.accessToken,
-    this.initialTab = 0,
   });
 
   @override
@@ -88,16 +86,11 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   Map<String, dynamic>? _signatureData;
   String? _signingUrl;
   String? _signatureStatus;
-  List<Map<String, dynamic>> _comments = [];
-  final TextEditingController _commentController = TextEditingController();
-  bool _isSubmittingComment = false;
   String? _currentSessionId;
   // Section-by-section viewing state for analytics
   List<Map<String, dynamic>> _sections = [];
   int _currentSectionIndex = 0;
   DateTime? _sectionViewStart;
-
-  int _selectedTab = 0; // 0: Content, 1: Comments
 
   String? _pdfObjectUrl;
   bool _isPdfLoading = false;
@@ -358,7 +351,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   @override
   void initState() {
     super.initState();
-    _selectedTab = widget.initialTab;
     _pdfViewType = 'pdf-preview-${DateTime.now().microsecondsSinceEpoch}';
     _deviceId = _getOrCreateDeviceId();
     _initPdfView();
@@ -873,12 +865,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           _signingUrl = _signatureData?['signing_url']?.toString();
           _signatureStatus = _signatureData?['status']?.toString();
 
-          // Debug logging for signature data
-
-          _comments = (data['comments'] as List?)
-                  ?.map((c) => Map<String, dynamic>.from(c))
-                  .toList() ??
-              [];
           _sections = parsedSections;
           _currentSectionIndex = 0;
           _sectionViewStart = _sections.isNotEmpty ? DateTime.now() : null;
@@ -919,94 +905,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
         _isLoading = false;
       });
     }
-  }
-
-  Future<void> _submitComment() async {
-    if (_commentController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter a comment'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _isSubmittingComment = true;
-    });
-
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/comment'),
-        headers: _clientJsonHeaders(),
-        body: jsonEncode({
-          'token': widget.accessToken,
-          'comment_text': _commentController.text.trim(),
-        }),
-      );
-
-      if (response.statusCode == 201) {
-        _logEvent('comment', metadata: {
-          'comment_length': _commentController.text.trim().length
-        });
-        _commentController.clear();
-        await _loadProposal();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Comment added successfully'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        final error = jsonDecode(response.body);
-        throw Exception(error['detail'] ?? 'Failed to add comment');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      setState(() {
-        _isSubmittingComment = false;
-      });
-    }
-  }
-
-  void _showRejectDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => RejectDialog(
-        proposalId: widget.proposalId,
-        accessToken: widget.accessToken,
-        onSuccess: () {
-          Navigator.pop(context); // Close dialog
-          Navigator.pop(context); // Go back to dashboard
-        },
-      ),
-    );
-  }
-
-  void _showApproveDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => ApproveDialog(
-        proposalId: widget.proposalId,
-        accessToken: widget.accessToken,
-        onSuccess: () {
-          Navigator.pop(context); // Close dialog
-          _loadProposal(); // Reload to show updated status
-        },
-      ),
-    );
   }
 
   @override
@@ -1079,9 +977,7 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
 
           // Content
           Expanded(
-            child: _selectedTab == 0
-                ? _buildProposalContent(proposal)
-                : _buildCommentsSection(),
+            child: _buildProposalContent(proposal),
           ),
         ],
       ),
@@ -1142,12 +1038,11 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           ),
           _buildStatusBadge(status),
           const SizedBox(width: 12),
-          if (_selectedTab == 0)
-            IconButton(
-              tooltip: 'Refresh Preview',
-              onPressed: _loadPdfPreview,
-              icon: const Icon(Icons.refresh, color: Colors.white),
-            ),
+          IconButton(
+            tooltip: 'Refresh Preview',
+            onPressed: _loadPdfPreview,
+            icon: const Icon(Icons.refresh, color: Colors.white),
+          ),
         ],
       ),
     );
@@ -1349,18 +1244,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
               ),
             ),
           ),
-          if (!isSigned)
-            OutlinedButton.icon(
-              onPressed: _showRejectDialog,
-              icon: const Icon(Icons.cancel, size: 18),
-              label: const Text('Reject'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-            ),
           if (!isSigned && hasSigningUrl) ...[
             const SizedBox(width: 12),
             ElevatedButton.icon(
@@ -1405,9 +1288,9 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
           ] else if (!isSigned && !hasSigningUrl) ...[
             const SizedBox(width: 12),
             ElevatedButton.icon(
-              onPressed: _showApproveDialog,
+              onPressed: _openSigningModal,
               icon: const Icon(Icons.check_circle, size: 18),
-              label: const Text('Approve'),
+              label: const Text('Get signing link'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF27AE60),
                 foregroundColor: Colors.white,
@@ -1853,176 +1736,6 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
     );
   }
 
-  Widget _buildCommentsSection() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Discussion & Comments',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF2C3E50),
-              ),
-            ),
-            const SizedBox(height: 24),
-
-            // Add comment
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _commentController,
-                    decoration: InputDecoration(
-                      hintText: 'Add a comment or question...',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      contentPadding: const EdgeInsets.all(16),
-                    ),
-                    maxLines: 3,
-                    enabled: !_isSubmittingComment,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _isSubmittingComment ? null : _submitComment,
-                  icon: _isSubmittingComment
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.send, size: 18),
-                  label: const Text('Send'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF3498DB),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 20),
-                  ),
-                ),
-              ],
-            ),
-
-            const Divider(height: 40),
-
-            // Comments list
-            if (_comments.isEmpty)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(40),
-                  child: Column(
-                    children: [
-                      Icon(Icons.chat_bubble_outline,
-                          size: 64, color: Colors.grey[300]),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No comments yet',
-                        style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Be the first to add a comment',
-                        style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else
-              ..._comments
-                  .map((comment) => _buildCommentItem(comment))
-                  .toList(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCommentItem(Map<String, dynamic> comment) {
-    final commenterName = comment['created_by_name']?.toString() ??
-        comment['created_by_email']?.toString() ??
-        'User';
-    final commentText = comment['comment_text']?.toString() ?? '';
-    final timestamp = comment['created_at']?.toString() ?? '';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 18,
-                backgroundColor: const Color(0xFF3498DB),
-                child: Text(
-                  commenterName.isNotEmpty
-                      ? commenterName[0].toUpperCase()
-                      : 'U',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      commenterName,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    Text(
-                      _formatDate(timestamp),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            commentText,
-            style: const TextStyle(fontSize: 14, height: 1.5),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildStatusBadge(String status) {
     Color color;
     IconData icon;
@@ -2103,466 +1816,5 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
       'Dec'
     ];
     return months[month];
-  }
-}
-
-// Reject Dialog
-class RejectDialog extends StatefulWidget {
-  final int proposalId;
-  final String accessToken;
-  final VoidCallback onSuccess;
-
-  const RejectDialog({
-    super.key,
-    required this.proposalId,
-    required this.accessToken,
-    required this.onSuccess,
-  });
-
-  @override
-  State<RejectDialog> createState() => _RejectDialogState();
-}
-
-class _RejectDialogState extends State<RejectDialog> {
-  final TextEditingController _reasonController = TextEditingController();
-  bool _isSubmitting = false;
-
-  Future<void> _submit() async {
-    if (_reasonController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please provide a reason for rejection'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
-
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/api/client/proposals/${widget.proposalId}/reject'),
-        headers: _clientJsonHeadersFromStorage(),
-        body: jsonEncode({
-          'token': widget.accessToken,
-          'reason': _reasonController.text.trim(),
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Proposal rejected'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-          widget.onSuccess();
-        }
-      } else {
-        final error = jsonDecode(response.body);
-        throw Exception(error['detail'] ?? 'Failed to reject');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: 500,
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.cancel, color: Colors.red, size: 28),
-                ),
-                const SizedBox(width: 16),
-                const Expanded(
-                  child: Text(
-                    'Reject Proposal',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2C3E50),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'Please provide a reason for rejecting this proposal. This will help the team understand your concerns.',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            TextField(
-              controller: _reasonController,
-              decoration: InputDecoration(
-                labelText: 'Reason for Rejection *',
-                hintText: 'Explain why you are rejecting this proposal...',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              maxLines: 5,
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed:
-                      _isSubmitting ? null : () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _isSubmitting ? null : _submit,
-                  icon: _isSubmitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.cancel),
-                  label: const Text('Reject Proposal'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _reasonController.dispose();
-    super.dispose();
-  }
-}
-
-// Approve Dialog
-class ApproveDialog extends StatefulWidget {
-  final int proposalId;
-  final String accessToken;
-  final VoidCallback onSuccess;
-
-  const ApproveDialog({
-    super.key,
-    required this.proposalId,
-    required this.accessToken,
-    required this.onSuccess,
-  });
-
-  @override
-  State<ApproveDialog> createState() => _ApproveDialogState();
-}
-
-class _ApproveDialogState extends State<ApproveDialog> {
-  final TextEditingController _signerNameController = TextEditingController();
-  final TextEditingController _signerTitleController = TextEditingController();
-  final TextEditingController _commentsController = TextEditingController();
-  bool _isSubmitting = false;
-
-  static const Duration _networkTimeout = Duration(seconds: 20);
-
-  Future<void> _submit() async {
-    if (_signerNameController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please provide your name'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _isSubmitting = true;
-    });
-
-    try {
-      final response = await http
-          .post(
-            Uri.parse(
-                '$baseUrl/api/client/proposals/${widget.proposalId}/approve'),
-            headers: _clientJsonHeadersFromStorage(),
-            body: jsonEncode({
-              'token': widget.accessToken,
-              'signer_name': _signerNameController.text.trim(),
-              'signer_title': _signerTitleController.text.trim(),
-              'comments': _commentsController.text.trim(),
-            }),
-          )
-          .timeout(_networkTimeout);
-
-      print('✅ Client approve response: ${response.statusCode}');
-      final bodyText = response.body;
-      if (bodyText.isNotEmpty) {
-        final preview =
-            bodyText.length > 500 ? bodyText.substring(0, 500) : bodyText;
-        print('✅ Client approve body (preview): $preview');
-      }
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final signingUrl = data['signing_url']?.toString();
-
-        if (mounted) {
-          Navigator.pop(context); // Close approve dialog
-
-          if (signingUrl != null && signingUrl.isNotEmpty) {
-            // Open DocuSign signing modal
-            _openDocuSignSigning(signingUrl);
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content:
-                    Text('Proposal approved, but signing URL not available'),
-                backgroundColor: Colors.orange,
-              ),
-            );
-            widget.onSuccess();
-          }
-        }
-      } else {
-        String detail = 'Failed to approve';
-        try {
-          final decoded = jsonDecode(response.body);
-          if (decoded is Map && decoded['detail'] != null) {
-            detail = decoded['detail'].toString();
-          } else {
-            detail = response.body;
-          }
-        } catch (_) {
-          detail = response.body.isNotEmpty ? response.body : detail;
-        }
-
-        if (response.statusCode == 501) {
-          throw Exception(
-              'DocuSign disabled on server. Set ENABLE_DOCUSIGN=true. ($detail)');
-        }
-
-        throw Exception(detail);
-      }
-    } on TimeoutException {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Approve timed out. Confirm backend is running on http://127.0.0.1:5000 and retry.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmitting = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _openDocuSignSigning(String signingUrl) async {
-    // Open DocuSign in the same tab
-    print(
-        '🔐 ApproveDialog: Opening DocuSign URL in same tab: ${signingUrl.substring(0, signingUrl.length > 100 ? 100 : signingUrl.length)}...');
-
-    try {
-      // Navigate to DocuSign in the same tab (redirect mode - works on HTTP)
-      print('🔐 ApproveDialog: Navigating to DocuSign (redirect mode)...');
-      // Use replace() to navigate to external URL (bypasses Flutter routing)
-      web.window.location.replace(signingUrl);
-      print(
-          '✅ Navigation initiated to DocuSign from ApproveDialog using location.replace()');
-
-      // Reload proposal after a delay to check for signature completion
-      Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) {
-          print(
-              '🔄 ApproveDialog: Reloading proposal to check signature status...');
-          widget.onSuccess(); // Reload to check if signed
-        }
-      });
-    } catch (e) {
-      print('❌ ApproveDialog: Error opening DocuSign: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error opening DocuSign: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: 500,
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.check_circle,
-                      color: Colors.green, size: 28),
-                ),
-                const SizedBox(width: 16),
-                const Expanded(
-                  child: Text(
-                    'Approve Proposal',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF2C3E50),
-                    ),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            const Text(
-              'Please provide your information to approve this proposal.',
-              style: TextStyle(fontSize: 14, color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            TextField(
-              controller: _signerNameController,
-              decoration: InputDecoration(
-                labelText: 'Your Name *',
-                hintText: 'Enter your full name',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _signerTitleController,
-              decoration: InputDecoration(
-                labelText: 'Your Title (Optional)',
-                hintText: 'e.g., CEO, Director, Manager',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _commentsController,
-              decoration: InputDecoration(
-                labelText: 'Comments (Optional)',
-                hintText: 'Any additional comments...',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              ),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed:
-                      _isSubmitting ? null : () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
-                  onPressed: _isSubmitting ? null : _submit,
-                  icon: _isSubmitting
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.check_circle),
-                  label: const Text('Approve Proposal'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF27AE60),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 12),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _signerNameController.dispose();
-    _signerTitleController.dispose();
-    _commentsController.dispose();
-    super.dispose();
   }
 }

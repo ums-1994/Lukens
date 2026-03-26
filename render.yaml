@@ -49,7 +49,7 @@ services:
     buildCommand: git clone https://github.com/flutter/flutter.git -b stable /tmp/flutter && export PATH="$PATH:/tmp/flutter/bin" && flutter config --enable-web && cd frontend_flutter && flutter pub get && flutter build web --release --base-href /
     staticPublishPath: frontend_flutter/build/web
     envVars:
-      - key: REACT_APP_API_URL
+      - key: APP_API_URL
         sync: false
         # Set this to your backend URL after deployment: https://lukens-backend.onrender.com
 
