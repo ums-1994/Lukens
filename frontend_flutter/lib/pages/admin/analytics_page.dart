@@ -14,6 +14,7 @@ import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/app_side_nav.dart';
+import '../../widgets/admin/admin_sidebar.dart';
 import '../creator/widgets/completion_rates_widget.dart';
 
 class AnalyticsPage extends StatefulWidget {
@@ -2044,14 +2045,23 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         color: Colors.transparent,
         child: Row(
           children: [
-            AppSideNav(
-              isCollapsed: sidebarCollapsed,
-              currentLabel:
-                  isAdminUser ? 'Analytics' : 'Analytics (My Pipeline)',
-              isAdmin: isAdminUser,
-              onToggle: () => app.toggleAdminSidebar(),
-              onSelect: _navigatePage,
-            ),
+            isAdminUser
+                ? AdminSidebar(
+                    isCollapsed: sidebarCollapsed,
+                    currentPage: 'Analytics',
+                    onToggle: app.toggleAdminSidebar,
+                    onSelect: (label) {
+                      app.setAdminNavLabel(label);
+                      _navigatePage(label);
+                    },
+                  )
+                : AppSideNav(
+                    isCollapsed: app.isSidebarCollapsed,
+                    currentLabel: 'Analytics (My Pipeline)',
+                    isAdmin: false,
+                    onToggle: app.toggleSidebar,
+                    onSelect: _navigatePage,
+                  ),
             Expanded(
               child: CustomScrollbar(
                       controller: _scrollController,
