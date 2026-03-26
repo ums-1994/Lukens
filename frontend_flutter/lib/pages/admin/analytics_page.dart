@@ -1979,14 +1979,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   bool _isAdminUser() {
-    final user = AuthService.currentUser;
-    final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
-    // Treat only true admin-style roles as admin here.
-    // Managers/creators should keep the creator sidebar; admins get admin view.
+    final user = AuthService.currentUser ?? context.read<AppState>().currentUser;
+    final backendRole = (user?['role'] ?? '').toString().toLowerCase().trim();
+    // Treat only true admin roles as admin for routing/sidebar behavior.
     return backendRole == 'admin' ||
         backendRole == 'ceo' ||
-        backendRole == 'finance_manager' ||
-        backendRole == 'financial manager';
+        backendRole == 'approver';
   }
 
   String? _pipelineStageForStatus(String statusLower) {
@@ -3353,9 +3351,13 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   void _navigatePage(String label) {
+    final isAdminUser = _isAdminUser();
     switch (label) {
       case 'Dashboard':
-        Navigator.pushReplacementNamed(context, '/creator_dashboard');
+        Navigator.pushReplacementNamed(
+          context,
+          isAdminUser ? '/approver_dashboard' : '/creator_dashboard',
+        );
         break;
       case 'My Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
@@ -3371,7 +3373,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         break;
       case 'Approved Proposals':
       case 'Approvals':
-        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        Navigator.pushReplacementNamed(
+          context,
+          isAdminUser ? '/admin_approvals' : '/approved_proposals',
+        );
         break;
       case 'Analytics':
       case 'Analytics (My Pipeline)':
@@ -3435,12 +3440,16 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       message: collapsed ? label : '',
       child: InkWell(
         onTap: () {
+          final isAdminUser = _isAdminUser();
           switch (label) {
             case 'Logout':
               Navigator.pushReplacementNamed(context, '/login');
               break;
             case 'Dashboard':
-              Navigator.pushReplacementNamed(context, '/creator_dashboard');
+              Navigator.pushReplacementNamed(
+                context,
+                isAdminUser ? '/approver_dashboard' : '/creator_dashboard',
+              );
               break;
             case 'My Proposals':
               Navigator.pushReplacementNamed(context, '/proposals');
@@ -3455,17 +3464,26 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               Navigator.pushReplacementNamed(context, '/client_management');
               break;
             case 'Approved Proposals':
-              Navigator.pushReplacementNamed(context, '/approved_proposals');
+              Navigator.pushReplacementNamed(
+                context,
+                isAdminUser ? '/admin_approvals' : '/approved_proposals',
+              );
               break;
             case 'Approvals':
-              Navigator.pushReplacementNamed(context, '/approved_proposals');
+              Navigator.pushReplacementNamed(
+                context,
+                isAdminUser ? '/admin_approvals' : '/approved_proposals',
+              );
               break;
             case 'Analytics':
             case 'Analytics (My Pipeline)':
               Navigator.pushReplacementNamed(context, '/analytics');
               break;
             default:
-              Navigator.pushReplacementNamed(context, '/creator_dashboard');
+              Navigator.pushReplacementNamed(
+                context,
+                isAdminUser ? '/approver_dashboard' : '/creator_dashboard',
+              );
           }
         },
         borderRadius: BorderRadius.circular(12),
