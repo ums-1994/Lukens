@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -10,7 +11,6 @@ import 'dart:html' as html;
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
-import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/finance/finance_sidebar.dart';
@@ -61,18 +61,23 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
       TextEditingController();
 
   bool _handledInitialOpen = false;
+  int _aiUsageRefreshTick = 0;
+  Timer? _aiUsageRefreshTimer;
+  Future<Map<String, dynamic>?>? _aiUsageFuture;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final roleService = context.read<RoleService>();
-      if (!roleService.isFinance()) {
-        roleService.switchRole(UserRole.finance);
-      }
-    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
+    _aiUsageFuture = _fetchAiUsageAnalytics();
+    _aiUsageRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted) return;
+      if (_currentTab != 'dashboard') return;
+      setState(() {
+        _aiUsageRefreshTick++;
+        _aiUsageFuture = _fetchAiUsageAnalytics();
+      });
+    });
   }
 
   @override
@@ -150,6 +155,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
 
   @override
   void dispose() {
+    _aiUsageRefreshTimer?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
     _auditUserController.dispose();
@@ -938,6 +944,212 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
           child,
         ],
       ),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _fetchAiUsageAnalytics() async {
+    final now = DateTime.now();
+    final start = now.subtract(const Duration(days: 30));
+    final fmt = DateFormat('yyyy-MM-dd');
+    return context.read<AppState>().getAiUsageAnalytics(
+          startDate: fmt.format(start),
+          endDate: fmt.format(now),
+        );
+  }
+
+  Widget _buildAiUsageDashboardPanel() {
+    return FutureBuilder<Map<String, dynamic>?>(
+      key: ValueKey('finance_dashboard_ai_usage_$_aiUsageRefreshTick'),
+      future: _aiUsageFuture ?? _fetchAiUsageAnalytics(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            height: 200,
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.7)),
+              ),
+            ),
+          );
+        }
+
+        final data = snapshot.data;
+        if (snapshot.hasError || data == null) {
+          return SizedBox(
+            height: 80,
+            child: Center(
+              child: Text(
+                'Failed to load AI usage data.',
+                style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+              ),
+            ),
+          );
+        }
+
+        if (data['error_status'] != null) {
+          return SizedBox(
+            height: 80,
+            child: Center(
+              child: Text(
+                'Unable to load AI usage (${data['error_status']}).',
+                style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+              ),
+            ),
+          );
+        }
+
+        int n(dynamic v) {
+          if (v is int) return v;
+          if (v is num) return v.toInt();
+          return int.tryParse((v ?? '').toString()) ?? 0;
+        }
+
+        final totals = (data['totals'] as Map?)?.cast<String, dynamic>() ?? {};
+        final endpointSplit = ((data['endpoint_split'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList();
+        final topUsers = ((data['top_users'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList();
+        final usageSummary =
+            (data['usage_summary'] as Map?)?.cast<String, dynamic>() ?? {};
+        final acceptanceRate = (totals['acceptance_rate'] is num)
+            ? (totals['acceptance_rate'] as num).toDouble()
+            : 0.0;
+        final averageSpendZar = (usageSummary['average_spend_zar'] is num)
+            ? (usageSummary['average_spend_zar'] as num).toDouble()
+            : 0.0;
+        final averageSpendReason =
+            (usageSummary['average_spend_reason'] ?? '').toString();
+
+        Widget chip(String label, String value) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.04),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white.withOpacity(0.08)),
+            ),
+            child: Text(
+              '$label: $value',
+              style: PremiumTheme.labelMedium.copyWith(color: Colors.white70),
+            ),
+          );
+        }
+
+        Widget listColumn(String title, List<Map<String, dynamic>> rows,
+            String leftKey, String rightKey) {
+          return Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.03),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withOpacity(0.06)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: PremiumTheme.titleMedium.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                if (rows.isEmpty)
+                  Text(
+                    'No data',
+                    style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+                  )
+                else
+                  ...rows.take(8).map(
+                        (row) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  (row[leftKey] ?? '-').toString(),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: PremiumTheme.bodyMedium
+                                      .copyWith(color: Colors.white70),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                (row[rightKey] ?? '0').toString(),
+                                style: PremiumTheme.bodyMedium.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                chip('Requests', n(totals['total_requests']).toString()),
+                chip('Success', n(totals['success_count']).toString()),
+                chip('Failed', n(totals['failed_count']).toString()),
+                chip('Blocked', n(totals['blocked_count']).toString()),
+                chip('Acceptance', '${acceptanceRate.toStringAsFixed(1)}%'),
+                chip(
+                    'Tokens', NumberFormat.compact().format(n(usageSummary['total_tokens']))),
+                chip('Cost',
+                    'R ${((usageSummary['estimated_cost_zar'] as num?) ?? 0).toStringAsFixed(2)}'),
+                chip('Average Spent', 'R ${averageSpendZar.toStringAsFixed(2)}'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (averageSpendReason.isNotEmpty)
+              Text(
+                'Reason: $averageSpendReason',
+                style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+              ),
+            if (averageSpendReason.isNotEmpty) const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final narrow = constraints.maxWidth < 980;
+                final left =
+                    listColumn('By Endpoint', endpointSplit, 'endpoint', 'requests');
+                final right =
+                    listColumn('Top Users', topUsers, 'username', 'requests');
+                if (narrow) {
+                  return Column(
+                    children: [
+                      left,
+                      const SizedBox(height: 10),
+                      right,
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: left),
+                    const SizedBox(width: 12),
+                    Expanded(child: right),
+                  ],
+                );
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -2292,6 +2504,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                                       _buildFinanceKpis(),
                                       const SizedBox(height: 16),
                                       _buildChartsRow(),
+                                      const SizedBox(height: 12),
+                                      _buildSimpleListPanel(
+                                        title: 'AI Usage',
+                                        subtitle:
+                                            'Live usage for AI Assistant + Risk Gate (last 30 days, auto-refresh)',
+                                        child: _buildAiUsageDashboardPanel(),
+                                      ),
                                       const SizedBox(height: 12),
                                       LayoutBuilder(
                                         builder: (context, constraints) {

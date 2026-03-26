@@ -564,7 +564,7 @@ def summary(username=None, user_id=None, email=None):
                 my_department = (me.get("department") or "").strip() or None
 
                 if scope == "all":
-                    if my_role not in {"admin", "ceo"}:
+                    if my_role not in {"admin", "ceo", "approver", "manager", "finance_manager", "financial_manager", "finance"}:
                         return jsonify({"detail": "Not authorized for scope=all"}), 403
                     team_owner_ids = None
                 else:
@@ -820,7 +820,7 @@ def proposals(username=None, user_id=None, email=None):
                 my_department = (me.get("department") or "").strip() or None
 
                 if scope == "all":
-                    if my_role not in {"admin", "ceo"}:
+                    if my_role not in {"admin", "ceo", "approver", "manager", "finance_manager", "financial_manager", "finance"}:
                         return jsonify({"detail": "Not authorized for scope=all"}), 403
                     team_owner_ids = None
                 else:

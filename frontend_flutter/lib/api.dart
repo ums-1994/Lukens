@@ -837,6 +837,31 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  Future<Map<String, dynamic>?> getAiUsageAnalytics({
+    String? startDate,
+    String? endDate,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/ai/analytics/usage").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+      return {
+        'error_status': r.statusCode,
+        'error': r.body,
+      };
+    } catch (e) {
+      print('Error fetching AI usage analytics: $e');
+      return null;
+    }
+  }
+
   Future<Map<String, dynamic>?> getRiskGateProposals({
     required String riskStatus,
     String? startDate,

@@ -2002,6 +2002,294 @@ def get_ai_analytics_summary(username=None):
         print(f"❌ Error fetching AI analytics: {e}")
         return {'detail': str(e)}, 500
 
+
+def _is_admin_or_finance_role(role: str | None) -> bool:
+    role_key = (role or '').strip().lower()
+    return role_key in {
+        'admin',
+        'ceo',
+        'approver',
+        'manager',
+        'finance',
+        'finance_manager',
+        'financial_manager',
+        'finance manager',
+        'financial manager',
+    }
+
+
+def _table_exists(cursor, table_name: str) -> bool:
+    cursor.execute("SELECT to_regclass(%s) AS table_ref", (f"public.{table_name}",))
+    row = cursor.fetchone() or {}
+    return row.get("table_ref") is not None
+
+
+@bp.get("/ai/analytics/usage")
+@token_required
+def get_ai_usage_dashboard(username=None):
+    """Aggregated AI usage data for in-app dashboard (admin + finance only)."""
+    try:
+        start_date = (request.args.get('start_date') or '').strip()
+        end_date = (request.args.get('end_date') or '').strip()
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute("SELECT role FROM users WHERE username = %s", (username,))
+            role_row = cursor.fetchone()
+            role = (role_row.get('role') if role_row else None)
+            if not _is_admin_or_finance_role(role):
+                return {'detail': 'Not authorized for AI usage analytics'}, 403
+
+            has_ai_usage = _table_exists(cursor, "ai_usage")
+            has_risk_runs = _table_exists(cursor, "risk_gate_runs")
+
+            # Keep date handling simple and DB-driven.
+            range_sql = """
+                (%s = '' OR created_at >= %s::date)
+                AND (%s = '' OR created_at < (%s::date + INTERVAL '1 day'))
+            """
+
+            # ai_usage tracks generate/improve/full_proposal
+            ai_endpoint_rows = []
+            if has_ai_usage:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        COALESCE(endpoint, 'unknown') AS endpoint,
+                        COUNT(*)::int AS requests
+                    FROM ai_usage
+                    WHERE {range_sql}
+                    GROUP BY endpoint
+                    """,
+                    (start_date, start_date, end_date, end_date),
+                )
+                ai_endpoint_rows = cursor.fetchall() or []
+
+            # risk_gate_runs tracks risk analysis usage
+            if has_risk_runs:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        'risk'::text AS endpoint,
+                        COUNT(*)::int AS requests
+                    FROM risk_gate_runs
+                    WHERE {range_sql}
+                    """,
+                    (start_date, start_date, end_date, end_date),
+                )
+                risk_endpoint_row = cursor.fetchone() or {'endpoint': 'risk', 'requests': 0}
+            else:
+                risk_endpoint_row = {'endpoint': 'risk', 'requests': 0}
+
+            endpoint_counts = {}
+            for row in ai_endpoint_rows:
+                endpoint = (row.get('endpoint') or 'unknown').strip().lower()
+                endpoint_counts[endpoint] = endpoint_counts.get(endpoint, 0) + int(row.get('requests') or 0)
+            endpoint_counts['risk'] = endpoint_counts.get('risk', 0) + int(risk_endpoint_row.get('requests') or 0)
+
+            endpoint_split = [
+                {'endpoint': k, 'requests': v}
+                for k, v in sorted(endpoint_counts.items(), key=lambda item: item[1], reverse=True)
+            ]
+            total_requests = sum(item['requests'] for item in endpoint_split)
+
+            ai_status = cursor.fetchone() or {}
+            ai_total_count = 0
+            if has_ai_usage:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        COUNT(*)::int AS total_count,
+                        COUNT(*)::int AS success_count,
+                        COUNT(CASE WHEN was_accepted = TRUE THEN 1 END)::int AS accepted_count
+                    FROM ai_usage
+                    WHERE {range_sql}
+                    """,
+                    (start_date, start_date, end_date, end_date),
+                )
+                ai_status = cursor.fetchone() or {}
+            else:
+                ai_status = {'total_count': 0, 'success_count': 0, 'accepted_count': 0}
+            ai_total_count = int(ai_status.get('total_count') or 0)
+
+            if has_risk_runs:
+                cursor.execute(
+                    f"""
+                    SELECT
+                    COUNT(*)::int AS total_risk,
+                    COUNT(CASE WHEN UPPER(COALESCE(status, '')) = 'BLOCK' THEN 1 END)::int AS blocked_risk,
+                    COUNT(
+                        CASE
+                            WHEN UPPER(COALESCE(status, '')) IN ('FAILED', 'FAIL', 'ERROR')
+                            THEN 1
+                        END
+                    )::int AS failed_risk
+                    FROM risk_gate_runs
+                    WHERE {range_sql}
+                    """,
+                    (start_date, start_date, end_date, end_date),
+                )
+                risk_status = cursor.fetchone() or {}
+            else:
+                risk_status = {'total_risk': 0, 'blocked_risk': 0, 'failed_risk': 0}
+
+            risk_total = int(risk_status.get('total_risk') or 0)
+            blocked_count = int(risk_status.get('blocked_risk') or 0)
+            risk_failed = int(risk_status.get('failed_risk') or 0)
+            risk_success = max(risk_total - blocked_count - risk_failed, 0)
+
+            ai_success = int(ai_status.get('success_count') or 0)
+            # ai_usage currently logs completed requests; explicit AI failures are not stored here.
+            ai_failed = max(ai_total_count - ai_success, 0)
+
+            success_count = ai_success + risk_success
+            failed_count = ai_failed + risk_failed
+            accepted_count = int(ai_status.get('accepted_count') or 0)
+
+            acceptance_rate = (
+                round((accepted_count / ai_total_count) * 100, 2) if ai_total_count > 0 else 0.0
+            )
+
+            ai_users = []
+            if has_ai_usage:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        COALESCE(username, 'unknown') AS username,
+                        COUNT(*)::int AS requests
+                    FROM ai_usage
+                    WHERE {range_sql}
+                    GROUP BY username
+                    """,
+                    (start_date, start_date, end_date, end_date),
+                )
+                ai_users = cursor.fetchall() or []
+
+            if has_risk_runs:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        COALESCE(requested_by, 'unknown') AS username,
+                        COUNT(*)::int AS requests
+                    FROM risk_gate_runs
+                    WHERE {range_sql}
+                    GROUP BY requested_by
+                    """,
+                    (start_date, start_date, end_date, end_date),
+                )
+                risk_users = cursor.fetchall() or []
+            else:
+                risk_users = []
+
+            user_counts = {}
+            for row in ai_users + risk_users:
+                user = (row.get('username') or 'unknown').strip() or 'unknown'
+                user_counts[user] = user_counts.get(user, 0) + int(row.get('requests') or 0)
+
+            top_users = [
+                {'username': user, 'requests': count}
+                for user, count in sorted(user_counts.items(), key=lambda item: item[1], reverse=True)[:10]
+            ]
+
+            ai_daily = []
+            if has_ai_usage:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        DATE(created_at) AS day,
+                        COUNT(*)::int AS requests
+                    FROM ai_usage
+                    WHERE {range_sql}
+                    GROUP BY DATE(created_at)
+                    """,
+                    (start_date, start_date, end_date, end_date),
+                )
+                ai_daily = cursor.fetchall() or []
+
+            if has_risk_runs:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        DATE(created_at) AS day,
+                        COUNT(*)::int AS requests
+                    FROM risk_gate_runs
+                    WHERE {range_sql}
+                    GROUP BY DATE(created_at)
+                    """,
+                    (start_date, start_date, end_date, end_date),
+                )
+                risk_daily = cursor.fetchall() or []
+            else:
+                risk_daily = []
+
+            daily_map = {}
+            for row in ai_daily + risk_daily:
+                key = row.get('day').isoformat() if row.get('day') else ''
+                if not key:
+                    continue
+                daily_map[key] = daily_map.get(key, 0) + int(row.get('requests') or 0)
+
+            daily_trend = [
+                {'date': d, 'requests': c}
+                for d, c in sorted(daily_map.items(), key=lambda item: item[0])
+            ]
+
+            if has_ai_usage:
+                cursor.execute(
+                    f"""
+                    SELECT COALESCE(SUM(response_tokens), 0)::bigint AS total_tokens
+                    FROM ai_usage
+                    WHERE {range_sql}
+                    """,
+                    (start_date, start_date, end_date, end_date),
+                )
+                token_row = cursor.fetchone() or {}
+            else:
+                token_row = {'total_tokens': 0}
+            total_tokens = int(token_row.get('total_tokens') or 0)
+            # Rough estimate only (dashboard copy should reflect approximation).
+            estimated_cost_usd = round((total_tokens / 1000.0) * 0.002, 4)
+            usd_to_zar = float(os.getenv("USD_TO_ZAR_RATE", "18.50") or 18.50)
+            estimated_cost_zar = round(estimated_cost_usd * usd_to_zar, 2)
+            avg_spend_zar = round((estimated_cost_zar / total_requests), 2) if total_requests > 0 else 0.0
+            hf_url = (os.getenv("AI_ASSISTANT_HF_URL") or "").strip().lower()
+            cost_reason = (
+                "hugging face self hosted free"
+                if ("hf.space" in hf_url or "huggingface" in hf_url) and estimated_cost_zar == 0
+                else f"estimated from token usage using usd_to_zar={usd_to_zar:.2f}"
+            )
+
+            return {
+                'date_range': {
+                    'start_date': start_date or None,
+                    'end_date': end_date or None,
+                },
+                'totals': {
+                    'total_requests': total_requests,
+                    'success_count': success_count,
+                    'failed_count': failed_count,
+                    'blocked_count': blocked_count,
+                    'accepted_count': accepted_count,
+                    'acceptance_rate': acceptance_rate,
+                },
+                'endpoint_split': endpoint_split,
+                'top_users': top_users,
+                'daily_trend': daily_trend,
+                'usage_summary': {
+                    'total_tokens': total_tokens,
+                    'estimated_cost_usd': estimated_cost_usd,
+                    'estimated_cost_zar': estimated_cost_zar,
+                    'average_spend_zar': avg_spend_zar,
+                    'average_spend_reason': cost_reason,
+                    'cost_model': 'approx_usd_per_1k_tokens=0.002',
+                },
+            }, 200
+    except Exception as e:
+        print(f"❌ Error fetching AI usage dashboard: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
 @bp.get("/ai/analytics/user-stats")
 @token_required
 def get_user_ai_stats(username=None):

@@ -701,6 +701,264 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     }
   }
 
+  bool _canViewAiUsage() {
+    final role = (context.read<AppState>().currentUser?['role'] ?? '')
+        .toString()
+        .trim()
+        .toLowerCase();
+    return role == 'admin' ||
+        role == 'ceo' ||
+        role == 'approver' ||
+        role == 'manager' ||
+        role == 'finance' ||
+        role == 'finance_manager' ||
+        role == 'financial_manager' ||
+        role == 'finance manager' ||
+        role == 'financial manager';
+  }
+
+  Future<Map<String, dynamic>?> _fetchAiUsageAnalytics() async {
+    try {
+      final now = DateTime.now();
+      final start = _periodStart(now);
+      final fmt = DateFormat('yyyy-MM-dd');
+      final startDate = start != null ? fmt.format(start) : null;
+      final endDate = fmt.format(now);
+
+      return await context.read<AppState>().getAiUsageAnalytics(
+            startDate: startDate,
+            endDate: endDate,
+          );
+    } catch (e) {
+      print('AI usage analytics exception: $e');
+      return null;
+    }
+  }
+
+  Widget _buildAiUsageCard(Map<String, dynamic>? data) {
+    if (data == null) {
+      return Center(
+        child: Text(
+          'AI usage data unavailable.',
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+        ),
+      );
+    }
+    if (data['error_status'] != null) {
+      final status = data['error_status'];
+      if (status == 403) {
+        return Center(
+          child: Text(
+            'AI usage dashboard is only available to admin and finance roles.',
+            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+            textAlign: TextAlign.center,
+          ),
+        );
+      }
+      return Center(
+        child: Text(
+          'Failed to load AI usage data${data['error'] != null ? ': ${data['error']}' : '.'}',
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    final totals = (data['totals'] as Map?)?.cast<String, dynamic>() ?? {};
+    final endpointSplit = ((data['endpoint_split'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+    final topUsers = ((data['top_users'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+    final usageSummary =
+        (data['usage_summary'] as Map?)?.cast<String, dynamic>() ?? {};
+    final dailyTrend = ((data['daily_trend'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+
+    int n(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse((v ?? '').toString()) ?? 0;
+    }
+
+    final totalRequests = n(totals['total_requests']);
+    final successCount = n(totals['success_count']);
+    final failedCount = n(totals['failed_count']);
+    final blockedCount = n(totals['blocked_count']);
+    final acceptedCount = n(totals['accepted_count']);
+    final acceptanceRate =
+        (totals['acceptance_rate'] is num) ? totals['acceptance_rate'] as num : 0;
+    final totalTokens = n(usageSummary['total_tokens']);
+    final estimatedCostZar = (usageSummary['estimated_cost_zar'] is num)
+        ? usageSummary['estimated_cost_zar'] as num
+        : 0;
+    final averageSpendZar = (usageSummary['average_spend_zar'] is num)
+        ? usageSummary['average_spend_zar'] as num
+        : 0;
+    final averageSpendReason =
+        (usageSummary['average_spend_reason'] ?? '').toString();
+
+    Widget chip(String label, String value, Color color) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withValues(alpha: 0.35)),
+        ),
+        child: Text(
+          '$label: $value',
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w600,
+            fontSize: 12,
+          ),
+        ),
+      );
+    }
+
+    final trendSummary = dailyTrend.isNotEmpty
+        ? '${dailyTrend.length} day${dailyTrend.length == 1 ? '' : 's'} tracked'
+        : 'No trend data yet';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            chip('Requests', totalRequests.toString(), Colors.white),
+            chip('Success', successCount.toString(), PremiumTheme.success),
+            chip('Failed', failedCount.toString(), PremiumTheme.error),
+            chip('Blocked', blockedCount.toString(), PremiumTheme.warning),
+            chip('Accepted', acceptedCount.toString(), PremiumTheme.teal),
+            chip('Acceptance', '${acceptanceRate.toStringAsFixed(1)}%',
+                PremiumTheme.cyan),
+            chip('Tokens', NumberFormat.compact().format(totalTokens),
+                PremiumTheme.purple),
+            chip('Approx Cost', 'R ${estimatedCostZar.toStringAsFixed(2)}',
+                PremiumTheme.info),
+            chip('Average Spent',
+                'R ${averageSpendZar.toStringAsFixed(2)}', PremiumTheme.teal),
+          ],
+        ),
+        const SizedBox(height: 14),
+        if (averageSpendReason.isNotEmpty)
+          Text(
+            'Reason: $averageSpendReason',
+            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+          ),
+        if (averageSpendReason.isNotEmpty) const SizedBox(height: 8),
+        Text(
+          trendSummary,
+          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+        ),
+        const SizedBox(height: 14),
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(
+                child: _buildAiUsageList(
+                  title: 'By Endpoint',
+                  rows: endpointSplit,
+                  leftKey: 'endpoint',
+                  rightKey: 'requests',
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _buildAiUsageList(
+                  title: 'Top Users',
+                  rows: topUsers,
+                  leftKey: 'username',
+                  rightKey: 'requests',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAiUsageList({
+    required String title,
+    required List<Map<String, dynamic>> rows,
+    required String leftKey,
+    required String rightKey,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.03),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            child: Text(
+              title,
+              style: PremiumTheme.bodyMedium.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const Divider(height: 1, color: Color(0x22FFFFFF)),
+          Expanded(
+            child: rows.isEmpty
+                ? Center(
+                    child: Text(
+                      'No data',
+                      style:
+                          PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+                    ),
+                  )
+                : ListView.separated(
+                    itemCount: rows.length,
+                    separatorBuilder: (_, __) =>
+                        const Divider(height: 1, color: Color(0x11FFFFFF)),
+                    itemBuilder: (context, i) {
+                      final row = rows[i];
+                      final left = (row[leftKey] ?? '-').toString();
+                      final right = (row[rightKey] ?? '0').toString();
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                left,
+                                style: PremiumTheme.bodyMedium
+                                    .copyWith(color: Colors.white),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              right,
+                              style: PremiumTheme.bodyMedium
+                                  .copyWith(color: Colors.white70),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCollaborationLoadCard(Map<String, dynamic>? data) {
     final totals = (data?['totals'] as Map?) ?? {};
     final totalProposals = (data?['total_proposals'] is num)
@@ -1006,6 +1264,17 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final client = _globalClientCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
+      final role = (currentUser?['role'] ?? '').toString().trim().toLowerCase();
+      final riskScope = (role == 'admin' ||
+              role == 'ceo' ||
+              role == 'approver' ||
+              role == 'manager' ||
+              role == 'finance' ||
+              role == 'finance_manager' ||
+              role == 'financial_manager' ||
+              role == 'financial manager')
+          ? 'all'
+          : _cycleTimeScope;
 
       final data = await context.read<AppState>().getRiskGateSummary(
             startDate: startDate,
@@ -1013,7 +1282,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             owner: owner.isEmpty ? null : owner,
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
-            scope: _cycleTimeScope,
+            scope: riskScope,
             department: department.isEmpty ? null : department,
           );
       return data;
@@ -1036,6 +1305,17 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final client = _globalClientCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
+      final role = (currentUser?['role'] ?? '').toString().trim().toLowerCase();
+      final riskScope = (role == 'admin' ||
+              role == 'ceo' ||
+              role == 'approver' ||
+              role == 'manager' ||
+              role == 'finance' ||
+              role == 'finance_manager' ||
+              role == 'financial_manager' ||
+              role == 'financial manager')
+          ? 'all'
+          : _cycleTimeScope;
 
       await showDialog(
         context: context,
@@ -1097,7 +1377,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                 proposalType:
                                     proposalType.isEmpty ? null : proposalType,
                                 client: client.isEmpty ? null : client,
-                                scope: _cycleTimeScope,
+                                scope: riskScope,
                                 department:
                                     department.isEmpty ? null : department,
                                 limit: 250,
@@ -1246,6 +1526,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final overall = (data?['overall_level'] ?? 'NONE').toString().toUpperCase();
     final countsMap = data?['counts'];
     final counts = <String, int>{'PASS': 0, 'REVIEW': 0, 'BLOCK': 0, 'NONE': 0};
+    final totalProposals = (data?['total_proposals'] is num)
+        ? (data?['total_proposals'] as num).toInt()
+        : 0;
+    final analyzedProposals = (data?['analyzed_proposals'] is num)
+        ? (data?['analyzed_proposals'] as num).toInt()
+        : 0;
     if (countsMap is Map) {
       for (final k in counts.keys) {
         final v = countsMap[k];
@@ -1283,9 +1569,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       }
     }
 
-    Widget chip(String label, int value, Color color) {
+    Widget chip({
+      required String riskKey,
+      required String label,
+      required int value,
+      required Color color,
+    }) {
       return InkWell(
-        onTap: () => _showRiskGateProposalsDialog(label),
+        onTap: () => _showRiskGateProposalsDialog(riskKey),
         borderRadius: BorderRadius.circular(999),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -1334,16 +1625,35 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           spacing: 10,
           runSpacing: 10,
           children: [
-            chip('PASS', counts['PASS'] ?? 0, PremiumTheme.success),
-            chip('REVIEW', counts['REVIEW'] ?? 0, PremiumTheme.warning),
-            chip('BLOCK', counts['BLOCK'] ?? 0, PremiumTheme.error),
-            chip('NONE', counts['NONE'] ?? 0,
-                Colors.white.withValues(alpha: 0.7)),
+            chip(
+              riskKey: 'PASS',
+              label: 'Pass',
+              value: counts['PASS'] ?? 0,
+              color: PremiumTheme.success,
+            ),
+            chip(
+              riskKey: 'REVIEW',
+              label: 'Review',
+              value: counts['REVIEW'] ?? 0,
+              color: PremiumTheme.warning,
+            ),
+            chip(
+              riskKey: 'BLOCK',
+              label: 'Block',
+              value: counts['BLOCK'] ?? 0,
+              color: PremiumTheme.error,
+            ),
+            chip(
+              riskKey: 'NONE',
+              label: 'Not Run Yet',
+              value: counts['NONE'] ?? 0,
+              color: Colors.white.withValues(alpha: 0.7),
+            ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
         Text(
-          'Latest run per proposal',
+          'Coverage: $analyzedProposals of $totalProposals proposals analyzed (latest run per proposal)',
           style: PremiumTheme.bodyMedium.copyWith(
             color: PremiumTheme.textSecondary,
           ),
@@ -1987,7 +2297,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         backendRole == 'ceo' ||
         backendRole == 'approver';
   }
-
   String? _pipelineStageForStatus(String statusLower) {
     final s = statusLower.trim();
     if (s.isEmpty || s.contains('draft')) return 'Draft';
@@ -2038,8 +2347,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final filtered = _filterProposals(app.proposals);
     final analytics = _calculateAnalytics(filtered);
     final metrics = _buildMetricCards(analytics);
-    _calculatePipelineCounts(filtered);
     final isAdminUser = _isAdminUser();
+    _calculatePipelineCounts(filtered);
     return Scaffold(
       body: Container(
         color: Colors.transparent,
@@ -2343,8 +2652,37 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                                     return _buildRiskGateIndicator(data);
                                   },
                                 ),
-                                height: 220,
+                                height: 170,
                               ),
+                              if (_canViewAiUsage()) ...[
+                                const SizedBox(height: 32),
+                                _buildGlassChartCard(
+                                  'AI Usage',
+                                  FutureBuilder<Map<String, dynamic>?>(
+                                    key: ValueKey(
+                                        'ai_usage_${_cycleTimeRefreshTick}_${_selectedPeriod}'),
+                                    future: _fetchAiUsageAnalytics(),
+                                    builder: (context, snapshot) {
+                                      if (snapshot.connectionState ==
+                                          ConnectionState.waiting) {
+                                        return const Center(
+                                            child: CircularProgressIndicator());
+                                      }
+                                      if (snapshot.hasError) {
+                                        return Center(
+                                          child: Text(
+                                            'Failed to load AI usage analytics.',
+                                            style: PremiumTheme.bodyMedium
+                                                .copyWith(color: Colors.white70),
+                                          ),
+                                        );
+                                      }
+                                      return _buildAiUsageCard(snapshot.data);
+                                    },
+                                  ),
+                                  height: 360,
+                                ),
+                              ],
                               const SizedBox(height: 32),
                               _buildGlassChartCard(
                                 'Collaboration Load',
@@ -3369,19 +3707,6 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           isAdminUser ? '/approver_dashboard' : '/creator_dashboard',
         );
         break;
-      case 'My Proposals':
-        Navigator.pushReplacementNamed(context, '/proposals');
-        break;
-      case 'Templates':
-        Navigator.pushReplacementNamed(context, '/templates');
-        break;
-      case 'Content Library':
-        Navigator.pushReplacementNamed(context, '/content_library');
-        break;
-      case 'Client Management':
-        Navigator.pushReplacementNamed(context, '/client_management');
-        break;
-      case 'Approved Proposals':
       case 'Approvals':
         Navigator.pushReplacementNamed(
           context,
@@ -3389,10 +3714,18 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         );
         break;
       case 'Analytics':
-      case 'Analytics (My Pipeline)':
         break; // already on this page
-      case 'Logout':
-        Navigator.pushReplacementNamed(context, '/login');
+      case 'History':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'approved'},
+        );
+        break;
+      case 'Sign Out':
+        AuthService.logout();
+        Navigator.pushNamedAndRemoveUntil(
+            context, '/login', (Route<dynamic> route) => false);
         break;
     }
   }

@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from flask import Blueprint, jsonify, request
 
 from api.utils.decorators import token_required
+from api.utils.database import get_db_connection
 
 
 # Load backend .env regardless of cwd (mirrors other backend modules)
@@ -127,6 +128,70 @@ def _build_upstream_url(hf_base: str, endpoint: str) -> str:
     else:
         url = _join_url(normalized, f"/ai-assistant{endpoint}")
     return url
+
+
+def _extract_text_for_token_estimate(payload: Any) -> str:
+    if payload is None:
+        return ""
+    if isinstance(payload, str):
+        return payload
+    if isinstance(payload, dict):
+        # Common response shapes from assistant endpoints.
+        for key in ("generated_text", "improved_text", "text", "content"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        result = payload.get("result")
+        if isinstance(result, dict):
+            for key in ("generated_text", "improved_text", "text", "content"):
+                value = result.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+        return str(payload)
+    return str(payload)
+
+
+def _estimate_response_tokens(payload: Any) -> int:
+    text = _extract_text_for_token_estimate(payload).strip()
+    if not text:
+        return 0
+    # Approximation: word count as lightweight token proxy for dashboard budgeting.
+    return max(1, len(text.split()))
+
+
+def _track_ai_usage(
+    *,
+    username: Optional[str],
+    endpoint: str,
+    prompt_text: str,
+    section_type: str,
+    response_tokens: int,
+    response_time_ms: int,
+) -> None:
+    if not username:
+        return
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO ai_usage (
+                    username, endpoint, prompt_text, section_type, response_tokens, response_time_ms
+                )
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    username,
+                    endpoint,
+                    (prompt_text or "")[:500],
+                    section_type,
+                    int(response_tokens or 0),
+                    int(response_time_ms or 0),
+                ),
+            )
+            conn.commit()
+    except Exception as track_error:
+        print(f"[AI Assistant Proxy] usage tracking failed endpoint={endpoint}: {track_error}")
 
 
 def _fallback_generate_section_text(section_name: str, proposal_text: str) -> str:
@@ -387,6 +452,15 @@ def proxy_generate_section(username=None):
 
     total_elapsed_ms = int((time.monotonic() - req_start) * 1000)
     print(f"[AI Assistant Proxy][{req_id}] completed status={status} total_elapsed_ms={total_elapsed_ms}")
+    if 200 <= status <= 299:
+        _track_ai_usage(
+            username=username,
+            endpoint="generate",
+            prompt_text=proposal_text,
+            section_type=section_name or "generate",
+            response_tokens=_estimate_response_tokens(body),
+            response_time_ms=total_elapsed_ms,
+        )
     return jsonify(body), status
 
 
@@ -417,6 +491,7 @@ def proxy_generate_section_async(username=None):
     )
 
     def _run() -> None:
+        started = time.monotonic()
         payload = {
             "section_name": section_name,
             "proposal_text": _compact_text(
@@ -427,6 +502,14 @@ def proxy_generate_section_async(username=None):
         }
         body, status = _call_upstream("/generate-section", payload, include_auth=True)
         if 200 <= status <= 299:
+            _track_ai_usage(
+                username=username,
+                endpoint="generate",
+                prompt_text=proposal_text,
+                section_type=section_name or "generate",
+                response_tokens=_estimate_response_tokens(body),
+                response_time_ms=int((time.monotonic() - started) * 1000),
+            )
             _set_async_job(job_id, {"status": "done", "status_code": status, "result": body})
         else:
             _set_async_job(job_id, {"status": "error", "status_code": status, "error": body})
@@ -515,6 +598,15 @@ def proxy_improve_area(username=None):
 
     total_elapsed_ms = int((time.monotonic() - req_start) * 1000)
     print(f"[AI Assistant Proxy][{req_id}] completed status={status} total_elapsed_ms={total_elapsed_ms}")
+    if 200 <= status <= 299:
+        _track_ai_usage(
+            username=username,
+            endpoint="improve",
+            prompt_text=proposal_text,
+            section_type=area_name or "improve",
+            response_tokens=_estimate_response_tokens(body),
+            response_time_ms=total_elapsed_ms,
+        )
     return jsonify(body), status
 
 
@@ -545,6 +637,7 @@ def proxy_improve_area_async(username=None):
     )
 
     def _run() -> None:
+        started = time.monotonic()
         payload = {
             "area_name": area_name,
             "proposal_text": _compact_text(
@@ -555,6 +648,14 @@ def proxy_improve_area_async(username=None):
         }
         body, status = _call_upstream("/improve-area", payload, include_auth=True)
         if 200 <= status <= 299:
+            _track_ai_usage(
+                username=username,
+                endpoint="improve",
+                prompt_text=proposal_text,
+                section_type=area_name or "improve",
+                response_tokens=_estimate_response_tokens(body),
+                response_time_ms=int((time.monotonic() - started) * 1000),
+            )
             _set_async_job(job_id, {"status": "done", "status_code": status, "result": body})
         else:
             _set_async_job(job_id, {"status": "error", "status_code": status, "error": body})
