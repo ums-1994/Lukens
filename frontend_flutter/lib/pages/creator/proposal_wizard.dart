@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 import 'dart:convert';
 import '../../api.dart';
 import '../../services/ai_analysis_service.dart';
@@ -64,6 +65,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
   bool _isInternalApproved = false;
   String? _proposalId; // Store created proposal ID
   bool _isRunningGovernance = false;
+  /// Prevents overlapping Improve requests (single HF upstream worker).
+  String? _improveInFlightModuleId;
 
   bool _showEmailFailedBanner = false;
   String? _lastEmailError;
@@ -2058,9 +2061,9 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                   const SizedBox(width: 8),
                                   // FEATURE 2: Improve button
                                   TextButton.icon(
-                                    onPressed: controller.text
-                                            .trim()
-                                            .isEmpty
+                                    onPressed: (_improveInFlightModuleId !=
+                                                null ||
+                                            controller.text.trim().isEmpty)
                                         ? null
                                         : () => _improveSectionContent(
                                               moduleId,
@@ -2069,9 +2072,11 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                             ),
                                     icon: Icon(
                                       Icons.edit_note,
-                                      color: controller.text
-                                              .trim()
-                                              .isEmpty
+                                      color: (_improveInFlightModuleId !=
+                                                  null ||
+                                              controller.text
+                                                  .trim()
+                                                  .isEmpty)
                                           ? Colors.grey
                                           : PremiumTheme.teal,
                                     ),
@@ -2079,9 +2084,11 @@ class _ProposalWizardPageState extends State<ProposalWizard>
                                       'Improve',
                                       style:
                                           PremiumTheme.bodyMedium.copyWith(
-                                        color: controller.text
-                                                .trim()
-                                                .isEmpty
+                                        color: (_improveInFlightModuleId !=
+                                                    null ||
+                                                controller.text
+                                                    .trim()
+                                                    .isEmpty)
                                             ? Colors.grey
                                             : PremiumTheme.teal,
                                       ),
@@ -3195,38 +3202,70 @@ class _ProposalWizardPageState extends State<ProposalWizard>
     }
   }
 
+  String _improveErrorMessage(Object e) {
+    if (e is TimeoutException) {
+      return 'Timed out waiting for the AI. Shorten the section or wait and try again.';
+    }
+    final s = e.toString();
+    if (s.startsWith('Exception: ')) {
+      return s.substring(11);
+    }
+    return s;
+  }
+
   Future<void> _improveSectionContent(
     String moduleId,
     String sectionName,
     TextEditingController controller,
   ) async {
-    try {
-      if (controller.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please add content before improving'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
+    if (controller.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please add content before improving'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
+    if (_improveInFlightModuleId != null) {
+      return;
+    }
+    setState(() => _improveInFlightModuleId = moduleId);
+
+    try {
       if (!mounted) return;
-      await showDialog<void>(
+
+      showDialog<void>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => const AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  Color(0xFF9C27B0),
+        builder: (dialogContext) => PopScope(
+          canPop: false,
+          child: AlertDialog(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Color(0xFF9C27B0),
+                  ),
                 ),
-              ),
-              SizedBox(height: 16),
-              Text('Improving content...'),
-            ],
+                const SizedBox(height: 16),
+                Text(
+                  'Improving content…',
+                  style: PremiumTheme.bodyMedium,
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Large models can take a few minutes. Please keep this window open.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -3241,11 +3280,8 @@ class _ProposalWizardPageState extends State<ProposalWizard>
       );
 
       if (!mounted) return;
-      Navigator.of(context).pop(); // close loading dialog
 
-      if (result == null || result['improved_version'] == null) {
-        throw Exception('Failed to improve content');
-      }
+      Navigator.of(context, rootNavigator: true).pop();
 
       final improvedText = result['improved_version'] as String;
       final summary = result['summary'] as String? ?? '';
@@ -3327,14 +3363,23 @@ class _ProposalWizardPageState extends State<ProposalWizard>
         }
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error: ${e.toString()}'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      if (mounted) {
+        final nav = Navigator.of(context, rootNavigator: true);
+        if (nav.canPop()) {
+          nav.pop();
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_improveErrorMessage(e)),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _improveInFlightModuleId = null);
+      }
     }
   }
 

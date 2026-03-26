@@ -9,7 +9,7 @@ if not port:
 bind = f"0.0.0.0:{port}"
 workers = int(os.environ.get('WORKERS', '2'))
 threads = int(os.environ.get('THREADS', '4'))
-timeout = int(os.environ.get('TIMEOUT', '180'))
+timeout = int(os.environ.get('TIMEOUT', '660'))
 worker_class = 'sync'
 
 # Log the bind address for debugging

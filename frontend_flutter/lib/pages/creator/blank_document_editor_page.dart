@@ -12080,6 +12080,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                               ? currentContent
                                               : 'Instructions:\n$instructions\n\nText:\n$currentContent';
 
+                                          if (!mounted || !dialogOpen) return;
+                                          setDialogState(() {
+                                            progressLabel =
+                                                'Improving… large models can take a few minutes.';
+                                          });
+
                                           final result =
                                               await AiAssistantApi.improveArea(
                                             token: token,
@@ -12126,17 +12132,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         if (!mounted || !dialogOpen) return;
                                         final raw = e.toString();
                                         String friendly;
-                                        if (raw.contains('504') ||
+                                        if (e is TimeoutException) {
+                                          friendly =
+                                              'Timed out waiting for the AI. Shorten the section or wait and try again.';
+                                        } else if (raw.contains('504') ||
                                             raw.contains('Gateway') ||
                                             raw.contains('Timeout')) {
                                           friendly =
-                                              'AI Assistant is taking longer than expected. Please retry.';
+                                              'AI Assistant timed out or the gateway closed the connection. Try a shorter section or retry.';
                                         } else if (raw.contains('500') ||
                                             raw.contains(
                                                 'Internal Server Error') ||
                                             raw.contains('server error')) {
                                           friendly =
                                               'AI service error. Please try again in a moment.';
+                                        } else if (raw.startsWith('Exception: ')) {
+                                          friendly = raw.substring(11);
                                         } else {
                                           friendly = raw;
                                         }
@@ -12168,7 +12179,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                     )
                                   : const Icon(Icons.auto_awesome, size: 18),
                               label: Text(isGenerating
-                                  ? 'Generating...'
+                                  ? (selectedAction == 'improve'
+                                      ? 'Improving...'
+                                      : 'Generating...')
                                   : (selectedAction == 'generate'
                                       ? 'Generate'
                                       : selectedAction == 'full_proposal'

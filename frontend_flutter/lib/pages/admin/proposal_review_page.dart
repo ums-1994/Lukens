@@ -37,7 +37,6 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   bool _isSubmittingComment = false;
   bool _showVersions = false;
   final ScrollController _scrollController = ScrollController();
-  bool _isSidebarCollapsed = false;
   String _currentPage = 'Approvals';
 
   void _safeSetState(VoidCallback fn) {
@@ -1527,11 +1526,9 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           if (isAdmin)
             Material(
               child: AdminSidebar(
-                isCollapsed: _isSidebarCollapsed,
+                isCollapsed: appState.isAdminSidebarCollapsed,
                 currentPage: _currentPage,
-                onToggle: () => setState(
-                  () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                ),
+                onToggle: () => appState.toggleAdminSidebar(),
                 onSelect: (label) {
                   if (label != 'Sign Out') setState(() => _currentPage = label);
                   _navigateToPage(context, label);
