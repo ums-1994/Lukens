@@ -113,12 +113,17 @@ def preview_proposal_pdf(username=None, proposal_id=None):
                     for c in cols
                 ]
 
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
 
             current_user_id = current_user['id'] if isinstance(current_user, dict) else current_user[0]
+            role_val = (current_user.get('role') if isinstance(current_user, dict) else (current_user[1] if len(current_user) > 1 else None))
+            role_key = (role_val or '').strip().lower()
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
 
             prop_cols = _get_table_columns('proposals')
             client_expr = 'client' if 'client' in prop_cols else ('client_name' if 'client_name' in prop_cols else None)
@@ -132,13 +137,19 @@ def preview_proposal_pdf(username=None, proposal_id=None):
             select_client = f"{client_expr} AS client_name" if client_expr else "NULL::text AS client_name"
             select_client_email = f"{client_email_expr} AS client_email" if client_email_expr else "NULL::text AS client_email"
 
+            where_sql = "id = %s"
+            params = [proposal_id]
+            if not (is_admin or is_finance or is_manager):
+                where_sql += f" AND {owner_expr} = %s"
+                params.append(current_user_id)
+
             cursor.execute(
                 f"""
                 SELECT id, title, {content_expr} AS content, {select_client}, {select_client_email}
                 FROM proposals
-                WHERE id = %s AND {owner_expr} = %s
+                WHERE {where_sql}
                 """,
-                (proposal_id, current_user_id),
+                tuple(params),
             )
 
             proposal = cursor.fetchone()
@@ -954,10 +965,15 @@ def create_suggestion(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, email, full_name, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
+
+            role_key = (current_user.get('role') or '').strip().lower()
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
             
             cursor.execute("""
                 SELECT ci.permission_level
@@ -1060,17 +1076,25 @@ def resolve_suggestion(username=None, proposal_id=None, suggestion_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, email, full_name, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
+
+            role_key = (current_user.get('role') or '').strip().lower()
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
             
             cursor.execute("""
                 SELECT user_id FROM proposals WHERE id = %s
             """, (proposal_id,))
             
             proposal = cursor.fetchone()
-            if not proposal or proposal['user_id'] != username:
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+
+            if not (is_admin or is_finance or is_manager) and proposal.get('user_id') != username:
                 return {'detail': 'Only proposal owner can resolve suggestions'}, 403
             
             cursor.execute("""
@@ -1170,21 +1194,38 @@ def unlock_section(username=None, proposal_id=None, section_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
             
             user_id = current_user[0]
+            role_val = current_user[1] if len(current_user) > 1 else None
+            role_key = (role_val or '').strip().lower()
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
             
             # Delete lock (only if locked by current user or if user owns proposal)
-            cursor.execute("""
-                DELETE FROM section_locks
-                WHERE proposal_id = %s AND section_id = %s
-                AND (locked_by = %s OR EXISTS (
-                    SELECT 1 FROM proposals WHERE id = %s AND owner_id = %s
-                ))
-            """, (proposal_id, section_id, user_id, proposal_id, user_id))
+            if is_admin or is_finance or is_manager:
+                cursor.execute(
+                    """
+                    DELETE FROM section_locks
+                    WHERE proposal_id = %s AND section_id = %s
+                    """,
+                    (proposal_id, section_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    DELETE FROM section_locks
+                    WHERE proposal_id = %s AND section_id = %s
+                    AND (locked_by = %s OR EXISTS (
+                        SELECT 1 FROM proposals WHERE id = %s AND owner_id = %s
+                    ))
+                    """,
+                    (proposal_id, section_id, user_id, proposal_id, user_id),
+                )
             
             conn.commit()
             

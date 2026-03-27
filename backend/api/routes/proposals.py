@@ -426,6 +426,8 @@ def get_proposals(username=None, user_id=None, email=None):
 
             requester_role = (requester_role or '').strip().lower()
             is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_admin = requester_role in ['admin', 'ceo']
+            is_manager = _is_manager_role(requester_role)
 
             if not user_id and not is_finance:
                 resolved_user_id = resolve_user_id(cursor, username or email)
@@ -448,8 +450,8 @@ def get_proposals(username=None, user_id=None, email=None):
             existing_columns = [row[0] for row in cursor.fetchall()]
             print(f"📋 Available columns in proposals table: {existing_columns}")
             
-            # Finance users can see all proposals
-            if is_finance:
+            # Finance/Admin/Manager users can see all proposals (including drafts).
+            if is_finance or is_admin or is_manager:
                 select_cols = ['id', 'title', 'content', 'status']
                 if 'owner_id' in existing_columns:
                     select_cols.append('owner_id')
@@ -478,7 +480,6 @@ def get_proposals(username=None, user_id=None, email=None):
 
                 query = f'''SELECT {', '.join(select_cols)}
                      FROM proposals
-                     WHERE LOWER(COALESCE(status, '')) <> 'draft'
                      ORDER BY created_at DESC'''
                 cursor.execute(query)
 
@@ -705,6 +706,8 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
 
             requester_role = (requester_role or '').strip().lower()
             is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_admin = requester_role in ['admin', 'ceo']
+            is_manager = _is_manager_role(requester_role)
 
             # Some environments do not have a dedicated `sections` column on proposals.
             # If the client sends `sections` but the DB does not support it, store it in `content`.
@@ -733,53 +736,11 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
 
             before_status = (before_row[0] or '').strip().lower()
             before_content = before_row[1] if len(before_row) > 1 else None
-
-            before_sections = None
-            if 'sections' in existing_columns:
-                try:
-                    before_sections = before_row[select_cols.index('sections')]
-                except Exception:
-                    before_sections = None
-
-            before_budget = None
-            if 'budget' in existing_columns:
-                try:
-                    before_budget = before_row[select_cols.index('budget')]
-                except Exception:
-                    before_budget = None
 
             sent_locked = ('sent to client' in before_status) or ('released' in before_status)
             if sent_locked and is_finance:
                 if any(k in data for k in ['content', 'budget']):
                     return jsonify({'detail': 'Pricing changes are not allowed after proposal is sent to client'}), 403
-
-            # Some environments do not have a dedicated `sections` column on proposals.
-            # If the client sends `sections` but the DB does not support it, store it in `content`.
-            if 'sections' in data and 'sections' not in existing_columns:
-                if 'content' not in data:
-                    data['content'] = data.get('sections')
-                data.pop('sections', None)
-
-            select_cols = ['status', 'content']
-            if 'sections' in existing_columns:
-                select_cols.append('sections')
-            if 'budget' in existing_columns:
-                select_cols.append('budget')
-
-            cursor.execute(
-                f"""
-                SELECT {', '.join(select_cols)}
-                FROM proposals
-                WHERE id = %s
-                """,
-                (proposal_id,),
-            )
-            before_row = cursor.fetchone()
-            if not before_row:
-                return jsonify({'detail': 'Proposal not found'}), 404
-
-            before_status = (before_row[0] or '').strip().lower()
-            before_content = before_row[1] if len(before_row) > 1 else None
 
             before_sections = None
             if 'sections' in existing_columns:
@@ -815,7 +776,7 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 ]:
                     data.pop(forbidden, None)
 
-            if not is_finance:
+            if not is_finance and not is_admin and not is_manager:
                 cursor.execute(
                     f"SELECT {owner_col} FROM proposals WHERE id = %s",
                     (proposal_id,),
@@ -1071,8 +1032,7 @@ def delete_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 requester_role = None
             requester_role = (requester_role or '').strip().lower()
             is_admin = requester_role in ['admin', 'ceo']
-            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
-            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_manager = _is_manager_role(requester_role)
 
             # Verify proposal exists and ownership (unless admin)
             cursor.execute(
@@ -1084,7 +1044,7 @@ def delete_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 return jsonify({'detail': 'Proposal not found'}), 404
 
             proposal_owner_id = proposal_row[0]
-            if not is_admin and str(proposal_owner_id) != str(resolved_user_id):
+            if not is_admin and not is_manager and str(proposal_owner_id) != str(resolved_user_id):
                 return jsonify({'detail': 'Proposal not found or access denied'}), 404
 
             # Best-effort cleanup of dependent rows for schemas without ON DELETE CASCADE.
@@ -1168,6 +1128,7 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
             requester_role = (requester_role or '').strip().lower()
             is_admin = requester_role in ['admin', 'ceo', 'approver']
             is_finance = requester_role.startswith('finance') or requester_role == 'finance'
+            is_manager = _is_manager_role(requester_role)
 
             # Detect proposals table schema
             cursor.execute(
@@ -1210,9 +1171,9 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
             where_clause = 'id = %s'
             params = [proposal_id]
 
-            # Non-admins can only read their own proposals, OR any proposal in
-            # "Changes Requested" / "Resubmitted" state (so manager/creator can open it to edit).
-            if not is_admin and not is_finance and owner_col:
+            # Non-admins can only read their own proposals.
+            # Managers are allowed to read all proposals.
+            if not is_admin and not is_finance and not is_manager and owner_col:
                 where_clause += (
                     f" AND ({owner_col}::text = %s::text"
                     " OR status IN ('Changes Requested', 'changes requested', 'Resubmitted', 'resubmitted'))"

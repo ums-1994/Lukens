@@ -35,6 +35,37 @@ class DocumentSection {
     return '${DateTime.now().microsecondsSinceEpoch}-${_idCounter.toString()}';
   }
 
+  void clearCommentHighlights() {
+    try {
+      final length = richController.document.length;
+      if (length <= 0) return;
+      richController.formatText(
+        0,
+        length,
+        Attribute.clone(Attribute.background, null),
+      );
+    } catch (_) {}
+  }
+
+  void applyCommentHighlight({
+    required int start,
+    required int end,
+    required String hexColor,
+  }) {
+    try {
+      final docLen = richController.document.length;
+      final safeStart = start.clamp(0, docLen).toInt();
+      final safeEnd = end.clamp(0, docLen).toInt();
+      final len = safeEnd - safeStart;
+      if (len <= 0) return;
+      richController.formatText(
+        safeStart,
+        len,
+        Attribute.fromKeyValue('background', hexColor),
+      );
+    } catch (_) {}
+  }
+
   DocumentSection({
     String? id,
     required this.title,
@@ -122,7 +153,8 @@ class DocumentSection {
 
   void syncRichFromPlainText() {
     final plain = controller.text;
-    final current = richController.document.toPlainText().replaceAll('\u0000', '');
+    final current =
+        richController.document.toPlainText().replaceAll('\u0000', '');
     if (plain == current) return;
     final doc = Document();
     if (plain.isNotEmpty) {

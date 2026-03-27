@@ -389,20 +389,80 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     try {
       final Map<String, List<HighlightRange>> rangesByBlock = {};
 
+      // Always clear existing highlights first so we don't rely on stale controller state.
+      for (final s in _sections) {
+        try {
+          s.controller.setHighlights(const []);
+        } catch (_) {}
+
+        try {
+          s.clearCommentHighlights();
+        } catch (_) {}
+      }
+
       for (final c in _comments) {
         final status = (c['status'] ?? 'open').toString().toLowerCase();
         if (status != 'open' && status != 'resolved') continue;
 
         // Root comments + replies both can have offsets; apply to all.
-        final blockId = c['block_id']?.toString();
-        if (blockId == null || blockId.isEmpty) continue;
+        String? blockId = c['block_id']?.toString();
+        final sectionIndex = int.tryParse(c['section_index']?.toString() ?? '');
+
+        // Determine the best target section for this highlight.
+        int? targetSectionIndex;
+        if (blockId != null && blockId.isNotEmpty) {
+          final idx = _sections.indexWhere((s) => s.id == blockId);
+          if (idx >= 0) {
+            targetSectionIndex = idx;
+          }
+        }
+        if (targetSectionIndex == null && sectionIndex != null) {
+          if (sectionIndex >= 0 && sectionIndex < _sections.length) {
+            targetSectionIndex = sectionIndex;
+            blockId = _sections[sectionIndex].id;
+          }
+        }
+        if (targetSectionIndex == null || blockId == null || blockId.isEmpty) {
+          print(
+              '🟡 highlight skip: cannot map comment ${c['id']} to section. block_id=${c['block_id']} section_index=${c['section_index']}');
+          continue;
+        }
 
         final startRaw = c['start_offset'];
         final endRaw = c['end_offset'];
-        final start = int.tryParse(startRaw?.toString() ?? '');
-        final end = int.tryParse(endRaw?.toString() ?? '');
-        if (start == null || end == null) continue;
-        if (end <= start) continue;
+        int? start = int.tryParse(startRaw?.toString() ?? '');
+        int? end = int.tryParse(endRaw?.toString() ?? '');
+        final sectionText = _sections[targetSectionIndex].controller.text;
+        if (start == null || end == null) {
+          final selectedText = (c['highlighted_text'] ?? '').toString();
+          if (selectedText.isEmpty) {
+            print(
+                '🟡 highlight skip: missing offsets and highlighted_text for comment ${c['id']}');
+            continue;
+          }
+          final idx = sectionText.indexOf(selectedText);
+          if (idx < 0) {
+            print(
+                '🟡 highlight skip: highlighted_text not found for comment ${c['id']} in section $blockId');
+            continue;
+          }
+          start = idx;
+          end = idx + selectedText.length;
+        }
+        if (end < start) {
+          final tmp = start;
+          start = end;
+          end = tmp;
+        }
+
+        final maxLen = sectionText.length;
+        start = start.clamp(0, maxLen);
+        end = end.clamp(0, maxLen);
+        if (end <= start) {
+          print(
+              '🟡 highlight skip: invalid range for comment ${c['id']} start=$start end=$end maxLen=$maxLen');
+          continue;
+        }
 
         final color = status == 'open'
             ? Colors.yellow.withOpacity(0.3)
@@ -421,6 +481,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       for (final section in _sections) {
         final ranges = rangesByBlock[section.id] ?? const <HighlightRange>[];
         section.controller.setHighlights(ranges);
+
+        for (final r in ranges) {
+          try {
+            section.applyCommentHighlight(
+              start: r.start,
+              end: r.end,
+              hexColor: '#FFF59D',
+            );
+          } catch (_) {}
+        }
       }
     } catch (e) {
       print('⚠️ Error applying inline highlights: $e');
@@ -1681,6 +1751,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
           _ensureSectionSelectionListeners();
 
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
+
+          try {
+            final ids = _sections.map((s) => s.id).toList();
+            print('🧭 Sections loaded: count=${_sections.length} ids=$ids');
+          } catch (_) {}
+
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
@@ -1707,6 +1786,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
+
+          _ensureSectionSelectionListeners();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
         }
       } else {
         // If backend returned no content, ensure we still have an editable section
@@ -1723,6 +1807,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           });
 
           _ensureSectionSelectionListeners();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
         }
       }
     } catch (e) {
@@ -1849,11 +1936,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
       });
 
+      try {
+        if (_comments.isNotEmpty) {
+          final c = _comments.first;
+          print(
+              '🧾 First comment anchors: id=${c['id']} block_id=${c['block_id']} section_index=${c['section_index']} start=${c['start_offset']} end=${c['end_offset']} text=${(c['highlighted_text'] ?? '').toString()}');
+        }
+      } catch (_) {}
+
       // If a thread overlay is open, force it to rebuild so new replies appear.
       _threadOverlay?.markNeedsBuild();
       print('✅ Loaded ${flatComments.length} comments (including replies)');
 
-      _applyInlineHighlights();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _applyInlineHighlights();
+      });
 
       if (mounted) {
         unawaited(() async {

@@ -709,13 +709,24 @@ def submit_for_review(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
+            cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+            role_row = cursor.fetchone()
+            role_key = (role_row[0] if role_row else '')
+            role_key = (role_key or '').strip().lower()
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+
             cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
             user_row = cursor.fetchone()
             if not user_row:
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
 
-            cursor.execute('SELECT id FROM proposals WHERE id = %s AND owner_id = %s', (proposal_id, user_id))
+            if is_admin or is_finance or is_manager:
+                cursor.execute('SELECT id FROM proposals WHERE id = %s', (proposal_id,))
+            else:
+                cursor.execute('SELECT id FROM proposals WHERE id = %s AND owner_id = %s', (proposal_id, user_id))
             proposal = cursor.fetchone()
             if not proposal:
                 return {'detail': 'Proposal not found or access denied'}, 404
@@ -2266,6 +2277,14 @@ def get_proposal_collaborators(username=None, proposal_id=None, user_id=None, em
                     print(f"❌ Could not extract user_id from user_row: {user_row}")
                     return {'detail': 'User not found'}, 404
             
+            cursor.execute('SELECT role FROM users WHERE id = %s', (effective_user_id,))
+            role_row = cursor.fetchone()
+            role_key = (role_row.get('role') if isinstance(role_row, dict) else (role_row[0] if role_row else None))
+            role_key = (role_key or '').strip().lower()
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager']
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+
             # Verify ownership
             cursor.execute(
                 """
@@ -2286,7 +2305,7 @@ def get_proposal_collaborators(username=None, proposal_id=None, user_id=None, em
             
             # Handle both dict and tuple results
             owner_id = proposal['owner_id'] if isinstance(proposal, dict) else proposal[0]
-            if str(owner_id) != str(effective_user_id):
+            if not (is_admin or is_finance or is_manager) and str(owner_id) != str(effective_user_id):
                 return {'detail': 'Access denied'}, 403
             
             # Get active collaborators from collaborators table
@@ -2373,6 +2392,13 @@ def invite_collaborator(username=None, proposal_id=None, user_id=None, email=Non
                 if not effective_user_id:
                     print(f"❌ Could not extract user_id from user_row: {user_row}")
                     return {'detail': 'User not found'}, 404
+
+            cursor.execute('SELECT role FROM users WHERE id = %s', (effective_user_id,))
+            role_row = cursor.fetchone() or {}
+            role_key = (role_row.get('role') or '').strip().lower()
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager']
+            is_admin = role_key in ['admin', 'ceo', 'approver']
             
             # Verify ownership
             cursor.execute(
@@ -2392,7 +2418,7 @@ def invite_collaborator(username=None, proposal_id=None, user_id=None, email=Non
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
-            if str(proposal.get('owner_id')) != str(effective_user_id):
+            if not (is_admin or is_finance or is_manager) and str(proposal.get('owner_id')) != str(effective_user_id):
                 return {'detail': 'Access denied'}, 403
             
             # Check if invitation already exists
@@ -2531,6 +2557,14 @@ def archive_proposal(username=None, proposal_id=None):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))
+            user = cursor.fetchone()
+            if not user:
+                return {'detail': 'User not found'}, 404
+            role_key = (user.get('role') or '').strip().lower()
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
+            is_admin = role_key in ['admin', 'ceo', 'approver']
             
             # Get proposal and verify ownership
             cursor.execute("""
@@ -2543,23 +2577,15 @@ def archive_proposal(username=None, proposal_id=None):
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
-            # Get user ID from username for comparison
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user_row = cursor.fetchone()
-            if not user_row:
-                return {'detail': 'User not found'}, 404
-            user_id = user_row[0]
-            
-            if proposal['owner_id'] != user_id:
+            user_id = user.get('id')
+
+            if not (is_admin or is_manager) and proposal['owner_id'] != user_id:
                 return {'detail': 'Access denied'}, 403
             
             if proposal['status'] == 'Archived':
                 return {'detail': 'Proposal is already archived'}, 400
             
-            # Get user ID for activity log
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-            user = cursor.fetchone()
-            user_id = user['id'] if user else None
+            user_id = user.get('id')
             
             # Archive proposal
             cursor.execute("""
@@ -2611,7 +2637,9 @@ def restore_proposal(username=None, proposal_id=None):
             if not user:
                 return {'detail': 'User not found'}, 404
             
-            is_admin = user['role'] == 'admin'
+            role_key = (user.get('role') or '').strip().lower()
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
             
             # Get proposal
             cursor.execute("""
@@ -2631,9 +2659,9 @@ def restore_proposal(username=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
             user_id = user_row[0]
             
-            # Check permissions (owner or admin)
-            if proposal['owner_id'] != user_id and not is_admin:
-                return {'detail': 'Access denied. Only owner or admin can restore proposals.'}, 403
+            # Check permissions (owner or admin/manager)
+            if proposal['owner_id'] != user_id and not is_admin and not is_manager:
+                return {'detail': 'Access denied. Only owner/admin/manager can restore proposals.'}, 403
             
             if proposal['status'] != 'Archived':
                 return {'detail': 'Proposal is not archived'}, 400
@@ -2681,13 +2709,15 @@ def get_archived_proposals(username=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            # Check if user is admin (admins can see all archived proposals)
+            # Check if user is admin/manager (admins/managers can see all archived proposals)
             cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
             user = cursor.fetchone()
-            is_admin = user and user['role'] == 'admin'
+            role_key = ((user or {}).get('role') or '').strip().lower()
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
             
-            if is_admin:
-                # Admin can see all archived proposals
+            if is_admin or is_manager:
+                # Admin/Manager can see all archived proposals
                 cursor.execute("""
                     SELECT id, owner_id, title, content, status, client, '' as client_email, 
                            NULL as budget, NULL as timeline_days, created_at, updated_at

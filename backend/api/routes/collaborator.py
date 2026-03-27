@@ -210,6 +210,47 @@ def create_comment(username=None, user_id=None, proposal_id=None):
             cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
             proposal_row = cursor.fetchone()
             proposal_title = proposal_row['title'] if proposal_row else f"Proposal {proposal_id}"
+
+            # Best-effort: if offsets aren't provided but highlighted_text is, derive offsets from
+            # the current section text so highlights persist for all viewers.
+            try:
+                if (start_offset is None or end_offset is None) and highlighted_text and section_index is not None:
+                    cursor.execute('SELECT content FROM proposals WHERE id = %s', (proposal_id,))
+                    content_row = cursor.fetchone() or {}
+                    content_val = content_row.get('content')
+                    section_text = None
+                    if isinstance(content_val, dict):
+                        sections = content_val.get('sections')
+                        if isinstance(sections, list) and 0 <= int(section_index) < len(sections):
+                            sec = sections[int(section_index)]
+                            if isinstance(sec, dict):
+                                section_text = sec.get('content') or sec.get('text')
+                            elif isinstance(sec, str):
+                                section_text = sec
+                    elif isinstance(content_val, str):
+                        try:
+                            import json
+                            parsed = json.loads(content_val)
+                            sections = parsed.get('sections') if isinstance(parsed, dict) else None
+                            if isinstance(sections, list) and 0 <= int(section_index) < len(sections):
+                                sec = sections[int(section_index)]
+                                if isinstance(sec, dict):
+                                    section_text = sec.get('content') or sec.get('text')
+                                elif isinstance(sec, str):
+                                    section_text = sec
+                        except Exception:
+                            section_text = None
+
+                    if section_text and isinstance(section_text, str):
+                        idx = section_text.find(str(highlighted_text))
+                        if idx >= 0:
+                            start_offset = idx
+                            end_offset = idx + len(str(highlighted_text))
+            except Exception as e:
+                print(f"⚠️ Could not derive comment offsets: {e}")
+
+            if block_id is not None:
+                block_id = str(block_id)
             
             # Validate parent_id if provided (must exist and belong to same proposal)
             if parent_id:
