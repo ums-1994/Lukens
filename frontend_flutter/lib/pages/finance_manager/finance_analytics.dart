@@ -30,6 +30,187 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
 
+  Future<List<Map<String, dynamic>>>? _pipelineFunnelFuture;
+  Future<List<Map<String, dynamic>>>? _alertsFuture;
+
+  Future<List<Map<String, dynamic>>> _fetchPipelineFunnel() async {
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+
+    if (token == null) return [];
+
+    try {
+      final uri = Uri.parse('$baseUrl/api/finance/funnel');
+      final r = await http.get(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      });
+      if (r.statusCode != 200) return [];
+      final decoded = jsonDecode(r.body);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  String _formatCurrency(double value) {
+    return _currencyFormatter.format(value);
+  }
+
+  Widget _buildPipelineFunnelChart() {
+    final future = _pipelineFunnelFuture ?? _fetchPipelineFunnel();
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: CircularProgressIndicator(
+              valueColor:
+                  AlwaysStoppedAnimation<Color>(Colors.white.withOpacity(0.7)),
+            ),
+          );
+        }
+
+        final items = snapshot.data ?? [];
+        final stages = <String>[];
+        final values = <double>[];
+        for (final r in items) {
+          final s = (r['stage'] ?? '').toString();
+          if (s.isEmpty) continue;
+          stages.add(s);
+          values.add((r['value'] is num)
+              ? (r['value'] as num).toDouble()
+              : double.tryParse(r['value']?.toString() ?? '') ?? 0.0);
+        }
+
+        if (stages.isEmpty) {
+          return Center(
+            child: Text(
+              'No data',
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+            ),
+          );
+        }
+
+        final maxY = (values.fold<double>(0, (a, b) => a > b ? a : b))
+            .clamp(1, double.infinity);
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withOpacity(0.06)),
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: BarChart(
+            BarChartData(
+              maxY: maxY * 1.1,
+              minY: 0,
+              alignment: BarChartAlignment.spaceAround,
+              groupsSpace: 18,
+              barTouchData: BarTouchData(
+                enabled: true,
+                touchTooltipData: BarTouchTooltipData(
+                  tooltipPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  tooltipMargin: 12,
+                  getTooltipColor: (group) => Colors.white.withOpacity(0.92),
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                    final label = groupIndex >= 0 && groupIndex < stages.length
+                        ? stages[groupIndex]
+                        : '';
+                    return BarTooltipItem(
+                      '$label\nvalue : ${_formatCurrency(rod.toY)}',
+                      PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: Colors.white.withOpacity(0.08),
+                  strokeWidth: 1,
+                ),
+              ),
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                topTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 42,
+                    getTitlesWidget: (value, meta) {
+                      if (value == 0) {
+                        return Text(
+                          'R0',
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        );
+                      }
+                      if (value == meta.max) {
+                        return Text(
+                          _formatCurrency(value),
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 34,
+                    getTitlesWidget: (value, meta) {
+                      final i = value.toInt();
+                      if (i < 0 || i >= stages.length) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          stages[i],
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              barGroups: List.generate(stages.length, (i) {
+                return BarChartGroupData(
+                  x: i,
+                  barRods: [
+                    BarChartRodData(
+                      toY: values[i],
+                      color: PremiumTheme.teal,
+                      width: 18,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ],
+                );
+              }),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   bool _canAccessAudit(AppState app) {
     final role = (app.currentUser?['role'] ?? '').toString().toLowerCase();
     return role == 'finance_manager' || role == 'admin' || role == 'ceo';
@@ -46,6 +227,119 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
       }
       context.read<AppState>().fetchProposals();
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _pipelineFunnelFuture ??= _fetchPipelineFunnel();
+    _alertsFuture ??= _fetchAlerts(year: DateTime.now().year);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAlerts({required int year}) async {
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+    if (token == null) return [];
+
+    try {
+      final uri = Uri.parse('$baseUrl/api/finance/alerts')
+          .replace(queryParameters: {'year': year.toString()});
+      final r = await http.get(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+      if (r.statusCode != 200) return [];
+      final decoded = jsonDecode(r.body);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Color _alertColor(String severity) {
+    final s = severity.toLowerCase();
+    if (s == 'warning') return Colors.orange;
+    if (s == 'critical') return Colors.redAccent;
+    return PremiumTheme.info;
+  }
+
+  Widget _buildFinancialAlertsPanel() {
+    final year = DateTime.now().year;
+    final future = _alertsFuture ?? _fetchAlerts(year: year);
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            height: 220,
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.7)),
+              ),
+            ),
+          );
+        }
+
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return SizedBox(
+            height: 80,
+            child: Center(
+              child: Text(
+                'No alerts',
+                style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+              ),
+            ),
+          );
+        }
+
+        final shown = items.take(10).toList();
+        return Column(
+          children: [
+            for (int i = 0; i < shown.length; i++) ...[
+              Row(
+                children: [
+                  Container(
+                    height: 10,
+                    width: 10,
+                    decoration: BoxDecoration(
+                      color: _alertColor(
+                          (shown[i]['severity'] ?? 'info').toString()),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      (shown[i]['type'] ?? '').toString().replaceAll('_', ' '),
+                      style:
+                          PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    (shown[i]['client'] ?? '').toString(),
+                    style: PremiumTheme.labelMedium
+                        .copyWith(color: Colors.white60),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+              if (i != shown.length - 1)
+                Divider(color: Colors.white.withOpacity(0.06), height: 14),
+            ],
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -1100,6 +1394,18 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                                 'Revenue projections, cycle metrics, and proposal performance insights',
                                 style: PremiumTheme.bodyMedium
                                     .copyWith(color: Colors.white60),
+                              ),
+                              const SizedBox(height: 18),
+                              _panel(
+                                title: 'Pipeline Funnel Chart',
+                                subtitle: 'Proposal value by stage',
+                                child: _buildPipelineFunnelChart(),
+                              ),
+                              const SizedBox(height: 18),
+                              _panel(
+                                title: 'Financial Alerts',
+                                subtitle: 'Deals requiring attention',
+                                child: _buildFinancialAlertsPanel(),
                               ),
                               const SizedBox(height: 18),
                               LayoutBuilder(
