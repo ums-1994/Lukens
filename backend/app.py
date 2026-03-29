@@ -98,6 +98,15 @@ print(
 
 app = Flask(__name__)
 
+def _normalize_origin(origin: str) -> str:
+    raw = (origin or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return raw.rstrip("/")
+
 # Flask-Cors origin matching is strict unless you provide regex objects.
 # Use compiled regexes so localhost dev ports (Flutter web) are allowed.
 _cors_origins = [
@@ -128,15 +137,24 @@ except Exception:
     # Never fail app startup due to CORS parsing.
     pass
 
+# Optional env-driven allowlist extension for local + deployed frontends.
+_extra_cors = (os.getenv("CORS_ALLOWED_ORIGINS") or "").strip()
+if _extra_cors:
+    for item in _extra_cors.split(","):
+        origin = _normalize_origin(item)
+        if origin:
+            _cors_origins.append(origin)
+
 
 def _is_allowed_origin(origin: str) -> bool:
-    if not origin:
+    candidate = _normalize_origin(origin)
+    if not candidate:
         return False
     for allowed in _cors_origins:
         try:
-            if isinstance(allowed, str) and origin == allowed:
+            if isinstance(allowed, str) and candidate == allowed:
                 return True
-            if hasattr(allowed, "match") and allowed.match(origin):
+            if hasattr(allowed, "match") and allowed.match(candidate):
                 return True
         except Exception:
             continue

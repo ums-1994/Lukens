@@ -485,8 +485,15 @@ class MyApp extends StatelessWidget {
               const ClientManagementPage(), // Redirected to Client Management
           // '/collaborate' is handled by onGenerateRoute to extract token
           '/analytics': (context) {
-            final role = context.watch<RoleService>();
-            if (role.isFinance()) {
+            final rawRole =
+                AuthService.currentUser?['role']?.toString().toLowerCase() ?? '';
+            final roleKey = rawRole.trim().replaceAll('-', '_');
+            final isFinance = roleKey.startsWith('finance') ||
+                roleKey == 'financial_manager' ||
+                roleKey == 'finance_manager' ||
+                roleKey == 'financial manager' ||
+                roleKey == 'finance manager';
+            if (isFinance) {
               return const FinanceAnalyticsPage();
             }
             return const admin.AnalyticsPage();

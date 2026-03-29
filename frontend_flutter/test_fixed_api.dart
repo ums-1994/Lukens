@@ -1,10 +1,24 @@
 import 'dart:convert';
 import 'dart:io';
 
+const String _kRiskBase = String.fromEnvironment(
+  'RISK_GATE_HF_BASE_URL',
+  defaultValue: '',
+);
+
 void main() async {
   print('🔍 Testing fixed API call...\n');
-  
-  final url = 'https://lorde01v-v3.hf.space/analyze';
+
+  var base = _kRiskBase.trim();
+  if (base.isEmpty) {
+    base = (Platform.environment['RISK_GATE_HF_BASE_URL'] ?? '').trim();
+  }
+  if (base.isEmpty) {
+    print(
+        '❌ Set RISK_GATE_HF_BASE_URL (export or --dart-define) or add to backend/.env for app runs.');
+    return;
+  }
+  final url = '$base/analyze';
   print('🌐 Testing: $url');
   
   try {

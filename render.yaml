@@ -36,6 +36,14 @@ services:
         fromDatabase:
           name: lukens-db
           property: connectionString
+      # AI assistant: async jobs free the Gunicorn worker during long HF calls; pair with WEB_CONCURRENCY=1 on small plans.
+      - key: AI_ASSISTANT_ASYNC_ENABLED
+        value: "true"
+      - key: AI_ASSISTANT_ASYNC_MAX_WORKERS
+        value: "1"
+      # One sync worker avoids duplicate Python heaps on small instances (see backend/gunicorn_conf.py WORKERS).
+      - key: WORKERS
+        value: "1"
       # Add your other environment variables in Render dashboard
       # OPENROUTER_API_KEY, CLOUDINARY_*, SENDGRID_*, DOCUSIGN_*, FIREBASE_*, etc.
       # FRONTEND_URL=https://sowbuilders.netlify.app (set in Render dashboard)
@@ -46,12 +54,15 @@ services:
     env: static
     region: oregon
     plan: starter
-    buildCommand: git clone https://github.com/flutter/flutter.git -b stable /tmp/flutter && export PATH="$PATH:/tmp/flutter/bin" && flutter config --enable-web && cd frontend_flutter && flutter pub get && flutter build web --release --base-href /
+    buildCommand: git clone https://github.com/flutter/flutter.git -b stable /tmp/flutter && export PATH="$PATH:/tmp/flutter/bin" && flutter config --enable-web && cd frontend_flutter && flutter pub get && flutter build web --release --base-href / --dart-define=RISK_GATE_HF_BASE_URL=$RISK_GATE_HF_BASE_URL
     staticPublishPath: frontend_flutter/build/web
     envVars:
       - key: REACT_APP_API_URL
         sync: false
         # Set this to your backend URL after deployment: https://lukens-backend.onrender.com
+      - key: RISK_GATE_HF_BASE_URL
+        sync: false
+        # e.g. https://your-risk-gate.hf.space (no /analyze suffix). Required for client-side Risk Gate calls.
 
 databases:
   # PostgreSQL Database

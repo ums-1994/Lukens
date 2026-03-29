@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'dart:convert';
@@ -12,7 +13,6 @@ import 'package:http/http.dart' as http;
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
-import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/finance/finance_sidebar.dart';
@@ -29,6 +29,8 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
   final ScrollController _scrollController = ScrollController();
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
+  Timer? _aiUsageRefreshTimer;
+  int _aiUsageRefreshTick = 0;
 
   Future<List<Map<String, dynamic>>>? _pipelineFunnelFuture;
   Future<List<Map<String, dynamic>>>? _alertsFuture;
@@ -221,11 +223,11 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final roleService = context.read<RoleService>();
-      if (!roleService.isFinance()) {
-        roleService.switchRole(UserRole.finance);
-      }
       context.read<AppState>().fetchProposals();
+    });
+    _aiUsageRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted) return;
+      setState(() => _aiUsageRefreshTick++);
     });
   }
 
@@ -344,8 +346,140 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
 
   @override
   void dispose() {
+    _aiUsageRefreshTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<Map<String, dynamic>?> _fetchAiUsageAnalytics() async {
+    final now = DateTime.now();
+    final start = now.subtract(const Duration(days: 30));
+    final fmt = DateFormat('yyyy-MM-dd');
+    return context.read<AppState>().getAiUsageAnalytics(
+          startDate: fmt.format(start),
+          endDate: fmt.format(now),
+        );
+  }
+
+  Widget _buildAiUsagePanel(Map<String, dynamic>? data) {
+    if (data == null) {
+      return const Center(child: Text('AI usage data unavailable'));
+    }
+    if (data['error_status'] != null) {
+      return Center(
+        child: Text('Unable to load AI usage (${data['error_status']})'),
+      );
+    }
+
+    final totals = (data['totals'] as Map?)?.cast<String, dynamic>() ?? {};
+    final endpointSplit = ((data['endpoint_split'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+    final topUsers = ((data['top_users'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+    final usageSummary =
+        (data['usage_summary'] as Map?)?.cast<String, dynamic>() ?? {};
+    final averageSpendZar = (usageSummary['average_spend_zar'] is num)
+        ? usageSummary['average_spend_zar'] as num
+        : 0;
+    final averageSpendReason =
+        (usageSummary['average_spend_reason'] ?? '').toString();
+
+    int n(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse((v ?? '').toString()) ?? 0;
+    }
+
+    final chips = Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _statPill('Requests', n(totals['total_requests']).toString()),
+        _statPill('Success', n(totals['success_count']).toString()),
+        _statPill('Failed', n(totals['failed_count']).toString()),
+        _statPill('Blocked', n(totals['blocked_count']).toString()),
+        _statPill(
+          'Acceptance',
+          '${((totals['acceptance_rate'] as num?) ?? 0).toStringAsFixed(1)}%',
+        ),
+        _statPill('Tokens', NumberFormat.compact().format(n(usageSummary['total_tokens']))),
+        _statPill('Average Spent', 'R ${averageSpendZar.toStringAsFixed(2)}'),
+      ],
+    );
+
+    Widget listCard(String title, List<Map<String, dynamic>> rows, String lk, String rk) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: PremiumTheme.bodyMedium.copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            if (rows.isEmpty)
+              Text('No data', style: PremiumTheme.bodySmall.copyWith(color: Colors.white60))
+            else
+              ...rows.take(8).map((r) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            (r[lk] ?? '-').toString(),
+                            overflow: TextOverflow.ellipsis,
+                            style: PremiumTheme.bodySmall,
+                          ),
+                        ),
+                        Text((r[rk] ?? '0').toString(), style: PremiumTheme.bodySmall),
+                      ],
+                    ),
+                  )),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        chips,
+        if (averageSpendReason.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Reason: $averageSpendReason',
+            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: listCard('By Endpoint', endpointSplit, 'endpoint', 'requests')),
+            const SizedBox(width: 12),
+            Expanded(child: listCard('Top Users', topUsers, 'username', 'requests')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _statPill(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      child: Text('$label: $value', style: PremiumTheme.bodySmall),
+    );
   }
 
   void _showExportDialog() {
@@ -1520,6 +1654,25 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                                   inReview: inReview,
                                   approved: approved,
                                   released: released,
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              _panel(
+                                title: 'AI Usage',
+                                subtitle:
+                                    'Live usage across AI Assistant and Risk Gate (auto-refresh every 20s)',
+                                child: FutureBuilder<Map<String, dynamic>?>(
+                                  key: ValueKey('finance_ai_usage_$_aiUsageRefreshTick'),
+                                  future: _fetchAiUsageAnalytics(),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.connectionState == ConnectionState.waiting) {
+                                      return const Center(child: CircularProgressIndicator());
+                                    }
+                                    if (snapshot.hasError) {
+                                      return const Center(child: Text('Failed to load AI usage analytics.'));
+                                    }
+                                    return _buildAiUsagePanel(snapshot.data);
+                                  },
                                 ),
                               ),
                               const SizedBox(height: 24),

@@ -401,7 +401,8 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> markNotificationRead(int notificationId) async {
-    if (authToken == null) return;
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) return;
 
     try {
       final response = await http.post(
@@ -410,6 +411,26 @@ class AppState extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
+        // Optimistic local update so badge clears immediately.
+        notifications = notifications.map((rawItem) {
+          final Map<String, dynamic> item = rawItem is Map<String, dynamic>
+              ? Map<String, dynamic>.from(rawItem)
+              : (rawItem is Map
+                  ? Map<String, dynamic>.from(rawItem.cast<String, dynamic>())
+                  : <String, dynamic>{});
+          final idRaw = item['id'];
+          final id =
+              idRaw is int ? idRaw : int.tryParse(idRaw?.toString() ?? '');
+          if (id == notificationId) {
+            item['is_read'] = true;
+          }
+          return item;
+        }).toList();
+        unreadNotifications =
+            notifications.where((n) => n is Map && n['is_read'] != true).length;
+        notifyListeners();
+
+        // Sync with backend to avoid drift.
         await fetchNotifications();
       } else {
         print(
@@ -421,7 +442,8 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> markAllNotificationsRead() async {
-    if (authToken == null) return;
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) return;
 
     try {
       final response = await http.post(
@@ -430,6 +452,20 @@ class AppState extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
+        // Optimistic local update so badge clears instantly.
+        notifications = notifications.map((rawItem) {
+          final Map<String, dynamic> item = rawItem is Map<String, dynamic>
+              ? Map<String, dynamic>.from(rawItem)
+              : (rawItem is Map
+                  ? Map<String, dynamic>.from(rawItem.cast<String, dynamic>())
+                  : <String, dynamic>{});
+          item['is_read'] = true;
+          return item;
+        }).toList();
+        unreadNotifications = 0;
+        notifyListeners();
+
+        // Sync with backend to avoid drift.
         await fetchNotifications();
       } else {
         print(
@@ -799,6 +835,31 @@ class AppState extends ChangeNotifier {
       print('Error fetching collaboration load analytics: $e');
     }
     return null;
+  }
+
+  Future<Map<String, dynamic>?> getAiUsageAnalytics({
+    String? startDate,
+    String? endDate,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/ai/analytics/usage").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+      return {
+        'error_status': r.statusCode,
+        'error': r.body,
+      };
+    } catch (e) {
+      print('Error fetching AI usage analytics: $e');
+      return null;
+    }
   }
 
   Future<Map<String, dynamic>?> getRiskGateProposals({

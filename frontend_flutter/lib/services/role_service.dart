@@ -82,7 +82,9 @@ class RoleService extends ChangeNotifier {
     // Finance roles → Finance Dashboard
     if (role.startsWith('finance') ||
         role == 'financial_manager' ||
-        role == 'financial manager') {
+        role == 'finance_manager' ||
+        role == 'financial manager' ||
+        role == 'finance manager') {
       return UserRole.finance;
     }
 

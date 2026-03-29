@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'dart:html' as html;
 
 import 'ai_assistant_api.dart';
+import '../config/risk_gate_config.dart';
 
 class ApiService {
   // Get API URL from JavaScript config or use default
@@ -785,31 +786,32 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>?> improveContent({
+  static Future<Map<String, dynamic>> improveContent({
     required String token,
     required String content,
     String sectionType = 'general',
   }) async {
-    try {
-      // HF expects: { area_name, proposal_text }
-      final data = await AiAssistantApi.improveArea(
-        token: token,
-        areaName: sectionType,
-        proposalText: content,
-      );
+    // HF expects: { area_name, proposal_text }
+    final data = await AiAssistantApi.improveArea(
+      token: token,
+      areaName: sectionType,
+      proposalText: content,
+    );
 
-      // Normalize to the shape existing UI expects
-      final improved =
-          (data['generated_text'] ?? data['improved_version'] ?? data['content'])
-              ?.toString();
-      return {
-        ...data,
-        if (improved != null) 'improved_version': improved,
-      };
-    } catch (e) {
-      print('Error improving content: $e');
-      return null;
+    final improved = (data['generated_text'] ??
+            data['improved_version'] ??
+            data['content'])
+        ?.toString()
+        .trim();
+    if (improved == null || improved.isEmpty) {
+      throw Exception(
+          'AI returned no improved text. Shorten the section and try again.');
     }
+
+    return {
+      ...data,
+      'improved_version': improved,
+    };
   }
 
   static Future<Map<String, dynamic>?> analyzeRisks({
@@ -852,8 +854,15 @@ class ApiService {
         'sections': sections,
       };
 
+      final riskBase = await resolveRiskGateHfBaseUrl();
+      if (riskBase.isEmpty) {
+        print(
+            'Risk analysis: RISK_GATE_HF_BASE_URL not set (use .env or --dart-define).');
+        return null;
+      }
+
       final response = await http.post(
-        Uri.parse('https://lorde01v-v3.hf.space/analyze-proposal'),
+        Uri.parse('$riskBase/analyze-proposal'),
         headers: _getHeaders(token),
         body: json.encode(proposalRequest),
       );
