@@ -16,6 +16,32 @@ from api.utils.helpers import create_notification
 
 bp = Blueprint('collaborator', __name__)
 
+
+def _get_proposal_owner_and_title(cursor, proposal_id):
+    try:
+        cursor.execute(
+            "SELECT user_id, title FROM proposals WHERE id = %s",
+            (proposal_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None, f"Proposal {proposal_id}"
+        return row.get('user_id'), row.get('title') or f"Proposal {proposal_id}"
+    except Exception as e:
+        try:
+            if isinstance(e, psycopg2.Error) and getattr(e, 'pgcode', None) == '42703':
+                cursor.execute(
+                    "SELECT owner_id, title FROM proposals WHERE id = %s",
+                    (proposal_id,),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None, f"Proposal {proposal_id}"
+                return row.get('owner_id'), row.get('title') or f"Proposal {proposal_id}"
+        except Exception:
+            pass
+        raise
+
 @bp.get("/api/collaborate")
 def get_collaboration_access():
     """Get proposal access for collaborator using token"""
@@ -152,13 +178,10 @@ def add_guest_comment():
 
             # Notify proposal owner when a collaborator/guest comments
             try:
-                cursor.execute(
-                    "SELECT user_id, title FROM proposals WHERE id = %s",
-                    (proposal_id,),
+                owner_id, proposal_title = _get_proposal_owner_and_title(
+                    cursor,
+                    proposal_id,
                 )
-                proposal = cursor.fetchone()
-                owner_id = proposal.get('user_id') if proposal else None
-                proposal_title = proposal.get('title') if proposal else f"Proposal {proposal_id}"
                 commenter_label = invited_email or 'A collaborator'
                 if owner_id:
                     create_notification(
@@ -236,10 +259,11 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
 
             user_id = user['id']
-            
-            cursor.execute('SELECT user_id, title FROM proposals WHERE id = %s', (proposal_id,))
-            proposal_row = cursor.fetchone()
-            proposal_title = proposal_row['title'] if proposal_row else f"Proposal {proposal_id}"
+
+            proposal_owner_id, proposal_title = _get_proposal_owner_and_title(
+                cursor,
+                proposal_id,
+            )
 
             # Best-effort: if offsets aren't provided but highlighted_text is, derive offsets from
             # the current section text so highlights persist for all viewers.
@@ -354,7 +378,6 @@ def create_comment(username=None, user_id=None, proposal_id=None):
 
             # Notify proposal owner when someone else comments on their proposal
             try:
-                proposal_owner_id = proposal_row.get('user_id') if proposal_row else None
                 if proposal_owner_id and proposal_owner_id != user_id:
                     commenter_name = user.get('full_name') or user.get('email') or username or 'Someone'
                     create_notification(
