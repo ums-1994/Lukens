@@ -7,6 +7,7 @@ import html
 import traceback
 import sys
 from datetime import datetime, timedelta
+import psycopg2
 import psycopg2.extras
 
 from api.utils.database import get_db_connection
@@ -327,10 +328,19 @@ def notify_proposal_collaborators(
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
             # Fetch proposal details
-            cursor.execute(
-                "SELECT user_id, title FROM proposals WHERE id = %s",
-                (proposal_id,),
-            )
+            try:
+                cursor.execute(
+                    "SELECT user_id, title FROM proposals WHERE id = %s",
+                    (proposal_id,),
+                )
+            except Exception as e:
+                if isinstance(e, psycopg2.Error) and getattr(e, 'pgcode', None) == '42703':
+                    cursor.execute(
+                        "SELECT owner_id, title FROM proposals WHERE id = %s",
+                        (proposal_id,),
+                    )
+                else:
+                    raise
             proposal = cursor.fetchone()
             if not proposal:
                 return
@@ -362,7 +372,10 @@ def notify_proposal_collaborators(
                 cursor.execute("SELECT id FROM users WHERE username = %s", (identifier,))
                 return cursor.fetchone()
 
-            owner = _resolve_user_row(proposal.get('user_id'))
+            owner_identifier = proposal.get('user_id')
+            if owner_identifier is None:
+                owner_identifier = proposal.get('owner_id')
+            owner = _resolve_user_row(owner_identifier)
             if owner and owner['id'] != exclude_user_id:
                 create_notification(
                     owner['id'],

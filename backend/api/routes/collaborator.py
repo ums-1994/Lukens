@@ -6,6 +6,7 @@ import os
 import traceback
 import secrets
 import jwt
+import psycopg2
 import psycopg2.extras
 from datetime import datetime, timedelta
 
