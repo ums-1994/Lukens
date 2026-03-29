@@ -18,11 +18,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+import psycopg2
 import psycopg2.extras
+from psycopg2.extras import Json
 from flask import Blueprint, jsonify, request
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required, finance_required
+from api.utils.helpers import create_notification
 from api.routes.finance_export import _extract_amount_from_content as _extract_amount_from_content_export
 
 
@@ -724,50 +727,21 @@ def top_clients_by_revenue(username=None, user_id=None, email=None):
     return jsonify({"metric": "top_clients_by_revenue", "year": year, "items": items[:limit]}), 200
 
 
-def _iter_discount_values(content_obj: Any) -> List[Tuple[str, float]]:
-    results: List[Tuple[str, float]] = []
-
-    def walk(node: Any, path: str) -> None:
-        if isinstance(node, dict):
-            for k, v in node.items():
-                p = f"{path}.{k}" if path else str(k)
-                if isinstance(k, str) and "discount" in k.lower():
-                    num = _parse_float(v, default=0.0)
-                    if num != 0.0:
-                        results.append((p, float(num)))
-                walk(v, p)
-        elif isinstance(node, list):
-            for i, v in enumerate(node):
-                walk(v, f"{path}[{i}]")
-
-    walk(content_obj, "")
-    return results
-
-
-@bp.get("/finance/alerts")
-@token_required
-@finance_required
-def finance_alerts(username=None, user_id=None, email=None):
-    # Alerts are best-effort and should never error.
-    year = _year_param()
-    discount_max = _parse_float(request.args.get("discount_max"), 20.0)
-    stuck_days = _parse_int(request.args.get("stuck_days"), 45) or 45
-
+def _compute_finance_alert_items(
+    year: int, discount_max: float, stuck_days: int
+) -> List[Dict[str, Any]]:
+    """Compute current finance alerts from proposals and compliance (ephemeral snapshot)."""
     proposals = _load_proposals_with_finance(year)
     now = datetime.now(timezone.utc)
 
     alerts: List[Dict[str, Any]] = []
 
-    # Discount alerts and probability-risk alerts
     for p in proposals:
         try:
-            content_obj = _safe_json_load(None)
-            # No access to raw content here without re-query. Skip content-based alert unless we can infer.
-            # Discount checks will be handled via proposal_compliance table if present.
+            _ = _safe_json_load(None)
         except Exception:
             pass
 
-        # Stuck in negotiation
         stage = _stage_from_status(p.status)
         if stage == "Negotiation":
             dt = p.updated_at or p.created_at
@@ -787,7 +761,6 @@ def finance_alerts(username=None, user_id=None, email=None):
                         }
                     )
 
-        # Low close probability alert (AI-derived)
         prob = _effective_probability(p)
         if stage in {"Sent", "Viewed", "Negotiation", "In Review"} and prob < 0.3:
             alerts.append(
@@ -801,7 +774,6 @@ def finance_alerts(username=None, user_id=None, email=None):
                 }
             )
 
-    # Discount threshold from proposal_compliance (if present)
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -850,9 +822,8 @@ def finance_alerts(username=None, user_id=None, email=None):
     except Exception:
         pass
 
-    # Deduplicate by (type, proposal_id)
     seen = set()
-    deduped = []
+    deduped: List[Dict[str, Any]] = []
     for a in alerts:
         key = (a.get("type"), a.get("proposal_id"))
         if key in seen:
@@ -860,4 +831,252 @@ def finance_alerts(username=None, user_id=None, email=None):
         seen.add(key)
         deduped.append(a)
 
-    return jsonify({"metric": "finance_alerts", "year": year, "items": deduped[:250]}), 200
+    return deduped[:250]
+
+
+def _finance_alert_recipient_user_ids(cursor) -> List[int]:
+    cursor.execute(
+        """
+        SELECT id FROM users
+        WHERE LOWER(TRIM(COALESCE(role, ''))) IN ('finance_manager', 'finance', 'financial_manager')
+           OR LOWER(TRIM(COALESCE(role, ''))) IN ('finance manager', 'financial manager')
+           OR LOWER(TRIM(COALESCE(role, ''))) LIKE 'finance%%manager%%'
+        """
+    )
+    rows = cursor.fetchall() or []
+    out: List[int] = []
+    for r in rows:
+        uid = r.get("id") if isinstance(r, dict) else r[0]
+        try:
+            out.append(int(uid))
+        except Exception:
+            continue
+    return list(dict.fromkeys(out))
+
+
+def _ensure_finance_alert_events_table(cursor) -> None:
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS finance_alert_events (
+            id SERIAL PRIMARY KEY,
+            alert_type TEXT NOT NULL,
+            proposal_id INTEGER NOT NULL,
+            severity TEXT,
+            details JSONB,
+            proposal_title TEXT,
+            client_name TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT (timezone('utc', now())),
+            resolved_at TIMESTAMPTZ NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_finance_alert_events_open_unique
+        ON finance_alert_events (alert_type, proposal_id)
+        WHERE resolved_at IS NULL
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_finance_alert_events_created
+        ON finance_alert_events (created_at DESC)
+        """
+    )
+
+
+def _sync_finance_alert_events_and_fetch(
+    year: int, current: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Persist open/resolved lifecycle; notify finance users when a new alert row opens."""
+    year_start = datetime(year, 1, 1, tzinfo=timezone.utc)
+    year_end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+
+    current_keys = {(str(a.get("type")), int(a.get("proposal_id"))) for a in current}
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            _ensure_finance_alert_events_table(cursor)
+
+            cursor.execute(
+                """
+                SELECT id, alert_type, proposal_id
+                FROM finance_alert_events
+                WHERE resolved_at IS NULL
+                """
+            )
+            open_rows = cursor.fetchall() or []
+            open_by_key = {
+                (str(r["alert_type"]), int(r["proposal_id"])): int(r["id"])
+                for r in open_rows
+                if r.get("alert_type") is not None and r.get("proposal_id") is not None
+            }
+
+            for key, row_id in list(open_by_key.items()):
+                if key not in current_keys:
+                    cursor.execute(
+                        """
+                        UPDATE finance_alert_events
+                        SET resolved_at = %s
+                        WHERE id = %s AND resolved_at IS NULL
+                        """,
+                        (now, row_id),
+                    )
+                    del open_by_key[key]
+
+            new_for_notify: List[Dict[str, Any]] = []
+            for a in current:
+                k = (str(a.get("type")), int(a.get("proposal_id")))
+                if k in open_by_key:
+                    continue
+                details = a.get("details")
+                details_param = Json(details) if isinstance(details, (dict, list)) else None
+                cursor.execute("SAVEPOINT finance_alert_ins")
+                try:
+                    cursor.execute(
+                        """
+                        INSERT INTO finance_alert_events
+                            (alert_type, proposal_id, severity, details, proposal_title, client_name)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                        """,
+                        (
+                            k[0],
+                            k[1],
+                            (a.get("severity") or "info"),
+                            details_param,
+                            (a.get("proposal") or "")[:2000],
+                            (a.get("client") or "")[:2000],
+                        ),
+                    )
+                    ins = cursor.fetchone()
+                    cursor.execute("RELEASE SAVEPOINT finance_alert_ins")
+                    if ins and ins.get("id"):
+                        new_for_notify.append({**a, "_event_id": ins["id"]})
+                        open_by_key[k] = int(ins["id"])
+                except psycopg2.IntegrityError:
+                    cursor.execute("ROLLBACK TO SAVEPOINT finance_alert_ins")
+
+            conn.commit()
+
+            # Notify after commit so row exists
+            finance_ids = _finance_alert_recipient_user_ids(cursor)
+            for a in new_for_notify:
+                title = (a.get("type") or "Finance alert").replace("_", " ")
+                pid = a.get("proposal_id")
+                prop = (a.get("proposal") or "").strip()
+                msg = f"{title}: {prop}" if prop else title
+                meta = {
+                    "finance_alert": True,
+                    "alert_type": a.get("type"),
+                    "proposal_id": pid,
+                    "details": a.get("details"),
+                }
+                for uid in finance_ids:
+                    try:
+                        create_notification(
+                            user_id=uid,
+                            notification_type="finance_alert",
+                            title=f"Financial alert: {title}",
+                            message=msg[:2000],
+                            proposal_id=int(pid) if pid is not None else None,
+                            metadata=meta,
+                        )
+                    except Exception:
+                        pass
+
+            cursor.execute(
+                """
+                SELECT id, alert_type AS type, proposal_id, severity, details,
+                       proposal_title AS proposal, client_name AS client,
+                       created_at, resolved_at
+                FROM finance_alert_events
+                WHERE (created_at >= %s AND created_at < %s)
+                   OR (resolved_at IS NOT NULL AND resolved_at >= %s AND resolved_at < %s)
+                   OR (resolved_at IS NULL)
+                ORDER BY created_at DESC
+                LIMIT 250
+                """,
+                (year_start, year_end, year_start, year_end),
+            )
+            rows = cursor.fetchall() or []
+            out: List[Dict[str, Any]] = []
+            for r in rows:
+                if not r:
+                    continue
+                rid = r.get("resolved_at")
+                st = "resolved" if rid else "active"
+                details = r.get("details")
+                if isinstance(details, str):
+                    try:
+                        details = json.loads(details)
+                    except Exception:
+                        details = {}
+                item = {
+                    "id": int(r["id"]),
+                    "type": r.get("type") or "",
+                    "severity": (r.get("severity") or "info"),
+                    "proposal_id": int(r["proposal_id"]) if r.get("proposal_id") is not None else None,
+                    "proposal": r.get("proposal") or "",
+                    "client": r.get("client") or "",
+                    "details": details,
+                    "status": st,
+                    "triggered_at": r["created_at"].isoformat() if r.get("created_at") else None,
+                    "resolved_at": rid.isoformat() if rid else None,
+                }
+                out.append(item)
+            conn.commit()
+            return out
+    except Exception as e:
+        print(f"⚠️ finance_alert_events sync/fetch failed (non-fatal): {e}")
+        return []
+
+
+def _iter_discount_values(content_obj: Any) -> List[Tuple[str, float]]:
+    results: List[Tuple[str, float]] = []
+
+    def walk(node: Any, path: str) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                p = f"{path}.{k}" if path else str(k)
+                if isinstance(k, str) and "discount" in k.lower():
+                    num = _parse_float(v, default=0.0)
+                    if num != 0.0:
+                        results.append((p, float(num)))
+                walk(v, p)
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                walk(v, f"{path}[{i}]")
+
+    walk(content_obj, "")
+    return results
+
+
+@bp.get("/finance/alerts")
+@token_required
+@finance_required
+def finance_alerts(username=None, user_id=None, email=None):
+    # Alerts are best-effort and should never error.
+    year = _year_param()
+    discount_max = _parse_float(request.args.get("discount_max"), 20.0)
+    stuck_days = _parse_int(request.args.get("stuck_days"), 45) or 45
+
+    deduped = _compute_finance_alert_items(year, discount_max, stuck_days)
+    persisted = _sync_finance_alert_events_and_fetch(year, deduped)
+
+    if persisted:
+        items = persisted
+    else:
+        items = [
+            {
+                **a,
+                "status": "active",
+                "triggered_at": None,
+                "resolved_at": None,
+            }
+            for a in deduped
+        ]
+
+    return jsonify({"metric": "finance_alerts", "year": year, "items": items[:250]}), 200

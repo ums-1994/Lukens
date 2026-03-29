@@ -1067,16 +1067,17 @@ def request_changes(username=None, proposal_id=None):
                         )
                         notifications_created.append('creator')
                 
-                    # Also notify finance if they exist as separate role
+                    # Also notify finance managers (avoid matching generic "manager" only)
                     cursor.execute(
                         """
-                        SELECT id FROM users 
-                        WHERE role ILIKE '%finance%' OR role ILIKE '%manager%'
-                        LIMIT 1
+                        SELECT id FROM users
+                        WHERE LOWER(TRIM(COALESCE(role, ''))) IN ('finance_manager', 'finance', 'financial_manager')
+                           OR LOWER(TRIM(COALESCE(role, ''))) IN ('finance manager', 'financial manager')
+                           OR LOWER(TRIM(COALESCE(role, ''))) LIKE '%finance%manager%'
                         """
                     )
-                    finance_user = cursor.fetchone()
-                    if finance_user:
+                    finance_users_coord = cursor.fetchall() or []
+                    for finance_user in finance_users_coord:
                         create_notification(
                             user_id=finance_user['id'],
                             notification_type='changes_requested',
@@ -1092,6 +1093,7 @@ def request_changes(username=None, proposal_id=None):
                                 'manager_email': manager_email,
                             }
                         )
+                    if finance_users_coord:
                         notifications_created.append('finance')
                     
                 elif target == 'finance':

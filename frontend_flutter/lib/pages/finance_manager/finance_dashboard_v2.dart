@@ -1376,6 +1376,34 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     return PremiumTheme.info;
   }
 
+  String _financeAlertSubtitle(Map<String, dynamic> row) {
+    final status = (row['status'] ?? 'active').toString().toLowerCase();
+    final triggeredRaw = row['triggered_at']?.toString();
+    final resolvedRaw = row['resolved_at']?.toString();
+    String fmt(String? iso) {
+      if (iso == null || iso.isEmpty) return '';
+      final d = DateTime.tryParse(iso);
+      if (d == null) return iso;
+      return DateFormat.yMMMd().add_Hm().format(d.toLocal());
+    }
+
+    final buf = StringBuffer();
+    buf.write(status == 'resolved' ? 'Resolved' : 'Active');
+    final t = fmt(triggeredRaw);
+    if (t.isNotEmpty) {
+      buf.write(' · ');
+      buf.write(t);
+    }
+    if (status == 'resolved') {
+      final r = fmt(resolvedRaw);
+      if (r.isNotEmpty) {
+        buf.write(' → ');
+        buf.write(r);
+      }
+    }
+    return buf.toString();
+  }
+
   Widget _buildAlertsPanel() {
     final future = _alertsFuture ?? _fetchAlerts(year: _selectedYear);
     return FutureBuilder<List<Map<String, dynamic>>>(
@@ -1404,29 +1432,50 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
           );
         }
 
-        final shown = items.take(10).toList();
+        final shown = items.take(12).toList();
         return Column(
           children: [
             for (int i = 0; i < shown.length; i++) ...[
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    height: 10,
-                    width: 10,
-                    decoration: BoxDecoration(
-                      color: _alertColor(
-                          (shown[i]['severity'] ?? 'info').toString()),
-                      borderRadius: BorderRadius.circular(10),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Container(
+                      height: 10,
+                      width: 10,
+                      decoration: BoxDecoration(
+                        color: _alertColor(
+                            (shown[i]['severity'] ?? 'info').toString()),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      (shown[i]['type'] ?? '').toString().replaceAll('_', ' '),
-                      style:
-                          PremiumTheme.bodyMedium.copyWith(color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (shown[i]['type'] ?? '')
+                              .toString()
+                              .replaceAll('_', ' '),
+                          style: PremiumTheme.bodyMedium
+                              .copyWith(color: Colors.white),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _financeAlertSubtitle(shown[i]),
+                          style: PremiumTheme.labelMedium.copyWith(
+                            fontSize: 11,
+                            color: Colors.white54,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(width: 10),
