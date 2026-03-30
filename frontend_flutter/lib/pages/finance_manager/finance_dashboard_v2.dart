@@ -496,6 +496,89 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     );
   }
 
+  Color _alertColor(String severity) {
+    final s = severity.toLowerCase();
+    if (s == 'warning') return Colors.orange;
+    if (s == 'critical') return Colors.redAccent;
+    return PremiumTheme.info;
+  }
+
+  Widget _buildFinancialAlertsPanel() {
+    final future = _alertsFuture ?? _fetchAlerts(year: _selectedYear);
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            height: 220,
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.7)),
+              ),
+            ),
+          );
+        }
+
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return SizedBox(
+            height: 80,
+            child: Center(
+              child: Text(
+                'No alerts',
+                style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+              ),
+            ),
+          );
+        }
+
+        final shown = items.take(10).toList();
+        return Column(
+          children: [
+            for (int i = 0; i < shown.length; i++) ...[
+              Row(
+                children: [
+                  Container(
+                    height: 10,
+                    width: 10,
+                    decoration: BoxDecoration(
+                      color: _alertColor(
+                          (shown[i]['severity'] ?? 'info').toString()),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      (shown[i]['type'] ?? '').toString().replaceAll('_', ' '),
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    (shown[i]['client'] ?? '').toString(),
+                    style: PremiumTheme.labelMedium
+                        .copyWith(color: Colors.white60),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+              if (i != shown.length - 1)
+                Divider(color: Colors.white.withOpacity(0.06), height: 14),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildPanel({
     required String title,
     required String subtitle,
@@ -914,7 +997,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                 if (rows.isEmpty)
                   Text(
                     'No data',
-                    style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+                    style:
+                        PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
                   )
                 else
                   ...rows.take(8).map(
@@ -960,10 +1044,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                 chip('Blocked', n(totals['blocked_count']).toString()),
                 chip('Acceptance', '${acceptanceRate.toStringAsFixed(1)}%'),
                 chip(
-                    'Tokens', NumberFormat.compact().format(n(usageSummary['total_tokens']))),
+                    'Tokens',
+                    NumberFormat.compact()
+                        .format(n(usageSummary['total_tokens']))),
                 chip('Cost',
                     'R ${((usageSummary['estimated_cost_zar'] as num?) ?? 0).toStringAsFixed(2)}'),
-                chip('Average Spent', 'R ${averageSpendZar.toStringAsFixed(2)}'),
+                chip(
+                    'Average Spent', 'R ${averageSpendZar.toStringAsFixed(2)}'),
               ],
             ),
             const SizedBox(height: 12),
@@ -976,8 +1063,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
             LayoutBuilder(
               builder: (context, constraints) {
                 final narrow = constraints.maxWidth < 980;
-                final left =
-                    listColumn('By Endpoint', endpointSplit, 'endpoint', 'requests');
+                final left = listColumn(
+                    'By Endpoint', endpointSplit, 'endpoint', 'requests');
                 final right =
                     listColumn('Top Users', topUsers, 'username', 'requests');
                 if (narrow) {
@@ -2326,6 +2413,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                                             ],
                                           );
                                         },
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildSimpleListPanel(
+                                        title: 'Financial Alerts',
+                                        subtitle:
+                                            'Items that may need finance attention',
+                                        child: _buildFinancialAlertsPanel(),
                                       ),
                                       const SizedBox(height: 12),
                                       _buildRequiresAttention(
