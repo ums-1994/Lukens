@@ -1152,15 +1152,46 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
             commenter_name = commenter['full_name'] if commenter else 'Someone'
             
             for mention in mentions:
-                # Try to find user by username or email
-                cursor.execute("""
-                    SELECT id, full_name, email FROM users 
-                    WHERE username = %s OR email = %s OR email LIKE %s
-                """, (mention, mention, f'{mention}@%'))
-                
-                mentioned_user = cursor.fetchone()
+                mention_value = mention.strip()
+                mention_base = mention_value
+                mention_role = None
+
+                # Support persona-tag mentions such as "@yohyoh-admin"
+                # by resolving username + role combination first.
+                if '@' not in mention_value and '-' in mention_value:
+                    base_candidate, role_candidate = mention_value.rsplit('-', 1)
+                    if base_candidate and role_candidate:
+                        mention_base = base_candidate
+                        mention_role = role_candidate.replace('_', ' ').lower().strip()
+
+                if mention_role:
+                    cursor.execute("""
+                        SELECT id, full_name, email FROM users
+                        WHERE username = %s
+                          AND LOWER(COALESCE(role, '')) IN (%s, %s)
+                    """, (mention_base, mention_role, mention_role.replace('_', ' ')))
+                    mentioned_user = cursor.fetchone()
+                else:
+                    mentioned_user = None
+
                 if not mentioned_user:
-                    print(f"⚠️ Mentioned user not found: @{mention}")
+                    # Try to find user by username or email
+                    cursor.execute("""
+                        SELECT id, full_name, email FROM users 
+                        WHERE username = %s OR email = %s OR email LIKE %s
+                    """, (mention_value, mention_value, f'{mention_value}@%'))
+                    mentioned_user = cursor.fetchone()
+
+                if not mentioned_user and mention_base != mention_value:
+                    # Fallback to username-only for persona-tag format
+                    cursor.execute("""
+                        SELECT id, full_name, email FROM users
+                        WHERE username = %s
+                    """, (mention_base,))
+                    mentioned_user = cursor.fetchone()
+
+                if not mentioned_user:
+                    print(f"⚠️ Mentioned user not found: @{mention_value}")
                     continue
                 
                 # Don't mention yourself
@@ -2327,12 +2358,26 @@ def send_for_approval(username, proposal_id):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+
+            cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+            role_row = cursor.fetchone()
+            role_key = (role_row[0] if role_row else '')
+            role_key = (role_key or '').strip().lower()
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_admin = role_key in ['admin', 'ceo', 'approver']
             
             # Check if proposal exists and belongs to user
-            cursor.execute(
-                'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
-                (proposal_id, username)
-            )
+            if is_admin or is_finance or is_manager:
+                cursor.execute(
+                    'SELECT id, title, status FROM proposals WHERE id = %s',
+                    (proposal_id,)
+                )
+            else:
+                cursor.execute(
+                    'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
+                    (proposal_id, username)
+                )
             proposal = cursor.fetchone()
             
             if not proposal:
@@ -3711,14 +3756,20 @@ def users_search():
                 with get_db_connection() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                         cur.execute("""
-                            SELECT u.id, u.username, u.full_name, u.email
+                            SELECT u.id, u.username, u.full_name, u.email, u.role
                             FROM users u
                             WHERE u.id = (SELECT owner_id FROM proposals WHERE id = %s)
                             OR u.email IN (SELECT invited_email FROM collaboration_invitations WHERE proposal_id = %s)
                             LIMIT 50
                         """, (proposal_id, proposal_id))
                         rows = cur.fetchall()
-                        return [dict(r) for r in rows], 200
+                        out = []
+                        for r in rows:
+                            item = dict(r)
+                            role = (item.get('role') or '').strip().lower().replace(' ', '_')
+                            item['mention_key'] = f"{item.get('username')}-{role}" if role else item.get('username')
+                            out.append(item)
+                        return out, 200
             return [], 200
 
         like = f"%{q}%"
@@ -3735,7 +3786,7 @@ def users_search():
 
                     # Build SQL using the detected owner column name (safe because we only allow known names)
                     sql = f"""
-                        SELECT u.id, u.username, u.full_name, u.email
+                        SELECT u.id, u.username, u.full_name, u.email, u.role
                         FROM users u
                         WHERE (u.username ILIKE %s OR u.full_name ILIKE %s OR u.email ILIKE %s)
                         AND (
@@ -3750,14 +3801,20 @@ def users_search():
                     if not authed_username:
                         return {'detail': 'Authorization required for global search'}, 401
                     cur.execute("""
-                        SELECT id, username, full_name, email
+                        SELECT id, username, full_name, email, role
                         FROM users
                         WHERE username ILIKE %s OR full_name ILIKE %s OR email ILIKE %s
                         LIMIT 50
                     """, (like, like, like))
 
                 rows = cur.fetchall()
-                return [dict(r) for r in rows], 200
+                out = []
+                for r in rows:
+                    item = dict(r)
+                    role = (item.get('role') or '').strip().lower().replace(' ', '_')
+                    item['mention_key'] = f"{item.get('username')}-{role}" if role else item.get('username')
+                    out.append(item)
+                return out, 200
 
     except Exception as e:
         print(f"❌ Error searching users: {e}")
@@ -5480,10 +5537,15 @@ def resolve_suggestion(username, proposal_id, suggestion_id):
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
             # Get user details
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, email, full_name, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
+
+            role_key = (current_user.get('role') or '').strip().lower()
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_admin = role_key in ['admin', 'ceo', 'approver']
             
             # Verify user owns the proposal
             cursor.execute("""
@@ -5491,7 +5553,10 @@ def resolve_suggestion(username, proposal_id, suggestion_id):
             """, (proposal_id,))
             
             proposal = cursor.fetchone()
-            if not proposal or proposal['user_id'] != username:
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+
+            if not (is_admin or is_finance or is_manager) and proposal.get('user_id') != username:
                 return {'detail': 'Only proposal owner can resolve suggestions'}, 403
             
             # Update suggestion

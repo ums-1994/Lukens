@@ -954,10 +954,18 @@ class _GuestCollaborationPageState extends State<GuestCollaborationPage> {
     );
   }
 
+  DateTime _toSast(DateTime dt) {
+    final utc = dt.isUtc
+        ? dt
+        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute,
+            dt.second, dt.millisecond, dt.microsecond);
+    return utc.add(const Duration(hours: 2));
+  }
+
   String _formatTimestamp(String timestamp) {
     try {
-      final dt = DateTime.parse(timestamp).toLocal();
-      final now = DateTime.now();
+      final dt = _toSast(DateTime.parse(timestamp));
+      final now = _toSast(DateTime.now().toUtc());
 
       final timePart = DateFormat('HH:mm').format(dt);
       final isSameDate =

@@ -64,6 +64,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   @override
   void initState() {
     super.initState();
+    AuthService.restoreSessionFromStorage();
     final user = AuthService.currentUser;
     final backendRole = user?['role']?.toString().toLowerCase() ?? 'manager';
     final isAdmin = backendRole == 'admin' || backendRole == 'ceo';
@@ -5009,38 +5010,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       message: collapsed ? label : '',
       child: InkWell(
         onTap: () {
-          switch (label) {
-            case 'Logout':
-              Navigator.pushReplacementNamed(context, '/login');
-              break;
-            case 'Dashboard':
-              Navigator.pushReplacementNamed(context, '/creator_dashboard');
-              break;
-            case 'My Proposals':
-              Navigator.pushReplacementNamed(context, '/proposals');
-              break;
-            case 'Templates':
-              Navigator.pushReplacementNamed(context, '/templates');
-              break;
-            case 'Content Library':
-              Navigator.pushReplacementNamed(context, '/content_library');
-              break;
-            case 'Client Management':
-              Navigator.pushReplacementNamed(context, '/client_management');
-              break;
-            case 'Approved Proposals':
-              Navigator.pushReplacementNamed(context, '/approved_proposals');
-              break;
-            case 'Approvals':
-              Navigator.pushReplacementNamed(context, '/approved_proposals');
-              break;
-            case 'Analytics':
-            case 'Analytics (My Pipeline)':
-              Navigator.pushReplacementNamed(context, '/analytics');
-              break;
-            default:
-              Navigator.pushReplacementNamed(context, '/creator_dashboard');
-          }
+          _navigatePage(label);
         },
         borderRadius: BorderRadius.circular(12),
         child: Container(

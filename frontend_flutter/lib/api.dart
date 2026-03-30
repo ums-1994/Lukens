@@ -476,6 +476,65 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> deleteNotification(int notificationId) async {
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) return;
+
+    try {
+      final response = await http.delete(
+        Uri.parse("$baseUrl/api/notifications/$notificationId"),
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        notifications = notifications.where((rawItem) {
+          final Map<String, dynamic> item = rawItem is Map<String, dynamic>
+              ? Map<String, dynamic>.from(rawItem)
+              : (rawItem is Map
+                  ? Map<String, dynamic>.from(rawItem.cast<String, dynamic>())
+                  : <String, dynamic>{});
+          final idRaw = item['id'];
+          final id =
+              idRaw is int ? idRaw : int.tryParse(idRaw?.toString() ?? '');
+          return id != notificationId;
+        }).toList();
+        unreadNotifications =
+            notifications.where((n) => n is Map && n['is_read'] != true).length;
+        notifyListeners();
+        await fetchNotifications();
+      } else {
+        print(
+            'Error deleting notification: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error deleting notification: $e');
+    }
+  }
+
+  Future<void> deleteAllNotifications() async {
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) return;
+
+    try {
+      final response = await http.delete(
+        Uri.parse("$baseUrl/api/notifications"),
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        notifications = [];
+        unreadNotifications = 0;
+        notifyListeners();
+        await fetchNotifications();
+      } else {
+        print(
+            'Error deleting all notifications: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error deleting all notifications: $e');
+    }
+  }
+
   Future<void> fetchProposals() async {
     try {
       final r = await http
@@ -1074,6 +1133,31 @@ class AppState extends ChangeNotifier {
       print('Error fetching collaboration load analytics: $e');
     }
     return null;
+  }
+
+  Future<Map<String, dynamic>?> getAiUsageAnalytics({
+    String? startDate,
+    String? endDate,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/ai/analytics/usage").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+      return {
+        'error_status': r.statusCode,
+        'error': r.body,
+      };
+    } catch (e) {
+      print('Error fetching AI usage analytics: $e');
+      return null;
+    }
   }
 
   Future<Map<String, dynamic>?> getRiskGateProposals({

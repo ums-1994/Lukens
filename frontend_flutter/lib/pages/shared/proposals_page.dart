@@ -23,7 +23,7 @@ class _ProposalsPageState extends State<ProposalsPage>
   bool _isLoading = true;
   String? _token;
   bool _isSidebarCollapsed = false;
-  String _currentNavLabel = 'My Proposals';
+  String _currentNavLabel = 'Proposals';
 
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
@@ -88,12 +88,23 @@ class _ProposalsPageState extends State<ProposalsPage>
   }
 
   final ScrollController _scrollController = ScrollController();
-  bool _hasLoadedOnce = false;
 
   @override
   void initState() {
     super.initState();
-    _loadProposals();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final appState = context.read<AppState>();
+      if (appState.proposals.isNotEmpty) {
+        setState(() {
+          proposals = List<Map<String, dynamic>>.from(appState.proposals
+              .whereType<Map>()
+              .map((p) => Map<String, dynamic>.from(p)));
+          _isLoading = false;
+        });
+      }
+      _loadProposals(showLoader: appState.proposals.isEmpty);
+    });
   }
 
   @override
@@ -102,18 +113,10 @@ class _ProposalsPageState extends State<ProposalsPage>
     super.dispose();
   }
 
-  // Refresh proposals when returning to this page
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_hasLoadedOnce) {
-      _hasLoadedOnce = true;
-      _loadProposals();
+  Future<void> _loadProposals({bool showLoader = false}) async {
+    if (showLoader && mounted) {
+      setState(() => _isLoading = true);
     }
-  }
-
-  Future<void> _loadProposals() async {
-    setState(() => _isLoading = true);
     try {
       // Get token from AuthService (backend JWT) - same as document editor
       final token = AuthService.token;
@@ -135,6 +138,7 @@ class _ProposalsPageState extends State<ProposalsPage>
           setState(() {
             proposals = List<Map<String, dynamic>>.from(data);
             print('Γ£à Loaded ${proposals.length} proposals');
+            _isLoading = false;
           });
         }
       } else {
@@ -142,13 +146,13 @@ class _ProposalsPageState extends State<ProposalsPage>
         if (mounted) {
           setState(() {
             proposals = [];
+            _isLoading = false;
           });
         }
       }
     } catch (e) {
       print('Γ¥î Error loading proposals: $e');
-    } finally {
-      if (mounted) {
+      if (mounted && showLoader) {
         setState(() => _isLoading = false);
       }
     }
@@ -454,7 +458,7 @@ class _ProposalsPageState extends State<ProposalsPage>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               Text(
-                'My Proposals',
+                'Proposals',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,

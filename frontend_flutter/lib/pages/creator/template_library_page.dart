@@ -22,6 +22,8 @@ class TemplateLibraryPage extends StatefulWidget {
 
 class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     with TickerProviderStateMixin {
+  static List<Template>? _cachedTemplates;
+
   final TextEditingController _searchController = TextEditingController();
   String _typeFilter = 'all';
   String _statusFilter = 'all';
@@ -71,7 +73,15 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
       vsync: this,
     );
     _animationController.value = 1.0;
-    _loadTemplates();
+
+    if (_cachedTemplates != null && _cachedTemplates!.isNotEmpty) {
+      _templates = List<Template>.from(_cachedTemplates!);
+      _applyFilters();
+      _isLoading = false;
+      _loadTemplates(showLoader: false);
+    } else {
+      _loadTemplates();
+    }
   }
 
   @override
@@ -81,15 +91,14 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     super.dispose();
   }
 
-  Future<void> _loadTemplates() async {
-    setState(() {
-      _isLoading = true;
-    });
+  Future<void> _loadTemplates({bool showLoader = true}) async {
+    if (showLoader && mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
 
     try {
-      // Mock API call - replace with your actual API
-      await Future.delayed(const Duration(seconds: 1));
-
       // Mock data
       final List<Template> mockTemplates = [
         Template(
@@ -278,13 +287,16 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
 
       setState(() {
         _templates = mockTemplates;
+        _cachedTemplates = List<Template>.from(mockTemplates);
         _applyFilters();
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted && showLoader) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
       _showError('Failed to load templates: $e');
     }
   }

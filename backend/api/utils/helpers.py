@@ -7,6 +7,7 @@ import html
 import traceback
 import sys
 from datetime import datetime, timedelta
+import psycopg2
 import psycopg2.extras
 
 from api.utils.database import get_db_connection
@@ -328,9 +329,24 @@ def notify_proposal_collaborators(
 
             # Fetch proposal details
             cursor.execute(
-                "SELECT user_id, title FROM proposals WHERE id = %s",
-                (proposal_id,),
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'proposals'
+                """
             )
+            cols = {r.get('column_name') for r in cursor.fetchall() or []}
+            owner_col = 'user_id' if 'user_id' in cols else ('owner_id' if 'owner_id' in cols else None)
+            if owner_col:
+                cursor.execute(
+                    f"SELECT {owner_col} AS owner_id, title FROM proposals WHERE id = %s",
+                    (proposal_id,),
+                )
+            else:
+                cursor.execute(
+                    "SELECT title FROM proposals WHERE id = %s",
+                    (proposal_id,),
+                )
             proposal = cursor.fetchone()
             if not proposal:
                 return
@@ -362,7 +378,7 @@ def notify_proposal_collaborators(
                 cursor.execute("SELECT id FROM users WHERE username = %s", (identifier,))
                 return cursor.fetchone()
 
-            owner = _resolve_user_row(proposal.get('user_id'))
+            owner = _resolve_user_row(proposal.get('owner_id'))
             if owner and owner['id'] != exclude_user_id:
                 create_notification(
                     owner['id'],

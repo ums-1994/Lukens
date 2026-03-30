@@ -724,19 +724,40 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     );
   }
 
+<<<<<<< HEAD
+=======
+  DateTime _toSast(DateTime dt) {
+    final utc = dt.isUtc
+        ? dt
+        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute,
+            dt.second, dt.millisecond, dt.microsecond);
+    return utc.add(const Duration(hours: 2));
+  }
+
+>>>>>>> origin/PSB-215_manager_full_access
   String _formatNotificationTimestamp(dynamic raw) {
     if (raw == null) return '';
     final value = raw.toString().trim();
     if (value.isEmpty) return '';
     final dt = DateTime.tryParse(value);
     if (dt == null) return value;
+<<<<<<< HEAD
     final local = dt.toLocal();
     final diff = DateTime.now().difference(local);
+=======
+    final sast = _toSast(dt);
+    final now = _toSast(DateTime.now().toUtc());
+    final diff = now.difference(sast);
+>>>>>>> origin/PSB-215_manager_full_access
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inHours < 1) return '${diff.inMinutes}m ago';
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
+<<<<<<< HEAD
     return DateFormat('MMM d, y • HH:mm').format(local);
+=======
+    return DateFormat('MMM d, y • HH:mm').format(sast);
+>>>>>>> origin/PSB-215_manager_full_access
   }
 
   Future<void> _showNotificationsDialog(AppState app) async {
@@ -792,6 +813,19 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                               },
                               child: const Text('Mark all read'),
                             ),
+<<<<<<< HEAD
+=======
+                          TextButton(
+                            onPressed: notifications.isEmpty
+                                ? null
+                                : () async {
+                                    await app.deleteAllNotifications();
+                                    await app.fetchNotifications();
+                                    setDialogState(() {});
+                                  },
+                            child: const Text('Delete all'),
+                          ),
+>>>>>>> origin/PSB-215_manager_full_access
                           IconButton(
                             onPressed: () => Navigator.of(dialogContext).pop(),
                             icon: const Icon(Icons.close, color: Colors.white70),
@@ -843,6 +877,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                       await app.fetchNotifications();
                                       setDialogState(() {});
                                     }
+<<<<<<< HEAD
+=======
+                                    if (!mounted) return;
+                                    Navigator.of(dialogContext).pop();
+                                    _openNotificationTarget(item);
+>>>>>>> origin/PSB-215_manager_full_access
                                   },
                                   child: Container(
                                     padding: const EdgeInsets.all(12),
@@ -906,6 +946,24 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                             ],
                                           ),
                                         ),
+<<<<<<< HEAD
+=======
+                                        if (notificationId != null)
+                                          IconButton(
+                                            tooltip: 'Delete',
+                                            onPressed: () async {
+                                              await app.deleteNotification(
+                                                  notificationId);
+                                              await app.fetchNotifications();
+                                              setDialogState(() {});
+                                            },
+                                            icon: const Icon(
+                                              Icons.delete_outline,
+                                              color: Colors.redAccent,
+                                              size: 18,
+                                            ),
+                                          ),
+>>>>>>> origin/PSB-215_manager_full_access
                                       ],
                                     ),
                                   ),
@@ -923,6 +981,64 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     );
   }
 
+<<<<<<< HEAD
+=======
+  Map<String, dynamic> _parseNotificationMetadata(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return raw.cast<String, dynamic>();
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return decoded.cast<String, dynamic>();
+      } catch (_) {}
+    }
+    return <String, dynamic>{};
+  }
+
+  String? _asIdString(dynamic value) {
+    if (value == null) return null;
+    final text = value.toString().trim();
+    if (text.isEmpty || text.toLowerCase() == 'null') return null;
+    return text;
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value == null) return null;
+    return int.tryParse(value.toString().trim());
+  }
+
+  void _openNotificationTarget(Map<String, dynamic> item) {
+    final metadata = _parseNotificationMetadata(item['metadata']);
+    final proposalId = _asIdString(
+      metadata['proposal_id'] ?? item['proposal_id'] ?? metadata['resource_id'],
+    );
+    if (proposalId == null) return;
+
+    final commentId = _asInt(metadata['comment_id']);
+    final sectionIndex = _asInt(metadata['section_index']);
+    final proposalTitle =
+        item['proposal_title']?.toString().trim().isNotEmpty == true
+            ? item['proposal_title'].toString().trim()
+            : item['title']?.toString().trim();
+
+    Navigator.of(context).pushNamed(
+      '/compose',
+      arguments: {
+        'proposalId': proposalId,
+        if (proposalTitle != null && proposalTitle.isNotEmpty)
+          'proposalTitle': proposalTitle,
+        // Open in focused comment mode (no manager-style nav chrome).
+        'isCollaborator': true,
+        'forceCommentsPanelOpen': true,
+        if (commentId != null) 'initialCommentId': commentId,
+        if (sectionIndex != null) 'initialSectionIndex': sectionIndex,
+      },
+    );
+  }
+
+>>>>>>> origin/PSB-215_manager_full_access
   Widget _buildDashboardWelcome() {
     final user = AuthService.currentUser ?? {};
     final rawName = user['full_name'] ??

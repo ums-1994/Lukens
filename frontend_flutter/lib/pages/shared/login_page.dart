@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../services/auth_service.dart';
 import '../../services/firebase_service.dart';
 import '../../services/role_service.dart';
@@ -104,20 +103,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  Future<String?> _getSafeFinanceRoleHint() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final savedRole = prefs.getString('user_role');
-      if (savedRole == null) return null;
-      if (savedRole.contains('finance')) {
-        return 'finance_manager';
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
   Future<void> _loginWithGoogle() async {
     setState(() => _isLoading = true);
     try {
@@ -155,8 +140,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'id_token': firebaseIdToken,
-          if (await _getSafeFinanceRoleHint() != null)
-            'role': await _getSafeFinanceRoleHint(),
         }),
       );
 
@@ -318,10 +301,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       // sent to finance dashboard). Backend uses DB role for existing users.
       print('📡 Sending Firebase token to backend...');
 
-      final financeRoleHint = await _getSafeFinanceRoleHint();
       final requestBody = {
         'id_token': firebaseIdToken,
-        if (financeRoleHint != null) 'role': financeRoleHint,
       };
 
       final response = await http.post(

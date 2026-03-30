@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
@@ -43,6 +44,8 @@ class BlankDocumentEditorPage extends StatefulWidget {
       isCollaborator; // For collaborator mode - hide navigation, show only editor
   final bool requireVersionDescription;
   final bool forceCommentsPanelOpen;
+  final int? initialCommentId;
+  final int? initialSectionIndex;
 
   const BlankDocumentEditorPage({
     super.key,
@@ -55,6 +58,8 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.isCollaborator = false, // Default to false
     this.requireVersionDescription = false,
     this.forceCommentsPanelOpen = false,
+    this.initialCommentId,
+    this.initialSectionIndex,
   });
 
   @override
@@ -217,15 +222,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final textWidth = (pageContentWidth - 32).clamp(200.0, pageContentWidth);
     painter.layout(maxWidth: textWidth);
 
-    const bubbleRightOutsidePage = -220.0; // place outside A4 card
-    const bubbleWidth = 200.0;
-    const baseYInSection = 86.0; // approx: title + spacers + padding
+    // Negative right pushes bubbles outside the page Stack (clipBehavior: Clip.none
+    // is already set on the Stack, so they render in the right gutter without
+    // overlapping the document text).
+    const bubbleWidth = 150.0;
+    const bubbleRightOutsidePage = -(bubbleWidth + 8.0);
+    const baseYInSection = 86.0;
 
     rootCommentsForSection.sort((a, b) {
       final aStart = int.tryParse(a['start_offset']?.toString() ?? '') ?? 0;
       final bStart = int.tryParse(b['start_offset']?.toString() ?? '') ?? 0;
       return aStart.compareTo(bStart);
     });
+
+    double lastPlacedTop = -1000.0;
+    const minBubbleGap = 6.0;
 
     return rootCommentsForSection.map((c) {
       final start = int.tryParse(c['start_offset']?.toString() ?? '') ?? 0;
@@ -235,8 +246,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         Rect.zero,
       );
 
-      final top = baseYInSection + caretOffset.dy;
-      final name = c['commenter_name']?.toString() ?? 'User';
+      final desiredTop = baseYInSection + caretOffset.dy;
+      final top = desiredTop <= lastPlacedTop + minBubbleGap
+          ? lastPlacedTop + minBubbleGap
+          : desiredTop;
+      lastPlacedTop = top;
+      final name = _commentPersonaTag(c);
       final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
       final commentText = c['comment_text']?.toString() ?? '';
       final timestampLabel = _formatTimestamp(c['timestamp']);
@@ -269,111 +284,95 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           onTapDown: (details) {
             final id = int.tryParse(c['id']?.toString() ?? '');
             if (id == null) return;
+            _focusedHighlightCommentId = id;
+            _startHighlightPulse();
             _showThreadOverlay(
               rootCommentId: id,
               globalPosition: details.globalPosition,
             );
           },
           child: Opacity(
-            opacity: isResolved ? 0.7 : 1.0,
+            opacity: isResolved ? 0.55 : 1.0,
             child: Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isResolved
-                      ? Colors.grey.shade300
-                      : const Color(0xFF00BCD4).withOpacity(0.35),
+                borderRadius: BorderRadius.circular(4),
+                border: Border(
+                  left: BorderSide(
+                    color: isResolved
+                        ? Colors.grey.shade400
+                        : const Color(0xFF00BCD4),
+                    width: 2.5,
+                  ),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.10),
-                    blurRadius: 10,
-                    offset: const Offset(0, 6),
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
                   ),
                 ],
               ),
-              child: Row(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircleAvatar(
-                    radius: 14,
-                    backgroundColor: const Color(0xFF00BCD4),
-                    child: Text(
-                      initial,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 8,
+                        backgroundColor: const Color(0xFF00BCD4),
+                        child: Text(
+                          initial,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
                           name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1A1A1A),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF333333),
                           ),
                         ),
-                        if (timestampLabel.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            timestampLabel,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey.shade600,
-                            ),
+                      ),
+                      if (replies.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF00BCD4).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
                           ),
-                        ],
-                        const SizedBox(height: 4),
-                        Text(
-                          commentText,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.25,
-                            color: Colors.grey.shade800,
-                          ),
-                        ),
-                        if (replies.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'Reply (${replies.length})',
-                            style: TextStyle(
-                              fontSize: 10,
+                          child: Text(
+                            '+${replies.length}',
+                            style: const TextStyle(
+                              fontSize: 8,
                               fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade700,
+                              color: Color(0xFF00838F),
                             ),
                           ),
-                          if (latestReplyText.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              latestReplyAuthor.isNotEmpty
-                                  ? '$latestReplyAuthor: $latestReplyText'
-                                  : latestReplyText,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11,
-                                height: 1.25,
-                                color: Colors.grey.shade800,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ],
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    commentText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      height: 1.2,
+                      color: Colors.grey.shade700,
                     ),
                   ),
                 ],
@@ -385,45 +384,173 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }).toList();
   }
 
+  String _colorToQuillHex(Color c) {
+    return '#${c.value.toRadixString(16).padLeft(8, '0')}';
+  }
+
+  void _clearQuillHighlights() {
+    for (final section in _sections) {
+      final ranges = _appliedQuillBgRanges[section.id];
+      if (ranges == null || ranges.isEmpty) continue;
+      final docLen = section.richController.document.length;
+      for (final r in ranges) {
+        final s = r[0].clamp(0, docLen - 1);
+        final len = r[1].clamp(0, docLen - 1 - s);
+        if (len <= 0) continue;
+        section.richController.formatText(s, len, Attribute.background);
+      }
+    }
+    _appliedQuillBgRanges.clear();
+  }
+
   void _applyInlineHighlights() {
+    _isMutatingHighlights = true;
     try {
+      _clearQuillHighlights();
+
       final Map<String, List<HighlightRange>> rangesByBlock = {};
+
+      // Always clear existing highlights first so we don't rely on stale controller state.
+      for (final s in _sections) {
+        try {
+          s.controller.setHighlights(const []);
+        } catch (_) {}
+
+        try {
+          s.clearCommentHighlights();
+        } catch (_) {}
+      }
+      int skippedNoBlock = 0;
+      int skippedNoOffset = 0;
+      int matched = 0;
 
       for (final c in _comments) {
         final status = (c['status'] ?? 'open').toString().toLowerCase();
         if (status != 'open' && status != 'resolved') continue;
 
         // Root comments + replies both can have offsets; apply to all.
-        final blockId = c['block_id']?.toString();
-        if (blockId == null || blockId.isEmpty) continue;
+        String? blockId = c['block_id']?.toString();
+        final sectionIndex =
+            int.tryParse(c['section_index']?.toString() ?? '');
+
+        // Determine the best target section for this highlight.
+        int? targetSectionIndex;
+        if (blockId != null && blockId.isNotEmpty) {
+          final idx = _sections.indexWhere((s) => s.id == blockId);
+          if (idx >= 0) {
+            targetSectionIndex = idx;
+          }
+        }
+        if (targetSectionIndex == null && sectionIndex != null) {
+          if (sectionIndex >= 0 && sectionIndex < _sections.length) {
+            targetSectionIndex = sectionIndex;
+            blockId = _sections[sectionIndex].id;
+          }
+        }
+        if (targetSectionIndex == null || blockId == null || blockId.isEmpty) {
+          skippedNoBlock++;
+          print(
+              '🟡 highlight skip: cannot map comment ${c['id']} to section. block_id=${c['block_id']} section_index=${c['section_index']}');
+          continue;
+        }
 
         final startRaw = c['start_offset'];
         final endRaw = c['end_offset'];
-        final start = int.tryParse(startRaw?.toString() ?? '');
-        final end = int.tryParse(endRaw?.toString() ?? '');
-        if (start == null || end == null) continue;
-        if (end <= start) continue;
+        int? start = int.tryParse(startRaw?.toString() ?? '');
+        int? end = int.tryParse(endRaw?.toString() ?? '');
+        final sectionText = _sections[targetSectionIndex].controller.text;
 
-        final color = status == 'open'
-            ? Colors.yellow.withOpacity(0.3)
-            : Colors.yellow.withOpacity(0.12);
+        // If offsets are missing, derive them from highlighted_text so other
+        // personas can still see the highlight.
+        if (start == null || end == null) {
+          final selectedText = (c['highlighted_text'] ?? '').toString();
+          if (selectedText.isEmpty) {
+            skippedNoOffset++;
+            continue;
+          }
+          final idx = sectionText.indexOf(selectedText);
+          if (idx < 0) {
+            skippedNoOffset++;
+            continue;
+          }
+          start = idx;
+          end = idx + selectedText.length;
+        }
+
+        if (start == null || end == null) {
+          skippedNoOffset++;
+          continue;
+        }
+
+        if (end < start) {
+          final tmp = start;
+          start = end;
+          end = tmp;
+        }
+
+        final maxLen = sectionText.length;
+        start = start.clamp(0, maxLen);
+        end = end.clamp(0, maxLen);
+        if (end <= start) {
+          skippedNoOffset++;
+          continue;
+        }
+
+        matched++;
+        final commentId = int.tryParse(c['id']?.toString() ?? '');
+        final isFocusedComment =
+            _focusedHighlightCommentId != null && commentId == _focusedHighlightCommentId;
+        final pulseWave = _highlightPulseActive
+            ? (0.5 + 0.5 * math.sin(_highlightPulseTick * 0.7))
+            : 0.6;
+        final focusedAlpha = 0.30 + (0.30 * pulseWave);
+        final color = isFocusedComment
+            ? Colors.orange.withOpacity(focusedAlpha)
+            : (status == 'open'
+                ? Colors.yellow.withOpacity(0.40)
+                : Colors.yellow.withOpacity(0.18));
 
         rangesByBlock.putIfAbsent(blockId, () => <HighlightRange>[]).add(
               HighlightRange(
                 start: start,
                 end: end,
                 color: color,
-                commentId: int.tryParse(c['id']?.toString() ?? ''),
+                commentId: commentId,
               ),
             );
       }
 
+      print('🖍️ Highlights: ${_comments.length} comments, $matched with offsets, $skippedNoBlock no block_id, $skippedNoOffset no offsets');
+
+      final sectionIds = _sections.map((s) => s.id).toList();
+      final blockIds = rangesByBlock.keys.toList();
+      print('🖍️ Section IDs: $sectionIds');
+      print('🖍️ Block IDs in comments: $blockIds');
+
+      int appliedCount = 0;
       for (final section in _sections) {
         final ranges = rangesByBlock[section.id] ?? const <HighlightRange>[];
         section.controller.setHighlights(ranges);
+
+        final docLen = section.richController.document.length;
+        final applied = <List<int>>[];
+        for (final range in ranges) {
+          final s = range.start.clamp(0, docLen - 1);
+          final e = range.end.clamp(0, docLen - 1);
+          final len = e - s;
+          if (len <= 0) continue;
+          final hex = _colorToQuillHex(range.color);
+          section.richController.formatText(s, len, BackgroundAttribute(hex));
+          applied.add([s, len]);
+          appliedCount++;
+        }
+        _appliedQuillBgRanges[section.id] = applied;
       }
+      print('🖍️ Applied $appliedCount Quill background highlights');
     } catch (e) {
       print('⚠️ Error applying inline highlights: $e');
+    } finally {
+      _isMutatingHighlights = false;
     }
   }
 
@@ -492,6 +619,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   OverlayEntry? _addCommentOverlay;
   Offset? _lastContentTapGlobalPosition;
   int? _pendingScrollToCommentId;
+  int? _focusedHighlightCommentId;
+  Timer? _highlightPulseTimer;
+  int _highlightPulseTick = 0;
+  bool _highlightPulseActive = false;
+  bool _isMutatingHighlights = false;
+  Map<String, List<List<int>>> _appliedQuillBgRanges = {};
   List<Map<String, dynamic>> _collaborators = [];
   bool _isCollaborating = false;
 
@@ -511,6 +644,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _threadOverlay?.remove();
     _threadOverlay = null;
     _activeThreadRootId = null;
+  }
+
+  void _startHighlightPulse() {
+    _highlightPulseTimer?.cancel();
+    _highlightPulseTick = 0;
+    _highlightPulseActive = true;
+    _applyInlineHighlights();
+
+    _highlightPulseTimer =
+        Timer.periodic(const Duration(milliseconds: 120), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _highlightPulseTick++;
+      if (_highlightPulseTick >= 16) {
+        _highlightPulseActive = false;
+        timer.cancel();
+      }
+      _applyInlineHighlights();
+    });
   }
 
   void _showThreadOverlay(
@@ -581,7 +735,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          root['commenter_name']?.toString() ?? 'User',
+                          _commentPersonaTag(root),
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -616,7 +770,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                   child: Align(
                                     alignment: Alignment.centerLeft,
                                     child: Text(
-                                      '${r['commenter_name'] ?? 'User'}: ${r['comment_text'] ?? ''}',
+                                      '${_commentPersonaTag(r)}: ${r['comment_text'] ?? ''}',
                                       style: const TextStyle(
                                           fontSize: 12, height: 1.35),
                                     ),
@@ -848,6 +1002,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     if (widget.forceCommentsPanelOpen) {
       _showCommentsPanel = true;
+    }
+    if (widget.initialCommentId != null) {
+      _pendingScrollToCommentId = widget.initialCommentId;
+      _showCommentsPanel = true;
+    }
+    if (widget.initialSectionIndex != null) {
+      _selectedSectionForComment = widget.initialSectionIndex;
+      _draftSectionIndex = widget.initialSectionIndex;
     }
 
     // Check if AI-generated sections are provided
@@ -1681,6 +1843,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
           _ensureSectionSelectionListeners();
 
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
+
+          try {
+            final ids = _sections.map((s) => s.id).toList();
+            print('🧭 Sections loaded: count=${_sections.length} ids=$ids');
+          } catch (_) {}
+
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
@@ -1707,6 +1878,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
+
+          _ensureSectionSelectionListeners();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
         }
       } else {
         // If backend returned no content, ensure we still have an editable section
@@ -1723,6 +1899,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           });
 
           _ensureSectionSelectionListeners();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
         }
       }
     } catch (e) {
@@ -1831,6 +2010,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 comment['author_username'] ??
                 comment['author_email'] ??
                 'User #${comment['created_by']}',
+            'commenter_username': comment['author_username'],
+            'commenter_role': comment['author_role'],
             'created_by': comment['created_by'],
             'comment_text': comment['comment_text'],
             'section_index': comment['section_index'],
@@ -1849,11 +2030,48 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
       });
 
+      try {
+        if (_comments.isNotEmpty) {
+          final c = _comments.first;
+          print(
+              '🧾 First comment anchors: id=${c['id']} block_id=${c['block_id']} section_index=${c['section_index']} start=${c['start_offset']} end=${c['end_offset']} text=${(c['highlighted_text'] ?? '').toString()}');
+        }
+      } catch (_) {}
+
       // If a thread overlay is open, force it to rebuild so new replies appear.
       _threadOverlay?.markNeedsBuild();
       print('✅ Loaded ${flatComments.length} comments (including replies)');
 
-      _applyInlineHighlights();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _applyInlineHighlights();
+      });
+
+      if (_pendingScrollToCommentId != null) {
+        final pendingId = _pendingScrollToCommentId!;
+        final target = _comments.firstWhere(
+          (c) => c['id']?.toString() == pendingId.toString(),
+          orElse: () => <String, dynamic>{},
+        );
+        if (target.isNotEmpty) {
+          final rootId = target['parent_id'] != null
+              ? int.tryParse(target['parent_id']?.toString() ?? '')
+              : int.tryParse(target['id']?.toString() ?? '');
+          if (rootId != null) {
+            _pendingScrollToCommentId = rootId;
+            _focusedHighlightCommentId = rootId;
+            _startHighlightPulse();
+          }
+          _showCommentsPanel = true;
+          _selectedSectionForComment ??=
+              int.tryParse(target['section_index']?.toString() ?? '');
+          _applyInlineHighlights();
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _pendingScrollToCommentId == null) return;
+          _scrollToCommentCard(_pendingScrollToCommentId!);
+          _pendingScrollToCommentId = null;
+        });
+      }
 
       if (mounted) {
         unawaited(() async {
@@ -2027,6 +2245,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   @override
   void dispose() {
     _autoSaveTimer?.cancel();
+    _highlightPulseTimer?.cancel();
     _selectionSnackDebounce?.cancel();
     _removeAddCommentOverlay();
     _removeThreadOverlay();
@@ -2562,18 +2781,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
 
     final query = prefix.substring(atIndex + 1);
-    if (query.contains(RegExp('[\\s@#\$%^&*()+\\-=/\\\\{}\\[\\]|;:\'",<>?]'))) {
+    if (query.contains(RegExp('[\\s@#\$%^&*()+=/\\\\{}\\[\\]|;:\'",<>?]'))) {
       _clearMentionState();
       return;
     }
 
     final suffix = text.substring(caretIndex);
-    if (suffix.isNotEmpty && !RegExp(r'^[A-Za-z0-9_.]*').hasMatch(suffix[0])) {
+    if (suffix.isNotEmpty && !RegExp(r'^[A-Za-z0-9_.-]*').hasMatch(suffix[0])) {
       _clearMentionState();
       return;
     }
 
-    if (!RegExp(r'^[A-Za-z0-9_.]*$').hasMatch(query)) {
+    if (!RegExp(r'^[A-Za-z0-9_.-]*$').hasMatch(query)) {
       _clearMentionState();
       return;
     }
@@ -2663,7 +2882,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     if (_mentionStartIndex == -1) return;
 
     String mentionKey =
-        (user['username']?.toString().trim() ?? '').replaceAll(' ', '');
+        (user['mention_key']?.toString().trim() ??
+                user['username']?.toString().trim() ??
+                '')
+            .replaceAll(' ', '');
     if (mentionKey.isEmpty) {
       final email = user['email']?.toString() ?? '';
       if (email.contains('@')) {
@@ -2671,7 +2893,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
     }
 
-    mentionKey = mentionKey.replaceAll(RegExp(r'[^A-Za-z0-9_.]'), '');
+    mentionKey = mentionKey.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '');
     if (mentionKey.isEmpty) {
       return;
     }
@@ -2734,7 +2956,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
 
     final spans = <TextSpan>[];
-    final mentionRegex = RegExp(r'@([A-Za-z0-9_.]+)');
+    final mentionRegex = RegExp(r'@([A-Za-z0-9_.-]+)');
     int lastIndex = 0;
 
     for (final match in mentionRegex.allMatches(text)) {
@@ -3430,8 +3652,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   DateTime _toSast(DateTime dt) {
-    // South Africa Standard Time is UTC+2 year-round.
-    return dt.toUtc().add(const Duration(hours: 2));
+    final utc = dt.isUtc
+        ? dt
+        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute,
+            dt.second, dt.millisecond, dt.microsecond);
+    return utc.add(const Duration(hours: 2));
   }
 
   String _formatTimestamp(dynamic timestamp) {
@@ -3439,7 +3664,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     if (parsed == null) return '';
     try {
       final DateTime dt = _toSast(parsed);
-      final now = _toSast(DateTime.now());
+      final now = _toSast(DateTime.now().toUtc());
 
       final timePart = DateFormat('HH:mm').format(dt);
       final isSameDate =
@@ -3470,6 +3695,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     } catch (e) {
       return '';
     }
+  }
+
+  String _commentPersonaTag(Map<String, dynamic> comment) {
+    final username = comment['commenter_username']?.toString().trim();
+    if (username == null || username.isEmpty) {
+      final fallback = comment['commenter_name']?.toString().trim();
+      return (fallback == null || fallback.isEmpty) ? 'user' : fallback;
+    }
+    final rawRole = comment['commenter_role']?.toString().trim() ?? '';
+    if (rawRole.isEmpty) return username;
+    final role = rawRole.toLowerCase().replaceAll(' ', '_');
+    return '$username-$role';
   }
 
   // Status helper methods
@@ -3988,6 +4225,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   void _onContentChanged() {
+    if (_isMutatingHighlights) return;
     if (_selectedSectionIndex >= 0 &&
         _selectedSectionIndex < _sections.length &&
         _sections[_selectedSectionIndex].contentFocus.hasFocus) {
@@ -4011,20 +4249,39 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     });
   }
 
+  List<Map<String, dynamic>> _stripHighlightBackgrounds(
+      List<Map<String, dynamic>> delta) {
+    return delta.map((op) {
+      if (op.containsKey('attributes')) {
+        final attrs = Map<String, dynamic>.from(op['attributes'] as Map);
+        attrs.remove('background');
+        if (attrs.isEmpty) {
+          final cleaned = Map<String, dynamic>.from(op);
+          cleaned.remove('attributes');
+          return cleaned;
+        }
+        return <String, dynamic>{...op, 'attributes': attrs};
+      }
+      return op;
+    }).toList();
+  }
+
   String _serializeDocumentContent() {
-    // Serialize sections into JSON format for backend storage
     final documentData = {
       'title': _titleController.text,
       'sections': _sections
-          .map((section) => {
+          .map((section) {
+                final cleanDelta =
+                    _stripHighlightBackgrounds(section.exportRichDelta());
+                return {
                 'id': section.id,
                 'title': section.titleController.text,
                 'content': section.controller.text,
-                'richContentDelta': section.exportRichDelta(),
+                'richContentDelta': cleanDelta,
                 'lineSpacing': section.lineSpacing,
                 'paragraphAlignment': section.paragraphAlignment,
                 'richParagraphs': paragraphsFromQuillDelta(
-                  section.exportRichDelta(),
+                  cleanDelta,
                   defaultFontFamily: _selectedFont,
                   defaultFontSize: double.tryParse(_selectedFontSize) ?? 12.0,
                   defaultAlignment: section.paragraphAlignment,
@@ -4041,7 +4298,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'positionedPricingTables': section.positionedPricingTables
                     .map((p) => p.toJson())
                     .toList(),
-              })
+              };})
           .toList(),
       'metadata': {
         'currency': _selectedCurrency,
@@ -10062,6 +10319,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               'User';
                           final email = user['email']?.toString();
                           final username = user['username']?.toString();
+                          final mentionKey = user['mention_key']?.toString();
+                          final role = user['role']?.toString();
                           return ListTile(
                             dense: true,
                             onTap: () => _insertMention(user),
@@ -10086,8 +10345,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             ),
                             subtitle: Text(
                               [
+                                if (mentionKey != null && mentionKey.isNotEmpty)
+                                  '@$mentionKey',
                                 if (username != null && username.isNotEmpty)
                                   '@$username',
+                                if (role != null && role.isNotEmpty) role,
                                 if (email != null && email.isNotEmpty) email,
                               ].join(' • '),
                               style: TextStyle(
@@ -10584,7 +10846,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     Row(
                       children: [
                         Text(
-                          comment['commenter_name'] ?? 'Unknown User',
+                          _commentPersonaTag(comment),
                           style: TextStyle(
                             fontSize: isReply ? 12 : 13,
                             fontWeight: FontWeight.w600,
