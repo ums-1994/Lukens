@@ -98,8 +98,20 @@ def get_pending_approvals(username=None, user_id=None, email=None):
             else:
                 owner_expr = "NULL::text"
 
-            if 'budget' in existing_columns:
-                budget_expr = 'budget'
+            amount_col = _pick_first(
+                existing_columns,
+                [
+                    'budget',
+                    'amount',
+                    'value',
+                    'proposal_value',
+                    'deal_value',
+                    'total_value',
+                    'pipeline_value',
+                ],
+            )
+            if amount_col:
+                budget_expr = amount_col
             else:
                 budget_expr = 'NULL::numeric'
 
