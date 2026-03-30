@@ -1881,7 +1881,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               ? proposal['title'].toString()
               : 'Untitled',
           value: budget > 0 ? budget : null,
-          valueLabel: budget > 0 ? _formatCurrency(budget) : 'â€”',
+          valueLabel: budget > 0 ? _formatCurrency(budget) : 'R0',
           status: statusLabel,
           daysOpen:
               updated != null ? DateTime.now().difference(updated).inDays : 0,
