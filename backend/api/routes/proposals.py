@@ -491,10 +491,7 @@ def get_proposals(username=None, user_id=None, email=None):
             requester_role = (requester_role or '').strip().lower()
             is_finance = requester_role.startswith('finance') or requester_role in ['finance']
             is_admin = requester_role in ['admin', 'ceo']
-<<<<<<< HEAD
-=======
             is_manager = _is_manager_role(requester_role)
->>>>>>> origin/PSB-215_manager_full_access
 
             if not user_id and not is_finance:
                 resolved_user_id = resolve_user_id(cursor, username or email)
@@ -517,14 +514,8 @@ def get_proposals(username=None, user_id=None, email=None):
             existing_columns = [row[0] for row in cursor.fetchall()]
             print(f"📋 Available columns in proposals table: {existing_columns}")
             
-<<<<<<< HEAD
-            # Finance users can see all proposals
-            # Admin/CEO should also see all proposals (team default)
-            if is_finance or is_admin:
-=======
             # Finance/Admin/Manager users can see all proposals (including drafts).
             if is_finance or is_admin or is_manager:
->>>>>>> origin/PSB-215_manager_full_access
                 select_cols = ['id', 'title', 'content', 'status']
                 if 'owner_id' in existing_columns:
                     select_cols.append('owner_id')
