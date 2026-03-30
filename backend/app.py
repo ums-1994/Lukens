@@ -2325,12 +2325,26 @@ def send_for_approval(username, proposal_id):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+
+            cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+            role_row = cursor.fetchone()
+            role_key = (role_row[0] if role_row else '')
+            role_key = (role_key or '').strip().lower()
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_admin = role_key in ['admin', 'ceo', 'approver']
             
             # Check if proposal exists and belongs to user
-            cursor.execute(
-                'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
-                (proposal_id, username)
-            )
+            if is_admin or is_finance or is_manager:
+                cursor.execute(
+                    'SELECT id, title, status FROM proposals WHERE id = %s',
+                    (proposal_id,)
+                )
+            else:
+                cursor.execute(
+                    'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
+                    (proposal_id, username)
+                )
             proposal = cursor.fetchone()
             
             if not proposal:
@@ -5478,10 +5492,15 @@ def resolve_suggestion(username, proposal_id, suggestion_id):
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
             # Get user details
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, email, full_name, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
+
+            role_key = (current_user.get('role') or '').strip().lower()
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_admin = role_key in ['admin', 'ceo', 'approver']
             
             # Verify user owns the proposal
             cursor.execute("""
@@ -5489,7 +5508,10 @@ def resolve_suggestion(username, proposal_id, suggestion_id):
             """, (proposal_id,))
             
             proposal = cursor.fetchone()
-            if not proposal or proposal['user_id'] != username:
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+
+            if not (is_admin or is_finance or is_manager) and proposal.get('user_id') != username:
                 return {'detail': 'Only proposal owner can resolve suggestions'}, 403
             
             # Update suggestion

@@ -23,7 +23,7 @@ class _ProposalsPageState extends State<ProposalsPage>
   bool _isLoading = true;
   String? _token;
   bool _isSidebarCollapsed = false;
-  String _currentNavLabel = 'My Proposals';
+  String _currentNavLabel = 'Proposals';
 
   void _navigateToPage(BuildContext context, String label) {
     switch (label) {
@@ -458,7 +458,7 @@ class _ProposalsPageState extends State<ProposalsPage>
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               Text(
-                'My Proposals',
+                'Proposals',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 22,

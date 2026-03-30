@@ -6,6 +6,7 @@ import os
 import traceback
 import secrets
 import jwt
+import psycopg2
 import psycopg2.extras
 from datetime import datetime, timedelta
 
@@ -15,6 +16,30 @@ from api.utils.email import send_email, get_logo_html
 from api.utils.helpers import create_notification
 
 bp = Blueprint('collaborator', __name__)
+
+
+def _get_proposal_owner_and_title(cursor, proposal_id):
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'proposals'
+        """
+    )
+    cols = {r.get('column_name') for r in cursor.fetchall() or []}
+    owner_col = 'user_id' if 'user_id' in cols else ('owner_id' if 'owner_id' in cols else None)
+    if not owner_col:
+        return None, f"Proposal {proposal_id}"
+
+    cursor.execute(
+        f"SELECT {owner_col} AS owner_id, title FROM proposals WHERE id = %s",
+        (proposal_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None, f"Proposal {proposal_id}"
+    return row.get('owner_id'), row.get('title') or f"Proposal {proposal_id}"
+
 
 @bp.get("/api/collaborate")
 def get_collaboration_access():
@@ -152,16 +177,14 @@ def add_guest_comment():
 
             # Notify proposal owner when a collaborator/guest comments
             try:
-                cursor.execute(
-                    "SELECT owner_id, title FROM proposals WHERE id = %s",
-                    (proposal_id,),
+                owner_id, proposal_title = _get_proposal_owner_and_title(
+                    cursor,
+                    proposal_id,
                 )
-                proposal = cursor.fetchone()
-                if proposal and proposal.get('owner_id') and proposal['owner_id'] != user_id:
-                    commenter_label = invited_email or 'A collaborator'
-                    proposal_title = proposal.get('title') or f"Proposal #{proposal_id}"
+                commenter_label = invited_email or 'A collaborator'
+                if owner_id:
                     create_notification(
-                        proposal['owner_id'],
+                        owner_id,
                         'proposal_comment_added',
                         'New comment on your proposal',
                         f"{commenter_label} commented on \"{proposal_title}\"",
@@ -235,10 +258,52 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
 
             user_id = user['id']
-            
-            cursor.execute('SELECT owner_id, title FROM proposals WHERE id = %s', (proposal_id,))
-            proposal_row = cursor.fetchone()
-            proposal_title = proposal_row['title'] if proposal_row else f"Proposal {proposal_id}"
+
+            proposal_owner_id, proposal_title = _get_proposal_owner_and_title(
+                cursor,
+                proposal_id,
+            )
+
+            # Best-effort: if offsets aren't provided but highlighted_text is, derive offsets from
+            # the current section text so highlights persist for all viewers.
+            try:
+                if (start_offset is None or end_offset is None) and highlighted_text and section_index is not None:
+                    cursor.execute('SELECT content FROM proposals WHERE id = %s', (proposal_id,))
+                    content_row = cursor.fetchone() or {}
+                    content_val = content_row.get('content')
+                    section_text = None
+                    if isinstance(content_val, dict):
+                        sections = content_val.get('sections')
+                        if isinstance(sections, list) and 0 <= int(section_index) < len(sections):
+                            sec = sections[int(section_index)]
+                            if isinstance(sec, dict):
+                                section_text = sec.get('content') or sec.get('text')
+                            elif isinstance(sec, str):
+                                section_text = sec
+                    elif isinstance(content_val, str):
+                        try:
+                            import json
+                            parsed = json.loads(content_val)
+                            sections = parsed.get('sections') if isinstance(parsed, dict) else None
+                            if isinstance(sections, list) and 0 <= int(section_index) < len(sections):
+                                sec = sections[int(section_index)]
+                                if isinstance(sec, dict):
+                                    section_text = sec.get('content') or sec.get('text')
+                                elif isinstance(sec, str):
+                                    section_text = sec
+                        except Exception:
+                            section_text = None
+
+                    if section_text and isinstance(section_text, str):
+                        idx = section_text.find(str(highlighted_text))
+                        if idx >= 0:
+                            start_offset = idx
+                            end_offset = idx + len(str(highlighted_text))
+            except Exception as e:
+                print(f"⚠️ Could not derive comment offsets: {e}")
+
+            if block_id is not None:
+                block_id = str(block_id)
             
             # Validate parent_id if provided (must exist and belong to same proposal)
             if parent_id:
@@ -312,7 +377,6 @@ def create_comment(username=None, user_id=None, proposal_id=None):
 
             # Notify proposal owner when someone else comments on their proposal
             try:
-                proposal_owner_id = proposal_row.get('owner_id') if proposal_row else None
                 if proposal_owner_id and proposal_owner_id != user_id:
                     commenter_name = user.get('full_name') or user.get('email') or username or 'Someone'
                     create_notification(
