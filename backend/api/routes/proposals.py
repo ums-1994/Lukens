@@ -449,6 +449,31 @@ def get_proposals(username=None, user_id=None, email=None):
             """)
             existing_columns = [row[0] for row in cursor.fetchall()]
             print(f"📋 Available columns in proposals table: {existing_columns}")
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+
+            amount_col = _pick_first(
+                existing_columns,
+                [
+                    'budget',
+                    'amount',
+                    'value',
+                    'proposal_value',
+                    'deal_value',
+                    'total_value',
+                    'pipeline_value',
+                ],
+            )
+            if amount_col:
+                budget_select = (
+                    "NULLIF(regexp_replace(" + amount_col + "::text, '[^0-9\\.-]', '', 'g'), '')::numeric AS budget"
+                )
+            else:
+                budget_select = "NULL::numeric AS budget"
             
             # Finance/Admin/Manager users can see all proposals (including drafts).
             if is_finance or is_admin or is_manager:
@@ -463,8 +488,7 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('client_name')
                 if 'client_email' in existing_columns:
                     select_cols.append('client_email')
-                if 'budget' in existing_columns:
-                    select_cols.append('budget')
+                select_cols.append(budget_select)
                 if 'timeline_days' in existing_columns:
                     select_cols.append('timeline_days')
                 if 'created_at' in existing_columns:
@@ -490,8 +514,7 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('client')
                 elif 'client_name' in existing_columns:
                     select_cols.append('client_name')
-                if 'budget' in existing_columns:
-                    select_cols.append('budget')
+                select_cols.append(budget_select)
                 if 'created_at' in existing_columns:
                     select_cols.append('created_at')
                 if 'updated_at' in existing_columns:
@@ -515,8 +538,7 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('client_name')
                 if 'client_email' in existing_columns:
                     select_cols.append('client_email')
-                if 'budget' in existing_columns:
-                    select_cols.append('budget')
+                select_cols.append(budget_select)
                 if 'timeline_days' in existing_columns:
                     select_cols.append('timeline_days')
                 if 'created_at' in existing_columns:

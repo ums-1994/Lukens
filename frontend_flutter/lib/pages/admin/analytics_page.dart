@@ -1815,10 +1815,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       }
     }
 
-    final monthlyPoints = List.generate(6, (index) {
-      final monthDate = DateTime(now.year, now.month - (5 - index), 1);
-      return _MonthlyPoint(monthDate);
-    });
+    final startMonth = now.month >= 2
+        ? DateTime(now.year, 2, 1)
+        : DateTime(now.year - 1, 2, 1);
+    final monthlyPoints = <_MonthlyPoint>[];
+    var cursorMonth = startMonth;
+    while (!cursorMonth.isAfter(DateTime(now.year, now.month, 1))) {
+      monthlyPoints.add(_MonthlyPoint(cursorMonth));
+      cursorMonth = DateTime(cursorMonth.year, cursorMonth.month + 1, 1);
+    }
 
     double totalRevenue = 0;
     int proposalsWithBudget = 0;
@@ -1856,16 +1861,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final created =
           _parseDate(proposal['created_at'] ?? proposal['createdAt']);
       if (created != null) {
-        final diffMonths =
-            (now.year - created.year) * 12 + (now.month - created.month);
-        if (diffMonths >= 0 && diffMonths < monthlyPoints.length) {
-          final idx = monthlyPoints.length - 1 - diffMonths;
-          monthlyPoints[idx].revenue += budget;
-          monthlyPoints[idx].proposals += 1;
+        final diffFromStart = (created.year - startMonth.year) * 12 +
+            (created.month - startMonth.month);
+        if (diffFromStart >= 0 && diffFromStart < monthlyPoints.length) {
+          monthlyPoints[diffFromStart].revenue += budget;
+          monthlyPoints[diffFromStart].proposals += 1;
           if (isWin) {
-            monthlyPoints[idx].wins += 1;
+            monthlyPoints[diffFromStart].wins += 1;
           } else if (isLoss) {
-            monthlyPoints[idx].losses += 1;
+            monthlyPoints[diffFromStart].losses += 1;
           }
         }
       }

@@ -111,7 +111,11 @@ def get_pending_approvals(username=None, user_id=None, email=None):
                 ],
             )
             if amount_col:
-                budget_expr = amount_col
+                # Force budget to be numeric even when the underlying column is text.
+                # Example inputs: "189750", "R189,750", "$ 189,750.00"
+                budget_expr = (
+                    "NULLIF(regexp_replace(" + amount_col + "::text, '[^0-9\\.-]', '', 'g'), '')::numeric"
+                )
             else:
                 budget_expr = 'NULL::numeric'
 
