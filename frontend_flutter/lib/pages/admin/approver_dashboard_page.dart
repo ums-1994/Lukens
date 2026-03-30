@@ -724,8 +724,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     );
   }
 
-<<<<<<< HEAD
-=======
   DateTime _toSast(DateTime dt) {
     final utc = dt.isUtc
         ? dt
@@ -734,30 +732,20 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     return utc.add(const Duration(hours: 2));
   }
 
->>>>>>> origin/PSB-215_manager_full_access
   String _formatNotificationTimestamp(dynamic raw) {
     if (raw == null) return '';
     final value = raw.toString().trim();
     if (value.isEmpty) return '';
     final dt = DateTime.tryParse(value);
     if (dt == null) return value;
-<<<<<<< HEAD
-    final local = dt.toLocal();
-    final diff = DateTime.now().difference(local);
-=======
     final sast = _toSast(dt);
     final now = _toSast(DateTime.now().toUtc());
     final diff = now.difference(sast);
->>>>>>> origin/PSB-215_manager_full_access
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inHours < 1) return '${diff.inMinutes}m ago';
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
-<<<<<<< HEAD
-    return DateFormat('MMM d, y • HH:mm').format(local);
-=======
     return DateFormat('MMM d, y • HH:mm').format(sast);
->>>>>>> origin/PSB-215_manager_full_access
   }
 
   Future<void> _showNotificationsDialog(AppState app) async {
@@ -804,7 +792,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                               ),
                             ),
                           ),
-                          if (unread > 0)
+                          if (unread > 0) ...[
                             TextButton(
                               onPressed: () async {
                                 await app.markAllNotificationsRead();
@@ -813,19 +801,17 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                               },
                               child: const Text('Mark all read'),
                             ),
-<<<<<<< HEAD
-=======
-                          TextButton(
-                            onPressed: notifications.isEmpty
-                                ? null
-                                : () async {
-                                    await app.deleteAllNotifications();
-                                    await app.fetchNotifications();
-                                    setDialogState(() {});
-                                  },
-                            child: const Text('Delete all'),
-                          ),
->>>>>>> origin/PSB-215_manager_full_access
+                            TextButton(
+                              onPressed: notifications.isEmpty
+                                  ? null
+                                  : () async {
+                                      await app.deleteAllNotifications();
+                                      await app.fetchNotifications();
+                                      setDialogState(() {});
+                                    },
+                              child: const Text('Delete all'),
+                            ),
+                          ],
                           IconButton(
                             onPressed: () => Navigator.of(dialogContext).pop(),
                             icon: const Icon(Icons.close, color: Colors.white70),
@@ -877,12 +863,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                       await app.fetchNotifications();
                                       setDialogState(() {});
                                     }
-<<<<<<< HEAD
-=======
                                     if (!mounted) return;
                                     Navigator.of(dialogContext).pop();
                                     _openNotificationTarget(item);
->>>>>>> origin/PSB-215_manager_full_access
                                   },
                                   child: Container(
                                     padding: const EdgeInsets.all(12),
@@ -946,8 +929,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                             ],
                                           ),
                                         ),
-<<<<<<< HEAD
-=======
                                         if (notificationId != null)
                                           IconButton(
                                             tooltip: 'Delete',
@@ -963,7 +944,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                               size: 18,
                                             ),
                                           ),
->>>>>>> origin/PSB-215_manager_full_access
                                       ],
                                     ),
                                   ),
@@ -981,8 +961,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     );
   }
 
-<<<<<<< HEAD
-=======
   Map<String, dynamic> _parseNotificationMetadata(dynamic raw) {
     if (raw is Map<String, dynamic>) return raw;
     if (raw is Map) return raw.cast<String, dynamic>();
@@ -1037,8 +1015,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       },
     );
   }
-
->>>>>>> origin/PSB-215_manager_full_access
   Widget _buildDashboardWelcome() {
     final user = AuthService.currentUser ?? {};
     final rawName = user['full_name'] ??
