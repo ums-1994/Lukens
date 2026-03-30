@@ -222,8 +222,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final textWidth = (pageContentWidth - 32).clamp(200.0, pageContentWidth);
     painter.layout(maxWidth: textWidth);
 
-    const bubbleRightOutsidePage = 8.0;
+    // Negative right pushes bubbles outside the page Stack (clipBehavior: Clip.none
+    // is already set on the Stack, so they render in the right gutter without
+    // overlapping the document text).
     const bubbleWidth = 150.0;
+    const bubbleRightOutsidePage = -(bubbleWidth + 8.0);
     const baseYInSection = 86.0;
 
     rootCommentsForSection.sort((a, b) {
