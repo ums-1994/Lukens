@@ -421,6 +421,16 @@ class MyApp extends StatelessWidget {
                   isCollaborator: args['isCollaborator'] ?? false,
                   forceCommentsPanelOpen:
                       args['forceCommentsPanelOpen'] ?? false,
+                  initialCommentId: args['initialCommentId'] is int
+                      ? args['initialCommentId'] as int
+                      : int.tryParse(
+                          args['initialCommentId']?.toString() ?? '',
+                        ),
+                  initialSectionIndex: args['initialSectionIndex'] is int
+                      ? args['initialSectionIndex'] as int
+                      : int.tryParse(
+                          args['initialSectionIndex']?.toString() ?? '',
+                        ),
                 );
               }
             }

@@ -262,7 +262,7 @@ def get_notifications(username=None, user_id=None, email=None):
                 FROM notifications
                 WHERE user_id::text = %s::text
                 ORDER BY created_at DESC
-                LIMIT 50
+                LIMIT 500
             """, (str(user_id),))
 
             notifications = cursor.fetchall()
@@ -292,6 +292,40 @@ def get_notifications(username=None, user_id=None, email=None):
         return {'detail': str(e)}, 500
 
 
+def _resolve_notification_user_id(cursor, username=None, user_id=None, email=None):
+    """Resolve current user id for notification actions."""
+    if user_id:
+        try:
+            cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+            row = cursor.fetchone()
+            if row:
+                if isinstance(row, dict):
+                    return row.get('id')
+                return row[0]
+        except Exception:
+            # token_required already validated this user; trust it as fallback
+            return user_id
+        return user_id
+
+    if email:
+        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+        row = cursor.fetchone()
+        if row:
+            if isinstance(row, dict):
+                return row.get('id')
+            return row[0]
+
+    if username:
+        cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+        row = cursor.fetchone()
+        if row:
+            if isinstance(row, dict):
+                return row.get('id')
+            return row[0]
+
+    return None
+
+
 @bp.post("/notifications/<int:notification_id>/mark-read")
 @token_required
 def mark_notification_read(username=None, user_id=None, email=None, notification_id=None):
@@ -299,37 +333,19 @@ def mark_notification_read(username=None, user_id=None, email=None, notification
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Use the same simple lookup pattern as the user profile endpoint (which works)
-            # Try email first (most reliable since it's unique and comes from Firebase)
-            found_user_id = None
-            if email:
-                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
-                user = cursor.fetchone()
-                if user:
-                    found_user_id = user[0]
-            
-            # If email lookup failed, try username (same as user profile endpoint)
-            if not found_user_id and username:
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user = cursor.fetchone()
-                if user:
-                    found_user_id = user[0]
-            
-            # Use the found user_id
-            user_id = found_user_id
-            
-            if not user_id:
+
+            resolved_user_id = _resolve_notification_user_id(
+                cursor, username=username, user_id=user_id, email=email
+            )
+            if not resolved_user_id:
                 return {'detail': 'User not found'}, 404
-            
-            user_id = user[0]
-            
+
             # Update notification
             cursor.execute("""
                 UPDATE notifications
                 SET is_read = TRUE, read_at = NOW()
                 WHERE id = %s AND user_id = %s
-            """, (notification_id, user_id))
+            """, (notification_id, resolved_user_id))
             
             conn.commit()
             
@@ -350,27 +366,11 @@ def mark_all_notifications_read(username=None, user_id=None, email=None):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Use the same simple lookup pattern as the user profile endpoint (which works)
-            # Try email first (most reliable since it's unique and comes from Firebase)
-            found_user_id = None
-            if email:
-                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
-                user = cursor.fetchone()
-                if user:
-                    found_user_id = user[0]
-            
-            # If email lookup failed, try username (same as user profile endpoint)
-            if not found_user_id and username:
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user = cursor.fetchone()
-                if user:
-                    found_user_id = user[0]
-            
-            # Use the found user_id
-            user_id = found_user_id
-            
-            if not user_id:
+
+            resolved_user_id = _resolve_notification_user_id(
+                cursor, username=username, user_id=user_id, email=email
+            )
+            if not resolved_user_id:
                 return {'detail': 'User not found'}, 404
             
             # Update all notifications
@@ -378,7 +378,7 @@ def mark_all_notifications_read(username=None, user_id=None, email=None):
                 UPDATE notifications
                 SET is_read = TRUE, read_at = NOW()
                 WHERE user_id = %s AND is_read = FALSE
-            """, (user_id,))
+            """, (resolved_user_id,))
             
             conn.commit()
             
@@ -386,6 +386,64 @@ def mark_all_notifications_read(username=None, user_id=None, email=None):
             
     except Exception as e:
         print(f"❌ Error marking all notifications as read: {e}")
+        return {'detail': str(e)}, 500
+
+
+@bp.delete("/notifications/<int:notification_id>")
+@token_required
+def delete_notification(username=None, user_id=None, email=None, notification_id=None):
+    """Delete one notification for the current user."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            resolved_user_id = _resolve_notification_user_id(
+                cursor, username=username, user_id=user_id, email=email
+            )
+            if not resolved_user_id:
+                return {'detail': 'User not found'}, 404
+
+            cursor.execute(
+                """
+                DELETE FROM notifications
+                WHERE id = %s AND user_id = %s
+                """,
+                (notification_id, resolved_user_id),
+            )
+            conn.commit()
+
+            if cursor.rowcount == 0:
+                return {'detail': 'Notification not found'}, 404
+            return {'message': 'Notification deleted'}, 200
+    except Exception as e:
+        print(f"❌ Error deleting notification: {e}")
+        return {'detail': str(e)}, 500
+
+
+@bp.delete("/notifications")
+@token_required
+def delete_all_notifications(username=None, user_id=None, email=None):
+    """Delete all notifications for the current user."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            resolved_user_id = _resolve_notification_user_id(
+                cursor, username=username, user_id=user_id, email=email
+            )
+            if not resolved_user_id:
+                return {'detail': 'User not found'}, 404
+
+            cursor.execute(
+                """
+                DELETE FROM notifications
+                WHERE user_id = %s
+                """,
+                (resolved_user_id,),
+            )
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return {'message': f'{deleted_count} notifications deleted'}, 200
+    except Exception as e:
+        print(f"❌ Error deleting all notifications: {e}")
         return {'detail': str(e)}, 500
 
 

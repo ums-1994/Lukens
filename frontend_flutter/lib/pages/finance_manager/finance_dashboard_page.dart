@@ -584,15 +584,24 @@ class _FinanceDashboardPageState extends State<FinanceDashboardPage> {
     }
   }
 
+  DateTime _toSast(DateTime dt) {
+    final utc = dt.isUtc
+        ? dt
+        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute,
+            dt.second, dt.millisecond, dt.microsecond);
+    return utc.add(const Duration(hours: 2));
+  }
+
   String _formatNotificationTimestamp(dynamic timestamp) {
     if (timestamp == null) return '';
     try {
       final dateTime = DateTime.parse(timestamp.toString());
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
+      final sast = _toSast(dateTime);
+      final now = _toSast(DateTime.now().toUtc());
+      final difference = now.difference(sast);
 
       if (difference.inDays > 0) {
-        return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
+        return '${sast.day}/${sast.month}/${sast.year}';
       } else if (difference.inHours > 0) {
         return '${difference.inHours}h ago';
       } else if (difference.inMinutes > 0) {
