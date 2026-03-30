@@ -1815,12 +1815,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       }
     }
 
-    final startMonth = now.month >= 2
-        ? DateTime(now.year, 2, 1)
-        : DateTime(now.year - 1, 2, 1);
+    final startMonth = DateTime(now.year, 1, 1);
     final monthlyPoints = <_MonthlyPoint>[];
     var cursorMonth = startMonth;
-    while (!cursorMonth.isAfter(DateTime(now.year, now.month, 1))) {
+    while (!cursorMonth.isAfter(DateTime(now.year, 12, 1))) {
       monthlyPoints.add(_MonthlyPoint(cursorMonth));
       cursorMonth = DateTime(cursorMonth.year, cursorMonth.month + 1, 1);
     }
@@ -2972,6 +2970,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               showTitles: true,
               reservedSize: 30,
               getTitlesWidget: (value, meta) {
+                if (value % 1 != 0) {
+                  return const SizedBox.shrink();
+                }
                 final index = value.toInt();
                 if (index >= 0 && index < points.length) {
                   return Padding(
