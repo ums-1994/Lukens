@@ -30,7 +30,11 @@ def _get_proposal_owner_and_title(cursor, proposal_id):
         return row.get('user_id'), row.get('title') or f"Proposal {proposal_id}"
     except Exception as e:
         try:
-            if isinstance(e, psycopg2.Error) and getattr(e, 'pgcode', None) == '42703':
+            missing_user_id_col = (
+                (isinstance(e, psycopg2.Error) and getattr(e, 'pgcode', None) == '42703')
+                or ('column "user_id" does not exist' in str(e).lower())
+            )
+            if missing_user_id_col:
                 cursor.execute(
                     "SELECT owner_id, title FROM proposals WHERE id = %s",
                     (proposal_id,),

@@ -334,7 +334,11 @@ def notify_proposal_collaborators(
                     (proposal_id,),
                 )
             except Exception as e:
-                if isinstance(e, psycopg2.Error) and getattr(e, 'pgcode', None) == '42703':
+                missing_user_id_col = (
+                    (isinstance(e, psycopg2.Error) and getattr(e, 'pgcode', None) == '42703')
+                    or ('column "user_id" does not exist' in str(e).lower())
+                )
+                if missing_user_id_col:
                     cursor.execute(
                         "SELECT owner_id, title FROM proposals WHERE id = %s",
                         (proposal_id,),
