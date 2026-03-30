@@ -19,33 +19,27 @@ bp = Blueprint('collaborator', __name__)
 
 
 def _get_proposal_owner_and_title(cursor, proposal_id):
-    try:
-        cursor.execute(
-            "SELECT user_id, title FROM proposals WHERE id = %s",
-            (proposal_id,),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return None, f"Proposal {proposal_id}"
-        return row.get('user_id'), row.get('title') or f"Proposal {proposal_id}"
-    except Exception as e:
-        try:
-            missing_user_id_col = (
-                (isinstance(e, psycopg2.Error) and getattr(e, 'pgcode', None) == '42703')
-                or ('column "user_id" does not exist' in str(e).lower())
-            )
-            if missing_user_id_col:
-                cursor.execute(
-                    "SELECT owner_id, title FROM proposals WHERE id = %s",
-                    (proposal_id,),
-                )
-                row = cursor.fetchone()
-                if not row:
-                    return None, f"Proposal {proposal_id}"
-                return row.get('owner_id'), row.get('title') or f"Proposal {proposal_id}"
-        except Exception:
-            pass
-        raise
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'proposals'
+        """
+    )
+    cols = {r.get('column_name') for r in cursor.fetchall() or []}
+    owner_col = 'user_id' if 'user_id' in cols else ('owner_id' if 'owner_id' in cols else None)
+    if not owner_col:
+        return None, f"Proposal {proposal_id}"
+
+    cursor.execute(
+        f"SELECT {owner_col} AS owner_id, title FROM proposals WHERE id = %s",
+        (proposal_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None, f"Proposal {proposal_id}"
+    return row.get('owner_id'), row.get('title') or f"Proposal {proposal_id}"
+
 
 @bp.get("/api/collaborate")
 def get_collaboration_access():

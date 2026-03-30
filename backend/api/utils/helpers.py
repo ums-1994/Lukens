@@ -328,23 +328,25 @@ def notify_proposal_collaborators(
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
             # Fetch proposal details
-            try:
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'proposals'
+                """
+            )
+            cols = {r.get('column_name') for r in cursor.fetchall() or []}
+            owner_col = 'user_id' if 'user_id' in cols else ('owner_id' if 'owner_id' in cols else None)
+            if owner_col:
                 cursor.execute(
-                    "SELECT user_id, title FROM proposals WHERE id = %s",
+                    f"SELECT {owner_col} AS owner_id, title FROM proposals WHERE id = %s",
                     (proposal_id,),
                 )
-            except Exception as e:
-                missing_user_id_col = (
-                    (isinstance(e, psycopg2.Error) and getattr(e, 'pgcode', None) == '42703')
-                    or ('column "user_id" does not exist' in str(e).lower())
+            else:
+                cursor.execute(
+                    "SELECT title FROM proposals WHERE id = %s",
+                    (proposal_id,),
                 )
-                if missing_user_id_col:
-                    cursor.execute(
-                        "SELECT owner_id, title FROM proposals WHERE id = %s",
-                        (proposal_id,),
-                    )
-                else:
-                    raise
             proposal = cursor.fetchone()
             if not proposal:
                 return
@@ -376,10 +378,7 @@ def notify_proposal_collaborators(
                 cursor.execute("SELECT id FROM users WHERE username = %s", (identifier,))
                 return cursor.fetchone()
 
-            owner_identifier = proposal.get('user_id')
-            if owner_identifier is None:
-                owner_identifier = proposal.get('owner_id')
-            owner = _resolve_user_row(owner_identifier)
+            owner = _resolve_user_row(proposal.get('owner_id'))
             if owner and owner['id'] != exclude_user_id:
                 create_notification(
                     owner['id'],
