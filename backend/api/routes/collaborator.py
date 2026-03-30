@@ -222,27 +222,15 @@ def add_guest_comment():
 
             # Notify proposal owner when a collaborator/guest comments
             try:
-<<<<<<< HEAD
-                cursor.execute(
-                    "SELECT owner_id, title FROM proposals WHERE id = %s",
-                    (proposal_id,),
-                )
-                proposal = cursor.fetchone()
-                if proposal and proposal.get('owner_id') and proposal['owner_id'] != user_id:
-                    commenter_label = invited_email or 'A collaborator'
-                    proposal_title = proposal.get('title') or f"Proposal #{proposal_id}"
-                    create_notification(
-                        proposal['owner_id'],
-=======
+                # Combine both approaches: get owner and title, then notify if not the actor
                 owner_id, proposal_title = _get_proposal_owner_and_title(
                     cursor,
                     proposal_id,
                 )
                 commenter_label = invited_email or 'A collaborator'
-                if owner_id:
+                if owner_id and owner_id != user_id:
                     create_notification(
                         owner_id,
->>>>>>> origin/PSB-215_manager_full_access
                         'proposal_comment_added',
                         'New comment on your proposal',
                         f"{commenter_label} commented on \"{proposal_title}\"",
@@ -316,13 +304,6 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
 
             user_id = user['id']
-<<<<<<< HEAD
-            
-            cursor.execute('SELECT owner_id, title FROM proposals WHERE id = %s', (proposal_id,))
-            proposal_row = cursor.fetchone()
-            proposal_title = proposal_row['title'] if proposal_row else f"Proposal {proposal_id}"
-=======
-
             proposal_owner_id, proposal_title = _get_proposal_owner_and_title(
                 cursor,
                 proposal_id,
@@ -368,71 +349,12 @@ def create_comment(username=None, user_id=None, proposal_id=None):
 
             if block_id is not None:
                 block_id = str(block_id)
->>>>>>> origin/PSB-215_manager_full_access
-            
-            # Validate parent_id if provided (must exist and belong to same proposal)
-            if parent_id:
-                cursor.execute("""
-                    SELECT id, proposal_id FROM document_comments 
-                    WHERE id = %s AND proposal_id = %s
-                """, (parent_id, proposal_id))
-                parent_comment = cursor.fetchone()
-                if not parent_comment:
-                    return {'detail': 'Parent comment not found'}, 404
-            
-            # Create comment - handle sequence issues and missing columns (old DB schema)
-            err_msg = None
-            try:
-                cursor.execute("""
-                    INSERT INTO document_comments 
-                    (proposal_id, comment_text, created_by, section_index, section_name, 
-                     highlighted_text, start_offset, end_offset, parent_id, block_type, block_id, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id, proposal_id, comment_text, created_by, created_at, 
-                              section_index, section_name, highlighted_text, start_offset, end_offset,
-                              parent_id, block_type, block_id, status, updated_at
-                """, (proposal_id, comment_text, user_id, section_index, section_name, 
-                      highlighted_text, start_offset, end_offset, parent_id, block_type, block_id, 'open'))
-            except Exception as seq_error:
-                err_msg = str(seq_error)
-                # If sequence issue, reset it and try again
-                if 'duplicate key' in err_msg.lower() or 'pkey' in err_msg.lower():
-                    print(f"⚠️ Sequence issue detected, resetting sequence for document_comments")
-                    cursor.execute("""
-                        SELECT setval(pg_get_serial_sequence('document_comments', 'id'), 
-                                     COALESCE((SELECT MAX(id) FROM document_comments), 1), true)
-                    """)
-                    conn.commit()
-                    cursor.execute("""
-                        INSERT INTO document_comments 
-                        (proposal_id, comment_text, created_by, section_index, section_name, 
-                         highlighted_text, start_offset, end_offset, parent_id, block_type, block_id, status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        RETURNING id, proposal_id, comment_text, created_by, created_at, 
-                                  section_index, section_name, highlighted_text, start_offset, end_offset,
-                                  parent_id, block_type, block_id, status, updated_at
-                    """, (proposal_id, comment_text, user_id, section_index, section_name, 
-                          highlighted_text, start_offset, end_offset, parent_id, block_type, block_id, 'open'))
-                else:
-                    raise
-            
-            result = cursor.fetchone()
-            comment_id = result['id']
-            conn.commit()
-            
-            # Process @mentions in comment text
-            try:
-                from app import process_mentions
-                process_mentions(comment_id, comment_text, user_id, proposal_id)
-            except Exception as e:
-                print(f"⚠️ Error processing mentions: {e}")
-            
             # Log activity
             try:
                 from app import log_activity
                 log_activity(
-                    proposal_id, 
-                    user_id, 
+                    proposal_id,
+                    user_id,
                     'comment_added',
                     f'Added a comment{(" on " + section_name) if section_name else ""}',
                     {'comment_id': comment_id, 'parent_id': parent_id}
@@ -440,18 +362,6 @@ def create_comment(username=None, user_id=None, proposal_id=None):
             except Exception as e:
                 print(f"⚠️ Error logging activity: {e}")
 
-<<<<<<< HEAD
-            # Notify proposal owner when someone else comments on their proposal
-            try:
-                proposal_owner_id = proposal_row.get('owner_id') if proposal_row else None
-                if proposal_owner_id and proposal_owner_id != user_id:
-                    commenter_name = user.get('full_name') or user.get('email') or username or 'Someone'
-                    create_notification(
-                        proposal_owner_id,
-                        'proposal_comment_added',
-                        'New comment on your proposal',
-                        f"{commenter_name} commented on \"{proposal_title}\"",
-=======
             # Notify all proposal participants (owner/collaborators/comment participants)
             try:
                 commenter_name = user.get('full_name') or user.get('email') or username or 'Someone'
@@ -475,7 +385,6 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                         notification_type,
                         notification_title,
                         notification_message,
->>>>>>> origin/PSB-215_manager_full_access
                         proposal_id=proposal_id,
                         metadata={
                             'comment_id': comment_id,
@@ -485,11 +394,7 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                         },
                     )
             except Exception as notify_error:
-<<<<<<< HEAD
-                print(f"⚠️ Error notifying proposal owner on comment: {notify_error}")
-=======
                 print(f"⚠️ Error notifying participants on comment: {notify_error}")
->>>>>>> origin/PSB-215_manager_full_access
             
             return dict(result), 201
             
