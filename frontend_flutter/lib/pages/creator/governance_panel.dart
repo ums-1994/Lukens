@@ -29,6 +29,136 @@ class _GovernancePanelState extends State<GovernancePanel>
   List<Map<String, dynamic>> _issues = [];
   bool _isAnalyzing = false;
 
+  int _countIssuesByPriority(Set<String> priorities) {
+    return _issues.where((i) {
+      final p = (i['priority']?.toString() ?? '').toLowerCase().trim();
+      return priorities.contains(p);
+    }).length;
+  }
+
+  void _openIssuesReviewSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final issues = List<Map<String, dynamic>>.from(_issues);
+
+        return DraggableScrollableSheet(
+          initialChildSize: 0.65,
+          minChildSize: 0.35,
+          maxChildSize: 0.9,
+          builder: (context, controller) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    child: Row(
+                      children: [
+                        const Text(
+                          'Flagged issues',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '${issues.length}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: issues.isEmpty
+                        ? Center(
+                            child: Text(
+                              _isAnalyzing
+                                  ? 'Analyzing...'
+                                  : 'No flagged issues found',
+                              style: TextStyle(color: Colors.grey[600]),
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: controller,
+                            itemCount: issues.length,
+                            itemBuilder: (context, index) {
+                              final issue = issues[index];
+                              final title =
+                                  issue['title']?.toString() ?? 'Issue';
+                              final description =
+                                  issue['description']?.toString() ?? '';
+                              final priority =
+                                  (issue['priority']?.toString() ?? 'info')
+                                      .toLowerCase()
+                                      .trim();
+
+                              return ListTile(
+                                title: Text(
+                                  title,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1A1A1A),
+                                  ),
+                                ),
+                                subtitle: description.isEmpty
+                                    ? null
+                                    : Text(
+                                        description,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[700],
+                                        ),
+                                      ),
+                                trailing: Text(
+                                  priority.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: priority == 'critical' ||
+                                            priority == 'high'
+                                        ? const Color(0xFFDC2626)
+                                        : priority == 'warning' ||
+                                                priority == 'medium'
+                                            ? const Color(0xFFF59E0B)
+                                            : const Color(0xFF00BCD4),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -349,6 +479,80 @@ class _GovernancePanelState extends State<GovernancePanel>
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
+                  if (_issues.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey[300]!, width: 1),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _getStatusColor().withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.flag_outlined,
+                                    size: 14, color: _getStatusColor()),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _isAnalyzing
+                                      ? 'Analyzing'
+                                      : '$_status · $_riskScore',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: _getStatusColor(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _isAnalyzing
+                                ? Text(
+                                    'Analyzing flagged issues...',
+                                    style: TextStyle(
+                                        color: Colors.grey[700], fontSize: 12),
+                                  )
+                                : Text(
+                                    'Flagged: ${_countIssuesByPriority({
+                                          'critical',
+                                          'high'
+                                        })} critical, '
+                                    '${_countIssuesByPriority({
+                                          'warning',
+                                          'medium'
+                                        })} warning, '
+                                    '${_countIssuesByPriority({
+                                          'info',
+                                          'low'
+                                        })} info',
+                                    style: const TextStyle(
+                                      color: Color(0xFF1A1A1A),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                          ),
+                          const SizedBox(width: 12),
+                          OutlinedButton(
+                            onPressed:
+                                _isAnalyzing ? null : _openIssuesReviewSheet,
+                            child: const Text('Review'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (_issues.isNotEmpty) const SizedBox(height: 16),
                   // Status Indicator
                   Container(
                     padding: const EdgeInsets.all(16),

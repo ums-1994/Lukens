@@ -407,6 +407,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
       final Map<String, List<HighlightRange>> rangesByBlock = {};
 
+      // Always clear existing highlights first so we don't rely on stale controller state.
+      for (final s in _sections) {
+        try {
+          s.controller.setHighlights(const []);
+        } catch (_) {}
+
+        try {
+          s.clearCommentHighlights();
+        } catch (_) {}
+      }
       int skippedNoBlock = 0;
       int skippedNoOffset = 0;
       int matched = 0;
@@ -415,20 +425,69 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         final status = (c['status'] ?? 'open').toString().toLowerCase();
         if (status != 'open' && status != 'resolved') continue;
 
-        final blockId = c['block_id']?.toString();
-        if (blockId == null || blockId.isEmpty) {
+        // Root comments + replies both can have offsets; apply to all.
+        String? blockId = c['block_id']?.toString();
+        final sectionIndex =
+            int.tryParse(c['section_index']?.toString() ?? '');
+
+        // Determine the best target section for this highlight.
+        int? targetSectionIndex;
+        if (blockId != null && blockId.isNotEmpty) {
+          final idx = _sections.indexWhere((s) => s.id == blockId);
+          if (idx >= 0) {
+            targetSectionIndex = idx;
+          }
+        }
+        if (targetSectionIndex == null && sectionIndex != null) {
+          if (sectionIndex >= 0 && sectionIndex < _sections.length) {
+            targetSectionIndex = sectionIndex;
+            blockId = _sections[sectionIndex].id;
+          }
+        }
+        if (targetSectionIndex == null || blockId == null || blockId.isEmpty) {
           skippedNoBlock++;
+          print(
+              '🟡 highlight skip: cannot map comment ${c['id']} to section. block_id=${c['block_id']} section_index=${c['section_index']}');
           continue;
         }
 
         final startRaw = c['start_offset'];
         final endRaw = c['end_offset'];
-        final start = int.tryParse(startRaw?.toString() ?? '');
-        final end = int.tryParse(endRaw?.toString() ?? '');
+        int? start = int.tryParse(startRaw?.toString() ?? '');
+        int? end = int.tryParse(endRaw?.toString() ?? '');
+        final sectionText = _sections[targetSectionIndex].controller.text;
+
+        // If offsets are missing, derive them from highlighted_text so other
+        // personas can still see the highlight.
+        if (start == null || end == null) {
+          final selectedText = (c['highlighted_text'] ?? '').toString();
+          if (selectedText.isEmpty) {
+            skippedNoOffset++;
+            continue;
+          }
+          final idx = sectionText.indexOf(selectedText);
+          if (idx < 0) {
+            skippedNoOffset++;
+            continue;
+          }
+          start = idx;
+          end = idx + selectedText.length;
+        }
+
         if (start == null || end == null) {
           skippedNoOffset++;
           continue;
         }
+
+        if (end < start) {
+          final tmp = start;
+          start = end;
+          end = tmp;
+        }
+
+        final maxLen = sectionText.length;
+        start = start.clamp(0, maxLen);
+        end = end.clamp(0, maxLen);
         if (end <= start) {
           skippedNoOffset++;
           continue;
@@ -1781,6 +1840,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
           _ensureSectionSelectionListeners();
 
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
+
+          try {
+            final ids = _sections.map((s) => s.id).toList();
+            print('🧭 Sections loaded: count=${_sections.length} ids=$ids');
+          } catch (_) {}
+
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
@@ -1807,6 +1875,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
+
+          _ensureSectionSelectionListeners();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
         }
       } else {
         // If backend returned no content, ensure we still have an editable section
@@ -1823,6 +1896,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           });
 
           _ensureSectionSelectionListeners();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
         }
       }
     } catch (e) {
@@ -1951,11 +2027,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
       });
 
+      try {
+        if (_comments.isNotEmpty) {
+          final c = _comments.first;
+          print(
+              '🧾 First comment anchors: id=${c['id']} block_id=${c['block_id']} section_index=${c['section_index']} start=${c['start_offset']} end=${c['end_offset']} text=${(c['highlighted_text'] ?? '').toString()}');
+        }
+      } catch (_) {}
+
       // If a thread overlay is open, force it to rebuild so new replies appear.
       _threadOverlay?.markNeedsBuild();
       print('✅ Loaded ${flatComments.length} comments (including replies)');
 
-      _applyInlineHighlights();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _applyInlineHighlights();
+      });
 
       if (_pendingScrollToCommentId != null) {
         final pendingId = _pendingScrollToCommentId!;

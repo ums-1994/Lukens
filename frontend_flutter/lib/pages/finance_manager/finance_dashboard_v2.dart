@@ -43,7 +43,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   int _selectedYear = DateTime.now().year;
   Future<Map<String, dynamic>>? _financeSummaryFuture;
   Future<List<Map<String, dynamic>>>? _monthlyForecastFuture;
-  Future<List<Map<String, dynamic>>>? _funnelFuture;
   Future<List<Map<String, dynamic>>>? _growthFuture;
   Future<List<Map<String, dynamic>>>? _topClientsFuture;
   Future<List<Map<String, dynamic>>>? _recentSignedFuture;
@@ -87,7 +86,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     // Ensure forecast is loaded once we have an auth token in context.
     _monthlyForecastFuture ??= _fetchMonthlyForecast(year: _selectedYear);
     _financeSummaryFuture ??= _fetchFinanceSummary(year: _selectedYear);
-    _funnelFuture ??= _fetchFunnel(year: _selectedYear);
     _growthFuture ??= _fetchGrowth(year: _selectedYear);
     _topClientsFuture ??= _fetchTopClients(year: _selectedYear);
     _recentSignedFuture ??= _fetchRecentSigned(year: _selectedYear);
@@ -337,7 +335,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
               _monthlyForecastFuture =
                   _fetchMonthlyForecast(year: _selectedYear);
               _financeSummaryFuture = _fetchFinanceSummary(year: _selectedYear);
-              _funnelFuture = _fetchFunnel(year: _selectedYear);
               _growthFuture = _fetchGrowth(year: _selectedYear);
               _topClientsFuture = _fetchTopClients(year: _selectedYear);
               _recentSignedFuture = _fetchRecentSigned(year: _selectedYear);
@@ -524,152 +521,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
           SizedBox(height: 240, child: child),
         ],
       ),
-    );
-  }
-
-  Widget _buildFunnelChart() {
-    final future = _funnelFuture ?? _fetchFunnel(year: _selectedYear);
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: CircularProgressIndicator(
-              valueColor:
-                  AlwaysStoppedAnimation<Color>(Colors.white.withOpacity(0.7)),
-            ),
-          );
-        }
-        final items = snapshot.data ?? [];
-        final stages = <String>[];
-        final values = <double>[];
-        for (final r in items) {
-          final s = (r['stage'] ?? '').toString();
-          if (s.isEmpty) continue;
-          stages.add(s);
-          values.add((r['value'] is num)
-              ? (r['value'] as num).toDouble()
-              : double.tryParse(r['value']?.toString() ?? '') ?? 0.0);
-        }
-        if (stages.isEmpty) {
-          return Center(
-            child: Text(
-              'No data',
-              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
-            ),
-          );
-        }
-
-        final maxY = (values.fold<double>(0, (a, b) => a > b ? a : b))
-            .clamp(1, double.infinity);
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.03),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white.withOpacity(0.06)),
-          ),
-          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-          child: BarChart(
-            BarChartData(
-              maxY: maxY * 1.1,
-              minY: 0,
-              alignment: BarChartAlignment.spaceAround,
-              groupsSpace: 18,
-              barTouchData: BarTouchData(
-                enabled: true,
-                touchTooltipData: BarTouchTooltipData(
-                  tooltipPadding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  tooltipMargin: 12,
-                  getTooltipColor: (group) => Colors.white.withOpacity(0.92),
-                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                    final label = groupIndex >= 0 && groupIndex < stages.length
-                        ? stages[groupIndex]
-                        : '';
-                    return BarTooltipItem(
-                      '$label\nvalue : ${_formatCurrency(rod.toY)}',
-                      PremiumTheme.bodyMedium.copyWith(
-                        color: Colors.black87,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    );
-                  },
-                ),
-              ),
-              gridData: FlGridData(
-                show: true,
-                drawVerticalLine: false,
-                getDrawingHorizontalLine: (value) => FlLine(
-                  color: Colors.white.withOpacity(0.08),
-                  strokeWidth: 1,
-                ),
-              ),
-              borderData: FlBorderData(show: false),
-              titlesData: FlTitlesData(
-                topTitles:
-                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles:
-                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 42,
-                    getTitlesWidget: (value, meta) {
-                      if (value == 0) {
-                        return Text(
-                          'R0',
-                          style: PremiumTheme.labelMedium
-                              .copyWith(color: Colors.white60, fontSize: 10),
-                        );
-                      }
-                      if (value == meta.max) {
-                        return Text(
-                          _formatCurrency(value),
-                          style: PremiumTheme.labelMedium
-                              .copyWith(color: Colors.white60, fontSize: 10),
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    },
-                  ),
-                ),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 34,
-                    getTitlesWidget: (value, meta) {
-                      final i = value.toInt();
-                      if (i < 0 || i >= stages.length)
-                        return const SizedBox.shrink();
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          stages[i],
-                          style: PremiumTheme.labelMedium
-                              .copyWith(color: Colors.white60, fontSize: 10),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              barGroups: List.generate(stages.length, (i) {
-                return BarChartGroupData(
-                  x: i,
-                  barRods: [
-                    BarChartRodData(
-                      toY: values[i],
-                      color: PremiumTheme.teal,
-                      width: 18,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ],
-                );
-              }),
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -881,9 +732,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
       builder: (context, constraints) {
         final isNarrow = constraints.maxWidth < 1100;
         final left = _buildPanel(
-          title: 'Pipeline Funnel Chart',
-          subtitle: 'Proposal value by stage',
-          child: _buildFunnelChart(),
+          title: 'Proposal Pipeline',
+          subtitle: 'Current proposals by status',
+          child: _buildPipelineChart(),
         );
         final mid = _buildPanel(
           title: 'Revenue Forecast Chart',
@@ -1357,85 +1208,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                       color: Colors.orange,
                       fontWeight: FontWeight.w800,
                     ),
-                  ),
-                ],
-              ),
-              if (i != shown.length - 1)
-                Divider(color: Colors.white.withOpacity(0.06), height: 14),
-            ],
-          ],
-        );
-      },
-    );
-  }
-
-  Color _alertColor(String severity) {
-    final s = severity.toLowerCase();
-    if (s == 'warning') return Colors.orange;
-    if (s == 'critical') return Colors.redAccent;
-    return PremiumTheme.info;
-  }
-
-  Widget _buildAlertsPanel() {
-    final future = _alertsFuture ?? _fetchAlerts(year: _selectedYear);
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: future,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return SizedBox(
-            height: 220,
-            child: Center(
-              child: CircularProgressIndicator(
-                valueColor: AlwaysStoppedAnimation<Color>(
-                    Colors.white.withOpacity(0.7)),
-              ),
-            ),
-          );
-        }
-        final items = snapshot.data ?? [];
-        if (items.isEmpty) {
-          return SizedBox(
-            height: 80,
-            child: Center(
-              child: Text('No alerts',
-                  style:
-                      PremiumTheme.bodyMedium.copyWith(color: Colors.white60)),
-            ),
-          );
-        }
-
-        final shown = items.take(10).toList();
-        return Column(
-          children: [
-            for (int i = 0; i < shown.length; i++) ...[
-              Row(
-                children: [
-                  Container(
-                    height: 10,
-                    width: 10,
-                    decoration: BoxDecoration(
-                      color: _alertColor(
-                          (shown[i]['severity'] ?? 'info').toString()),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      (shown[i]['type'] ?? '').toString().replaceAll('_', ' '),
-                      style:
-                          PremiumTheme.bodyMedium.copyWith(color: Colors.white),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    (shown[i]['client'] ?? '').toString(),
-                    style: PremiumTheme.labelMedium
-                        .copyWith(color: Colors.white60),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -2670,12 +2442,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                                         },
                                       ),
                                       const SizedBox(height: 12),
-                                      _buildSimpleListPanel(
-                                        title: 'Financial Alerts',
-                                        subtitle: 'Deals requiring attention',
-                                        child: _buildAlertsPanel(),
-                                      ),
-                                      const SizedBox(height: 12),
                                       _buildRequiresAttention(
                                           requiresAttention),
                                       const SizedBox(height: 24),
@@ -2743,63 +2509,6 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
           style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
         ),
       ],
-    );
-  }
-
-  Widget _buildDashboardPanels() {
-    Widget panel(String title, String subtitle) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          color: PremiumTheme.darkBg2.withOpacity(0.9),
-          border: Border.all(color: Colors.white.withOpacity(0.06)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: PremiumTheme.titleMedium),
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              height: 220,
-              child: title == 'Proposal Pipeline'
-                  ? _buildPipelineChart()
-                  : _buildRevenueForecastChart(),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < 900;
-        final left = panel('Proposal Pipeline', 'Current proposals by status');
-        final right = panel('Revenue Forecast', 'Projected vs actual revenue');
-
-        if (isNarrow) {
-          return Column(
-            children: [
-              left,
-              const SizedBox(height: 12),
-              right,
-            ],
-          );
-        }
-
-        return Row(
-          children: [
-            Expanded(child: left),
-            const SizedBox(width: 12),
-            Expanded(child: right),
-          ],
-        );
-      },
     );
   }
 
@@ -2915,9 +2624,9 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
               sideTitles: SideTitles(
                 showTitles: true,
                 reservedSize: 28,
-                interval: 1,
+                interval: 10,
                 getTitlesWidget: (value, meta) {
-                  if (value % 1 != 0) return const SizedBox.shrink();
+                  if (value % 10 != 0) return const SizedBox.shrink();
                   return Text(
                     value.toInt().toString(),
                     style: PremiumTheme.labelMedium.copyWith(
