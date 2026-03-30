@@ -1327,6 +1327,11 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                       _currentPage == 'Analytics', context),
                   _buildNavItem('History', 'assets/images/analytics.png',
                       _currentPage == 'History', context),
+                  _buildNavItem(
+                      'Content Library',
+                      'assets/images/content_library.png',
+                      _currentPage == 'Content Library',
+                      context),
                   const SizedBox(height: 20),
                 ],
               ),
@@ -1936,6 +1941,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           '/admin_approvals',
           arguments: const {'initialFilter': 'approved'},
         );
+        break;
+      case 'Content Library':
+        Navigator.pushNamed(context, '/content_library');
         break;
       case 'Sign Out':
         AuthService.logout();

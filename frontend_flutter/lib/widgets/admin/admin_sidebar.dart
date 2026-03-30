@@ -40,6 +40,10 @@ class AdminSidebar extends StatelessWidget {
       label: 'History',
       assetPath: 'assets/images/analytics.png',
     ),
+    _AdminNavItem(
+      label: 'Content Library',
+      assetPath: 'assets/images/content_library.png',
+    ),
   ];
 
   @override

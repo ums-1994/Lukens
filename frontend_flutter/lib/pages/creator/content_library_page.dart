@@ -491,6 +491,14 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     final usesLabel =
         item["usage_count"] != null ? "${item["usage_count"]} uses" : "0 uses";
 
+    // Roles permitted to edit/delete content library items.
+    final _userRole = (app.currentUser?['role'] ?? '').toString().toLowerCase().trim();
+    final canEdit = _userRole == 'admin' ||
+        _userRole == 'ceo' ||
+        _userRole == 'manager' ||
+        _userRole == 'creator' ||
+        _userRole == 'user';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
@@ -542,18 +550,20 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     const Icon(Icons.history, size: 18, color: Colors.white70),
                 onPressed: () => _showVersionHistory(context, item),
               ),
-              IconButton(
-                tooltip: "Edit block",
-                icon: const Icon(Icons.edit_outlined,
-                    size: 18, color: Colors.white70),
-                onPressed: () => _showEditDialog(context, app, item),
-              ),
-              IconButton(
-                tooltip: "Delete block",
-                icon: const Icon(Icons.delete_outline,
-                    size: 18, color: Colors.redAccent),
-                onPressed: () => _deleteItem(context, app, item["id"]),
-              ),
+              if (canEdit) ...[
+                IconButton(
+                  tooltip: "Edit block",
+                  icon: const Icon(Icons.edit_outlined,
+                      size: 18, color: Colors.white70),
+                  onPressed: () => _showEditDialog(context, app, item),
+                ),
+                IconButton(
+                  tooltip: "Delete block",
+                  icon: const Icon(Icons.delete_outline,
+                      size: 18, color: Colors.redAccent),
+                  onPressed: () => _deleteItem(context, app, item["id"]),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
@@ -663,6 +673,13 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     required AppState app,
     required Map<String, dynamic> item,
   }) {
+    final _tRole = (app.currentUser?['role'] ?? '').toString().toLowerCase().trim();
+    final canEdit = _tRole == 'admin' ||
+        _tRole == 'ceo' ||
+        _tRole == 'manager' ||
+        _tRole == 'creator' ||
+        _tRole == 'user';
+
     final label = item["label"] ?? item["key"] ?? "Untitled Template";
     final content = (item["content"] ?? "").toString();
     final updatedAt = item["updated_at"];
@@ -806,18 +823,20 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                         ],
                       ),
                     ),
-                    IconButton(
-                      tooltip: "Edit template",
-                      icon: const Icon(Icons.edit_outlined,
-                          size: 18, color: Colors.white70),
-                      onPressed: () => _showEditDialog(context, app, item),
-                    ),
-                    IconButton(
-                      tooltip: "Delete template",
-                      icon: const Icon(Icons.delete_outline,
-                          size: 18, color: Colors.redAccent),
-                      onPressed: () => _deleteItem(context, app, item["id"]),
-                    ),
+                    if (canEdit) ...[
+                      IconButton(
+                        tooltip: "Edit template",
+                        icon: const Icon(Icons.edit_outlined,
+                            size: 18, color: Colors.white70),
+                        onPressed: () => _showEditDialog(context, app, item),
+                      ),
+                      IconButton(
+                        tooltip: "Delete template",
+                        icon: const Icon(Icons.delete_outline,
+                            size: 18, color: Colors.redAccent),
+                        onPressed: () => _deleteItem(context, app, item["id"]),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -1983,8 +2002,17 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                           String? imageUrl =
                                               isImage ? item["content"] : null;
 
+                                          final _gRole = (app.currentUser?['role'] ?? '')
+                                              .toString().toLowerCase().trim();
+                                          final canEditGrid = _gRole == 'admin' ||
+                                              _gRole == 'ceo' ||
+                                              _gRole == 'manager' ||
+                                              _gRole == 'creator' ||
+                                              _gRole == 'user';
+
                                           return GestureDetector(
-                                            onLongPress: () {
+                                            onLongPress: canEditGrid
+                                                ? () {
                                               showDialog(
                                                 context: context,
                                                 builder: (ctx) => AlertDialog(
@@ -2010,7 +2038,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                   ],
                                                 ),
                                               );
-                                            },
+                                            }
+                                                : null,
                                             child: Container(
                                               decoration: BoxDecoration(
                                                 color: Colors.white
@@ -2132,7 +2161,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                                   ),
                                                                 ),
                                                         ),
-                                                        if (isImage)
+                                                        if (isImage && canEditGrid)
                                                           Positioned(
                                                             top: 8,
                                                             right: 8,
