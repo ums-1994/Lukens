@@ -1566,12 +1566,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final dynamic rawContent = proposal['content'];
       if (rawContent != null &&
           (!(rawContent is String) ||
-              (rawContent as String).trim().isNotEmpty)) {
+              rawContent.trim().isNotEmpty)) {
         try {
-          contentData = rawContent is String
-              ? Map<String, dynamic>.from(json.decode(rawContent) as Map)
-              : Map<String, dynamic>.from(
-                  rawContent is Map ? rawContent as Map : <String, dynamic>{});
+          dynamic decodedContent = rawContent;
+          if (rawContent is String) {
+            decodedContent = json.decode(rawContent);
+          }
+
+          if (decodedContent is Map) {
+            contentData = Map<String, dynamic>.from(decodedContent);
+          } else if (decodedContent is List) {
+            // Some older records store proposal content directly as a sections list.
+            contentData = <String, dynamic>{
+              'title': proposal['title'] ?? 'Untitled Document',
+              'sections': decodedContent,
+            };
+          }
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
         }
@@ -1584,9 +1594,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           List<dynamic> sectionList;
           if (rawSections is List && rawSections.isNotEmpty) {
             sectionList = rawSections;
-          } else if (rawSections is Map && (rawSections as Map).isNotEmpty) {
+          } else if (rawSections is Map && rawSections.isNotEmpty) {
             sectionList =
-                (rawSections as Map).entries.map<Map<String, dynamic>>((e) {
+                rawSections.entries.map<Map<String, dynamic>>((e) {
               final v = e.value;
               return {
                 'title': e.key.toString(),
@@ -1608,7 +1618,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
       if (contentData != null && contentData.isNotEmpty) {
         try {
-          final Map<String, dynamic> data = contentData!;
+          final Map<String, dynamic> data = contentData;
           setState(() {
             // Set title
             _titleController.text =
@@ -1652,7 +1662,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       (sectionData['paragraphAlignment'] ?? 'left').toString(),
                   richParagraphs:
                       (sectionData['richParagraphs'] as List<dynamic>?)
-                              ?.map((p) => Map<String, dynamic>.from(p as Map))
+                              ?.whereType<Map>()
+                              .map((p) => Map<String, dynamic>.from(p))
                               .toList() ??
                           [],
                   backgroundColor: sectionData['backgroundColor'] != null
@@ -1663,8 +1674,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   sectionType: sectionTypeRaw,
                   isCoverPage: isCover,
                   inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
-                          ?.map((img) =>
-                              InlineImage.fromJson(img as Map<String, dynamic>))
+                          ?.whereType<Map>()
+                          .map((img) => InlineImage.fromJson(
+                              Map<String, dynamic>.from(img)))
                           .toList() ??
                       [],
                   tables: (sectionData['tables'] as List<dynamic>?)
@@ -1682,8 +1694,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       [],
                   positionedPricingTables:
                       (sectionData['positionedPricingTables'] as List<dynamic>?)
-                              ?.map((p) => PositionedPricingTable.fromJson(
-                                  p as Map<String, dynamic>))
+                              ?.whereType<Map>()
+                              .map((p) => PositionedPricingTable.fromJson(
+                                  Map<String, dynamic>.from(p)))
                               .toList() ??
                           [],
                 );
@@ -1895,13 +1908,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
         // Add replies if they exist
         final replies = comment['replies'] as List<dynamic>? ?? [];
-        for (var reply in replies) {
-          addCommentWithReplies(reply as Map<String, dynamic>);
+        for (var reply in replies.whereType<Map>()) {
+          addCommentWithReplies(Map<String, dynamic>.from(reply));
         }
       }
 
-      for (var comment in comments) {
-        addCommentWithReplies(comment as Map<String, dynamic>);
+      for (var comment in (comments as List).whereType<Map>()) {
+        addCommentWithReplies(Map<String, dynamic>.from(comment));
       }
 
       if (!mounted) return;
@@ -4447,7 +4460,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         sectionType: sectionTypeRaw,
         isCoverPage: isCover,
         inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
-            ?.map((img) => InlineImage.fromJson(img as Map<String, dynamic>))
+            ?.whereType<Map>()
+            .map((img) => InlineImage.fromJson(Map<String, dynamic>.from(img)))
             .toList(),
         tables: (sectionData['tables'] as List<dynamic>?)?.map((tableData) {
               try {
@@ -4461,12 +4475,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               }
             }).toList() ??
             [],
-        positionedPricingTables: (sectionData['positionedPricingTables']
-                    as List<dynamic>?)
-                ?.map((p) =>
-                    PositionedPricingTable.fromJson(p as Map<String, dynamic>))
-                .toList() ??
-            [],
+        positionedPricingTables:
+            (sectionData['positionedPricingTables'] as List<dynamic>?)
+                    ?.whereType<Map>()
+                    .map((p) => PositionedPricingTable.fromJson(
+                        Map<String, dynamic>.from(p)))
+                    .toList() ??
+                [],
       );
 
       if (newSection.tables.isNotEmpty) {

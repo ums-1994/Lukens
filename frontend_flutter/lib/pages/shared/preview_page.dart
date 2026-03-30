@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher_string.dart';
+import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import '../../api.dart';
@@ -9,6 +10,52 @@ import '../../theme/premium_theme.dart';
 
 class PreviewPage extends StatelessWidget {
   const PreviewPage({super.key});
+
+  List<MapEntry<String, dynamic>> _extractSectionEntries(
+      Map<String, dynamic> pm) {
+    dynamic sectionsAny = pm['sections'];
+
+    if (sectionsAny == null) {
+      final contentAny = pm['content'];
+      if (contentAny is String && contentAny.trim().isNotEmpty) {
+        try {
+          final decoded = jsonDecode(contentAny);
+          if (decoded is Map) {
+            sectionsAny = decoded['sections'] ?? decoded;
+          } else if (decoded is List) {
+            sectionsAny = decoded;
+          }
+        } catch (_) {}
+      } else if (contentAny is Map) {
+        sectionsAny = contentAny['sections'] ?? contentAny;
+      }
+    }
+
+    if (sectionsAny is Map) {
+      return sectionsAny.entries
+          .map((e) => MapEntry(e.key.toString(), e.value))
+          .toList();
+    }
+
+    if (sectionsAny is List) {
+      final result = <MapEntry<String, dynamic>>[];
+      for (int i = 0; i < sectionsAny.length; i++) {
+        final item = sectionsAny[i];
+        if (item is Map) {
+          final title = item['title']?.toString().trim();
+          final fallbackTitle = 'Section ${i + 1}';
+          final key = (title != null && title.isNotEmpty) ? title : fallbackTitle;
+          final value = item['content'] ?? item['body'] ?? '';
+          result.add(MapEntry(key, value));
+        } else {
+          result.add(MapEntry('Section ${i + 1}', item));
+        }
+      }
+      return result;
+    }
+
+    return const [];
+  }
 
   // Helper function to check if a string is likely an image URL
   bool _isImageUrl(String? url) {
@@ -96,7 +143,7 @@ class PreviewPage extends StatelessWidget {
       return const Center(child: Text("Select a proposal to preview."));
     }
     final Map<String, dynamic> pm = Map<String, dynamic>.from(p as Map);
-    final sections = Map<String, dynamic>.from(pm["sections"] ?? {});
+    final sectionEntries = _extractSectionEntries(pm);
     final title = (pm['title'] ?? 'Untitled Proposal').toString();
     final dtype = (pm['dtype'] ?? 'Proposal').toString();
     final client =
@@ -313,7 +360,7 @@ class PreviewPage extends StatelessWidget {
               Expanded(
                 child: ListView(
                   children: [
-                    ...sections.entries.map(
+                    ...sectionEntries.map(
                       (e) => Padding(
                         padding: const EdgeInsets.symmetric(vertical: 10),
                         child: GlassContainer(
