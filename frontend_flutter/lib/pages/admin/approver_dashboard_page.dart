@@ -374,7 +374,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   child: AdminSidebar(
                     isCollapsed: app.isAdminSidebarCollapsed,
                     currentPage: _currentPage,
-                    onToggle: () => context.read<AppState>().toggleAdminSidebar(),
+                    onToggle: () =>
+                        context.read<AppState>().toggleAdminSidebar(),
                     onSelect: (label) {
                       setState(() => _currentPage = label);
                       _navigateToPage(context, label);
@@ -702,8 +703,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   DateTime _toSast(DateTime dt) {
     final utc = dt.isUtc
         ? dt
-        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute,
-            dt.second, dt.millisecond, dt.microsecond);
+        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second,
+            dt.millisecond, dt.microsecond);
     return utc.add(const Duration(hours: 2));
   }
 
@@ -741,7 +742,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 side: BorderSide(color: Colors.white.withOpacity(0.12)),
               ),
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 560, maxHeight: 600),
+                constraints:
+                    const BoxConstraints(maxWidth: 560, maxHeight: 600),
                 child: Column(
                   children: [
                     Container(
@@ -788,7 +790,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                           ),
                           IconButton(
                             onPressed: () => Navigator.of(dialogContext).pop(),
-                            icon: const Icon(Icons.close, color: Colors.white70),
+                            icon:
+                                const Icon(Icons.close, color: Colors.white70),
                           ),
                         ],
                       ),
@@ -832,8 +835,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                   borderRadius: BorderRadius.circular(10),
                                   onTap: () async {
                                     if (!isRead && notificationId != null) {
-                                      await app.markNotificationRead(
-                                          notificationId);
+                                      await app
+                                          .markNotificationRead(notificationId);
                                       await app.fetchNotifications();
                                       setDialogState(() {});
                                     }
@@ -858,7 +861,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                       children: [
                                         Icon(
                                           isRead
-                                              ? Icons.notifications_none_outlined
+                                              ? Icons
+                                                  .notifications_none_outlined
                                               : Icons.notifications_active,
                                           color: isRead
                                               ? Colors.white54
@@ -1515,7 +1519,13 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     final submittedDate = proposal['updated_at'] != null
         ? DateTime.tryParse(proposal['updated_at'].toString())
         : null;
-    final value = proposal['budget'];
+    final value = proposal['budget'] ??
+        proposal['amount'] ??
+        proposal['value'] ??
+        proposal['proposal_value'] ??
+        proposal['deal_value'] ??
+        proposal['total_value'] ??
+        proposal['pipeline_value'];
     final client = proposal['client_name'] ?? proposal['client'] ?? 'Unknown';
 
     final compact = MediaQuery.sizeOf(context).height < 860;
@@ -1550,7 +1560,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                     submittedDate != null
                         ? DateFormat('dd MMM yyyy').format(submittedDate)
                         : 'Unknown'),
-                if (value != null && value != 0) ...[
+                if (_parseBudget(value) > 0) ...[
                   SizedBox(width: compact ? 8 : 12),
                   _buildInfoChip(
                       Icons.attach_money, _formatCurrency(_parseBudget(value))),

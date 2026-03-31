@@ -406,12 +406,14 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
           'Acceptance',
           '${((totals['acceptance_rate'] as num?) ?? 0).toStringAsFixed(1)}%',
         ),
-        _statPill('Tokens', NumberFormat.compact().format(n(usageSummary['total_tokens']))),
+        _statPill('Tokens',
+            NumberFormat.compact().format(n(usageSummary['total_tokens']))),
         _statPill('Average Spent', 'R ${averageSpendZar.toStringAsFixed(2)}'),
       ],
     );
 
-    Widget listCard(String title, List<Map<String, dynamic>> rows, String lk, String rk) {
+    Widget listCard(
+        String title, List<Map<String, dynamic>> rows, String lk, String rk) {
       return Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -422,10 +424,13 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(title, style: PremiumTheme.bodyMedium.copyWith(fontWeight: FontWeight.w700)),
+            Text(title,
+                style: PremiumTheme.bodyMedium
+                    .copyWith(fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
             if (rows.isEmpty)
-              Text('No data', style: PremiumTheme.bodySmall.copyWith(color: Colors.white60))
+              Text('No data',
+                  style: PremiumTheme.bodySmall.copyWith(color: Colors.white60))
             else
               ...rows.take(8).map((r) => Padding(
                     padding: const EdgeInsets.symmetric(vertical: 3),
@@ -438,7 +443,8 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                             style: PremiumTheme.bodySmall,
                           ),
                         ),
-                        Text((r[rk] ?? '0').toString(), style: PremiumTheme.bodySmall),
+                        Text((r[rk] ?? '0').toString(),
+                            style: PremiumTheme.bodySmall),
                       ],
                     ),
                   )),
@@ -461,9 +467,12 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
         const SizedBox(height: 12),
         Row(
           children: [
-            Expanded(child: listCard('By Endpoint', endpointSplit, 'endpoint', 'requests')),
+            Expanded(
+                child: listCard(
+                    'By Endpoint', endpointSplit, 'endpoint', 'requests')),
             const SizedBox(width: 12),
-            Expanded(child: listCard('Top Users', topUsers, 'username', 'requests')),
+            Expanded(
+                child: listCard('Top Users', topUsers, 'username', 'requests')),
           ],
         ),
       ],
@@ -1530,18 +1539,6 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                                     .copyWith(color: Colors.white60),
                               ),
                               const SizedBox(height: 18),
-                              _panel(
-                                title: 'Pipeline Funnel Chart',
-                                subtitle: 'Proposal value by stage',
-                                child: _buildPipelineFunnelChart(),
-                              ),
-                              const SizedBox(height: 18),
-                              _panel(
-                                title: 'Financial Alerts',
-                                subtitle: 'Deals requiring attention',
-                                child: _buildFinancialAlertsPanel(),
-                              ),
-                              const SizedBox(height: 18),
                               LayoutBuilder(
                                 builder: (context, c) {
                                   final narrow = c.maxWidth < 980;
@@ -1662,18 +1659,35 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                                 subtitle:
                                     'Live usage across AI Assistant and Risk Gate (auto-refresh every 20s)',
                                 child: FutureBuilder<Map<String, dynamic>?>(
-                                  key: ValueKey('finance_ai_usage_$_aiUsageRefreshTick'),
+                                  key: ValueKey(
+                                      'finance_ai_usage_$_aiUsageRefreshTick'),
                                   future: _fetchAiUsageAnalytics(),
                                   builder: (context, snapshot) {
-                                    if (snapshot.connectionState == ConnectionState.waiting) {
-                                      return const Center(child: CircularProgressIndicator());
+                                    if (snapshot.connectionState ==
+                                        ConnectionState.waiting) {
+                                      return const Center(
+                                          child: CircularProgressIndicator());
                                     }
                                     if (snapshot.hasError) {
-                                      return const Center(child: Text('Failed to load AI usage analytics.'));
+                                      return const Center(
+                                          child: Text(
+                                              'Failed to load AI usage analytics.'));
                                     }
                                     return _buildAiUsagePanel(snapshot.data);
                                   },
                                 ),
+                              ),
+                              const SizedBox(height: 18),
+                              _panel(
+                                title: 'Pipeline Funnel Chart',
+                                subtitle: 'Proposal value by stage',
+                                child: _buildPipelineFunnelChart(),
+                              ),
+                              const SizedBox(height: 18),
+                              _panel(
+                                title: 'Financial Alerts',
+                                subtitle: 'Deals requiring attention',
+                                child: _buildFinancialAlertsPanel(),
                               ),
                               const SizedBox(height: 24),
                               const Footer(),
