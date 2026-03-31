@@ -343,15 +343,18 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         try {
           print('📡 Fetching risk-gate details from analytics endpoint...');
           final rgResp = await http.get(
-            Uri.parse('${ApiService.baseUrl}/api/analytics/risk-gate/details?limit=1&blocked_only=true'),
+            Uri.parse('${ApiService.baseUrl}/api/analytics/risk-gate/details?limit=500&blocked_only=true&scope=all'),
             headers: {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $token',
             },
-          ).timeout(const Duration(seconds: 8));
+          ).timeout(const Duration(seconds: 12));
 
           if (rgResp.statusCode == 200) {
             final rgJson = json.decode(rgResp.body);
+            try {
+              print('📡 risk-gate response: ${rgResp.body.substring(0, rgResp.body.length>800?800:rgResp.body.length)}');
+            } catch (_) {}
             final counts = rgJson is Map ? (rgJson['counts'] as Map? ?? {}) : {};
             final blockCount = counts['BLOCK'] ?? counts['BLOCKED'] ?? counts['block'] ?? counts['Block'] ?? 0;
             final int parsed = (blockCount is int)
