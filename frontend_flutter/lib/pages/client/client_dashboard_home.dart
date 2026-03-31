@@ -684,17 +684,27 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                         children: [
                           _buildSidebarNavItem(
                               0, Icons.rocket_launch_outlined, 'Dashboard',
-                              activeColor: activeColor),
+                              activeColor: activeColor,
+                              itemWidth: 188.08,
+                              itemHeight: 32.58),
                           const SizedBox(height: 10.27),
-                          _buildSidebarNavItem(1, Icons.handshake_outlined, 'Proposals'),
+                          _buildSidebarNavItem(
+                              1, Icons.handshake_outlined, 'Proposals',
+                              itemWidth: 188.08, itemHeight: 32.58),
                           const SizedBox(height: 10.27),
-                          _buildSidebarNavItem(2, Icons.assignment_outlined, "SOW'S"),
+                          _buildSidebarNavItem(2, Icons.assignment_outlined, "SOW'S",
+                              itemWidth: 188.08, itemHeight: 32.58),
                           const SizedBox(height: 10.27),
-                          _buildSidebarNavItem(3, Icons.request_quote_outlined, 'Invoices'),
+                          _buildSidebarNavItem(
+                              3, Icons.request_quote_outlined, 'Invoices',
+                              itemWidth: 188.08, itemHeight: 32.58),
                           const SizedBox(height: 10.27),
-                          _buildSidebarNavItem(4, Icons.mail_outline, 'Messages'),
+                          _buildSidebarNavItem(4, Icons.mail_outline, 'Messages',
+                              itemWidth: 188.08, itemHeight: 32.58),
                           const SizedBox(height: 10.27),
-                          _buildSidebarNavItem(5, Icons.description_outlined, 'Documents'),
+                          _buildSidebarNavItem(
+                              5, Icons.description_outlined, 'Documents',
+                              itemWidth: 188.08, itemHeight: 32.58),
                         ],
                       ),
                     ),
@@ -710,7 +720,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: _buildSidebarNavItem(6, Icons.person, 'Account Profile'),
+                    child: _buildSidebarNavItem(6, Icons.person, 'Account Profile',
+                        itemWidth: 111.87, itemHeight: 20.7),
                   ),
                   const SizedBox(height: 10),
                   Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
@@ -785,22 +796,28 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                     child: Column(
                       children: [
                         _buildDrawerNavItem(
-                            context, 0, Icons.rocket_launch_outlined, 'Dashboard'),
+                            context, 0, Icons.rocket_launch_outlined, 'Dashboard',
+                            itemWidth: 188.08, itemHeight: 32.58),
                         const SizedBox(height: 10.27),
                         _buildDrawerNavItem(
-                            context, 1, Icons.handshake_outlined, 'Proposals'),
+                            context, 1, Icons.handshake_outlined, 'Proposals',
+                            itemWidth: 188.08, itemHeight: 32.58),
                         const SizedBox(height: 10.27),
                         _buildDrawerNavItem(
-                            context, 2, Icons.assignment_outlined, "SOW'S"),
+                            context, 2, Icons.assignment_outlined, "SOW'S",
+                            itemWidth: 188.08, itemHeight: 32.58),
                         const SizedBox(height: 10.27),
                         _buildDrawerNavItem(
-                            context, 3, Icons.request_quote_outlined, 'Invoices'),
+                            context, 3, Icons.request_quote_outlined, 'Invoices',
+                            itemWidth: 188.08, itemHeight: 32.58),
                         const SizedBox(height: 10.27),
                         _buildDrawerNavItem(
-                            context, 4, Icons.mail_outline, 'Messages'),
+                            context, 4, Icons.mail_outline, 'Messages',
+                            itemWidth: 188.08, itemHeight: 32.58),
                         const SizedBox(height: 10.27),
                         _buildDrawerNavItem(
-                            context, 5, Icons.description_outlined, 'Documents'),
+                            context, 5, Icons.description_outlined, 'Documents',
+                            itemWidth: 188.08, itemHeight: 32.58),
                       ],
                     ),
                   ),
@@ -813,7 +830,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: _buildDrawerNavItem(
-                              context, 6, Icons.person, 'Account Profile'),
+                              context, 6, Icons.person, 'Account Profile',
+                              itemWidth: 111.87, itemHeight: 20.7),
                         ),
                         const SizedBox(height: 10),
                         Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
