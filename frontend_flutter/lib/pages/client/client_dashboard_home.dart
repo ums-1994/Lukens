@@ -621,8 +621,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   Widget _buildSidebar() {
     const panelColor = Color(0xFF2A2A2A);
     const activeColor = Color(0xFFD50000);
-    return Container(
-      width: 274,
+    return SizedBox(
+      width: 192.14,
+      height: 410.58,
+      child: Container(
       decoration: BoxDecoration(
         color: panelColor,
         border: Border(
@@ -672,40 +674,48 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               child: Column(
                 children: [
                   _buildSidebarNavItem(0, Icons.rocket_launch_outlined, 'Dashboard',
-                      activeColor: activeColor, itemHeight: 65.94, itemWidth: 192.14),
+                      activeColor: activeColor, itemHeight: 20.7, itemWidth: 111.87),
                   const SizedBox(height: 8),
                   _buildSidebarNavItem(1, Icons.handshake_outlined, 'Proposals',
-                      itemHeight: 65.94, itemWidth: 192.14),
+                      itemHeight: 20.7, itemWidth: 111.87),
                   const SizedBox(height: 8),
                   _buildSidebarNavItem(2, Icons.assignment_outlined, "SOW'S",
-                      itemHeight: 65.94, itemWidth: 192.14),
+                      itemHeight: 20.7, itemWidth: 111.87),
                   const SizedBox(height: 8),
                   _buildSidebarNavItem(3, Icons.request_quote_outlined, 'Invoices',
-                      itemHeight: 65.94, itemWidth: 192.14),
+                      itemHeight: 20.7, itemWidth: 111.87),
                   const SizedBox(height: 8),
                   _buildSidebarNavItem(4, Icons.mail_outline, 'Messages',
-                      itemHeight: 65.94, itemWidth: 192.14),
+                      itemHeight: 20.7, itemWidth: 111.87),
                   const SizedBox(height: 8),
                   _buildSidebarNavItem(5, Icons.description_outlined, 'Documents',
-                      itemHeight: 65.94, itemWidth: 192.14),
+                      itemHeight: 20.7, itemWidth: 111.87),
                 ],
               ),
             ),
-            const SizedBox(height: 12),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-              child: _buildSidebarNavItem(6, Icons.person, 'Account Profile',
-                  itemWidth: 192.14),
-            ),
-            Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-              child: _buildSidebarNavItem(
-                7,
-                Icons.logout,
-                'Logout',
-                itemWidth: 192.14,
-                onTap: () => Navigator.pushReplacementNamed(context, '/login'),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: SizedBox(
+                width: 191.77,
+                height: 189.92,
+                child: Column(
+                  children: [
+                    const Spacer(),
+                    _buildSidebarNavItem(6, Icons.person, 'Account Profile',
+                        itemWidth: 111.87, itemHeight: 20.7),
+                    const SizedBox(height: 10),
+                    Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+                    const SizedBox(height: 10),
+                    _buildSidebarNavItem(
+                      7,
+                      Icons.logout,
+                      'Logout',
+                      itemWidth: 111.87,
+                      itemHeight: 20.7,
+                      onTap: () => Navigator.pushReplacementNamed(context, '/login'),
+                    ),
+                  ],
+                ),
               ),
             ),
             if ((_clientEmail ?? '').isNotEmpty)
@@ -721,6 +731,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -768,44 +779,52 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                       children: [
                         _buildDrawerNavItem(context, 0, Icons.rocket_launch_outlined,
                             'Dashboard',
-                            itemHeight: 65.94, itemWidth: 192.14),
+                            itemHeight: 20.7, itemWidth: 111.87),
                         const SizedBox(height: 8),
                         _buildDrawerNavItem(
                             context, 1, Icons.handshake_outlined, 'Proposals',
-                            itemHeight: 65.94, itemWidth: 192.14),
+                            itemHeight: 20.7, itemWidth: 111.87),
                         const SizedBox(height: 8),
                         _buildDrawerNavItem(
                             context, 2, Icons.assignment_outlined, "SOW'S",
-                            itemHeight: 65.94, itemWidth: 192.14),
+                            itemHeight: 20.7, itemWidth: 111.87),
                         const SizedBox(height: 8),
                         _buildDrawerNavItem(
                             context, 3, Icons.request_quote_outlined, 'Invoices',
-                            itemHeight: 65.94, itemWidth: 192.14),
+                            itemHeight: 20.7, itemWidth: 111.87),
                         const SizedBox(height: 8),
                         _buildDrawerNavItem(
                             context, 4, Icons.mail_outline, 'Messages',
-                            itemHeight: 65.94, itemWidth: 192.14),
+                            itemHeight: 20.7, itemWidth: 111.87),
                         const SizedBox(height: 8),
                         _buildDrawerNavItem(
                             context, 5, Icons.description_outlined, 'Documents',
-                            itemHeight: 65.94, itemWidth: 192.14),
+                            itemHeight: 20.7, itemWidth: 111.87),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-                    child: _buildDrawerNavItem(
-                        context, 6, Icons.person, 'Account Profile',
-                        itemWidth: 192.14),
-                  ),
-                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
-                    child: _buildDrawerNavItem(
-                        context, 7, Icons.logout, 'Logout',
-                        itemWidth: 192.14,
-                        onTap: () => Navigator.pushReplacementNamed(context, '/login')),
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: SizedBox(
+                      width: 191.77,
+                      height: 189.92,
+                      child: Column(
+                        children: [
+                          const Spacer(),
+                          _buildDrawerNavItem(
+                              context, 6, Icons.person, 'Account Profile',
+                              itemWidth: 111.87, itemHeight: 20.7),
+                          const SizedBox(height: 10),
+                          Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+                          const SizedBox(height: 10),
+                          _buildDrawerNavItem(
+                              context, 7, Icons.logout, 'Logout',
+                              itemWidth: 111.87,
+                              itemHeight: 20.7,
+                              onTap: () => Navigator.pushReplacementNamed(context, '/login')),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               )),
@@ -831,7 +850,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       child: Container(
         width: itemWidth,
         height: itemHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFFD50000) : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
@@ -839,15 +858,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         child: Row(
           children: [
             Container(
-              width: 30,
-              height: 30,
+              width: 18,
+              height: 18,
               decoration: const BoxDecoration(
                 color: Color(0xFFE5E7EB),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: const Color(0xFF1F2937), size: 18),
+              child: Icon(icon, color: const Color(0xFF1F2937), size: 10),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 4),
             Expanded(
               child: Text(
                 label,
@@ -855,6 +874,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
+                  fontSize: 9,
                 ),
               ),
             ),
@@ -880,7 +900,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       child: Container(
         width: itemWidth,
         height: itemHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
         decoration: BoxDecoration(
           color: selected ? activeColor : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
@@ -888,15 +908,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         child: Row(
           children: [
             Container(
-              width: 30,
-              height: 30,
+              width: 18,
+              height: 18,
               decoration: const BoxDecoration(
                 color: Color(0xFFE5E7EB),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: const Color(0xFF1F2937), size: 18),
+              child: Icon(icon, color: const Color(0xFF1F2937), size: 10),
             ),
-            const SizedBox(width: 10),
+            const SizedBox(width: 4),
             Expanded(
               child: Text(
                 label,
@@ -904,6 +924,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
+                  fontSize: 9,
                 ),
               ),
             ),
