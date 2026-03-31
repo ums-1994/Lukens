@@ -702,20 +702,28 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   ],
                 ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: _buildSidebarNavItem(6, Icons.person, 'Account Profile'),
-            ),
-            const SizedBox(height: 10),
-            Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: _buildSidebarNavItem(
-                7,
-                Icons.logout,
-                'Logout',
-                onTap: () => Navigator.pushReplacementNamed(context, '/login'),
+            SizedBox(
+              width: 191.77,
+              height: 189.92,
+              child: Column(
+                children: [
+                  const Spacer(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: _buildSidebarNavItem(6, Icons.person, 'Account Profile'),
+                  ),
+                  const SizedBox(height: 10),
+                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+                  const SizedBox(height: 10),
+                  _buildSidebarNavItem(
+                    7,
+                    Icons.logout,
+                    'Logout',
+                    itemWidth: 192.14,
+                    itemHeight: 36.88,
+                    onTap: () => Navigator.pushReplacementNamed(context, '/login'),
+                  ),
+                ],
               ),
             ),
             if ((_clientEmail ?? '').isNotEmpty)
@@ -796,19 +804,27 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: _buildDrawerNavItem(context, 6, Icons.person, 'Account Profile'),
-                  ),
-                  const SizedBox(height: 10),
-                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-                  const SizedBox(height: 10),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: _buildDrawerNavItem(
-                        context, 7, Icons.logout, 'Logout',
-                        onTap: () => Navigator.pushReplacementNamed(context, '/login')),
+                  SizedBox(
+                    width: 191.77,
+                    height: 189.92,
+                    child: Column(
+                      children: [
+                        const Spacer(),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: _buildDrawerNavItem(
+                              context, 6, Icons.person, 'Account Profile'),
+                        ),
+                        const SizedBox(height: 10),
+                        Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+                        const SizedBox(height: 10),
+                        _buildDrawerNavItem(
+                            context, 7, Icons.logout, 'Logout',
+                            itemWidth: 192.14,
+                            itemHeight: 36.88,
+                            onTap: () => Navigator.pushReplacementNamed(context, '/login')),
+                      ],
+                    ),
                   ),
                 ],
               )),
