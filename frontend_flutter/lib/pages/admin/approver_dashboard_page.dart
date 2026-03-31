@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
+import '../../services/telemetry_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
@@ -1442,6 +1443,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           label: 'Blocked proposals',
           count: _attentionBlocked.length,
           onView: () {
+            TelemetryService.trackEvent('dashboard_cta', {'section': 'blocked', 'action': 'view'});
             Navigator.pushReplacementNamed(
               context,
               '/admin_approvals',
@@ -1480,6 +1482,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           label: 'Released awaiting signature',
           count: _attentionAwaitingSignature.length,
           onView: () {
+            TelemetryService.trackEvent('dashboard_cta', {'section': 'released_awaiting_signature', 'action': 'view'});
             Navigator.pushReplacementNamed(
               context,
               '/admin_approvals',
@@ -1493,6 +1496,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           label: 'Recently signed',
           count: _attentionRecentlySigned.length,
           onView: () {
+            TelemetryService.trackEvent('dashboard_cta', {'section': 'recently_signed', 'action': 'view'});
             Navigator.pushReplacementNamed(
               context,
               '/admin_approvals',
@@ -1946,6 +1950,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   void _openProposal(Map<String, dynamic> proposal) {
     final id = proposal['id']?.toString();
     if (id == null) return;
+    TelemetryService.trackEvent('review_proposal', {'proposal_id': id});
     Navigator.pushNamed(
       context,
       '/proposal_review',
