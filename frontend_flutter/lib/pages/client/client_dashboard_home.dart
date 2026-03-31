@@ -623,7 +623,6 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     const activeColor = Color(0xFFD50000);
     return SizedBox(
       width: 192.14,
-      height: 410.58,
       child: Container(
       decoration: BoxDecoration(
         color: panelColor,
@@ -631,8 +630,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           right: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
         ),
       ),
-      child: SingleChildScrollView(
-        child: Column(
+      child: Column(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 20),
@@ -693,39 +695,41 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _buildSidebarNavItem(6, Icons.person, 'Account Profile',
-                  itemWidth: 111.87, itemHeight: 20.7),
-            ),
-            const SizedBox(height: 10),
-            Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-            const SizedBox(height: 10),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _buildSidebarNavItem(
-                7,
-                Icons.logout,
-                'Logout',
-                itemWidth: 111.87,
-                itemHeight: 20.7,
-                onTap: () => Navigator.pushReplacementNamed(context, '/login'),
-              ),
-            ),
-            if ((_clientEmail ?? '').isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                child: Text(
-                  _clientEmail!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.55), fontSize: 11),
-                ),
-              ),
           ],
-        ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _buildSidebarNavItem(6, Icons.person, 'Account Profile',
+                itemWidth: 111.87, itemHeight: 20.7),
+          ),
+          const SizedBox(height: 10),
+          Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+          const SizedBox(height: 10),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _buildSidebarNavItem(
+              7,
+              Icons.logout,
+              'Logout',
+              itemWidth: 111.87,
+              itemHeight: 20.7,
+              onTap: () => Navigator.pushReplacementNamed(context, '/login'),
+            ),
+          ),
+          if ((_clientEmail ?? '').isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Text(
+                _clientEmail!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55), fontSize: 11),
+              ),
+            ),
+        ],
       ),
       ),
     );
@@ -1791,11 +1795,13 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   ),
                 ),
               ),
-              SafeArea(
-                child: Row(
-                  children: [
-                    if (!useDrawer) _buildSidebar(),
-                    Expanded(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!useDrawer) _buildSidebar(),
+                  Expanded(
+                    child: SafeArea(
+                      left: false,
                       child: Column(
                         children: [
                           _buildTopHeader(useDrawer: useDrawer),
@@ -1844,8 +1850,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
