@@ -17,6 +17,7 @@ import '../../theme/app_colors.dart';
 import '../../mixins/sidebar_mixin.dart';
 import '../../widgets/ai_content_generator.dart';
 import '../../widgets/app_side_nav.dart';
+import '../../widgets/admin/admin_sidebar.dart';
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
@@ -434,6 +435,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final app = context.read<AppState>();
       app.setCurrentNavLabel('Content Library');
+      if (_isAdminUser()) {
+        app.setAdminNavLabel('Content Library');
+      }
       if (app.contentBlocks.isEmpty) {
         await app.fetchContent();
       }
@@ -1608,11 +1612,27 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                 // Consistent Sidebar using AppSideNav
                 Consumer<AppState>(
                   builder: (context, app, child) {
-                    final role = (app.currentUser?['role'] ?? '')
+                    final role = ((app.currentUser?['role'] ??
+                                AuthService.currentUser?['role']) ??
+                            '')
                         .toString()
                         .toLowerCase()
                         .trim();
                     final isAdmin = role == 'admin' || role == 'ceo';
+                    if (isAdmin) {
+                      return Material(
+                        child: AdminSidebar(
+                          isCollapsed: app.isAdminSidebarCollapsed,
+                          currentPage: app.adminNavLabel,
+                          onToggle: app.toggleAdminSidebar,
+                          onSelect: (label) {
+                            app.setAdminNavLabel(label);
+                            setState(() => _currentPage = label);
+                            _navigateToPage(context, label);
+                          },
+                        ),
+                      );
+                    }
                     return AppSideNav(
                       isCollapsed: app.isSidebarCollapsed,
                       currentLabel: app.currentNavLabel,
@@ -4199,6 +4219,23 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
           Navigator.pushReplacementNamed(context, '/creator_dashboard');
         }
         break;
+      case 'Approvals':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'pending'},
+        );
+        break;
+      case 'Analytics':
+        Navigator.pushReplacementNamed(context, '/analytics');
+        break;
+      case 'History':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'approved'},
+        );
+        break;
       case 'My Proposals':
         Navigator.pushNamed(context, '/proposals');
         break;
@@ -4218,6 +4255,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         Navigator.pushNamed(context, '/analytics');
         break;
       case 'Logout':
+      case 'Sign Out':
         _handleLogout(context);
         break;
     }
