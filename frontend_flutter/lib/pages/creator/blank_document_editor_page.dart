@@ -2043,7 +2043,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       print('✅ Loaded ${flatComments.length} comments (including replies)');
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        _applyInlineHighlights();
+        // Brief delay so Quill documents finish rendering before
+        // applying BackgroundAttribute highlights.
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) _applyInlineHighlights();
+        });
       });
 
       if (_pendingScrollToCommentId != null) {
@@ -4203,6 +4207,26 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _onContentChanged();
       if (section.contentFocus.hasFocus) {
         _syncToolbarStateFromRichSelection();
+        // Prevent Quill from extending comment-highlight background to
+        // newly-typed characters.  This fires only for user input (not
+        // during _applyInlineHighlights which sets _isMutatingHighlights).
+        if (!_isMutatingHighlights) {
+          final sel = section.richController.selection;
+          if (sel.isCollapsed && sel.baseOffset > 0) {
+            final offset = sel.baseOffset;
+            final style = section.richController.document
+                .collectStyle(offset - 1, 1);
+            if (style.containsKey(Attribute.background.key)) {
+              _isMutatingHighlights = true;
+              try {
+                section.richController.formatText(
+                    offset - 1, 1, Attribute.background);
+              } finally {
+                _isMutatingHighlights = false;
+              }
+            }
+          }
+        }
       }
     });
     section.titleController.addListener(_onContentChanged);
@@ -5376,10 +5400,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final isCollaboratorMode = widget.isCollaborator;
     final forceCommentsPanelOpen = widget.forceCommentsPanelOpen;
     final _statusForSidebar = (_proposalStatus ?? '').toLowerCase().trim();
-    // Show the full sidebar to finance when the proposal is returned for changes
-    // so they can access Content Library and insert blocks like any other editor.
-    final hideLeftSidebar = context.watch<RoleService>().isFinance() &&
-        _statusForSidebar != 'changes requested';
+    final isAdminUser = _isAdminUser();
+    // Hide the left nav sidebar for Finance and Admin roles — they have their
+    // own dashboards and should not see the manager-style navigation panel.
+    // Finance still gets the full sidebar when a proposal is returned for changes.
+    final hideLeftSidebar =
+        (context.watch<RoleService>().isFinance() &&
+                _statusForSidebar != 'changes requested') ||
+            isAdminUser;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),

@@ -985,8 +985,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         'proposalId': proposalId,
         if (proposalTitle != null && proposalTitle.isNotEmpty)
           'proposalTitle': proposalTitle,
-        // Open in focused comment mode (no manager-style nav chrome).
-        'isCollaborator': true,
+        // Admin gets full editing rights — left nav is suppressed via
+        // hideLeftSidebar in the editor based on role, so no isCollaborator needed.
+        'readOnly': false,
         'forceCommentsPanelOpen': true,
         if (commentId != null) 'initialCommentId': commentId,
         if (sectionIndex != null) 'initialSectionIndex': sectionIndex,

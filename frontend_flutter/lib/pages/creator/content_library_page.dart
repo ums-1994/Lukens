@@ -43,6 +43,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   String typeFilter = "all";
   bool _showAIGenerator = false;
   final _versionedModulesCache = <int, List<Map<String, dynamic>>>{};
+  final ScrollController _listScrollController = ScrollController();
 
   // SidebarMixin implementation
   @override
@@ -1346,6 +1347,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   void dispose() {
     _animationController.dispose();
     searchCtrl.dispose();
+    _listScrollController.dispose();
     super.dispose();
   }
 
@@ -1929,8 +1931,17 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                       style: TextStyle(color: Colors.white70),
                                     ),
                                   )
-                                : (selectedCategory == "Images")
+                                : RawScrollbar(
+                                    controller: _listScrollController,
+                                    thumbVisibility: true,
+                                    trackVisibility: true,
+                                    thumbColor: Colors.white38,
+                                    trackColor: Colors.white10,
+                                    radius: const Radius.circular(6),
+                                    thickness: 6,
+                                    child: (selectedCategory == "Images")
                                     ? GridView.builder(
+                                        controller: _listScrollController,
                                         gridDelegate:
                                             const SliverGridDelegateWithFixedCrossAxisCount(
                                           crossAxisCount: 3,
@@ -2333,6 +2344,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                     : (selectedCategory == "Template" ||
                                             selectedCategory == "Templates")
                                         ? ListView.builder(
+                                            controller: _listScrollController,
                                             itemCount: pagedItems.length,
                                             itemBuilder: (ctx, i) {
                                               final item = pagedItems[i];
@@ -2413,6 +2425,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                             },
                                           )
                                         : ListView.builder(
+                                            controller: _listScrollController,
                                             itemCount: pagedItems.length,
                                             itemBuilder: (ctx, i) =>
                                                 _buildTextBlockCard(
@@ -2421,6 +2434,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                               item: pagedItems[i],
                                             ),
                                           ),
+                                  ),
                           ),
                         ],
                       ),
