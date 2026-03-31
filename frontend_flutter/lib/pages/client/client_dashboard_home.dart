@@ -619,92 +619,98 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildSidebar() {
-    Widget navItem(int index, IconData icon, String label,
-        {VoidCallback? afterTap}) {
-      final selected = _selectedNavIndex == index;
-      return InkWell(
-        onTap: () {
-          setState(() {
-            _selectedNavIndex = index;
-          });
-          afterTap?.call();
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? Colors.white.withValues(alpha: 0.12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: selected ? Colors.white : Colors.white70, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: selected ? Colors.white : Colors.white70,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
+    const panelColor = Color(0xFF2A2A2A);
+    const activeColor = Color(0xFFD50000);
     return Container(
-      width: 220,
+      width: 274,
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1220).withValues(alpha: 0.96),
+        color: panelColor,
         border: Border(
-          right: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          right: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
         ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 18),
+          const SizedBox(height: 20),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: const [
-                Icon(Icons.grid_view_rounded, color: Colors.white),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Client Portal',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'KHONOLOGY',
+                  style: TextStyle(
+                    color: Color(0xFFE11D2E),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 6,
+                    fontSize: 24,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Welcome to',
+                  style: TextStyle(color: Colors.white, fontSize: 13),
+                ),
+                Text(
+                  'Proposal & SOW Builder',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          navItem(0, Icons.dashboard_outlined, 'Dashboard'),
-          navItem(1, Icons.description_outlined, 'Proposals'),
-          navItem(2, Icons.assignment_outlined, 'SOWs'),
-          navItem(3, Icons.receipt_long_outlined, 'Invoices'),
-          navItem(4, Icons.mail_outline, 'Messages'),
-          navItem(5, Icons.folder_outlined, 'Documents'),
-          navItem(6, Icons.person_outline, 'Profile'),
-          const Spacer(),
+          const SizedBox(height: 18),
+          Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+          const SizedBox(height: 14),
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-            child: Text(
-              _clientEmail ?? '',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Column(
+              children: [
+                _buildSidebarNavItem(0, Icons.rocket_launch_outlined, 'Dashboard',
+                    activeColor: activeColor),
+                const SizedBox(height: 10),
+                _buildSidebarNavItem(1, Icons.handshake_outlined, 'Proposals'),
+                const SizedBox(height: 10),
+                _buildSidebarNavItem(2, Icons.assignment_outlined, "SOW'S"),
+                const SizedBox(height: 10),
+                _buildSidebarNavItem(3, Icons.request_quote_outlined, 'Invoices'),
+                const SizedBox(height: 10),
+                _buildSidebarNavItem(4, Icons.mail_outline, 'Messages'),
+                const SizedBox(height: 10),
+                _buildSidebarNavItem(5, Icons.description_outlined, 'Documents'),
+              ],
             ),
           ),
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+            child: _buildSidebarNavItem(6, Icons.person, 'Account Profile'),
+          ),
+          Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+            child: _buildSidebarNavItem(
+              7,
+              Icons.logout,
+              'Logout',
+              onTap: () => Navigator.pushReplacementNamed(context, '/login'),
+            ),
+          ),
+          if ((_clientEmail ?? '').isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Text(
+                _clientEmail!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.55), fontSize: 11),
+              ),
+            ),
         ],
       ),
     );
@@ -712,24 +718,20 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   Widget _buildSidebarDrawer() {
     return Drawer(
-      backgroundColor: const Color(0xFF0B1220),
+      backgroundColor: const Color(0xFF2A2A2A),
       child: SafeArea(
         child: Builder(
           builder: (context) {
             return Container(
-              color: const Color(0xFF0B1220).withValues(alpha: 0.96),
+              color: const Color(0xFF2A2A2A),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 14),
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.fromLTRB(18, 8, 8, 10),
                     child: Row(
                       children: [
-                        const Icon(Icons.grid_view_rounded,
-                            color: Colors.white),
-                        const SizedBox(width: 10),
                         const Expanded(
                           child: Text(
                             'Client Portal',
@@ -748,32 +750,44 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                       ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  _buildDrawerNavItem(
-                      context, 0, Icons.dashboard_outlined, 'Dashboard'),
-                  _buildDrawerNavItem(
-                      context, 1, Icons.description_outlined, 'Proposals'),
-                  _buildDrawerNavItem(
-                      context, 2, Icons.assignment_outlined, 'SOWs'),
-                  _buildDrawerNavItem(
-                      context, 3, Icons.receipt_long_outlined, 'Invoices'),
-                  _buildDrawerNavItem(
-                      context, 4, Icons.mail_outline, 'Messages'),
-                  _buildDrawerNavItem(
-                      context, 5, Icons.folder_outlined, 'Documents'),
-                  _buildDrawerNavItem(
-                      context, 6, Icons.person_outline, 'Profile'),
+                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      children: [
+                        _buildDrawerNavItem(
+                            context, 0, Icons.rocket_launch_outlined, 'Dashboard'),
+                        const SizedBox(height: 10),
+                        _buildDrawerNavItem(
+                            context, 1, Icons.handshake_outlined, 'Proposals'),
+                        const SizedBox(height: 10),
+                        _buildDrawerNavItem(
+                            context, 2, Icons.assignment_outlined, "SOW'S"),
+                        const SizedBox(height: 10),
+                        _buildDrawerNavItem(
+                            context, 3, Icons.request_quote_outlined, 'Invoices'),
+                        const SizedBox(height: 10),
+                        _buildDrawerNavItem(
+                            context, 4, Icons.mail_outline, 'Messages'),
+                        const SizedBox(height: 10),
+                        _buildDrawerNavItem(
+                            context, 5, Icons.description_outlined, 'Documents'),
+                      ],
+                    ),
+                  ),
                   const Spacer(),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-                    child: Text(
-                      _clientEmail ?? '',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.65),
-                          fontSize: 12),
-                    ),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                    child: _buildDrawerNavItem(
+                        context, 6, Icons.person, 'Account Profile'),
+                  ),
+                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 12),
+                    child: _buildDrawerNavItem(
+                        context, 7, Icons.logout, 'Logout',
+                        onTap: () => Navigator.pushReplacementNamed(context, '/login')),
                   ),
                 ],
               ),
@@ -785,36 +799,88 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildDrawerNavItem(
-      BuildContext context, int index, IconData icon, String label) {
+      BuildContext context, int index, IconData icon, String label,
+      {VoidCallback? onTap}) {
     final selected = _selectedNavIndex == index;
     return InkWell(
       onTap: () {
         setState(() {
           _selectedNavIndex = index;
         });
+        onTap?.call();
         Navigator.of(context).pop();
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: selected
-              ? Colors.white.withValues(alpha: 0.12)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          color: selected ? const Color(0xFFD50000) : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
         ),
         child: Row(
           children: [
-            Icon(icon,
-                color: selected ? Colors.white : Colors.white70, size: 20),
+            Container(
+              width: 30,
+              height: 30,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE5E7EB),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: const Color(0xFF1F2937), size: 18),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: selected ? Colors.white : Colors.white70,
-                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarNavItem(int index, IconData icon, String label,
+      {Color activeColor = const Color(0xFFD50000), VoidCallback? onTap}) {
+    final selected = _selectedNavIndex == index;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedNavIndex = index;
+        });
+        onTap?.call();
+      },
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: selected ? activeColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 30,
+              height: 30,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE5E7EB),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: const Color(0xFF1F2937), size: 18),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
