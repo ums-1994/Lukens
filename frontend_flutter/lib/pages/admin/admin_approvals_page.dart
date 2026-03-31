@@ -45,8 +45,19 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   int? _staleDays;
   double? _minRiskScore;
 
+  String? _pipelineStage;
+  int? _recentDays;
+
   bool _isSidebarCollapsed = false;
   String _currentPage = 'Approvals';
+
+  static const String _filterAll = 'all';
+  static const String _filterNeedsDecision = 'needs_decision';
+  static const String _filterReady = 'ready';
+  static const String _filterBlocked = 'blocked';
+  static const String _filterChangesRequested = 'changes_requested';
+  static const String _filterApproved = 'approved';
+  static const String _filterDeclined = 'declined';
 
   static const Color _adminBlockBase = Color(0xFF252525);
 
@@ -116,25 +127,28 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     if (args is Map) {
       final raw = args['initialFilter'];
       final filter = raw is String ? raw.toLowerCase().trim() : null;
-      if (filter == 'pending' ||
-          filter == 'approved' ||
-          filter == 'rejected' ||
-          filter == 'all') {
+      final mapped = _mapLegacyFilter(filter);
+      if (mapped != null) {
         setState(() {
-          _activeFilter = filter!;
-        });
-        setState(() {
-          _currentPage = filter == 'approved' ? 'History' : 'Approvals';
+          _activeFilter = mapped;
+          _currentPage = mapped == _filterApproved ? 'History' : 'Approvals';
         });
       }
 
       final staleRaw = args['staleDays'];
       final riskRaw = args['minRiskScore'];
+      final pipelineStageRaw = args['pipelineStage'];
+      final recentDaysRaw = args['recentDays'];
       final stale = staleRaw is int ? staleRaw : int.tryParse(staleRaw?.toString() ?? '');
       final minRisk = riskRaw is num ? riskRaw.toDouble() : double.tryParse(riskRaw?.toString() ?? '');
+      final recentDays = recentDaysRaw is int
+          ? recentDaysRaw
+          : int.tryParse(recentDaysRaw?.toString() ?? '');
       setState(() {
         _staleDays = stale;
         _minRiskScore = minRisk;
+        _pipelineStage = pipelineStageRaw?.toString().trim().toLowerCase();
+        _recentDays = recentDays;
       });
     }
   }
@@ -144,6 +158,178 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  String? _mapLegacyFilter(String? legacy) {
+    final v = (legacy ?? '').trim().toLowerCase();
+    if (v.isEmpty) return null;
+    switch (v) {
+      case 'all':
+        return _filterAll;
+      case 'pending':
+        return _filterNeedsDecision;
+      case 'approved':
+        return _filterApproved;
+      case 'rejected':
+        return _filterDeclined;
+      case _filterNeedsDecision:
+      case _filterReady:
+      case _filterBlocked:
+      case _filterChangesRequested:
+        return v;
+      default:
+        return null;
+    }
+  }
+
+  DateTime? _getUpdatedAt(Map<String, dynamic> proposal) {
+    return _parseDate(proposal['updated_at'] ?? proposal['updatedAt']);
+  }
+
+  bool _matchesPipelineStage(Map<String, dynamic> proposal) {
+    final stage = (_pipelineStage ?? '').trim().toLowerCase();
+    if (stage.isEmpty) return true;
+
+    final status = (proposal['status'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim()
+        .replaceAll('_', ' ');
+
+    final updatedAt = _getUpdatedAt(proposal);
+
+    bool isSignedLike() {
+      return status.contains('signed') || status == 'completed';
+    }
+
+    bool isReleasedLike() {
+      return status == 'released' ||
+          status.contains('sent to client') ||
+          status.contains('sent for signature') ||
+          status.contains('released');
+    }
+
+    switch (stage) {
+      case 'released_awaiting_signature':
+        return isReleasedLike() && !isSignedLike();
+      case 'recently_signed':
+        if (!isSignedLike()) return false;
+        final days = (_recentDays != null && _recentDays! > 0) ? _recentDays! : 14;
+        if (updatedAt == null) return false;
+        return DateTime.now().difference(updatedAt).inDays <= days;
+      default:
+        return true;
+    }
+  }
+
+  String _decisionLabel(String decisionKey) {
+    switch (decisionKey) {
+      case _filterNeedsDecision:
+        return 'Needs decision';
+      case _filterReady:
+        return 'Ready for approval';
+      case _filterBlocked:
+        return 'Blocked';
+      case _filterChangesRequested:
+        return 'Changes requested';
+      case _filterApproved:
+        return 'Approved';
+      case _filterDeclined:
+        return 'Declined';
+      default:
+        return '—';
+    }
+  }
+
+  Color _decisionColor(String decisionKey) {
+    switch (decisionKey) {
+      case _filterNeedsDecision:
+        return PremiumTheme.orange;
+      case _filterReady:
+        return PremiumTheme.teal;
+      case _filterBlocked:
+        return PremiumTheme.error;
+      case _filterChangesRequested:
+        return PremiumTheme.pink;
+      case _filterApproved:
+        return PremiumTheme.teal;
+      case _filterDeclined:
+        return PremiumTheme.error;
+      default:
+        return Colors.white70;
+    }
+  }
+
+  List<String> _getBlockers(Map<String, dynamic> proposal) {
+    final blockers = <String>[];
+
+    final title = (proposal['title'] ?? '').toString().trim();
+    if (title.isEmpty) {
+      blockers.add('Missing title');
+    }
+
+    final budget = proposal['budget'];
+    final parsedBudget = _parseBudget(budget);
+    if (parsedBudget <= 0) {
+      blockers.add('Missing budget');
+    }
+
+    final clientEmail = (proposal['client_email'] ?? proposal['clientEmail'] ?? '')
+        .toString()
+        .trim();
+    if (clientEmail.isEmpty) {
+      blockers.add('Missing client email');
+    }
+
+    final risk = _parseDouble(proposal['risk_score'] ?? proposal['riskScore']);
+    if (risk != null && risk >= 70) {
+      blockers.add('High risk');
+    }
+
+    final updatedAt = _getUpdatedAt(proposal);
+    if (updatedAt != null) {
+      final thresholdDays = (_staleDays != null && _staleDays! > 0) ? _staleDays! : 14;
+      final age = DateTime.now().difference(updatedAt).inDays;
+      if (age >= thresholdDays) {
+        blockers.add('Stalled ${age}d');
+      }
+    }
+
+    return blockers;
+  }
+
+  String _getDecisionKey(Map<String, dynamic> proposal) {
+    final status = (proposal['status'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim()
+        .replaceAll('_', ' ');
+    final blockers = _getBlockers(proposal);
+
+    if (status.contains('changes requested')) return _filterChangesRequested;
+
+    if (status == 'rejected' || status == 'declined' || status == 'lost') {
+      return _filterDeclined;
+    }
+
+    if (status == 'approved' ||
+        status == 'signed' ||
+        status == 'client signed' ||
+        status == 'client approved' ||
+        status == 'released' ||
+        status.contains('sent to client') ||
+        status.contains('sent for signature') ||
+        status == 'completed') {
+      return _filterApproved;
+    }
+
+    if (blockers.isNotEmpty) return _filterBlocked;
+
+    if (status.contains('pending') || status.contains('resubmitted')) {
+      return _filterReady;
+    }
+
+    return _filterNeedsDecision;
   }
 
   Future<void> _enforceAccessAndLoad() async {
@@ -890,18 +1076,42 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   Widget _buildStatusTabs() {
+    final counts = <String, int>{
+      _filterAll: 0,
+      _filterNeedsDecision: 0,
+      _filterReady: 0,
+      _filterBlocked: 0,
+      _filterChangesRequested: 0,
+      _filterApproved: 0,
+      _filterDeclined: 0,
+    };
+
+    for (final proposal in _allProposals) {
+      counts[_filterAll] = (counts[_filterAll] ?? 0) + 1;
+      final key = _getDecisionKey(proposal);
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          _buildStatusTab('All', 'all', _allProposals.length),
+          _buildStatusTab('All', _filterAll, counts[_filterAll] ?? 0),
           const SizedBox(width: 8),
           _buildStatusTab(
-              'Request for Change', 'pending', _pendingProposals.length),
+              'Needs decision', _filterNeedsDecision, counts[_filterNeedsDecision] ?? 0),
           const SizedBox(width: 8),
-          _buildStatusTab('Approved', 'approved', _approvedProposals.length),
+          _buildStatusTab(
+              'Ready for approval', _filterReady, counts[_filterReady] ?? 0),
           const SizedBox(width: 8),
-          _buildStatusTab('Rejected', 'rejected', _rejectedProposals.length),
+          _buildStatusTab('Blocked', _filterBlocked, counts[_filterBlocked] ?? 0),
+          const SizedBox(width: 8),
+          _buildStatusTab(
+              'Changes requested', _filterChangesRequested, counts[_filterChangesRequested] ?? 0),
+          const SizedBox(width: 8),
+          _buildStatusTab('Approved', _filterApproved, counts[_filterApproved] ?? 0),
+          const SizedBox(width: 8),
+          _buildStatusTab('Declined', _filterDeclined, counts[_filterDeclined] ?? 0),
         ],
       ),
     );
@@ -966,25 +1176,18 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   List<Map<String, dynamic>> _getVisibleProposals() {
-    List<Map<String, dynamic>> source;
-    switch (_activeFilter) {
-      case 'pending':
-        source = _pendingProposals;
-        break;
-      case 'approved':
-        source = _approvedProposals;
-        break;
-      case 'rejected':
-        source = _rejectedProposals;
-        break;
-      default:
-        source = _allProposals;
-    }
+    final source = _allProposals;
 
     final query = _searchQuery.toLowerCase();
     final now = DateTime.now();
 
     return source.where((proposal) {
+      if (_activeFilter != _filterAll) {
+        if (_getDecisionKey(proposal) != _activeFilter) return false;
+      }
+
+      if (!_matchesPipelineStage(proposal)) return false;
+
       if (query.isNotEmpty) {
         final id = proposal['id']?.toString().toLowerCase() ?? '';
         final title = proposal['title']?.toString().toLowerCase() ?? '';
@@ -1102,7 +1305,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
   Widget _buildTableHeader() {
     return Row(
-      children: const [
+      children: [
         Expanded(
           flex: 1,
           child: Text(
@@ -1116,21 +1319,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           ),
         ),
         Expanded(
-          flex: 4,
+          flex: 2,
           child: Text(
-            'Proposal',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 3,
-          child: Text(
-            'Client',
+            'Decision',
             style: TextStyle(
               color: Colors.white70,
               fontSize: 12,
@@ -1142,31 +1333,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         Expanded(
           flex: 2,
           child: Text(
-            'Created',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 2,
-          child: Text(
-            'Status',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 2,
-          child: Text(
-            'Risk',
+            'Blockers',
             style: TextStyle(
               color: Colors.white70,
               fontSize: 12,
@@ -1180,7 +1347,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           child: Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'Action',
+              'Actions',
               style: TextStyle(
                 color: Colors.white70,
                 fontSize: 12,
@@ -1202,11 +1369,10 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     final created = _formatProposalDate(
       proposal['created_at'] ?? proposal['createdAt'],
     );
-    final rawStatus = (proposal['status'] ?? '').toString();
-    final statusLabel = _formatStatusLabel(rawStatus);
-    final statusColor = _getStatusColor(rawStatus);
-    final riskLabel = _getRiskLabel(proposal);
-    final riskColor = _getRiskColor(proposal);
+    final decisionKey = _getDecisionKey(proposal);
+    final decisionLabel = _decisionLabel(decisionKey);
+    final decisionColor = _decisionColor(decisionKey);
+    final blockers = _getBlockers(proposal);
     final owner =
         (proposal['owner_email'] ?? proposal['owner'] ?? '').toString().trim();
 
@@ -1268,35 +1434,267 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             flex: 2,
             child: Align(
               alignment: Alignment.centerLeft,
-              child: _buildStatusChip(statusLabel, statusColor),
+              child: _buildStatusChip(decisionLabel, decisionColor),
             ),
           ),
           Expanded(
             flex: 2,
             child: Align(
               alignment: Alignment.centerLeft,
-              child: _buildRiskChip(riskLabel, riskColor),
+              child: blockers.isEmpty
+                  ? _buildStatusChip('—', Colors.white70)
+                  : _buildRiskChip(
+                      blockers.length == 1
+                          ? blockers.first
+                          : '${blockers.length} blockers',
+                      blockers.any((b) => b.toLowerCase().contains('missing') ||
+                              b.toLowerCase().contains('stalled') ||
+                              b.toLowerCase().contains('high risk'))
+                          ? PremiumTheme.orange
+                          : Colors.white70,
+                    ),
             ),
           ),
           Expanded(
             flex: 2,
             child: Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => _openReview(proposal),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF3498DB),
-                ),
-                child: const Text(
-                  'Review',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => _openReview(proposal),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF3498DB),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    child: const Text(
+                      'Review',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _approveFromRow(Map<String, dynamic> proposal) async {
+    final id = proposal['id']?.toString();
+    if (id == null || id.isEmpty) return;
+
+    final token = AuthService.token;
+    if (token == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Session expired. Please login again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$id/approve'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({}),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✅ Approved'),
+            backgroundColor: PremiumTheme.teal,
+          ),
+        );
+        await _loadData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to approve: ${response.statusCode}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error approving: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _declineFromRow(Map<String, dynamic> proposal) async {
+    final id = proposal['id']?.toString();
+    if (id == null || id.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Decline proposal?'),
+        content: const Text('This will return the proposal to Draft.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Decline'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final token = AuthService.token;
+    if (token == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Session expired. Please login again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$id/reject'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({}),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✅ Declined'),
+            backgroundColor: PremiumTheme.error,
+          ),
+        );
+        await _loadData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to decline: ${response.statusCode}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error declining: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _requestChangesFromRow(Map<String, dynamic> proposal) async {
+    final id = proposal['id']?.toString();
+    if (id == null || id.isEmpty) return;
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Request changes from'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('Manager'),
+              onTap: () => Navigator.pop(context, 'manager'),
+            ),
+            ListTile(
+              title: const Text('Finance Manager'),
+              onTap: () => Navigator.pop(context, 'finance'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected == null) return;
+
+    final token = AuthService.token;
+    if (token == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Session expired. Please login again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$id/request-changes'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({'target': selected}),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✅ Changes requested'),
+            backgroundColor: PremiumTheme.pink,
+          ),
+        );
+        await _loadData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to request changes: ${response.statusCode}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error requesting changes: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   String _formatProposalDate(dynamic date) {
