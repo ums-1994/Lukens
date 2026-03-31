@@ -1398,8 +1398,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               context,
               '/admin_approvals',
               arguments: const {
-                'initialFilter': 'all',
-                'minRiskScore': 70,
+                'initialFilter': 'blocked',
               },
             );
           },
@@ -1436,7 +1435,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             Navigator.pushReplacementNamed(
               context,
               '/admin_approvals',
-              arguments: const {'initialFilter': 'approved'},
+              arguments: const {
+                'pipelineStage': 'released_awaiting_signature',
+              },
             );
           },
         ),
@@ -1447,7 +1448,10 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             Navigator.pushReplacementNamed(
               context,
               '/admin_approvals',
-              arguments: const {'initialFilter': 'approved'},
+              arguments: const {
+                'pipelineStage': 'recently_signed',
+                'recentDays': 14,
+              },
             );
           },
         ),
@@ -1587,8 +1591,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                       'assets/images/Time Allocation_Approval_Blue.png',
                       _currentPage == 'Approvals',
                       context),
-                  _buildNavItem('Analytics', 'assets/images/analytics.png',
-                      _currentPage == 'Analytics', context),
+                    // Analytics intentionally hidden for manager/approver dashboard
                   _buildNavItem('History', 'assets/images/analytics.png',
                       _currentPage == 'History', context),
                   const SizedBox(height: 20),
@@ -2196,7 +2199,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       case 'Approvals':
         Navigator.pushReplacementNamed(context, '/admin_approvals');
         break;
-      case 'Analytics':
       case 'All analytics':
       case 'My analytics':
         Navigator.pushReplacementNamed(context, '/analytics');
