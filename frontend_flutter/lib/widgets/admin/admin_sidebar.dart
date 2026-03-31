@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../config/app_constants.dart';
+import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
 
@@ -23,24 +24,35 @@ class AdminSidebar extends StatelessWidget {
   static const Color _adminBase = Color(0xFF252525);
   static const Color _adminAccent = Color(0xFFC10D00);
 
-  static const List<_AdminNavItem> _items = [
-    _AdminNavItem(
-      label: 'Dashboard',
-      assetPath: 'assets/images/Dahboard.png',
-    ),
-    _AdminNavItem(
-      label: 'Approvals',
-      assetPath: 'assets/images/Time Allocation_Approval_Blue.png',
-    ),
-    _AdminNavItem(
-      label: 'Analytics',
-      assetPath: 'assets/images/analytics.png',
-    ),
-    _AdminNavItem(
-      label: 'History',
-      assetPath: 'assets/images/analytics.png',
-    ),
-  ];
+  static List<_AdminNavItem> _buildItems() {
+    final role = AuthService.currentUser?['role']?.toString().toLowerCase() ?? 'manager';
+    final items = <_AdminNavItem>[
+      const _AdminNavItem(
+        label: 'Dashboard',
+        assetPath: 'assets/images/Dahboard.png',
+      ),
+      const _AdminNavItem(
+        label: 'Approvals',
+        assetPath: 'assets/images/Time Allocation_Approval_Blue.png',
+      ),
+    ];
+
+    // Only show Analytics and History to elevated roles
+    if (role == 'admin' || role == 'ceo' || role == 'finance') {
+      items.addAll([
+        const _AdminNavItem(
+          label: 'Analytics',
+          assetPath: 'assets/images/analytics.png',
+        ),
+        const _AdminNavItem(
+          label: 'History',
+          assetPath: 'assets/images/analytics.png',
+        ),
+      ]);
+    }
+
+    return items;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -100,7 +112,7 @@ class AdminSidebar extends StatelessWidget {
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
-                      for (final item in _items)
+                      for (final item in _buildItems())
                         _AdminSidebarNavItem(
                           label: item.label,
                           assetPath: item.assetPath,
