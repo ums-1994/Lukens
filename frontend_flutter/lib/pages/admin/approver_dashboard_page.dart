@@ -245,17 +245,32 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
 
         // Compute dashboard metrics from the combined set
         for (final proposal in combined) {
-            final riskScore = _parseDouble(
-              proposal['risk_score'] ?? proposal['riskScore'] ?? proposal['riskScoreValue']);
-            final riskLevel = (proposal['risk_level'] ?? proposal['riskLevel'] ?? '')
-              .toString()
-              .toLowerCase()
-              .trim();
-          if ((riskScore != null && riskScore >= 70) ||
-              riskLevel == 'high' ||
-              riskLevel == 'critical') {
-            highRiskCount++;
-          }
+            final rawRiskCandidate = proposal['risk_score'] ??
+                proposal['riskScore'] ??
+                proposal['riskScoreValue'] ??
+                proposal['analysis']?['risk_score'] ??
+                proposal['analysis']?['riskScore'];
+            final riskScore = _parseDouble(rawRiskCandidate);
+            final rawRiskLevel = proposal['risk_level'] ??
+                proposal['riskLevel'] ??
+                proposal['analysis']?['risk_level'] ??
+                proposal['analysis']?['riskLevel'] ??
+                '';
+            final riskLevel = rawRiskLevel.toString().toLowerCase().trim();
+
+            // Debug: log risk-related fields to help diagnose missing counts
+            try {
+              print('🔍 Proposal id=${proposal['id']} risk_raw=$rawRiskCandidate parsed=$riskScore level_raw=$rawRiskLevel level_norm=$riskLevel');
+            } catch (_) {}
+
+            if ((riskScore != null && riskScore >= 70) ||
+                riskLevel == 'high' ||
+                riskLevel == 'critical') {
+              highRiskCount++;
+              try {
+                print('⚠️ Counted high-risk: id=${proposal['id']} score=$riskScore level=$riskLevel');
+              } catch (_) {}
+            }
 
           dynamic rawStatus(dynamic p) {
             if (p is! Map) return null;
