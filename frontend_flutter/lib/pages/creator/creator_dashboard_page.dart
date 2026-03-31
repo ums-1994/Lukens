@@ -458,6 +458,21 @@ class _DashboardPageState extends State<DashboardPage>
                                     style: TextStyle(fontSize: 12),
                                   ),
                                 ),
+                              TextButton(
+                                onPressed: notifications.isEmpty
+                                    ? null
+                                    : () async {
+                                        await app.deleteAllNotifications();
+                                        setModalState(() {});
+                                      },
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.red.shade200,
+                                ),
+                                child: const Text(
+                                  'Delete all',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
                               IconButton(
                                 icon: const Icon(Icons.close,
                                     color: Colors.white),
@@ -587,15 +602,47 @@ class _DashboardPageState extends State<DashboardPage>
                               ),
                               isThreeLine: true,
                               trailing: !isRead && notificationId != null
-                                  ? TextButton(
-                                      onPressed: () async {
-                                        await app.markNotificationRead(
-                                            notificationId);
-                                        setModalState(() {});
-                                      },
-                                      child: const Text('Mark read'),
+                                  ? Wrap(
+                                      spacing: 4,
+                                      children: [
+                                        TextButton(
+                                          onPressed: () async {
+                                            await app.markNotificationRead(
+                                                notificationId);
+                                            setModalState(() {});
+                                          },
+                                          child: const Text('Mark read'),
+                                        ),
+                                        IconButton(
+                                          tooltip: 'Delete',
+                                          onPressed: () async {
+                                            await app.deleteNotification(
+                                                notificationId);
+                                            setModalState(() {});
+                                          },
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            size: 18,
+                                            color: Colors.redAccent,
+                                          ),
+                                        ),
+                                      ],
                                     )
-                                  : null,
+                                  : (notificationId != null
+                                      ? IconButton(
+                                          tooltip: 'Delete',
+                                          onPressed: () async {
+                                            await app.deleteNotification(
+                                                notificationId);
+                                            setModalState(() {});
+                                          },
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            size: 18,
+                                            color: Colors.redAccent,
+                                          ),
+                                        )
+                                      : null),
                             );
                           },
                         ),
@@ -1606,6 +1653,14 @@ class _DashboardPageState extends State<DashboardPage>
     Navigator.of(context).pushNamed('/blank-document', arguments: args);
   }
 
+  DateTime _toSast(DateTime dt) {
+    final utc = dt.isUtc
+        ? dt
+        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute,
+            dt.second, dt.millisecond, dt.microsecond);
+    return utc.add(const Duration(hours: 2));
+  }
+
   String _formatNotificationTimestamp(dynamic value) {
     DateTime? timestamp;
     if (value is String) {
@@ -1618,8 +1673,9 @@ class _DashboardPageState extends State<DashboardPage>
       return '';
     }
 
-    final local = timestamp.toLocal();
-    final difference = DateTime.now().difference(local);
+    final sast = _toSast(timestamp);
+    final now = _toSast(DateTime.now().toUtc());
+    final difference = now.difference(sast);
 
     if (difference.inSeconds < 60) {
       return 'Just now';
@@ -1631,9 +1687,9 @@ class _DashboardPageState extends State<DashboardPage>
       return '${difference.inDays}d ago';
     }
 
-    final month = local.month.toString().padLeft(2, '0');
-    final day = local.day.toString().padLeft(2, '0');
-    return '${local.year}-$month-$day';
+    final month = sast.month.toString().padLeft(2, '0');
+    final day = sast.day.toString().padLeft(2, '0');
+    return '${sast.year}-$month-$day';
   }
 
   Widget _buildAISection() {

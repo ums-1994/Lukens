@@ -3,11 +3,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/app_side_nav.dart';
+import 'dart:async';
 import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
@@ -30,6 +32,117 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
   bool _isSidebarCollapsed = false;
   String _currentNavLabel = 'Approved Proposals';
+
+  Future<void> _openSignedProposal(Map<String, dynamic> proposal) async {
+    final idRaw = proposal['id'];
+    final proposalId =
+        idRaw is int ? idRaw : int.tryParse(idRaw?.toString() ?? '');
+    final status = (proposal['status'] ?? '').toString().toLowerCase().trim();
+
+    if (proposalId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('❌ Could not open signed proposal (missing proposal id).'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final isSigned = status == 'signed' ||
+        status == 'completed' ||
+        status == 'client signed';
+    if (!isSigned) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚠️ Proposal is not signed yet (status: "$status").'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    AuthService.restoreSessionFromStorage();
+    var token = AuthService.token;
+    if (token == null) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      token = AuthService.token;
+    }
+
+    if (token == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Session expired. Please login again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Opening signed proposal...'),
+        backgroundColor: Colors.black87,
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      final url =
+          '${ApiService.baseUrl}/api/proposals/$proposalId/signed-document';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw Exception('Request timed out'),
+      );
+
+      if (response.statusCode != 200) {
+        String detail = 'Failed to retrieve signed proposal.';
+        try {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map && decoded['detail'] != null) {
+            detail = decoded['detail'].toString();
+          }
+        } catch (_) {}
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ $detail'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final bytes = response.bodyBytes;
+      final blob = html.Blob([bytes], 'application/pdf');
+      final objectUrl = html.Url.createObjectUrlFromBlob(blob);
+      html.window.open(objectUrl, '_blank');
+      Timer(const Duration(seconds: 60), () {
+        try {
+          html.Url.revokeObjectUrl(objectUrl);
+        } catch (_) {}
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Could not open signed proposal: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -519,88 +632,101 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         proposal['client']?.toString() ??
         'Unknown Client';
     final budget = proposal['budget']?.toString() ?? '0';
-    final status = proposal['status']?.toString() ?? 'unknown';
+    final status = (proposal['status'] ?? '').toString().toLowerCase().trim();
     final date = proposal['updated_at']?.toString();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.2),
-          width: 1,
+    final statusLabel = (status == 'signed' ||
+            status == 'completed' ||
+            status == 'client signed' ||
+            status == 'client approved')
+        ? 'Signed'
+        : 'Approved';
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => _openSignedProposal(proposal),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.2),
+            width: 1,
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      client,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
+                      const SizedBox(height: 4),
+                      Text(
+                        client,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'Approved',
-                  style: const TextStyle(
-                    color: Colors.green,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    ],
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Value: ${_currencyFormatter.format(double.tryParse(budget.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0)}',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
-              Text(
-                date != null ? _formatDate(DateTime.tryParse(date)) : 'No date',
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 12,
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Value: ${_currencyFormatter.format(double.tryParse(budget.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0)}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+                Text(
+                  date != null
+                      ? _formatDate(DateTime.tryParse(date))
+                      : 'No date',
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -98,8 +98,24 @@ def get_pending_approvals(username=None, user_id=None, email=None):
             else:
                 owner_expr = "NULL::text"
 
-            if 'budget' in existing_columns:
-                budget_expr = 'budget'
+            amount_col = _pick_first(
+                existing_columns,
+                [
+                    'budget',
+                    'amount',
+                    'value',
+                    'proposal_value',
+                    'deal_value',
+                    'total_value',
+                    'pipeline_value',
+                ],
+            )
+            if amount_col:
+                # Force budget to be numeric even when the underlying column is text.
+                # Example inputs: "189750", "R189,750", "$ 189,750.00"
+                budget_expr = (
+                    "NULLIF(regexp_replace(" + amount_col + "::text, '[^0-9\\.-]', '', 'g'), '')::numeric"
+                )
             else:
                 budget_expr = 'NULL::numeric'
 

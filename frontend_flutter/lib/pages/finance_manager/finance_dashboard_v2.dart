@@ -496,6 +496,89 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
     );
   }
 
+  Color _alertColor(String severity) {
+    final s = severity.toLowerCase();
+    if (s == 'warning') return Colors.orange;
+    if (s == 'critical') return Colors.redAccent;
+    return PremiumTheme.info;
+  }
+
+  Widget _buildFinancialAlertsPanel() {
+    final future = _alertsFuture ?? _fetchAlerts(year: _selectedYear);
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            height: 220,
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.7)),
+              ),
+            ),
+          );
+        }
+
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return SizedBox(
+            height: 80,
+            child: Center(
+              child: Text(
+                'No alerts',
+                style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+              ),
+            ),
+          );
+        }
+
+        final shown = items.take(10).toList();
+        return Column(
+          children: [
+            for (int i = 0; i < shown.length; i++) ...[
+              Row(
+                children: [
+                  Container(
+                    height: 10,
+                    width: 10,
+                    decoration: BoxDecoration(
+                      color: _alertColor(
+                          (shown[i]['severity'] ?? 'info').toString()),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      (shown[i]['type'] ?? '').toString().replaceAll('_', ' '),
+                      style: PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    (shown[i]['client'] ?? '').toString(),
+                    style: PremiumTheme.labelMedium
+                        .copyWith(color: Colors.white60),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+              if (i != shown.length - 1)
+                Divider(color: Colors.white.withOpacity(0.06), height: 14),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildPanel({
     required String title,
     required String subtitle,
@@ -914,7 +997,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                 if (rows.isEmpty)
                   Text(
                     'No data',
-                    style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+                    style:
+                        PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
                   )
                 else
                   ...rows.take(8).map(
@@ -960,10 +1044,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                 chip('Blocked', n(totals['blocked_count']).toString()),
                 chip('Acceptance', '${acceptanceRate.toStringAsFixed(1)}%'),
                 chip(
-                    'Tokens', NumberFormat.compact().format(n(usageSummary['total_tokens']))),
+                    'Tokens',
+                    NumberFormat.compact()
+                        .format(n(usageSummary['total_tokens']))),
                 chip('Cost',
                     'R ${((usageSummary['estimated_cost_zar'] as num?) ?? 0).toStringAsFixed(2)}'),
-                chip('Average Spent', 'R ${averageSpendZar.toStringAsFixed(2)}'),
+                chip(
+                    'Average Spent', 'R ${averageSpendZar.toStringAsFixed(2)}'),
               ],
             ),
             const SizedBox(height: 12),
@@ -976,8 +1063,8 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
             LayoutBuilder(
               builder: (context, constraints) {
                 final narrow = constraints.maxWidth < 980;
-                final left =
-                    listColumn('By Endpoint', endpointSplit, 'endpoint', 'requests');
+                final left = listColumn(
+                    'By Endpoint', endpointSplit, 'endpoint', 'requests');
                 final right =
                     listColumn('Top Users', topUsers, 'username', 'requests');
                 if (narrow) {
@@ -1950,6 +2037,15 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                                     style: TextStyle(color: Colors.white),
                                   ),
                                 ),
+                              TextButton(
+                                onPressed: notifications.isEmpty
+                                    ? null
+                                    : () async {
+                                        await app.deleteAllNotifications();
+                                        setModalState(() {});
+                                      },
+                                child: const Text('Delete all'),
+                              ),
                             ],
                           ),
                         ],
@@ -1983,7 +2079,7 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                                       rawItem is Map<String, dynamic>
                                           ? rawItem
                                           : (rawItem is Map
-                                              ? <String, dynamic>{}
+                                              ? rawItem.cast<String, dynamic>()
                                               : <String, dynamic>{});
 
                                   final title =
@@ -2034,21 +2130,87 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                                           ? title!
                                           : 'Notification',
                                       style: TextStyle(
-                                        color: const Color(0xFF2C3E50),
+                                        color: Colors.white,
                                         fontWeight: isRead
-                                            ? FontWeight.normal
-                                            : FontWeight.bold,
+                                            ? FontWeight.w600
+                                            : FontWeight.w700,
                                       ),
                                     ),
-                                    subtitle: Text(
-                                      message,
-                                      style: TextStyle(
-                                        color: const Color(0xFF64748B),
-                                        fontSize: 14,
-                                      ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        if (message.isNotEmpty)
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              message,
+                                              style: const TextStyle(
+                                                color: Color(0xFFCBD5E1),
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ),
+                                        if (proposalTitle != null &&
+                                            proposalTitle.isNotEmpty)
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              proposalTitle,
+                                              style: const TextStyle(
+                                                color: Color(0xFF94A3B8),
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                        if (timeLabel.isNotEmpty)
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 4),
+                                            child: Text(
+                                              timeLabel,
+                                              style: const TextStyle(
+                                                color: Color(0xFF94A3B8),
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
                                     ),
+                                    isThreeLine: true,
+                                    trailing: notificationId != null
+                                        ? Wrap(
+                                            spacing: 4,
+                                            children: [
+                                              if (!isRead)
+                                                TextButton(
+                                                  onPressed: () async {
+                                                    await app
+                                                        .markNotificationRead(
+                                                            notificationId);
+                                                    setModalState(() {});
+                                                  },
+                                                  child:
+                                                      const Text('Mark read'),
+                                                ),
+                                              IconButton(
+                                                tooltip: 'Delete',
+                                                onPressed: () async {
+                                                  await app.deleteNotification(
+                                                      notificationId);
+                                                  setModalState(() {});
+                                                },
+                                                icon: const Icon(
+                                                  Icons.delete_outline,
+                                                  size: 18,
+                                                  color: Colors.redAccent,
+                                                ),
+                                              ),
+                                            ],
+                                          )
+                                        : null,
                                   );
                                 },
                               ),
@@ -2067,34 +2229,22 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
   Future<void> _handleNotificationTap(
       AppState app, Map<String, dynamic> notification, int? notificationId,
       {required bool isAlreadyRead}) async {
-    // Handle notification tap based on type
-    final notificationType = notification['notification_type']?.toString();
+    final metadata = _parseNotificationMetadata(notification['metadata']);
+    String? proposalId = _asIdString(
+      metadata['proposal_id'] ?? notification['proposal_id'],
+    );
+    proposalId ??= _asIdString(metadata['resource_id']);
+    final proposalTitle =
+        notification['proposal_title']?.toString().trim().isNotEmpty == true
+            ? notification['proposal_title'].toString().trim()
+            : notification['title']?.toString().trim();
+    final commentId = metadata['comment_id'] is int
+        ? metadata['comment_id'] as int
+        : int.tryParse(metadata['comment_id']?.toString() ?? '');
+    final sectionIndex = metadata['section_index'] is int
+        ? metadata['section_index'] as int
+        : int.tryParse(metadata['section_index']?.toString() ?? '');
 
-    if (notificationType == 'changes_requested') {
-      // Finance: open the proposal in edit mode so they can update pricing and submit back
-      final proposalId = notification['proposal_id'];
-      if (proposalId != null) {
-        Navigator.of(context).pop();
-        Navigator.pushNamed(
-          context,
-          '/blank-document',
-          arguments: {'proposalId': proposalId.toString()},
-        );
-      }
-    } else if (notificationType == 'proposal_approved' ||
-        notificationType == 'proposal_resubmitted') {
-      final proposalId = notification['proposal_id'];
-      if (proposalId != null) {
-        Navigator.of(context).pop();
-        Navigator.pushNamed(
-          context,
-          '/blank-document',
-          arguments: {'proposalId': proposalId.toString()},
-        );
-      }
-    }
-
-    // Mark as read if not already read
     if (!isAlreadyRead && notificationId != null) {
       try {
         await app.markNotificationRead(notificationId);
@@ -2102,17 +2252,68 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
         debugPrint('Error marking notification as read: $e');
       }
     }
+
+    if (!mounted) return;
+    if (proposalId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This notification is missing proposal details.'),
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).pushNamed(
+      '/compose',
+      arguments: {
+        'proposalId': proposalId,
+        if (proposalTitle != null && proposalTitle.isNotEmpty)
+          'proposalTitle': proposalTitle,
+        'forceCommentsPanelOpen': true,
+        if (commentId != null) 'initialCommentId': commentId,
+        if (sectionIndex != null) 'initialSectionIndex': sectionIndex,
+      },
+    );
+  }
+
+  Map<String, dynamic> _parseNotificationMetadata(dynamic raw) {
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return raw.cast<String, dynamic>();
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic>) return decoded;
+        if (decoded is Map) return decoded.cast<String, dynamic>();
+      } catch (_) {}
+    }
+    return <String, dynamic>{};
+  }
+
+  String? _asIdString(dynamic value) {
+    if (value == null) return null;
+    final text = value.toString().trim();
+    if (text.isEmpty || text.toLowerCase() == 'null') return null;
+    return text;
+  }
+
+  DateTime _toSast(DateTime dt) {
+    final utc = dt.isUtc
+        ? dt
+        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute,
+            dt.second, dt.millisecond, dt.microsecond);
+    return utc.add(const Duration(hours: 2));
   }
 
   String _formatNotificationTimestamp(dynamic timestamp) {
     if (timestamp == null) return '';
     try {
       final dateTime = DateTime.parse(timestamp.toString());
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
+      final sast = _toSast(dateTime);
+      final now = _toSast(DateTime.now().toUtc());
+      final difference = now.difference(sast);
 
       if (difference.inDays > 0) {
-        return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
+        return '${sast.day}/${sast.month}/${sast.year}';
       } else if (difference.inHours > 0) {
         return '${difference.inHours}h ago';
       } else if (difference.inMinutes > 0) {
@@ -2326,6 +2527,13 @@ class _FinanceDashboardPageState extends State<FinanceDashboardV2Page> {
                                             ],
                                           );
                                         },
+                                      ),
+                                      const SizedBox(height: 12),
+                                      _buildSimpleListPanel(
+                                        title: 'Financial Alerts',
+                                        subtitle:
+                                            'Items that may need finance attention',
+                                        child: _buildFinancialAlertsPanel(),
                                       ),
                                       const SizedBox(height: 12),
                                       _buildRequiresAttention(
