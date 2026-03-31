@@ -635,13 +635,12 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             SizedBox(
               width: 192.14,
               height: 410.58,
-              child: SingleChildScrollView(
-                child: Column(
+              child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const SizedBox(height: 20),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
                       child: const Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -655,16 +654,22 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                             ),
                           ),
                           SizedBox(height: 6),
-                          Text(
-                            'Welcome to',
-                            style: TextStyle(color: Colors.white, fontSize: 13),
-                          ),
-                          Text(
-                            'Proposal & SOW Builder',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
+                          SizedBox(
+                            width: 192.14,
+                            height: 65.94,
+                            child: Center(
+                              child: Text(
+                                'Welcome to\nProposal & SOW Builder',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontFamily: 'Poppins',
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 9.27,
+                                  height: 1.0572,
+                                  letterSpacing: 0.0927,
+                                ),
+                              ),
                             ),
                           ),
                         ],
@@ -672,57 +677,44 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                     ),
                     const SizedBox(height: 18),
                     Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Column(
                         children: [
                           _buildSidebarNavItem(
                               0, Icons.rocket_launch_outlined, 'Dashboard',
-                              activeColor: activeColor,
-                              itemHeight: 20.7,
-                              itemWidth: 111.87),
-                          const SizedBox(height: 8),
-                          _buildSidebarNavItem(
-                              1, Icons.handshake_outlined, 'Proposals',
-                              itemHeight: 20.7, itemWidth: 111.87),
-                          const SizedBox(height: 8),
-                          _buildSidebarNavItem(2, Icons.assignment_outlined, "SOW'S",
-                              itemHeight: 20.7, itemWidth: 111.87),
-                          const SizedBox(height: 8),
-                          _buildSidebarNavItem(
-                              3, Icons.request_quote_outlined, 'Invoices',
-                              itemHeight: 20.7, itemWidth: 111.87),
-                          const SizedBox(height: 8),
-                          _buildSidebarNavItem(4, Icons.mail_outline, 'Messages',
-                              itemHeight: 20.7, itemWidth: 111.87),
-                          const SizedBox(height: 8),
-                          _buildSidebarNavItem(
-                              5, Icons.description_outlined, 'Documents',
-                              itemHeight: 20.7, itemWidth: 111.87),
+                              activeColor: activeColor),
+                          const SizedBox(height: 10.27),
+                          _buildSidebarNavItem(1, Icons.handshake_outlined, 'Proposals'),
+                          const SizedBox(height: 10.27),
+                          _buildSidebarNavItem(2, Icons.assignment_outlined, "SOW'S"),
+                          const SizedBox(height: 10.27),
+                          _buildSidebarNavItem(3, Icons.request_quote_outlined, 'Invoices'),
+                          const SizedBox(height: 10.27),
+                          _buildSidebarNavItem(4, Icons.mail_outline, 'Messages'),
+                          const SizedBox(height: 10.27),
+                          _buildSidebarNavItem(5, Icons.description_outlined, 'Documents'),
                         ],
                       ),
                     ),
+                    const Spacer(),
                   ],
                 ),
-              ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: _buildSidebarNavItem(6, Icons.person, 'Account Profile',
-                  itemWidth: 111.87, itemHeight: 20.7),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: _buildSidebarNavItem(6, Icons.person, 'Account Profile'),
             ),
             const SizedBox(height: 10),
             Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
             const SizedBox(height: 10),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: _buildSidebarNavItem(
                 7,
                 Icons.logout,
                 'Logout',
-                itemWidth: 111.87,
-                itemHeight: 20.7,
                 onTap: () => Navigator.pushReplacementNamed(context, '/login'),
               ),
             ),
@@ -781,51 +773,41 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
                   const SizedBox(height: 12),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Column(
                       children: [
-                        _buildDrawerNavItem(context, 0, Icons.rocket_launch_outlined,
-                            'Dashboard',
-                            itemHeight: 20.7, itemWidth: 111.87),
-                        const SizedBox(height: 8),
                         _buildDrawerNavItem(
-                            context, 1, Icons.handshake_outlined, 'Proposals',
-                            itemHeight: 20.7, itemWidth: 111.87),
-                        const SizedBox(height: 8),
+                            context, 0, Icons.rocket_launch_outlined, 'Dashboard'),
+                        const SizedBox(height: 10.27),
                         _buildDrawerNavItem(
-                            context, 2, Icons.assignment_outlined, "SOW'S",
-                            itemHeight: 20.7, itemWidth: 111.87),
-                        const SizedBox(height: 8),
+                            context, 1, Icons.handshake_outlined, 'Proposals'),
+                        const SizedBox(height: 10.27),
                         _buildDrawerNavItem(
-                            context, 3, Icons.request_quote_outlined, 'Invoices',
-                            itemHeight: 20.7, itemWidth: 111.87),
-                        const SizedBox(height: 8),
+                            context, 2, Icons.assignment_outlined, "SOW'S"),
+                        const SizedBox(height: 10.27),
                         _buildDrawerNavItem(
-                            context, 4, Icons.mail_outline, 'Messages',
-                            itemHeight: 20.7, itemWidth: 111.87),
-                        const SizedBox(height: 8),
+                            context, 3, Icons.request_quote_outlined, 'Invoices'),
+                        const SizedBox(height: 10.27),
                         _buildDrawerNavItem(
-                            context, 5, Icons.description_outlined, 'Documents',
-                            itemHeight: 20.7, itemWidth: 111.87),
+                            context, 4, Icons.mail_outline, 'Messages'),
+                        const SizedBox(height: 10.27),
+                        _buildDrawerNavItem(
+                            context, 5, Icons.description_outlined, 'Documents'),
                       ],
                     ),
                   ),
                   const SizedBox(height: 20),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: _buildDrawerNavItem(
-                        context, 6, Icons.person, 'Account Profile',
-                        itemWidth: 111.87, itemHeight: 20.7),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: _buildDrawerNavItem(context, 6, Icons.person, 'Account Profile'),
                   ),
                   const SizedBox(height: 10),
                   Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
                   const SizedBox(height: 10),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: _buildDrawerNavItem(
                         context, 7, Icons.logout, 'Logout',
-                        itemWidth: 111.87,
-                        itemHeight: 20.7,
                         onTap: () => Navigator.pushReplacementNamed(context, '/login')),
                   ),
                 ],
@@ -839,7 +821,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   Widget _buildDrawerNavItem(
       BuildContext context, int index, IconData icon, String label,
-      {VoidCallback? onTap, double itemHeight = 46, double? itemWidth}) {
+      {VoidCallback? onTap, double itemHeight = 37.77, double? itemWidth}) {
     final selected = _selectedNavIndex == index;
     return InkWell(
       onTap: () {
@@ -852,7 +834,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       child: Container(
         width: itemWidth,
         height: itemHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFFD50000) : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
@@ -860,15 +842,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         child: Row(
           children: [
             Container(
-              width: 18,
-              height: 18,
+              width: 26,
+              height: 26,
               decoration: const BoxDecoration(
                 color: Color(0xFFE5E7EB),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: const Color(0xFF1F2937), size: 10),
+              child: Icon(icon, color: const Color(0xFF1F2937), size: 14),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 label,
@@ -876,7 +858,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 style: TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
-                  fontSize: 9,
+                  fontSize: 14,
                 ),
               ),
             ),
@@ -889,7 +871,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   Widget _buildSidebarNavItem(int index, IconData icon, String label,
       {Color activeColor = const Color(0xFFD50000),
       VoidCallback? onTap,
-      double itemHeight = 46,
+      double itemHeight = 37.77,
       double? itemWidth}) {
     final selected = _selectedNavIndex == index;
     return InkWell(
@@ -902,7 +884,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       child: Container(
         width: itemWidth,
         height: itemHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: selected ? activeColor : Colors.transparent,
           borderRadius: BorderRadius.circular(4),
@@ -910,15 +892,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         child: Row(
           children: [
             Container(
-              width: 18,
-              height: 18,
+              width: 26,
+              height: 26,
               decoration: const BoxDecoration(
                 color: Color(0xFFE5E7EB),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: const Color(0xFF1F2937), size: 10),
+              child: Icon(icon, color: const Color(0xFF1F2937), size: 14),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 label,
@@ -926,7 +908,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
-                  fontSize: 9,
+                  fontSize: 14,
                 ),
               ),
             ),
