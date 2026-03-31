@@ -19,6 +19,7 @@ import '../../services/role_service.dart';
 import '../../services/ai_assistant_api.dart';
 import '../../api.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/admin/admin_sidebar.dart';
 import '../../utils/html_content_parser.dart';
 import '../../widgets/header.dart';
 import 'governance_panel.dart';
@@ -5400,14 +5401,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final isCollaboratorMode = widget.isCollaborator;
     final forceCommentsPanelOpen = widget.forceCommentsPanelOpen;
     final _statusForSidebar = (_proposalStatus ?? '').toLowerCase().trim();
+    final appState = context.watch<AppState>();
     final isAdminUser = _isAdminUser();
-    // Hide the left nav sidebar for Finance and Admin roles — they have their
-    // own dashboards and should not see the manager-style navigation panel.
-    // Finance still gets the full sidebar when a proposal is returned for changes.
+    // Keep admin navigation available in-editor so admins can move back
+    // to dashboard pages after opening a proposal from mention notifications.
+    // Finance still hides this sidebar unless changes were requested.
     final hideLeftSidebar =
-        (context.watch<RoleService>().isFinance() &&
-                _statusForSidebar != 'changes requested') ||
-            isAdminUser;
+        context.watch<RoleService>().isFinance() &&
+        _statusForSidebar != 'changes requested';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -5415,7 +5416,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         children: [
           // Left Sidebar (hide in read-only mode AND collaborator mode)
           if (!isReadOnly && !isCollaboratorMode && !hideLeftSidebar)
-            _buildLeftSidebar(),
+            (isAdminUser
+                ? Material(
+                    child: AdminSidebar(
+                      isCollapsed: appState.isAdminSidebarCollapsed,
+                      currentPage: appState.adminNavLabel,
+                      onToggle: appState.toggleAdminSidebar,
+                      onSelect: (label) {
+                        appState.setAdminNavLabel(label);
+                        _navigateToPage(label);
+                      },
+                    ),
+                  )
+                : _buildLeftSidebar()),
           // Sections Sidebar (conditional, hide in read-only mode AND collaborator mode)
           if (!isReadOnly && !isCollaboratorMode && _showSectionsSidebar)
             _buildSectionsSidebar(),
@@ -6020,6 +6033,23 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           Navigator.pushReplacementNamed(context, '/creator_dashboard');
         }
         break;
+      case 'Approvals':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'pending'},
+        );
+        break;
+      case 'Analytics':
+        Navigator.pushReplacementNamed(context, '/analytics');
+        break;
+      case 'History':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'approved'},
+        );
+        break;
       case 'Proposals for Review':
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
@@ -6089,6 +6119,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
         break;
       case 'Logout':
+      case 'Sign Out':
         Navigator.pushReplacementNamed(context, '/login');
         break;
     }
