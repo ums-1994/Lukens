@@ -1427,18 +1427,31 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            TextButton(
-              onPressed: onView,
-              child: const Text('View'),
+            Semantics(
+              label: '$label: View',
+              button: true,
+              child: TextButton(
+                onPressed: onView,
+                child: const Text('View'),
+              ),
             ),
           ],
         ),
       );
     }
 
+    final description = Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        'This quick view surfaces the highest-priority items across the Draft → Review → Released → Signed flow. Use the Approvals page for full action controls.',
+        style: const TextStyle(color: Colors.white60, fontSize: 12),
+      ),
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        description,
         row(
           label: 'Blocked proposals',
           count: _attentionBlocked.length,
