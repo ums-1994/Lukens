@@ -245,9 +245,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
 
         // Compute dashboard metrics from the combined set
         for (final proposal in combined) {
-          final riskScore = _parseDouble(proposal['risk_score']);
-          final riskLevel =
-              (proposal['risk_level'] ?? '').toString().toLowerCase().trim();
+            final riskScore = _parseDouble(
+              proposal['risk_score'] ?? proposal['riskScore'] ?? proposal['riskScoreValue']);
+            final riskLevel = (proposal['risk_level'] ?? proposal['riskLevel'] ?? '')
+              .toString()
+              .toLowerCase()
+              .trim();
           if ((riskScore != null && riskScore >= 70) ||
               riskLevel == 'high' ||
               riskLevel == 'critical') {
