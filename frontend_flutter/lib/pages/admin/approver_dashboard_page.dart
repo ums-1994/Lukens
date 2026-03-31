@@ -258,18 +258,13 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                 '';
             final riskLevel = rawRiskLevel.toString().toLowerCase().trim();
 
-            // Debug: log risk-related fields to help diagnose missing counts
-            try {
-              print('🔍 Proposal id=${proposal['id']} risk_raw=$rawRiskCandidate parsed=$riskScore level_raw=$rawRiskLevel level_norm=$riskLevel');
-            } catch (_) {}
+            // (debug logs removed)
 
             if ((riskScore != null && riskScore >= 70) ||
                 riskLevel == 'high' ||
                 riskLevel == 'critical') {
               highRiskCount++;
-              try {
-                print('⚠️ Counted high-risk: id=${proposal['id']} score=$riskScore level=$riskLevel');
-              } catch (_) {}
+              // counted as high-risk
             }
 
           dynamic rawStatus(dynamic p) {
@@ -341,7 +336,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
 
         // Try to fetch authoritative risk counts from the risk-gate analytics endpoint.
         try {
-          print('📡 Fetching risk-gate details from analytics endpoint...');
           final rgResp = await http.get(
             Uri.parse('${ApiService.baseUrl}/api/analytics/risk-gate/details?limit=500&blocked_only=true&scope=all'),
             headers: {
@@ -352,9 +346,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
 
           if (rgResp.statusCode == 200) {
             final rgJson = json.decode(rgResp.body);
-            try {
-              print('📡 risk-gate response: ${rgResp.body.substring(0, rgResp.body.length>800?800:rgResp.body.length)}');
-            } catch (_) {}
+            // (response logging removed)
             final counts = rgJson is Map ? (rgJson['counts'] as Map? ?? {}) : {};
             final blockCount = counts['BLOCK'] ?? counts['BLOCKED'] ?? counts['block'] ?? counts['Block'] ?? 0;
             final int parsed = (blockCount is int)
@@ -501,10 +493,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                           _buildWhatNeedsAttentionInline(),
                                         ),
                                         SizedBox(height: compact ? 16 : 24),
-                                        _buildSection(
-                                          'Risk Gate',
-                                          _buildRiskGateInline(),
-                                        ),
+                                        // Risk Gate KPI removed from approver dashboard
                                         SizedBox(height: compact ? 16 : 24),
                                         _buildSection(
                                           'Proposals Awaiting Your Approval',
@@ -697,37 +686,40 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             ),
           ],
         ),
-        Row(
-          children: [
-            _buildNotificationBell(app),
-            const SizedBox(width: 12),
-            ClipOval(
-              child: Image.asset(
-                'assets/images/User_Profile.png',
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
+        Flexible(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildNotificationBell(app),
+              const SizedBox(width: 12),
+              ClipOval(
+                child: Image.asset(
+                  'assets/images/User_Profile.png',
+                  width: 48,
+                  height: 48,
+                  fit: BoxFit.cover,
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  email,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    email,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                Text(
-                  displayRole,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ],
-            ),
-          ],
+                  Text(
+                    displayRole,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ],
     );
