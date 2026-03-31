@@ -641,22 +641,26 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                     const SizedBox(height: 20),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: const Column(
+                      child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'KHONOLOGY',
-                            style: TextStyle(
-                              color: Color(0xFFE11D2E),
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 6,
-                              fontSize: 24,
+                          SizedBox(
+                            width: 186.27,
+                            height: 34.97,
+                            child: Align(
+                              alignment: Alignment.center,
+                              child: Image.asset(
+                                'assets/images/khonology_logo.png',
+                                width: 186.27,
+                                height: 34.97,
+                                fit: BoxFit.contain,
+                              ),
                             ),
                           ),
                           SizedBox(height: 6),
                           SizedBox(
-                            width: 192.14,
-                            height: 65.94,
+                            width: 156.73,
+                            height: 55.93,
                             child: Center(
                               child: Text(
                                 'Welcome to\nProposal & SOW Builder',
