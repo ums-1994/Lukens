@@ -338,6 +338,41 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         if (recentApprovals.length > 5) {
           recentApprovals = recentApprovals.sublist(0, 5);
         }
+
+        // Try to fetch authoritative risk counts from the risk-gate analytics endpoint.
+        try {
+          print('📡 Fetching risk-gate details from analytics endpoint...');
+          final rgResp = await http.get(
+            Uri.parse('${ApiService.baseUrl}/api/analytics/risk-gate/details?limit=1&blocked_only=true'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          ).timeout(const Duration(seconds: 8));
+
+          if (rgResp.statusCode == 200) {
+            final rgJson = json.decode(rgResp.body);
+            final counts = rgJson is Map ? (rgJson['counts'] as Map? ?? {}) : {};
+            final blockCount = counts['BLOCK'] ?? counts['BLOCKED'] ?? counts['block'] ?? counts['Block'] ?? 0;
+            final int parsed = (blockCount is int)
+                ? blockCount
+                : (blockCount is String ? int.tryParse(blockCount) ?? 0 : 0);
+            if (parsed > 0) {
+              print('📊 risk-gate reports BLOCK count=$parsed — using authoritative value');
+              highRiskCount = parsed;
+            } else if ((rgJson is Map) && rgJson.containsKey('blocked_proposals')) {
+              final list = (rgJson['blocked_proposals'] as List? ?? []);
+              if (list.isNotEmpty) {
+                print('📊 risk-gate returned ${list.length} blocked_proposals — using length');
+                highRiskCount = list.length;
+              }
+            }
+          } else {
+            print('⚠️ risk-gate analytics API returned ${rgResp.statusCode}');
+          }
+        } catch (e) {
+          print('⚠️ Could not fetch risk-gate details: $e');
+        }
       } catch (e) {
         print('⚠️ Error computing approver metrics: $e');
       }
