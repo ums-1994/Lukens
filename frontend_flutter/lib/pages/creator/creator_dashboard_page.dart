@@ -3084,11 +3084,7 @@ class _DashboardPageState extends State<DashboardPage>
         ),
         const SizedBox(height: 20),
 
-        _buildSection(
-          'Analytics',
-          _buildDashboardAnalytics(app),
-        ),
-        const SizedBox(height: 20),
+        // Analytics removed from Manager Dashboard (hidden for managers)
 
         // End-to-End Proposal Flow
         _buildSection(
