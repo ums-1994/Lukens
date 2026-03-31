@@ -624,113 +624,121 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     return SizedBox(
       width: 192.14,
       child: Container(
-      decoration: BoxDecoration(
-        color: panelColor,
-        border: Border(
-          right: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+        decoration: BoxDecoration(
+          color: panelColor,
+          border: Border(
+            right: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+          ),
         ),
-      ),
-      child: Column(
-        children: [
-          Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Column(
           children: [
-            const SizedBox(height: 20),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'KHONOLOGY',
-                    style: TextStyle(
-                      color: Color(0xFFE11D2E),
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 6,
-                      fontSize: 24,
+            SizedBox(
+              width: 192.14,
+              height: 410.58,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 20),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'KHONOLOGY',
+                            style: TextStyle(
+                              color: Color(0xFFE11D2E),
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 6,
+                              fontSize: 24,
+                            ),
+                          ),
+                          SizedBox(height: 6),
+                          Text(
+                            'Welcome to',
+                            style: TextStyle(color: Colors.white, fontSize: 13),
+                          ),
+                          Text(
+                            'Proposal & SOW Builder',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  SizedBox(height: 6),
-                  Text(
-                    'Welcome to',
-                    style: TextStyle(color: Colors.white, fontSize: 13),
-                  ),
-                  Text(
-                    'Proposal & SOW Builder',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
+                    const SizedBox(height: 18),
+                    Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+                    const SizedBox(height: 14),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        children: [
+                          _buildSidebarNavItem(
+                              0, Icons.rocket_launch_outlined, 'Dashboard',
+                              activeColor: activeColor,
+                              itemHeight: 20.7,
+                              itemWidth: 111.87),
+                          const SizedBox(height: 8),
+                          _buildSidebarNavItem(
+                              1, Icons.handshake_outlined, 'Proposals',
+                              itemHeight: 20.7, itemWidth: 111.87),
+                          const SizedBox(height: 8),
+                          _buildSidebarNavItem(2, Icons.assignment_outlined, "SOW'S",
+                              itemHeight: 20.7, itemWidth: 111.87),
+                          const SizedBox(height: 8),
+                          _buildSidebarNavItem(
+                              3, Icons.request_quote_outlined, 'Invoices',
+                              itemHeight: 20.7, itemWidth: 111.87),
+                          const SizedBox(height: 8),
+                          _buildSidebarNavItem(4, Icons.mail_outline, 'Messages',
+                              itemHeight: 20.7, itemWidth: 111.87),
+                          const SizedBox(height: 8),
+                          _buildSidebarNavItem(
+                              5, Icons.description_outlined, 'Documents',
+                              itemHeight: 20.7, itemWidth: 111.87),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 18),
-            Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-            const SizedBox(height: 14),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Column(
-                children: [
-                  _buildSidebarNavItem(0, Icons.rocket_launch_outlined, 'Dashboard',
-                      activeColor: activeColor, itemHeight: 20.7, itemWidth: 111.87),
-                  const SizedBox(height: 8),
-                  _buildSidebarNavItem(1, Icons.handshake_outlined, 'Proposals',
-                      itemHeight: 20.7, itemWidth: 111.87),
-                  const SizedBox(height: 8),
-                  _buildSidebarNavItem(2, Icons.assignment_outlined, "SOW'S",
-                      itemHeight: 20.7, itemWidth: 111.87),
-                  const SizedBox(height: 8),
-                  _buildSidebarNavItem(3, Icons.request_quote_outlined, 'Invoices',
-                      itemHeight: 20.7, itemWidth: 111.87),
-                  const SizedBox(height: 8),
-                  _buildSidebarNavItem(4, Icons.mail_outline, 'Messages',
-                      itemHeight: 20.7, itemWidth: 111.87),
-                  const SizedBox(height: 8),
-                  _buildSidebarNavItem(5, Icons.description_outlined, 'Documents',
-                      itemHeight: 20.7, itemWidth: 111.87),
-                ],
-              ),
+              child: _buildSidebarNavItem(6, Icons.person, 'Account Profile',
+                  itemWidth: 111.87, itemHeight: 20.7),
             ),
-          ],
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: _buildSidebarNavItem(6, Icons.person, 'Account Profile',
-                itemWidth: 111.87, itemHeight: 20.7),
-          ),
-          const SizedBox(height: 10),
-          Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-          const SizedBox(height: 10),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: _buildSidebarNavItem(
-              7,
-              Icons.logout,
-              'Logout',
-              itemWidth: 111.87,
-              itemHeight: 20.7,
-              onTap: () => Navigator.pushReplacementNamed(context, '/login'),
-            ),
-          ),
-          if ((_clientEmail ?? '').isNotEmpty)
+            const SizedBox(height: 10),
+            Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
+            const SizedBox(height: 10),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-              child: Text(
-                _clientEmail!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55), fontSize: 11),
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: _buildSidebarNavItem(
+                7,
+                Icons.logout,
+                'Logout',
+                itemWidth: 111.87,
+                itemHeight: 20.7,
+                onTap: () => Navigator.pushReplacementNamed(context, '/login'),
               ),
             ),
-        ],
-      ),
+            if ((_clientEmail ?? '').isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                child: Text(
+                  _clientEmail!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.55), fontSize: 11),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
