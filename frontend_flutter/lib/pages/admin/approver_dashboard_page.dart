@@ -985,8 +985,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         'proposalId': proposalId,
         if (proposalTitle != null && proposalTitle.isNotEmpty)
           'proposalTitle': proposalTitle,
-        // Open in focused comment mode (no manager-style nav chrome).
-        'isCollaborator': true,
+        // Admin gets full editing rights — left nav is suppressed via
+        // hideLeftSidebar in the editor based on role, so no isCollaborator needed.
+        'readOnly': false,
         'forceCommentsPanelOpen': true,
         if (commentId != null) 'initialCommentId': commentId,
         if (sectionIndex != null) 'initialSectionIndex': sectionIndex,
@@ -1331,6 +1332,11 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                       _currentPage == 'Analytics', context),
                   _buildNavItem('History', 'assets/images/analytics.png',
                       _currentPage == 'History', context),
+                  _buildNavItem(
+                      'Content Library',
+                      'assets/images/content_library.png',
+                      _currentPage == 'Content Library',
+                      context),
                   const SizedBox(height: 20),
                 ],
               ),
@@ -1946,6 +1952,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           '/admin_approvals',
           arguments: const {'initialFilter': 'approved'},
         );
+        break;
+      case 'Content Library':
+        Navigator.pushNamed(context, '/content_library');
         break;
       case 'Sign Out':
         AuthService.logout();
