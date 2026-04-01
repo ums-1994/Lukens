@@ -242,6 +242,55 @@ class MyApp extends StatelessWidget {
       );
     }
 
+    // Handle client dashboard route
+    if (settings.name == '/client/dashboard' ||
+        (settings.name != null &&
+            settings.name!.startsWith('/client/dashboard'))) {
+      final currentUrl = web.window.location.href;
+      final hash = web.window.location.hash;
+      String? token;
+
+      try {
+        final name = settings.name ?? '';
+        final routeUri = Uri.parse(name);
+        token = routeUri.queryParameters['token'];
+      } catch (_) {}
+
+      if (token == null || token.isEmpty) {
+        try {
+          final uri = Uri.parse(currentUrl);
+          token = uri.queryParameters['token'];
+        } catch (_) {}
+      }
+
+      if ((token == null || token.isEmpty) && hash.contains('token=')) {
+        try {
+          final normalizedFragment =
+              hash.startsWith('#') ? hash.substring(1) : hash;
+          final fragmentUri = Uri.parse('http://dummy/$normalizedFragment');
+          token = fragmentUri.queryParameters['token'];
+        } catch (_) {}
+      }
+
+      if (token != null && token.isNotEmpty) {
+        final validToken = token;
+        return MaterialPageRoute(
+          builder: (context) => ClientDashboardHome(
+            initialToken: validToken,
+            initialNavIndex: 0,
+            showSummary: true,
+          ),
+        );
+      }
+
+      return MaterialPageRoute(
+        builder: (context) => const ClientDashboardHome(
+          initialNavIndex: 0,
+          showSummary: true,
+        ),
+      );
+    }
+
     // Handle client proposals route
     if (settings.name == '/client/proposals' ||
         (settings.name != null &&
@@ -286,12 +335,19 @@ class MyApp extends StatelessWidget {
       if (token != null && token.isNotEmpty) {
         final validToken = token;
         return MaterialPageRoute(
-          builder: (context) => ClientDashboardHome(initialToken: validToken),
+          builder: (context) => ClientDashboardHome(
+            initialToken: validToken,
+            initialNavIndex: 1,
+            showSummary: false,
+          ),
         );
       }
 
       return MaterialPageRoute(
-        builder: (context) => const ClientDashboardHome(),
+        builder: (context) => const ClientDashboardHome(
+          initialNavIndex: 1,
+          showSummary: false,
+        ),
       );
     }
 
@@ -496,7 +552,8 @@ class MyApp extends StatelessWidget {
           // '/collaborate' is handled by onGenerateRoute to extract token
           '/analytics': (context) {
             final rawRole =
-                AuthService.currentUser?['role']?.toString().toLowerCase() ?? '';
+                AuthService.currentUser?['role']?.toString().toLowerCase() ??
+                    '';
             final roleKey = rawRole.trim().replaceAll('-', '_');
             final isFinance = roleKey.startsWith('finance') ||
                 roleKey == 'financial_manager' ||
@@ -688,6 +745,29 @@ class _AuthWrapperState extends State<AuthWrapper> {
         uri.path.contains('/client/proposals') ||
         uri.fragment.contains('/client/proposals');
 
+    final isClientDashboard = currentUrl.contains('/client/dashboard') ||
+        uri.path.contains('/client/dashboard') ||
+        uri.fragment.contains('/client/dashboard');
+
+    if (isClientDashboard) {
+      final clientToken = _extractTokenFromUrl(currentUrl);
+      if (clientToken != null && clientToken.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ClientDashboardHome(
+                initialToken: clientToken,
+                initialNavIndex: 0,
+                showSummary: true,
+              ),
+            ),
+          );
+        });
+        return;
+      }
+    }
+
     if (isClientProposals) {
       // Preview mode support
       bool isClientPreview = false;
@@ -709,7 +789,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => const ClientDashboardHome(),
+              builder: (context) => const ClientDashboardHome(
+                initialNavIndex: 1,
+                showSummary: false,
+              ),
             ),
           );
         });
@@ -727,8 +810,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) =>
-                  ClientDashboardHome(initialToken: clientToken),
+              builder: (context) => ClientDashboardHome(
+                initialToken: clientToken,
+                initialNavIndex: 1,
+                showSummary: false,
+              ),
             ),
           );
         });
@@ -849,6 +935,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
         uri.path.contains('/client/proposals') ||
         uri.fragment.contains('/client/proposals');
 
+    final isClientDashboard = currentUrl.contains('/client/dashboard') ||
+        hash.contains('/client/dashboard') ||
+        uri.path.contains('/client/dashboard') ||
+        uri.fragment.contains('/client/dashboard');
+
     bool isClientPreview = false;
     try {
       isClientPreview = uri.queryParameters['preview'] == '1';
@@ -867,9 +958,31 @@ class _AuthWrapperState extends State<AuthWrapper> {
           currentUrl.contains('preview=1') || hash.contains('preview=1');
     }
 
+    if (isClientDashboard) {
+      final extractedToken = _extractTokenFromUrl(currentUrl);
+      if (extractedToken != null && extractedToken.isNotEmpty) {
+        String tokenValue = extractedToken;
+        try {
+          tokenValue = Uri.decodeComponent(tokenValue);
+        } catch (_) {}
+        return ClientDashboardHome(
+          initialToken: tokenValue,
+          initialNavIndex: 0,
+          showSummary: true,
+        );
+      }
+      return const ClientDashboardHome(
+        initialNavIndex: 0,
+        showSummary: true,
+      );
+    }
+
     if (isClientProposals) {
       if (isClientPreview) {
-        return const ClientDashboardHome();
+        return const ClientDashboardHome(
+          initialNavIndex: 1,
+          showSummary: false,
+        );
       }
       final extractedToken = _extractTokenFromUrl(currentUrl);
       if (extractedToken != null && extractedToken.isNotEmpty) {
@@ -881,7 +994,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
         final tokenPreview =
             tokenValue.length >= 10 ? tokenValue.substring(0, 10) : tokenValue;
         print('📍 Client token: $tokenPreview...');
-        return ClientDashboardHome(initialToken: tokenValue);
+        return ClientDashboardHome(
+          initialToken: tokenValue,
+          initialNavIndex: 1,
+          showSummary: false,
+        );
       }
     }
 

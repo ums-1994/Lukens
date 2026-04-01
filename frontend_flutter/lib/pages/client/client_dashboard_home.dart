@@ -11,8 +11,15 @@ import '../../theme/premium_theme.dart';
 
 class ClientDashboardHome extends StatefulWidget {
   final String? initialToken;
+  final int? initialNavIndex;
+  final bool showSummary;
 
-  const ClientDashboardHome({super.key, this.initialToken});
+  const ClientDashboardHome({
+    super.key,
+    this.initialToken,
+    this.initialNavIndex,
+    this.showSummary = true,
+  });
 
   @override
   State<ClientDashboardHome> createState() => _ClientDashboardHomeState();
@@ -36,6 +43,49 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     'rejected': 0,
     'viewed': 0,
   };
+
+  bool _isSow(Map<String, dynamic> p) {
+    final t =
+        (p['template_type'] ?? p['templateType'] ?? p['template_key'] ?? '')
+            .toString()
+            .toLowerCase();
+    return t.contains('sow');
+  }
+
+  bool _isProposalRequiringAction(Map<String, dynamic> p) {
+    if (_isSow(p)) return false;
+    final s = (p['status'] ?? '').toString().toLowerCase();
+    return s.contains('sent') ||
+        s.contains('released') ||
+        s.contains('review') ||
+        s.contains('pending') ||
+        s.contains('signature');
+  }
+
+  bool _isSignedDocument(Map<String, dynamic> p) {
+    if (_isSow(p)) return false;
+    final statusLower = (p['status'] ?? '').toString().toLowerCase().trim();
+    return statusLower.contains('client signed') ||
+        statusLower.contains('signed');
+  }
+
+  bool _isAwaitingSignature(Map<String, dynamic> p) {
+    if (_isSow(p)) return false;
+    if (_isSignedDocument(p)) return false;
+
+    final statusLower = (p['status'] ?? '').toString().toLowerCase().trim();
+
+    return statusLower.contains('sent for signature') ||
+        statusLower.contains('sent to client') ||
+        statusLower.contains('released') ||
+        statusLower.contains('in review') ||
+        statusLower.contains('review') ||
+        statusLower.contains('sent');
+  }
+
+  int _proposalsRequiringActionCount() {
+    return _proposals.where(_isProposalRequiringAction).length;
+  }
 
   String _normalizeStatus(String rawStatus) {
     final lower = rawStatus.toLowerCase().trim();
@@ -72,9 +122,18 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   @override
   void initState() {
     super.initState();
+    _selectedNavIndex = widget.initialNavIndex ?? 0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _extractTokenAndLoad();
     });
+  }
+
+  void _navigateClient(String route) {
+    final token = _accessToken;
+    final suffix = (token != null && token.isNotEmpty)
+        ? '?token=${Uri.encodeComponent(token)}'
+        : '';
+    Navigator.pushReplacementNamed(context, '$route$suffix');
   }
 
   String _sanitizeToken(String token) {
@@ -99,7 +158,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       final existing = web.window.localStorage['lukens_client_device_id'];
       final clean = existing?.trim();
       if (clean != null && clean.isNotEmpty) return clean;
-      final id = 'dev_${DateTime.now().millisecondsSinceEpoch}_${(100000 + (DateTime.now().microsecondsSinceEpoch % 900000))}';
+      final id =
+          'dev_${DateTime.now().millisecondsSinceEpoch}_${(100000 + (DateTime.now().microsecondsSinceEpoch % 900000))}';
       web.window.localStorage['lukens_client_device_id'] = id;
       return id;
     } catch (_) {
@@ -222,22 +282,23 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           return false;
         }
 
-        final verifyUri = Uri.parse('$baseUrl/api/client/device-session/verify-otp');
+        final verifyUri =
+            Uri.parse('$baseUrl/api/client/device-session/verify-otp');
         final verifyResp = await http
             .post(
-              verifyUri,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'challenge_id': activeChallengeId,
-                'otp': normalizedOtp,
-              }),
-            )
+          verifyUri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'challenge_id': activeChallengeId,
+            'otp': normalizedOtp,
+          }),
+        )
             .timeout(
-              const Duration(seconds: 12),
-              onTimeout: () {
-                throw TimeoutException('OTP verification timed out');
-              },
-            );
+          const Duration(seconds: 12),
+          onTimeout: () {
+            throw TimeoutException('OTP verification timed out');
+          },
+        );
 
         Map<String, dynamic>? verifyDecoded;
         try {
@@ -263,7 +324,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('OTP verified but no session token was returned.'),
+                content:
+                    Text('OTP verified but no session token was returned.'),
                 backgroundColor: Colors.red,
               ),
             );
@@ -285,16 +347,16 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final startUri = Uri.parse('$baseUrl/api/client/device-session/start');
     final startResp = await http
         .post(
-          startUri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'token': token, 'device_id': deviceId}),
-        )
+      startUri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'token': token, 'device_id': deviceId}),
+    )
         .timeout(
-          const Duration(seconds: 12),
-          onTimeout: () {
-            throw TimeoutException('Device session start timed out');
-          },
-        );
+      const Duration(seconds: 12),
+      onTimeout: () {
+        throw TimeoutException('Device session start timed out');
+      },
+    );
 
     Map<String, dynamic>? decoded;
     try {
@@ -328,7 +390,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Device session started but no session token was returned.'),
+            content: Text(
+                'Device session started but no session token was returned.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -377,19 +440,20 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return false;
     }
 
-    final verifyUri = Uri.parse('$baseUrl/api/client/device-session/verify-otp');
+    final verifyUri =
+        Uri.parse('$baseUrl/api/client/device-session/verify-otp');
     final verifyResp = await http
         .post(
-          verifyUri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'challenge_id': challengeId, 'otp': normalizedOtp}),
-        )
+      verifyUri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'challenge_id': challengeId, 'otp': normalizedOtp}),
+    )
         .timeout(
-          const Duration(seconds: 12),
-          onTimeout: () {
-            throw TimeoutException('OTP verification timed out');
-          },
-        );
+      const Duration(seconds: 12),
+      onTimeout: () {
+        throw TimeoutException('OTP verification timed out');
+      },
+    );
 
     Map<String, dynamic>? verifyDecoded;
     try {
@@ -434,25 +498,20 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     if (idx == 0) {
       return docs;
     }
-
-    bool isSow(Map<String, dynamic> p) {
-      final t = (p['template_type'] ?? p['templateType'] ?? p['template_key'] ?? '')
-          .toString()
-          .toLowerCase();
-      return t.contains('sow');
-    }
-
     if (idx == 1) {
-      return docs.where((p) => !isSow(p)).toList();
+      return docs.where(_isAwaitingSignature).toList();
     }
     if (idx == 2) {
-      return docs.where(isSow).toList();
+      return docs.where(_isSignedDocument).toList();
     }
     return docs;
   }
 
   String _documentLabel(Map<String, dynamic> doc) {
-    final t = (doc['template_type'] ?? doc['templateType'] ?? doc['template_key'] ?? '')
+    final t = (doc['template_type'] ??
+            doc['templateType'] ??
+            doc['template_key'] ??
+            '')
         .toString()
         .toLowerCase();
     if (t.contains('sow')) return 'SOW';
@@ -478,7 +537,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   Future<void> _showFallbackSignModal(Map<String, dynamic> doc) async {
     if (_accessToken == null || _accessToken!.isEmpty) return;
     final rawId = doc['id'];
-    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (proposalId == null) return;
 
     final nameController = TextEditingController();
@@ -499,7 +559,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 return;
               }
               if (!consent) {
-                setModalState(() => error = 'Please confirm you agree to sign.');
+                setModalState(
+                    () => error = 'Please confirm you agree to sign.');
                 return;
               }
 
@@ -510,7 +571,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
               try {
                 final resp = await http.post(
-                  Uri.parse('$baseUrl/api/client/proposals/$proposalId/sign_token'),
+                  Uri.parse(
+                      '$baseUrl/api/client/proposals/$proposalId/sign_token'),
                   headers: {
                     'Content-Type': 'application/json',
                     if (_deviceId != null && _deviceId!.isNotEmpty)
@@ -576,7 +638,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                           value: consent,
                           onChanged: submitting
                               ? null
-                              : (v) => setModalState(() => consent = v ?? false),
+                              : (v) =>
+                                  setModalState(() => consent = v ?? false),
                         ),
                         const Expanded(
                           child: Text(
@@ -597,7 +660,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               ),
               actions: [
                 TextButton(
-                  onPressed: submitting ? null : () => Navigator.of(context).pop(),
+                  onPressed:
+                      submitting ? null : () => Navigator.of(context).pop(),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
@@ -619,141 +683,130 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildSidebar() {
-    const panelColor = Color(0xFF2A2A2A);
-    const activeColor = Color(0xFFD50000);
-    return SizedBox(
-      width: 192.14,
-      child: Container(
-        decoration: BoxDecoration(
-          color: panelColor,
-          border: Border(
-            right: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+    Widget navItem(int index, IconData icon, String label,
+        {VoidCallback? afterTap}) {
+      final selected = _selectedNavIndex == index;
+      final badgeCount =
+          label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
+      return InkWell(
+        onTap: () {
+          if (index == 0) {
+            if (!widget.showSummary) {
+              _navigateClient('/client/dashboard');
+            }
+            return;
+          }
+          if (index == 1) {
+            if (widget.showSummary) {
+              _navigateClient('/client/proposals');
+            }
+            return;
+          }
+          setState(() {
+            _selectedNavIndex = index;
+          });
+          afterTap?.call();
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? Colors.white.withValues(alpha: 0.12)
+                : Colors.transparent,
+            border: selected
+                ? Border(
+                    left: BorderSide(color: PremiumTheme.primaryRed, width: 3),
+                  )
+                : null,
+            borderRadius: BorderRadius.circular(10),
           ),
-        ),
-        child: Column(
-          children: [
-            SizedBox(
-              width: 192.14,
-              height: 410.58,
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const SizedBox(height: 20),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            width: 186.27,
-                            height: 34.97,
-                            child: Align(
-                              alignment: Alignment.center,
-                              child: Image.asset(
-                                'assets/images/khonology_logo.png',
-                                width: 186.27,
-                                height: 34.97,
-                                fit: BoxFit.contain,
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 6),
-                          SizedBox(
-                            width: 156.73,
-                            height: 55.93,
-                            child: Center(
-                              child: Text(
-                                'Welcome to\nProposal & SOW Builder',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontFamily: 'Poppins',
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 9.27,
-                                  height: 1.0572,
-                                  letterSpacing: 0.0927,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 18),
-                    Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-                    const SizedBox(height: 12),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Column(
-                        children: [
-                          _buildSidebarNavItem(
-                              0, Icons.rocket_launch_outlined, 'Dashboard',
-                              activeColor: activeColor,
-                              itemWidth: 188.08,
-                              itemHeight: 32.58),
-                          const SizedBox(height: 10.27),
-                          _buildSidebarNavItem(
-                              1, Icons.handshake_outlined, 'Proposals',
-                              itemWidth: 188.08, itemHeight: 32.58),
-                          const SizedBox(height: 10.27),
-                          _buildSidebarNavItem(2, Icons.assignment_outlined, "SOW'S",
-                              itemWidth: 188.08, itemHeight: 32.58),
-                          const SizedBox(height: 10.27),
-                          _buildSidebarNavItem(
-                              3, Icons.request_quote_outlined, 'Invoices',
-                              itemWidth: 188.08, itemHeight: 32.58),
-                          const SizedBox(height: 10.27),
-                          _buildSidebarNavItem(4, Icons.mail_outline, 'Messages',
-                              itemWidth: 188.08, itemHeight: 32.58),
-                          const SizedBox(height: 10.27),
-                          _buildSidebarNavItem(
-                              5, Icons.description_outlined, 'Documents',
-                              itemWidth: 188.08, itemHeight: 32.58),
-                        ],
-                      ),
-                    ),
-                    const Spacer(),
-                  ],
-                ),
-            ),
-            SizedBox(
-              width: 191.77,
-              height: 189.92,
-              child: Column(
-                children: [
-                  const Spacer(),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: _buildSidebarNavItem(6, Icons.person, 'Account Profile',
-                        itemWidth: 111.87, itemHeight: 20.7),
-                  ),
-                  const SizedBox(height: 10),
-                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-                  const SizedBox(height: 10),
-                  _buildSidebarNavItem(
-                    7,
-                    Icons.logout,
-                    'Logout',
-                    itemWidth: 192.14,
-                    itemHeight: 36.88,
-                    onTap: () => Navigator.pushReplacementNamed(context, '/login'),
-                  ),
-                ],
-              ),
-            ),
-            if ((_clientEmail ?? '').isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          child: Row(
+            children: [
+              Icon(icon,
+                  color: selected ? Colors.white : Colors.white70, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
                 child: Text(
-                  _clientEmail!,
-                  maxLines: 1,
+                  label,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.55), fontSize: 11),
+                    color: selected ? Colors.white : Colors.white70,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
                 ),
               ),
-          ],
+              if (badgeCount > 0)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.primaryRed,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    badgeCount > 99 ? '99+' : badgeCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
+      );
+    }
+
+    return Container(
+      width: 220,
+      decoration: BoxDecoration(
+        color: const Color(0xFF0B1220).withValues(alpha: 0.96),
+        border: Border(
+          right: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 18),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: const [
+                Icon(Icons.grid_view_rounded, color: Colors.white),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Client Portal',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          navItem(0, Icons.dashboard_outlined, 'Dashboard'),
+          navItem(1, Icons.description_outlined, 'Proposals'),
+          navItem(2, Icons.folder_outlined, 'Documents'),
+          navItem(3, Icons.person_outline, 'Profile'),
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+            child: Text(
+              _clientEmail ?? '',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -793,59 +846,25 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                       ],
                     ),
                   ),
-                  Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
+                  _buildDrawerNavItem(
+                      context, 0, Icons.dashboard_outlined, 'Dashboard'),
+                  _buildDrawerNavItem(
+                      context, 1, Icons.description_outlined, 'Proposals'),
+                  _buildDrawerNavItem(
+                      context, 2, Icons.folder_outlined, 'Documents'),
+                  _buildDrawerNavItem(
+                      context, 3, Icons.person_outline, 'Profile'),
+                  const Spacer(),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Column(
-                      children: [
-                        _buildDrawerNavItem(
-                            context, 0, Icons.rocket_launch_outlined, 'Dashboard',
-                            itemWidth: 188.08, itemHeight: 32.58),
-                        const SizedBox(height: 10.27),
-                        _buildDrawerNavItem(
-                            context, 1, Icons.handshake_outlined, 'Proposals',
-                            itemWidth: 188.08, itemHeight: 32.58),
-                        const SizedBox(height: 10.27),
-                        _buildDrawerNavItem(
-                            context, 2, Icons.assignment_outlined, "SOW'S",
-                            itemWidth: 188.08, itemHeight: 32.58),
-                        const SizedBox(height: 10.27),
-                        _buildDrawerNavItem(
-                            context, 3, Icons.request_quote_outlined, 'Invoices',
-                            itemWidth: 188.08, itemHeight: 32.58),
-                        const SizedBox(height: 10.27),
-                        _buildDrawerNavItem(
-                            context, 4, Icons.mail_outline, 'Messages',
-                            itemWidth: 188.08, itemHeight: 32.58),
-                        const SizedBox(height: 10.27),
-                        _buildDrawerNavItem(
-                            context, 5, Icons.description_outlined, 'Documents',
-                            itemWidth: 188.08, itemHeight: 32.58),
-                      ],
-                    ),
-                  ),
-                  SizedBox(
-                    width: 191.77,
-                    height: 189.92,
-                    child: Column(
-                      children: [
-                        const Spacer(),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: _buildDrawerNavItem(
-                              context, 6, Icons.person, 'Account Profile',
-                              itemWidth: 111.87, itemHeight: 20.7),
-                        ),
-                        const SizedBox(height: 10),
-                        Divider(height: 1, color: Colors.white.withValues(alpha: 0.18)),
-                        const SizedBox(height: 10),
-                        _buildDrawerNavItem(
-                            context, 7, Icons.logout, 'Logout',
-                            itemWidth: 192.14,
-                            itemHeight: 36.88,
-                            onTap: () => Navigator.pushReplacementNamed(context, '/login')),
-                      ],
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
+                    child: Text(
+                      _clientEmail ?? '',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.65),
+                          fontSize: 12),
                     ),
                   ),
                 ],
@@ -861,8 +880,24 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       BuildContext context, int index, IconData icon, String label,
       {VoidCallback? onTap, double itemHeight = 37.77, double? itemWidth}) {
     final selected = _selectedNavIndex == index;
+    final badgeCount =
+        label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
     return InkWell(
       onTap: () {
+        if (index == 0) {
+          Navigator.of(context).pop();
+          if (!widget.showSummary) {
+            _navigateClient('/client/dashboard');
+          }
+          return;
+        }
+        if (index == 1) {
+          Navigator.of(context).pop();
+          if (widget.showSummary) {
+            _navigateClient('/client/proposals');
+          }
+          return;
+        }
         setState(() {
           _selectedNavIndex = index;
         });
@@ -874,8 +909,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         height: itemHeight,
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFD50000) : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
+          color: selected
+              ? Colors.white.withValues(alpha: 0.12)
+              : Colors.transparent,
+          border: selected
+              ? Border(
+                  left: BorderSide(color: PremiumTheme.primaryRed, width: 3),
+                )
+              : null,
+          borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
@@ -894,62 +936,27 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 label,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
+                  color: selected ? Colors.white : Colors.white70,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
                 ),
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSidebarNavItem(int index, IconData icon, String label,
-      {Color activeColor = const Color(0xFFD50000),
-      VoidCallback? onTap,
-      double itemHeight = 37.77,
-      double? itemWidth}) {
-    final selected = _selectedNavIndex == index;
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedNavIndex = index;
-        });
-        onTap?.call();
-      },
-      child: Container(
-        width: itemWidth,
-        height: itemHeight,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: selected ? activeColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 26,
-              height: 26,
-              decoration: const BoxDecoration(
-                color: Color(0xFFE5E7EB),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, color: const Color(0xFF1F2937), size: 14),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
+            if (badgeCount > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: PremiumTheme.primaryRed,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : badgeCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -992,15 +999,12 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 const SizedBox(height: 4),
                 Text(
                   'Welcome back, ${_clientEmail ?? 'Client'}',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12),
                 ),
               ],
             ),
-          ),
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.mail_outline, color: Colors.white70),
-            tooltip: 'Messages',
           ),
           IconButton(
             onPressed: () {},
@@ -1021,7 +1025,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final docs = _filteredDocuments();
     final activeCount = docs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
-      return s.contains('sent') || s.contains('released') || s.contains('review');
+      return s.contains('sent') ||
+          s.contains('released') ||
+          s.contains('review');
     }).length;
     final signedCount = docs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
@@ -1058,11 +1064,14 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 children: [
                   Text(label,
                       style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 12)),
                   const SizedBox(height: 4),
                   Text(value,
                       style: const TextStyle(
-                          color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700)),
                 ],
               ),
             ),
@@ -1075,9 +1084,12 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < 860;
         final children = [
-          tile('Active Proposals', activeCount.toString(), Icons.description_outlined),
-          tile('Signed SOWs', signedCount.toString(), Icons.verified_outlined),
-          tile('Pending Approvals', pendingCount.toString(), Icons.pending_actions_outlined),
+          tile('Active Proposals', activeCount.toString(),
+              Icons.description_outlined),
+          tile('Signed Documents', signedCount.toString(),
+              Icons.verified_outlined),
+          tile('Pending Approvals', pendingCount.toString(),
+              Icons.pending_actions_outlined),
         ];
         if (narrow) {
           return Column(
@@ -1105,6 +1117,13 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   Widget _buildRecentDocuments() {
     final docs = _filteredDocuments();
+    final isDocumentsTab = _selectedNavIndex == 2;
+    final isProposalsTab = _selectedNavIndex == 1;
+    final listTitle = isDocumentsTab
+        ? 'Signed Documents'
+        : isProposalsTab
+            ? 'Awaiting Signature'
+            : 'Recent Documents';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1119,8 +1138,18 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             children: [
               const Expanded(
                 child: Text(
-                  'Recent Documents',
+                  '',
                   style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  listTitle,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -1129,14 +1158,19 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               ),
               Text(
                 '${docs.length}',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
               ),
             ],
           ),
           const SizedBox(height: 12),
           if (docs.isEmpty)
             Text(
-              'No documents available for this link.',
+              isDocumentsTab
+                  ? 'No signed documents available yet.'
+                  : isProposalsTab
+                      ? 'No proposals are currently awaiting signature.'
+                      : 'No documents available for this link.',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
             )
           else
@@ -1150,8 +1184,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               ),
               itemBuilder: (context, index) {
                 final doc = docs[index];
-                final selected =
-                    _selectedDocument?['id']?.toString() == doc['id']?.toString();
+                final selected = _selectedDocument?['id']?.toString() ==
+                    doc['id']?.toString();
                 final status = (doc['status'] ?? '').toString();
 
                 Widget _statusChip(String rawStatus) {
@@ -1197,6 +1231,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                     ),
                   );
                 }
+
                 return InkWell(
                   onTap: () {
                     setState(() {
@@ -1206,8 +1241,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   child: Row(
                     children: [
                       Icon(
-                        selected ? Icons.check_box : Icons.check_box_outline_blank,
-                        color: selected ? Colors.lightBlueAccent : Colors.white70,
+                        selected
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                        color:
+                            selected ? Colors.lightBlueAccent : Colors.white70,
                         size: 18,
                       ),
                       const SizedBox(width: 10),
@@ -1230,10 +1268,26 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                           ],
                         ),
                       ),
-                      TextButton(
-                        onPressed: () => _openProposal(doc),
-                        child: const Text('View'),
-                      ),
+                      if (isDocumentsTab)
+                        TextButton(
+                          onPressed: () => _downloadPdfForDocument(doc),
+                          child: const Text('Download'),
+                        )
+                      else if (isProposalsTab)
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _selectedDocument = doc;
+                            });
+                            _openSigningUrl(doc);
+                          },
+                          child: const Text('Sign'),
+                        )
+                      else
+                        TextButton(
+                          onPressed: () => _openProposal(doc),
+                          child: const Text('View'),
+                        ),
                     ],
                   ),
                 );
@@ -1248,7 +1302,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final doc = _selectedDocument;
     final title = doc?['title']?.toString() ?? 'Select a document';
     final status = doc?['status']?.toString() ?? '';
-    final hasSigning = (doc?['signing_url']?.toString() ?? '').trim().isNotEmpty;
+    final hasSigning =
+        (doc?['signing_url']?.toString() ?? '').trim().isNotEmpty;
     final statusLower = status.toLowerCase().trim();
     final isSignedStatus =
         statusLower.contains('client signed') || statusLower.contains('signed');
@@ -1290,12 +1345,14 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 6),
               Text(
                 status.isEmpty ? '' : status,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
               ),
               if (isSignedStatus) ...[
                 const SizedBox(height: 8),
@@ -1323,7 +1380,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.10)),
                 ),
                 alignment: Alignment.center,
                 child: Text(
@@ -1370,13 +1428,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             children: [
               Text(
                 'Open a document to view and post comments.',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
               ),
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
-                  onPressed: doc == null ? null : () => _openProposalComments(doc),
+                  onPressed:
+                      doc == null ? null : () => _openProposalComments(doc),
                   icon: const Icon(Icons.forum_outlined, size: 18),
                   label: const Text('Open Comments'),
                 ),
@@ -1393,7 +1453,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: doc == null ? null : () => _downloadPdfForDocument(doc),
+                      onPressed: doc == null
+                          ? null
+                          : () => _downloadPdfForDocument(doc),
                       icon: const Icon(Icons.download_outlined, size: 18),
                       label: const Text('Download PDF'),
                     ),
@@ -1456,22 +1518,49 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildMainLeftContent() {
-    if (_selectedNavIndex == 0 || _selectedNavIndex == 1 || _selectedNavIndex == 2) {
+    if (!widget.showSummary && _selectedNavIndex == 1) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSummaryTiles(),
-          const SizedBox(height: 16),
+          const Text(
+            'Proposals',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Review and sign documents awaiting your signature',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.70),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildRecentDocuments(),
+        ],
+      );
+    }
+
+    if (_selectedNavIndex == 0 ||
+        _selectedNavIndex == 1 ||
+        _selectedNavIndex == 2) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.showSummary) ...[
+            _buildSummaryTiles(),
+            const SizedBox(height: 16),
+          ],
           _buildRecentDocuments(),
         ],
       );
     }
 
     final titles = {
-      3: 'Invoices',
-      4: 'Messages',
-      5: 'Documents',
-      6: 'Profile',
+      3: 'Profile',
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1568,21 +1657,19 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     try {
       final uri = Uri.parse('$baseUrl/api/client/proposals')
           .replace(queryParameters: {'token': token});
-      final response = await http
-          .get(
-            uri,
-            headers: {
-              if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
-              if (_clientSessionToken != null)
-                'X-Client-Session-Token': _clientSessionToken!,
-            },
-          )
-          .timeout(
-            const Duration(seconds: 8),
-            onTimeout: () {
-              throw TimeoutException('Request timed out');
-            },
-          );
+      final response = await http.get(
+        uri,
+        headers: {
+          if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
+          if (_clientSessionToken != null)
+            'X-Client-Session-Token': _clientSessionToken!,
+        },
+      ).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {
+          throw TimeoutException('Request timed out');
+        },
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -1597,9 +1684,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         if (!mounted) return;
         setState(() {
           _clientEmail = data['client_email'];
-          _proposals = proposalsRaw
-              .map((p) => Map<String, dynamic>.from(p))
-              .toList();
+          _proposals =
+              proposalsRaw.map((p) => Map<String, dynamic>.from(p)).toList();
 
           if (_selectedDocument != null) {
             final selId = _selectedDocument?['id']?.toString();
@@ -1653,8 +1739,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
         if (!mounted) return;
         setState(() {
-          _error = decoded?['detail']?.toString() ??
-              'Device verification required.';
+          _error =
+              decoded?['detail']?.toString() ?? 'Device verification required.';
           _isLoading = false;
         });
       } else if (response.statusCode == 423) {
@@ -1699,7 +1785,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   void _openProposal(Map<String, dynamic> proposal) {
     final rawId = proposal['id'];
-    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
       print(
           '[ClientDashboardHome] Cannot open proposal: invalid id=$rawId tokenPresent=${_accessToken != null && _accessToken!.isNotEmpty}');
@@ -1732,7 +1819,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   void _openProposalComments(Map<String, dynamic> proposal) {
     final rawId = proposal['id'];
-    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
       return;
     }
@@ -1848,9 +1936,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                       children: [
                                         leftContent,
                                         const SizedBox(height: 16),
-                                        if (_selectedNavIndex == 0 ||
-                                            _selectedNavIndex == 1 ||
-                                            _selectedNavIndex == 2)
+                                        if ((_selectedNavIndex == 0 ||
+                                                _selectedNavIndex == 1 ||
+                                                _selectedNavIndex == 2) &&
+                                            widget.showSummary)
                                           _buildRightPanel(),
                                       ],
                                     );
@@ -1862,9 +1951,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                     children: [
                                       Expanded(child: leftContent),
                                       const SizedBox(width: 16),
-                                      if (_selectedNavIndex == 0 ||
-                                          _selectedNavIndex == 1 ||
-                                          _selectedNavIndex == 2)
+                                      if ((_selectedNavIndex == 0 ||
+                                              _selectedNavIndex == 1 ||
+                                              _selectedNavIndex == 2) &&
+                                          widget.showSummary)
                                         SizedBox(
                                           width: 380,
                                           child: _buildRightPanel(),
