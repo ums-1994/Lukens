@@ -351,6 +351,61 @@ class MyApp extends StatelessWidget {
       );
     }
 
+    // Handle client documents route
+    if (settings.name == '/client/documents' ||
+        (settings.name != null &&
+            settings.name!.startsWith('/client/documents'))) {
+      final currentUrl = web.window.location.href;
+      final hash = web.window.location.hash;
+      String? token;
+
+      try {
+        final name = settings.name ?? '';
+        final routeUri = Uri.parse(name);
+        token = routeUri.queryParameters['token'];
+      } catch (_) {
+        // ignore
+      }
+
+      if (token == null || token.isEmpty) {
+        try {
+          final uri = Uri.parse(currentUrl);
+          token = uri.queryParameters['token'];
+        } catch (_) {
+          // ignore
+        }
+      }
+
+      if ((token == null || token.isEmpty) && hash.contains('token=')) {
+        try {
+          final normalizedFragment =
+              hash.startsWith('#') ? hash.substring(1) : hash;
+          final fragmentUri = Uri.parse('http://dummy/$normalizedFragment');
+          token = fragmentUri.queryParameters['token'];
+        } catch (_) {
+          // ignore
+        }
+      }
+
+      if (token != null && token.isNotEmpty) {
+        final validToken = token;
+        return MaterialPageRoute(
+          builder: (context) => ClientDashboardHome(
+            initialToken: validToken,
+            initialNavIndex: 2,
+            showSummary: false,
+          ),
+        );
+      }
+
+      return MaterialPageRoute(
+        builder: (context) => const ClientDashboardHome(
+          initialNavIndex: 2,
+          showSummary: false,
+        ),
+      );
+    }
+
     // Fallback to default routes
     return MaterialPageRoute(
       builder: (context) => const AuthWrapper(),
