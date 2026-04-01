@@ -1038,42 +1038,53 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return s.contains('pending');
     }).length;
 
-    Widget tile(String label, String value, IconData icon) {
+    Widget tile({
+      required String label,
+      required String value,
+      required IconData icon,
+    }) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        height: 104,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(14),
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.zero,
           border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(10),
+            Text(
+              label,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
-              child: Icon(icon, color: Colors.white70, size: 18),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(value,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700)),
-                ],
-              ),
+            Row(
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 36,
+                    fontWeight: FontWeight.w700,
+                    height: 1,
+                  ),
+                ),
+                const Spacer(),
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 20),
+                ),
+              ],
             ),
           ],
         ),
@@ -1084,12 +1095,21 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < 860;
         final children = [
-          tile('Active Proposals', activeCount.toString(),
-              Icons.description_outlined),
-          tile('Signed Documents', signedCount.toString(),
-              Icons.verified_outlined),
-          tile('Pending Approvals', pendingCount.toString(),
-              Icons.pending_actions_outlined),
+          tile(
+            label: 'Active Approvals',
+            value: activeCount.toString(),
+            icon: Icons.hourglass_top_rounded,
+          ),
+          tile(
+            label: 'Signed Documents',
+            value: signedCount.toString(),
+            icon: Icons.verified_rounded,
+          ),
+          tile(
+            label: 'Pending Approvals',
+            value: pendingCount.toString(),
+            icon: Icons.visibility_outlined,
+          ),
         ];
         if (narrow) {
           return Column(
@@ -1124,14 +1144,27 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         : isProposalsTab
             ? 'Awaiting Signature'
             : 'Recent Documents';
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-      ),
-      child: Column(
+    return Align(
+      alignment: Alignment.topLeft,
+      child: SizedBox(
+        width: 466.59,
+        height: 308.28,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(5.32),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                offset: const Offset(0, 3.55),
+                blurRadius: 3.55,
+                spreadRadius: 0,
+              ),
+            ],
+            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          ),
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -1294,6 +1327,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               },
             ),
         ],
+          ),
+        ),
       ),
     );
   }
@@ -1895,7 +1930,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             children: [
               Positioned.fill(
                 child: Image.asset(
-                  'assets/images/Global BG.jpg',
+                  'assets/images/client_dashboard_bg.png',
                   fit: BoxFit.cover,
                 ),
               ),
