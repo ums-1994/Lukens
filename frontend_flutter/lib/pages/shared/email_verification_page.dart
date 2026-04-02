@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:web/web.dart' as web;
 import '../../services/auth_service.dart';
 import '../../api.dart';
 import '../../services/role_service.dart';
@@ -22,17 +23,47 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
   bool _isLoading = false;
   bool _isVerified = false;
   String? _errorMessage;
+  String? _token;
 
   @override
   void initState() {
     super.initState();
-    if (widget.token != null) {
+    _token = widget.token;
+    if ((_token == null || _token!.isEmpty)) {
+      try {
+        final currentUrl = web.window.location.href;
+        final uri = Uri.parse(currentUrl);
+        String? token = uri.queryParameters['token'];
+
+        if (token == null || token.isEmpty) {
+          final hash = web.window.location.hash;
+          if (hash.contains('token=')) {
+            final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+            if (hashMatch != null) token = hashMatch.group(1);
+          }
+          if (token == null || token.isEmpty) {
+            final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+            if (urlMatch != null) token = urlMatch.group(1);
+          }
+        }
+
+        if (token != null && token.isNotEmpty) {
+          try {
+            token = Uri.decodeComponent(token);
+          } catch (_) {}
+          _token = token;
+        }
+      } catch (_) {}
+    }
+
+    if (_token != null && _token!.isNotEmpty) {
       _verifyEmail();
     }
   }
 
   Future<void> _verifyEmail() async {
-    if (widget.token == null) return;
+    final token = _token;
+    if (token == null || token.isEmpty) return;
 
     setState(() {
       _isLoading = true;
@@ -40,7 +71,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     });
 
     try {
-      final result = await AuthService.verifyEmail(widget.token!);
+      final result = await AuthService.verifyEmail(token);
 
       if (mounted) {
         setState(() {
