@@ -65,8 +65,17 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
   Future<void> _fetchSilently() async {
     try {
       final token = AuthService.token;
+      final role =
+          (AuthService.currentUser?['role'] ?? '').toString().toLowerCase().trim();
+      final isAdmin = role == 'admin' || role == 'ceo';
+      final uri =
+          Uri.parse('${ApiService.baseUrl}/api/analytics/completion-rates').replace(
+        queryParameters: {
+          'scope': isAdmin ? 'all' : 'self',
+        },
+      );
       final resp = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/analytics/completion-rates'),
+        uri,
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
@@ -74,9 +83,20 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
       );
       if (resp.statusCode == 200 && mounted) {
         final data = jsonDecode(resp.body);
+        final summary = (data['summary'] is Map<String, dynamic>)
+            ? Map<String, dynamic>.from(data['summary'])
+            : <String, dynamic>{
+                'total_proposals': (data['totals']?['total'] ?? 0),
+                'passing_readiness': (data['totals']?['passed'] ?? 0),
+                'completion_rate': (data['totals']?['pass_rate'] ?? 0).toDouble(),
+                'sign_off_rate': 0.0,
+                'avg_readiness_score': 0.0,
+                'pass_threshold': 80,
+              };
         setState(() {
-          _summary = Map<String, dynamic>.from(data['summary'] ?? {});
-          _proposals = List<dynamic>.from(data['proposals'] ?? []);
+          _summary = summary;
+          _proposals =
+              List<dynamic>.from(data['proposals'] ?? data['low_proposals'] ?? []);
           _trend = List<dynamic>.from(data['trend'] ?? []);
           _statusBreakdown =
               Map<String, dynamic>.from(data['status_breakdown'] ?? {});
@@ -95,8 +115,17 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
     });
     try {
       final token = AuthService.token;
+      final role =
+          (AuthService.currentUser?['role'] ?? '').toString().toLowerCase().trim();
+      final isAdmin = role == 'admin' || role == 'ceo';
+      final uri =
+          Uri.parse('${ApiService.baseUrl}/api/analytics/completion-rates').replace(
+        queryParameters: {
+          'scope': isAdmin ? 'all' : 'self',
+        },
+      );
       final resp = await http.get(
-        Uri.parse('${ApiService.baseUrl}/api/analytics/completion-rates'),
+        uri,
         headers: {
           'Content-Type': 'application/json',
           if (token != null) 'Authorization': 'Bearer $token',
@@ -106,9 +135,20 @@ class _CompletionRatesWidgetState extends State<CompletionRatesWidget>
       if (!mounted) return;
       if (resp.statusCode == 200) {
         final data = jsonDecode(resp.body);
+        final summary = (data['summary'] is Map<String, dynamic>)
+            ? Map<String, dynamic>.from(data['summary'])
+            : <String, dynamic>{
+                'total_proposals': (data['totals']?['total'] ?? 0),
+                'passing_readiness': (data['totals']?['passed'] ?? 0),
+                'completion_rate': (data['totals']?['pass_rate'] ?? 0).toDouble(),
+                'sign_off_rate': 0.0,
+                'avg_readiness_score': 0.0,
+                'pass_threshold': 80,
+              };
         setState(() {
-          _summary = Map<String, dynamic>.from(data['summary'] ?? {});
-          _proposals = List<dynamic>.from(data['proposals'] ?? []);
+          _summary = summary;
+          _proposals =
+              List<dynamic>.from(data['proposals'] ?? data['low_proposals'] ?? []);
           _trend = List<dynamic>.from(data['trend'] ?? []);
           _statusBreakdown =
               Map<String, dynamic>.from(data['status_breakdown'] ?? {});

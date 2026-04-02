@@ -988,15 +988,37 @@ def request_changes(username=None, proposal_id=None):
             if not proposal:
                 return {'detail': 'Proposal not found'}, 404
             
-            # Update status to indicate changes are requested
-            cursor.execute(
-                """
-                    UPDATE proposals 
-                    SET status = 'Changes Requested', updated_at = NOW() 
-                    WHERE id = %s
-                """,
-                (proposal_id,)
-            )
+            # Update status to indicate changes are requested.
+            # Some environments still enforce slightly different status constraints/casing,
+            # so try both known valid variants before failing.
+            status_updated = False
+            status_value_used = None
+            status_candidates = ['Changes Requested', 'changes requested']
+            last_status_error = None
+
+            for status_candidate in status_candidates:
+                try:
+                    cursor.execute(
+                        """
+                            UPDATE proposals
+                            SET status = %s, updated_at = NOW()
+                            WHERE id = %s
+                        """,
+                        (status_candidate, proposal_id)
+                    )
+                    status_updated = True
+                    status_value_used = status_candidate
+                    break
+                except Exception as status_err:
+                    last_status_error = status_err
+                    # Continue to next candidate status value
+                    continue
+
+            if not status_updated:
+                # Re-raise with actionable context for the caller/UI.
+                raise Exception(
+                    f"Failed to set proposal status to changes requested. Last error: {last_status_error}"
+                )
             
             # Get creator/owner ID (ensure int for notifications)
             try:
@@ -1213,7 +1235,7 @@ def request_changes(username=None, proposal_id=None):
                 'target': target,
                 'notifications_sent': notifications_created,
                 'proposal_id': proposal_id,
-                'status': 'Changes Requested',
+                'status': status_value_used or 'Changes Requested',
                 'manager': {
                     'id': creator_id,
                     'name': manager_name,

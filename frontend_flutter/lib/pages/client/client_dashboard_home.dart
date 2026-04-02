@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:fl_chart/fl_chart.dart';
 import 'package:web/web.dart' as web;
 import 'dart:async';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -11,8 +12,15 @@ import '../../theme/premium_theme.dart';
 
 class ClientDashboardHome extends StatefulWidget {
   final String? initialToken;
+  final int? initialNavIndex;
+  final bool showSummary;
 
-  const ClientDashboardHome({super.key, this.initialToken});
+  const ClientDashboardHome({
+    super.key,
+    this.initialToken,
+    this.initialNavIndex,
+    this.showSummary = true,
+  });
 
   @override
   State<ClientDashboardHome> createState() => _ClientDashboardHomeState();
@@ -30,12 +38,58 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   List<Map<String, dynamic>> _proposals = [];
   Map<String, dynamic>? _selectedDocument;
   int _selectedNavIndex = 0;
+  bool _overviewLoading = false;
+  String? _overviewError;
+  Map<String, dynamic>? _overview;
   Map<String, int> _statusCounts = {
     'pending': 0,
     'approved': 0,
     'rejected': 0,
     'viewed': 0,
   };
+
+  bool _isSow(Map<String, dynamic> p) {
+    final t =
+        (p['template_type'] ?? p['templateType'] ?? p['template_key'] ?? '')
+            .toString()
+            .toLowerCase();
+    return t.contains('sow');
+  }
+
+  bool _isProposalRequiringAction(Map<String, dynamic> p) {
+    if (_isSow(p)) return false;
+    final s = (p['status'] ?? '').toString().toLowerCase();
+    return s.contains('sent') ||
+        s.contains('released') ||
+        s.contains('review') ||
+        s.contains('pending') ||
+        s.contains('signature');
+  }
+
+  bool _isSignedDocument(Map<String, dynamic> p) {
+    if (_isSow(p)) return false;
+    final statusLower = (p['status'] ?? '').toString().toLowerCase().trim();
+    return statusLower.contains('client signed') ||
+        statusLower.contains('signed');
+  }
+
+  bool _isAwaitingSignature(Map<String, dynamic> p) {
+    if (_isSow(p)) return false;
+    if (_isSignedDocument(p)) return false;
+
+    final statusLower = (p['status'] ?? '').toString().toLowerCase().trim();
+
+    return statusLower.contains('sent for signature') ||
+        statusLower.contains('sent to client') ||
+        statusLower.contains('released') ||
+        statusLower.contains('in review') ||
+        statusLower.contains('review') ||
+        statusLower.contains('sent');
+  }
+
+  int _proposalsRequiringActionCount() {
+    return _proposals.where(_isProposalRequiringAction).length;
+  }
 
   String _normalizeStatus(String rawStatus) {
     final lower = rawStatus.toLowerCase().trim();
@@ -72,9 +126,20 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   @override
   void initState() {
     super.initState();
+    _selectedNavIndex = widget.initialNavIndex ?? 0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _extractTokenAndLoad();
     });
+  }
+
+  bool get _isOverviewDashboard => widget.showSummary && _selectedNavIndex == 0;
+
+  void _navigateClient(String route) {
+    final token = _accessToken;
+    final suffix = (token != null && token.isNotEmpty)
+        ? '?token=${Uri.encodeComponent(token)}'
+        : '';
+    Navigator.pushReplacementNamed(context, '$route$suffix');
   }
 
   String _sanitizeToken(String token) {
@@ -449,10 +514,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     }
 
     if (idx == 1) {
-      return docs.where((p) => !isSow(p)).toList();
+      return docs.where(_isAwaitingSignature).toList();
     }
     if (idx == 2) {
-      return docs.where(isSow).toList();
+      return docs.where(_isSignedDocument).toList();
     }
     return docs;
   }
@@ -636,8 +701,22 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     Widget navItem(int index, IconData icon, String label,
         {VoidCallback? afterTap}) {
       final selected = _selectedNavIndex == index;
+      final badgeCount =
+          label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
       return InkWell(
         onTap: () {
+          if (index == 0) {
+            if (!widget.showSummary) {
+              _navigateClient('/client/dashboard');
+            }
+            return;
+          }
+          if (index == 1) {
+            if (widget.showSummary) {
+              _navigateClient('/client/proposals');
+            }
+            return;
+          }
           setState(() {
             _selectedNavIndex = index;
           });
@@ -656,6 +735,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             children: [
               Icon(icon,
                   color: selected ? Colors.white : Colors.white70, size: 20),
+              Icon(icon,
+                  color: selected ? Colors.white : Colors.white70, size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -667,6 +748,23 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   ),
                 ),
               ),
+              if (badgeCount > 0)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: PremiumTheme.primaryRed,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    badgeCount > 99 ? '99+' : badgeCount.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -707,11 +805,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           const SizedBox(height: 10),
           navItem(0, Icons.dashboard_outlined, 'Dashboard'),
           navItem(1, Icons.description_outlined, 'Proposals'),
-          navItem(2, Icons.assignment_outlined, 'SOWs'),
-          navItem(3, Icons.receipt_long_outlined, 'Invoices'),
-          navItem(4, Icons.mail_outline, 'Messages'),
-          navItem(5, Icons.folder_outlined, 'Documents'),
-          navItem(6, Icons.person_outline, 'Profile'),
+          navItem(2, Icons.folder_outlined, 'Documents'),
+          navItem(3, Icons.person_outline, 'Profile'),
           const Spacer(),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
@@ -772,15 +867,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   _buildDrawerNavItem(
                       context, 1, Icons.description_outlined, 'Proposals'),
                   _buildDrawerNavItem(
-                      context, 2, Icons.assignment_outlined, 'SOWs'),
+                      context, 2, Icons.folder_outlined, 'Documents'),
                   _buildDrawerNavItem(
-                      context, 3, Icons.receipt_long_outlined, 'Invoices'),
-                  _buildDrawerNavItem(
-                      context, 4, Icons.mail_outline, 'Messages'),
-                  _buildDrawerNavItem(
-                      context, 5, Icons.folder_outlined, 'Documents'),
-                  _buildDrawerNavItem(
-                      context, 6, Icons.person_outline, 'Profile'),
+                      context, 3, Icons.person_outline, 'Profile'),
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
@@ -805,8 +894,24 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   Widget _buildDrawerNavItem(
       BuildContext context, int index, IconData icon, String label) {
     final selected = _selectedNavIndex == index;
+    final badgeCount =
+        label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
     return InkWell(
       onTap: () {
+        if (index == 0) {
+          Navigator.of(context).pop();
+          if (!widget.showSummary) {
+            _navigateClient('/client/dashboard');
+          }
+          return;
+        }
+        if (index == 1) {
+          Navigator.of(context).pop();
+          if (widget.showSummary) {
+            _navigateClient('/client/proposals');
+          }
+          return;
+        }
         setState(() {
           _selectedNavIndex = index;
         });
@@ -819,6 +924,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           color: selected
               ? Colors.white.withValues(alpha: 0.12)
               : Colors.transparent,
+          border: selected
+              ? Border(
+                  left: BorderSide(color: PremiumTheme.primaryRed, width: 3),
+                )
+              : null,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
@@ -836,6 +946,22 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 ),
               ),
             ),
+            if (badgeCount > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: PremiumTheme.primaryRed,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : badgeCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -887,18 +1013,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           ),
           IconButton(
             onPressed: () {},
-            icon: const Icon(Icons.mail_outline, color: Colors.white70),
-            tooltip: 'Messages',
-          ),
-          IconButton(
-            onPressed: () {},
             icon: const Icon(Icons.notifications_none, color: Colors.white70),
             tooltip: 'Notifications',
-          ),
-          IconButton(
-            onPressed: _loadClientProposals,
-            icon: const Icon(Icons.refresh, color: Colors.white70),
-            tooltip: 'Refresh',
           ),
         ],
       ),
@@ -909,6 +1025,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final docs = _filteredDocuments();
     final activeCount = docs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
+      return s.contains('sent') ||
+          s.contains('released') ||
+          s.contains('review');
       return s.contains('sent') ||
           s.contains('released') ||
           s.contains('review');
@@ -946,16 +1065,22 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontSize: 12)),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(value,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700)),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1000,6 +1125,13 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   Widget _buildRecentDocuments() {
     final docs = _filteredDocuments();
+    final isDocumentsTab = _selectedNavIndex == 2;
+    final isProposalsTab = _selectedNavIndex == 1;
+    final listTitle = isDocumentsTab
+        ? 'Signed Documents'
+        : isProposalsTab
+            ? 'Awaiting Signature'
+            : 'Recent Documents';
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1014,8 +1146,18 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             children: [
               const Expanded(
                 child: Text(
-                  'Recent Documents',
+                  '',
                   style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: Text(
+                  listTitle,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -1032,7 +1174,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           const SizedBox(height: 12),
           if (docs.isEmpty)
             Text(
-              'No documents available for this link.',
+              isDocumentsTab
+                  ? 'No signed documents available yet.'
+                  : isProposalsTab
+                      ? 'No proposals are currently awaiting signature.'
+                      : 'No documents available for this link.',
               style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
             )
           else
@@ -1130,10 +1276,26 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                           ],
                         ),
                       ),
-                      TextButton(
-                        onPressed: () => _openProposal(doc),
-                        child: const Text('View'),
-                      ),
+                      if (isDocumentsTab)
+                        TextButton(
+                          onPressed: () => _downloadPdfForDocument(doc),
+                          child: const Text('Download'),
+                        )
+                      else if (isProposalsTab)
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _selectedDocument = doc;
+                            });
+                            _openSigningUrl(doc);
+                          },
+                          child: const Text('View'),
+                        )
+                      else
+                        TextButton(
+                          onPressed: () => _openProposal(doc),
+                          child: const Text('View'),
+                        ),
                     ],
                   ),
                 );
@@ -1183,7 +1345,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     return Column(
       children: [
         panelCard(
-          title: 'Sign Document',
+          title: 'View Document',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1249,7 +1411,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                 _showFallbackSignModal(doc);
                               }
                             },
-                      child: const Text('Sign Now'),
+                      child: const Text('View'),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -1378,10 +1540,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     }
 
     final titles = {
-      3: 'Invoices',
-      4: 'Messages',
-      5: 'Documents',
-      6: 'Profile',
+      3: 'Profile',
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1535,6 +1694,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
           _isLoading = false;
         });
+
+        if (_isOverviewDashboard) {
+          await _loadDashboardOverview();
+        }
       } else if (response.statusCode == 428) {
         _saveCachedClientSession(null);
         _clientSessionToken = null;
@@ -1560,6 +1723,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
         if (!mounted) return;
         setState(() {
+          _error =
+              decoded?['detail']?.toString() ?? 'Device verification required.';
           _error =
               decoded?['detail']?.toString() ?? 'Device verification required.';
           _isLoading = false;
@@ -1602,6 +1767,687 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _loadDashboardOverview() async {
+    final token = _accessToken;
+    if (token == null || token.isEmpty) return;
+
+    if (!mounted) return;
+    setState(() {
+      _overviewLoading = true;
+      _overviewError = null;
+    });
+
+    try {
+      final clean = _sanitizeToken(token);
+      final uri = Uri.parse('$baseUrl/api/client/dashboard/overview')
+          .replace(queryParameters: {'token': clean});
+
+      final resp = await http.get(
+        uri,
+        headers: {
+          if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
+          if (_clientSessionToken != null)
+            'X-Client-Session-Token': _clientSessionToken!,
+        },
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException('Request timed out'),
+      );
+
+      Map<String, dynamic>? decoded;
+      try {
+        final body = jsonDecode(resp.body);
+        if (body is Map) decoded = Map<String, dynamic>.from(body);
+      } catch (_) {}
+
+      if (resp.statusCode != 200) {
+        final msg = decoded?['detail']?.toString() ??
+            'Failed to load dashboard (HTTP ${resp.statusCode})';
+        if (!mounted) return;
+        setState(() {
+          _overviewError = msg;
+          _overviewLoading = false;
+        });
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _overview = decoded;
+        _overviewLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _overviewError = e is TimeoutException
+            ? 'Dashboard request timed out. Please retry.'
+            : 'Error: $e';
+        _overviewLoading = false;
+      });
+    }
+  }
+
+  int _kpi(String key) {
+    final kpis = _overview?['kpis'];
+    if (kpis is Map && kpis[key] != null) {
+      return int.tryParse(kpis[key].toString()) ?? 0;
+    }
+    return 0;
+  }
+
+  int _pipe(String key) {
+    final pipe = _overview?['pipeline'];
+    if (pipe is Map && pipe[key] != null) {
+      return int.tryParse(pipe[key].toString()) ?? 0;
+    }
+    return 0;
+  }
+
+  List<Map<String, dynamic>> _activity() {
+    final a = _overview?['activity'];
+    if (a is List) {
+      return a.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    return [];
+  }
+
+  List<Map<String, dynamic>> _trend() {
+    final analytics = _overview?['analytics'];
+    if (analytics is Map) {
+      final t = analytics['trend'];
+      if (t is List) {
+        return t.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    }
+    return [];
+  }
+
+  Map<String, int> _conversionBreakdown() {
+    final analytics = _overview?['analytics'];
+    if (analytics is Map) {
+      final b = analytics['conversion_breakdown'];
+      if (b is Map) {
+        return {
+          'signed': int.tryParse(b['signed']?.toString() ?? '0') ?? 0,
+          'rejected': int.tryParse(b['rejected']?.toString() ?? '0') ?? 0,
+          'requested_changes':
+              int.tryParse(b['requested_changes']?.toString() ?? '0') ?? 0,
+        };
+      }
+    }
+    return {'signed': 0, 'rejected': 0, 'requested_changes': 0};
+  }
+
+  String _timeAgo(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inSeconds < 45) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours} hours ago';
+    if (diff.inDays < 7) return '${diff.inDays} days ago';
+    final weeks = (diff.inDays / 7).floor();
+    if (weeks < 5) return '${weeks} weeks ago';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
+
+  IconData _activityIcon(String eventType) {
+    final e = eventType.toLowerCase().trim();
+    if (e.contains('view') || e.contains('open'))
+      return Icons.visibility_outlined;
+    if (e.contains('sign')) return Icons.check_circle_outline;
+    if (e.contains('download')) return Icons.download_outlined;
+    if (e.contains('comment') || e.contains('change')) {
+      return Icons.mode_comment_outlined;
+    }
+    return Icons.bolt_outlined;
+  }
+
+  String _activityLabel(Map<String, dynamic> a) {
+    final proposalId = a['proposal_id']?.toString();
+    final event = (a['event_type'] ?? '').toString();
+    final ev = event.toLowerCase().trim();
+    String verb;
+    if (ev.contains('view') || ev.contains('open')) {
+      verb = 'viewed';
+    } else if (ev.contains('sign')) {
+      verb = 'signed';
+    } else if (ev.contains('download')) {
+      verb = 'downloaded';
+    } else if (ev.contains('comment')) {
+      verb = 'commented';
+    } else if (ev.contains('change')) {
+      verb = 'requested changes';
+    } else {
+      verb = event.isEmpty ? 'updated' : event;
+    }
+    if (proposalId == null || proposalId.isEmpty) return 'Proposal $verb';
+    return 'Proposal #$proposalId $verb';
+  }
+
+  Widget _sectionCard({required String title, required Widget child}) {
+    return GlassContainer(
+      borderRadius: 18,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKpiCards() {
+    final cards = [
+      (
+        'Active Proposals',
+        _kpi('active_proposals').toString(),
+        Icons.play_circle_outline,
+        PremiumTheme.blueGradient,
+        '/client/proposals'
+      ),
+      (
+        'Signed Proposals',
+        _kpi('signed_proposals').toString(),
+        Icons.check_circle_outline,
+        PremiumTheme.tealGradient,
+        '/client/proposals'
+      ),
+      (
+        'Requested for Change',
+        _kpi('requested_changes').toString(),
+        Icons.edit_note,
+        PremiumTheme.orangeGradient,
+        '/client/proposals'
+      ),
+      (
+        'Rejected Proposals',
+        _kpi('rejected_proposals').toString(),
+        Icons.cancel_outlined,
+        PremiumTheme.redGradient,
+        '/client/proposals'
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 980;
+        final children = cards
+            .map(
+              (c) => SizedBox(
+                width:
+                    narrow ? double.infinity : (constraints.maxWidth - 48) / 4,
+                height: 109,
+                child: PremiumStatCard(
+                  title: c.$1,
+                  value: c.$2,
+                  subtitle: null,
+                  icon: c.$3,
+                  gradient: c.$4,
+                  onTap: () => _navigateClient(c.$5),
+                ),
+              ),
+            )
+            .toList();
+
+        if (narrow) {
+          return Column(
+            children: [
+              for (int i = 0; i < children.length; i++) ...[
+                children[i],
+                if (i != children.length - 1) const SizedBox(height: 12),
+              ]
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            for (int i = 0; i < children.length; i++) ...[
+              Expanded(child: children[i]),
+              if (i != children.length - 1) const SizedBox(width: 12),
+            ]
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPipelineOverview() {
+    final active = _pipe('active');
+    final changes = _pipe('requested_changes');
+    final signed = _pipe('signed');
+    final rejected = _pipe('rejected');
+    final total = _pipe('total');
+    final denom = total <= 0 ? 1 : total;
+
+    Widget segment({
+      required int count,
+      required Color color,
+      required String label,
+    }) {
+      final flex =
+          (count <= 0) ? 0 : (count * 1000 / denom).round().clamp(1, 1000);
+      if (count <= 0) {
+        return const SizedBox.shrink();
+      }
+      return Expanded(
+        flex: flex,
+        child: Container(
+          height: 14,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+      );
+    }
+
+    Widget pill(String label, int count, Color color) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$label: $count',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return _sectionCard(
+      title: 'Pipeline Overview',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              segment(count: active, color: PremiumTheme.info, label: 'Active'),
+              const SizedBox(width: 6),
+              segment(
+                  count: changes,
+                  color: PremiumTheme.warning,
+                  label: 'Changes'),
+              const SizedBox(width: 6),
+              segment(
+                  count: signed, color: PremiumTheme.success, label: 'Signed'),
+              const SizedBox(width: 6),
+              segment(
+                  count: rejected,
+                  color: PremiumTheme.error,
+                  label: 'Rejected'),
+              if (active + changes + signed + rejected == 0)
+                Expanded(
+                  child: Container(
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              pill('Active', active, PremiumTheme.info),
+              pill('Requested Changes', changes, PremiumTheme.warning),
+              pill('Signed', signed, PremiumTheme.success),
+              pill('Rejected', rejected, PremiumTheme.error),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentActivity() {
+    final items = _activity();
+    return _sectionCard(
+      title: 'Recent Activity',
+      child: Column(
+        children: [
+          if (items.isEmpty)
+            Text(
+              _overviewLoading
+                  ? 'Loading activity...'
+                  : 'No recent activity yet.',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
+            )
+          else
+            for (int i = 0; i < items.length; i++) ...[
+              Builder(
+                builder: (context) {
+                  final a = items[i];
+                  DateTime? created;
+                  try {
+                    final raw = a['created_at']?.toString();
+                    if (raw != null && raw.isNotEmpty) {
+                      created = DateTime.parse(raw);
+                    }
+                  } catch (_) {}
+
+                  final eventType = (a['event_type'] ?? '').toString();
+                  return Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.10)),
+                          ),
+                          child: Icon(
+                            _activityIcon(eventType),
+                            size: 18,
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _activityLabel(a),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                created == null
+                                    ? ''
+                                    : _timeAgo(created.toLocal()),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.60),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              if (i != items.length - 1)
+                Divider(color: Colors.white.withValues(alpha: 0.06), height: 1),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActions() {
+    return _sectionCard(
+      title: 'Quick Actions',
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () => _navigateClient('/client/proposals'),
+              icon: const Icon(Icons.description_outlined, size: 18),
+              label: const Text('View Proposals'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () => _navigateClient('/client/documents'),
+              icon: const Icon(Icons.folder_outlined, size: 18),
+              label: const Text('Download Documents'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrendChart() {
+    final points = _trend();
+    if (points.isEmpty) {
+      return _sectionCard(
+        title: 'Proposals Trend',
+        child: Text(
+          _overviewLoading ? 'Loading trend...' : 'No trend data yet.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
+        ),
+      );
+    }
+
+    final created = <FlSpot>[];
+    final signed = <FlSpot>[];
+    final rejected = <FlSpot>[];
+    for (int i = 0; i < points.length; i++) {
+      final p = points[i];
+      created.add(FlSpot(i.toDouble(), (p['created'] ?? 0).toDouble()));
+      signed.add(FlSpot(i.toDouble(), (p['signed'] ?? 0).toDouble()));
+      rejected.add(FlSpot(i.toDouble(), (p['rejected'] ?? 0).toDouble()));
+    }
+
+    String bottomTitle(double value) {
+      final idx = value.round();
+      if (idx < 0 || idx >= points.length) return '';
+      final raw = points[idx]['period']?.toString();
+      if (raw == null || raw.isEmpty) return '';
+      try {
+        final dt = DateTime.parse(raw);
+        return '${dt.day}/${dt.month}';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    return _sectionCard(
+      title: 'Proposals Trend',
+      child: SizedBox(
+        height: 240,
+        child: LineChart(
+          LineChartData(
+            gridData: const FlGridData(show: false),
+            borderData: FlBorderData(show: false),
+            titlesData: FlTitlesData(
+              topTitles:
+                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles:
+                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 34,
+                  interval: 1,
+                  getTitlesWidget: (v, meta) => Text(
+                    v.toInt().toString(),
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.60),
+                        fontSize: 11),
+                  ),
+                ),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 28,
+                  interval: (points.length / 4).ceilToDouble().clamp(1, 999),
+                  getTitlesWidget: (v, meta) => Text(
+                    bottomTitle(v),
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.60),
+                        fontSize: 11),
+                  ),
+                ),
+              ),
+            ),
+            lineBarsData: [
+              LineChartBarData(
+                spots: created,
+                isCurved: true,
+                barWidth: 3,
+                color: PremiumTheme.cyan,
+                dotData: const FlDotData(show: false),
+              ),
+              LineChartBarData(
+                spots: signed,
+                isCurved: true,
+                barWidth: 3,
+                color: PremiumTheme.success,
+                dotData: const FlDotData(show: false),
+              ),
+              LineChartBarData(
+                spots: rejected,
+                isCurved: true,
+                barWidth: 3,
+                color: PremiumTheme.error,
+                dotData: const FlDotData(show: false),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConversionChart() {
+    final b = _conversionBreakdown();
+    final signed = b['signed'] ?? 0;
+    final rejected = b['rejected'] ?? 0;
+    final changes = b['requested_changes'] ?? 0;
+    final total = signed + rejected + changes;
+    if (total <= 0) {
+      return _sectionCard(
+        title: 'Conversion Breakdown',
+        child: Text(
+          _overviewLoading ? 'Loading breakdown...' : 'No conversion data yet.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
+        ),
+      );
+    }
+
+    return _sectionCard(
+      title: 'Conversion Breakdown',
+      child: SizedBox(
+        height: 220,
+        child: Row(
+          children: [
+            Expanded(
+              child: PieChart(
+                PieChartData(
+                  sectionsSpace: 3,
+                  centerSpaceRadius: 36,
+                  sections: [
+                    PieChartSectionData(
+                      value: signed.toDouble(),
+                      color: PremiumTheme.success,
+                      title: '',
+                      radius: 62,
+                    ),
+                    PieChartSectionData(
+                      value: rejected.toDouble(),
+                      color: PremiumTheme.error,
+                      title: '',
+                      radius: 62,
+                    ),
+                    PieChartSectionData(
+                      value: changes.toDouble(),
+                      color: PremiumTheme.warning,
+                      title: '',
+                      radius: 62,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 170,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _legendRow('Signed', signed, PremiumTheme.success),
+                  const SizedBox(height: 10),
+                  _legendRow('Rejected', rejected, PremiumTheme.error),
+                  const SizedBox(height: 10),
+                  _legendRow(
+                      'Requested Changes', changes, PremiumTheme.warning),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legendRow(String label, int value, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+              color: color, borderRadius: BorderRadius.circular(99)),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.80), fontSize: 12),
+          ),
+        ),
+        Text(
+          value.toString(),
+          style:
+              const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
   }
 
   void _openProposal(Map<String, dynamic> proposal) {
@@ -1755,9 +2601,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                       children: [
                                         leftContent,
                                         const SizedBox(height: 16),
-                                        if (_selectedNavIndex == 0 ||
-                                            _selectedNavIndex == 1 ||
-                                            _selectedNavIndex == 2)
+                                        if ((_selectedNavIndex == 0 ||
+                                                _selectedNavIndex == 1 ||
+                                                _selectedNavIndex == 2) &&
+                                            widget.showSummary &&
+                                            !_isOverviewDashboard)
                                           _buildRightPanel(),
                                       ],
                                     );
@@ -1769,9 +2617,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                     children: [
                                       Expanded(child: leftContent),
                                       const SizedBox(width: 16),
-                                      if (_selectedNavIndex == 0 ||
-                                          _selectedNavIndex == 1 ||
-                                          _selectedNavIndex == 2)
+                                      if ((_selectedNavIndex == 0 ||
+                                              _selectedNavIndex == 1 ||
+                                              _selectedNavIndex == 2) &&
+                                          widget.showSummary &&
+                                          !_isOverviewDashboard)
                                         SizedBox(
                                           width: 380,
                                           child: _buildRightPanel(),
