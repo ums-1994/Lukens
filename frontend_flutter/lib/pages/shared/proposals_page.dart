@@ -31,6 +31,7 @@ class _ProposalsPageState extends State<ProposalsPage>
         Navigator.pushReplacementNamed(context, '/dashboard');
         break;
       case 'My Proposals':
+      case 'Proposals':
         // Already on proposals page
         break;
       case 'Templates':

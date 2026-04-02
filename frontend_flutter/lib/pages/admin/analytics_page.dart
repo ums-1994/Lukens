@@ -3792,6 +3792,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               );
               break;
             case 'My Proposals':
+            case 'Proposals':
               Navigator.pushReplacementNamed(context, '/proposals');
               break;
             case 'Templates':

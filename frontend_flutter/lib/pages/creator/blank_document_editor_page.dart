@@ -6081,6 +6081,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':

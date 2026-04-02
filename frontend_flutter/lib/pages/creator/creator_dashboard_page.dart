@@ -1336,6 +1336,7 @@ class _DashboardPageState extends State<DashboardPage>
         // Already on dashboard
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':

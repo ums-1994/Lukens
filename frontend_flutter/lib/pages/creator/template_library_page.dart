@@ -435,6 +435,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
         Navigator.pushReplacementNamed(context, '/dashboard');
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':

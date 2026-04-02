@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../services/asset_service.dart';
-import '../theme/premium_theme.dart';
 import '../config/app_constants.dart';
 
 class AppSideNav extends StatefulWidget {
@@ -19,31 +18,44 @@ class AppSideNav extends StatefulWidget {
   final VoidCallback onToggle;
   final bool isAdmin;
 
-  // 🎨 Core Sidebar Colors
-  static const Color backgroundColor = Color(0xFF1F2840); // Dark blue-gray
-  static const Color hoverColor = Color(0xFF2A3652); // Lighter blue-gray
-  static const Color activeColor = Color(0xFFC10D00); // Red-orange accent
-  static const Color textPrimary = Colors.white; // White text
-  static const Color textSecondary = Colors.white70; // 70% white
-  static const Color textMuted = Colors.white54; // 54% white
+  // Core colors matching the Khonology design
+  static const Color backgroundColor = Color(0xFF1A1D2E);
+  static const Color activeColor = Color(0xFFC10D00);
+  static const Color leftAccentColor = Color(0xFF1565C0);
 
-  // 📐 Layout Dimensions
-  static const double collapsedWidth = 72.0; // Collapsed: 72px
-  static const double expandedWidth = 280.0; // Expanded: 280px
-  static const double itemHeight = 44.0; // Each nav item height
-  static const double headerHeight = 64.0; // Fixed header height
+  // Layout dimensions
+  static const double collapsedWidth = 72.0;
+  static const double expandedWidth = 260.0;
 
   static const List<Map<String, String>> _items = [
-    {'label': 'Dashboard', 'icon': 'assets/images/Dahboard.png'},
-    {'label': 'My Proposals', 'icon': 'assets/images/My_Proposals.png'},
-    {'label': 'Templates', 'icon': 'assets/images/content_library.png'},
-    {'label': 'Content Library', 'icon': 'assets/images/content_library.png'},
-    {'label': 'Client Management', 'icon': 'assets/images/collaborations.png'},
+    {
+      'label': 'Dashboard',
+      'icon': 'assets/images/new icons for manager/Dashboard.png',
+    },
+    {
+      'label': 'Proposals',
+      'icon': 'assets/images/new icons for manager/proposals.png',
+    },
+    {
+      'label': 'Templates',
+      'icon': 'assets/images/new icons for manager/Templates.png',
+    },
+    {
+      'label': 'Content Library',
+      'icon': 'assets/images/new icons for manager/content library.png',
+    },
+    {
+      'label': 'Client Management',
+      'icon': 'assets/images/new icons for manager/client_management.png',
+    },
     {
       'label': 'Approved Proposals',
-      'icon': 'assets/images/Time Allocation_Approval_Blue.png'
+      'icon': 'assets/images/new icons for manager/Approved proposals.png',
     },
-    {'label': 'Analytics (My Pipeline)', 'icon': 'assets/images/analytics.png'},
+    {
+      'label': 'Analytics (My Pipeline)',
+      'icon': 'assets/images/analytics.png',
+    },
   ];
 
   @override
@@ -55,8 +67,6 @@ class _AppSideNavState extends State<AppSideNav> {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveCollapsed = widget.isCollapsed;
-
     return GestureDetector(
       onTap: () {
         if (widget.isCollapsed) widget.onToggle();
@@ -68,128 +78,155 @@ class _AppSideNavState extends State<AppSideNav> {
             ? AppSideNav.collapsedWidth
             : AppSideNav.expandedWidth,
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.black.withOpacity(0.3),
-              Colors.black.withOpacity(0.2),
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
+          color: AppSideNav.backgroundColor,
           border: Border(
+            left: BorderSide(
+              color: AppSideNav.leftAccentColor,
+              width: 3,
+            ),
             right: BorderSide(
-              color: PremiumTheme.glassWhiteBorder,
+              color: Colors.white.withOpacity(0.08),
               width: 1,
             ),
           ),
         ),
         child: SafeArea(
-          child: Column(
-            children: [
-              const SizedBox(height: 16),
-              // Toggle button (always visible)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: InkWell(
-                  onTap: widget.onToggle,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2C3E50),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          widget.isCollapsed
-                              ? Icons.keyboard_arrow_right
-                              : Icons.keyboard_arrow_left,
-                          color: Colors.white,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final effectiveCollapsed = widget.isCollapsed;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // ── Header ──────────────────────────────────────────────
+                  _buildHeader(effectiveCollapsed),
 
-              const SizedBox(height: 8),
-
-              // Navigation Items
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      for (final item in AppSideNav._items)
-                        if (!_shouldHideItemForAdmin(item['label']!))
-                          _buildNavItem(
-                            label: item['label']!,
-                            assetPath: item['icon']!,
-                            effectiveCollapsed: effectiveCollapsed,
-                          ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Bottom section - Logout
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Column(
-                  children: [
-                    if (!widget.isCollapsed)
-                      Container(
-                        margin: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                        height: 1,
-                        color: const Color(0xFF2C3E50),
-                      ),
-                    _buildItem('Logout', 'assets/images/Logout_KhonoBuzz.png'),
-                    if (!widget.isCollapsed) ...[
-                      const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 8, horizontal: 12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1A1F2E),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                                color: const Color(0xFF2C3E50), width: 1),
-                          ),
-                          child: Text(
-                            AppConstants.fullVersion,
-                            style: const TextStyle(
-                              color: Color(0xFF9CA3AF),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w500,
+                  // ── Nav Items ───────────────────────────────────────────
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        children: [
+                          for (final item in AppSideNav._items)
+                            _buildNavItem(
+                              label: item['label']!,
+                              assetPath: item['icon']!,
+                              effectiveCollapsed: effectiveCollapsed,
                             ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ],
-                ),
-              ),
-            ],
+                    ),
+                  ),
+
+                  // ── Bottom: divider + Logout + version ──────────────────
+                  _buildBottom(effectiveCollapsed),
+                ],
+              );
+            },
           ),
         ),
       ),
     );
   }
 
-  bool _shouldHideItemForAdmin(String label) {
-    return false;
-  }
+  Widget _buildHeader(bool effectiveCollapsed) {
+    if (effectiveCollapsed) {
+      // Collapsed: just the toggle arrow
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        child: InkWell(
+          onTap: widget.onToggle,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.10),
+              ),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.keyboard_arrow_right,
+              color: Colors.white,
+              size: 20,
+            ),
+          ),
+        ),
+      );
+    }
 
-  Widget _buildItem(String label, String assetPath) {
-    return _buildNavItem(
-      label: label,
-      assetPath: assetPath,
-      effectiveCollapsed: widget.isCollapsed,
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Logo + collapse toggle in one row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Khonology logo
+              Expanded(
+                child: Image.asset(
+                  'assets/images/new icons for manager/khonology_logo.png',
+                  height: 22,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.centerLeft,
+                ),
+              ),
+              InkWell(
+                onTap: widget.onToggle,
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.10),
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.keyboard_arrow_left,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Sub-header text
+          const Text(
+            'Welcome to',
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 2),
+          const Text(
+            'Proposal & SOW Builder',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 14),
+          // Thin divider below header
+          Container(
+            height: 1,
+            color: Colors.white.withOpacity(0.10),
+          ),
+        ],
+      ),
     );
   }
 
@@ -206,60 +243,65 @@ class _AppSideNavState extends State<AppSideNav> {
       onExit: (_) => setState(() => _hoveringItem = null),
       child: Padding(
         padding: effectiveCollapsed
-            ? const EdgeInsets.symmetric(vertical: 8)
-            : const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: InkWell(
-          onTap: () => widget.onSelect(label),
-          borderRadius: BorderRadius.circular(effectiveCollapsed ? 30 : 12),
-          child: effectiveCollapsed
-              ? _buildCollapsedIcon(assetPath, isActive, isHovering: isHovering)
-              : _buildExpandedNavRow(label, assetPath, isActive,
-                  isHovering: isHovering),
+            ? const EdgeInsets.symmetric(vertical: 4)
+            : const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        child: Tooltip(
+          message: effectiveCollapsed ? label : '',
+          child: InkWell(
+            onTap: () => widget.onSelect(label),
+            borderRadius: BorderRadius.circular(effectiveCollapsed ? 30 : 10),
+            child: effectiveCollapsed
+                ? _buildCollapsedIcon(assetPath, isActive, isHovering: isHovering)
+                : _buildExpandedRow(label, assetPath, isActive, isHovering: isHovering),
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildExpandedNavRow(
+  Widget _buildExpandedRow(
     String label,
     String assetPath,
     bool isActive, {
     required bool isHovering,
   }) {
-    final border = isActive
-        ? Border.all(color: const Color(0xFFE74C3C), width: 1)
-        : isHovering
-            ? Border.all(color: Colors.white.withOpacity(0.18), width: 1)
-            : null;
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        border: border,
+        color: isActive
+            ? AppSideNav.activeColor
+            : isHovering
+                ? Colors.white.withOpacity(0.06)
+                : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
-          SizedBox(
-            width: 44,
-            height: 44,
-            child: _buildWhiteCircleIcon(assetPath, isActive),
+          // Circular icon container
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: isActive
+                  ? Colors.white.withOpacity(0.15)
+                  : Colors.white.withOpacity(0.08),
+              shape: BoxShape.circle,
+            ),
+            padding: const EdgeInsets.all(8),
+            child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               label,
               style: TextStyle(
-                color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                fontSize: 14,
+                color: isActive ? Colors.white : const Color(0xFFCDD5E0),
+                fontSize: 13,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
               ),
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          if (isActive)
-            const Icon(Icons.arrow_forward_ios, size: 12, color: Colors.white),
         ],
       ),
     );
@@ -270,49 +312,67 @@ class _AppSideNavState extends State<AppSideNav> {
     bool isActive, {
     required bool isHovering,
   }) {
-    final bg = isActive
-        ? const Color(0xFFC10D00).withOpacity(0.16)
-        : isHovering
-            ? Colors.white.withOpacity(0.08)
-            : Colors.transparent;
-
     return Container(
-      width: 44,
-      height: 44,
+      width: 48,
+      height: 48,
+      margin: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
-        color: bg,
+        color: isActive
+            ? AppSideNav.activeColor
+            : isHovering
+                ? Colors.white.withOpacity(0.08)
+                : Colors.white.withOpacity(0.06),
         shape: BoxShape.circle,
-        border: isActive
-            ? Border.all(color: const Color(0xFFE74C3C), width: 1)
-            : null,
       ),
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(11),
       child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
     );
   }
 
-  Widget _buildWhiteCircleIcon(String assetPath, bool isActive) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.10),
-        shape: BoxShape.circle,
-        border: isActive
-            ? Border.all(color: const Color(0xFFE74C3C), width: 1)
-            : Border.all(color: Colors.white.withOpacity(0.10), width: 1),
-      ),
-      padding: const EdgeInsets.all(10),
-      child: AssetService.buildImageWidget(assetPath, fit: BoxFit.contain),
-    );
-  }
-
-  Widget _buildIcon(String assetPath, bool isActive, bool isCollapsed) {
-    // 🎨 Icon Color Logic
-    // AssetService.buildImageWidget doesn't support color tinting
-    // Icons will use their original colors
-    return ClipOval(
-      child: AssetService.buildImageWidget(
-        assetPath,
-        fit: BoxFit.contain,
+  Widget _buildBottom(bool effectiveCollapsed) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        children: [
+          if (!effectiveCollapsed)
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              height: 1,
+              color: Colors.white.withOpacity(0.10),
+            ),
+          _buildNavItem(
+            label: 'Logout',
+            assetPath: 'assets/images/Logout_KhonoBuzz.png',
+            effectiveCollapsed: effectiveCollapsed,
+          ),
+          if (!effectiveCollapsed) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.04),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.08),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  AppConstants.fullVersion,
+                  style: const TextStyle(
+                    color: Color(0xFF9CA3AF),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

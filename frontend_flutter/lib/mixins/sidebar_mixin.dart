@@ -31,6 +31,7 @@ mixin SidebarMixin<T extends StatefulWidget> on State<T> {
         Navigator.pushReplacementNamed(context, '/dashboard');
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':

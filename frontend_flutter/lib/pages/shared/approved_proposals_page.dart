@@ -275,6 +275,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         Navigator.pushReplacementNamed(context, '/creator-dashboard');
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':

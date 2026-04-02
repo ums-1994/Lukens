@@ -800,6 +800,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         }
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
