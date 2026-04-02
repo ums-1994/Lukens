@@ -1751,7 +1751,21 @@ class _ClientProposalViewerState extends State<ClientProposalViewer> {
   String _formatDate(dynamic date) {
     if (date == null) return 'N/A';
     try {
-      final dt = DateTime.parse(date.toString());
+      final raw = date.toString();
+      final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(raw);
+      final parsedRaw = DateTime.parse(raw);
+      final dt = hasTimezone
+          ? parsedRaw.toLocal()
+          : DateTime.utc(
+              parsedRaw.year,
+              parsedRaw.month,
+              parsedRaw.day,
+              parsedRaw.hour,
+              parsedRaw.minute,
+              parsedRaw.second,
+              parsedRaw.millisecond,
+              parsedRaw.microsecond,
+            ).toLocal();
       final now = DateTime.now();
       final diff = now.difference(dt);
 

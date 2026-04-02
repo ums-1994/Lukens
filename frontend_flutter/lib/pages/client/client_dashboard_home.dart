@@ -99,7 +99,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       final existing = web.window.localStorage['lukens_client_device_id'];
       final clean = existing?.trim();
       if (clean != null && clean.isNotEmpty) return clean;
-      final id = 'dev_${DateTime.now().millisecondsSinceEpoch}_${(100000 + (DateTime.now().microsecondsSinceEpoch % 900000))}';
+      final id =
+          'dev_${DateTime.now().millisecondsSinceEpoch}_${(100000 + (DateTime.now().microsecondsSinceEpoch % 900000))}';
       web.window.localStorage['lukens_client_device_id'] = id;
       return id;
     } catch (_) {
@@ -222,22 +223,23 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           return false;
         }
 
-        final verifyUri = Uri.parse('$baseUrl/api/client/device-session/verify-otp');
+        final verifyUri =
+            Uri.parse('$baseUrl/api/client/device-session/verify-otp');
         final verifyResp = await http
             .post(
-              verifyUri,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'challenge_id': activeChallengeId,
-                'otp': normalizedOtp,
-              }),
-            )
+          verifyUri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'challenge_id': activeChallengeId,
+            'otp': normalizedOtp,
+          }),
+        )
             .timeout(
-              const Duration(seconds: 12),
-              onTimeout: () {
-                throw TimeoutException('OTP verification timed out');
-              },
-            );
+          const Duration(seconds: 12),
+          onTimeout: () {
+            throw TimeoutException('OTP verification timed out');
+          },
+        );
 
         Map<String, dynamic>? verifyDecoded;
         try {
@@ -263,7 +265,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('OTP verified but no session token was returned.'),
+                content:
+                    Text('OTP verified but no session token was returned.'),
                 backgroundColor: Colors.red,
               ),
             );
@@ -285,16 +288,16 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final startUri = Uri.parse('$baseUrl/api/client/device-session/start');
     final startResp = await http
         .post(
-          startUri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'token': token, 'device_id': deviceId}),
-        )
+      startUri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'token': token, 'device_id': deviceId}),
+    )
         .timeout(
-          const Duration(seconds: 12),
-          onTimeout: () {
-            throw TimeoutException('Device session start timed out');
-          },
-        );
+      const Duration(seconds: 12),
+      onTimeout: () {
+        throw TimeoutException('Device session start timed out');
+      },
+    );
 
     Map<String, dynamic>? decoded;
     try {
@@ -328,7 +331,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Device session started but no session token was returned.'),
+            content: Text(
+                'Device session started but no session token was returned.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -377,19 +381,20 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return false;
     }
 
-    final verifyUri = Uri.parse('$baseUrl/api/client/device-session/verify-otp');
+    final verifyUri =
+        Uri.parse('$baseUrl/api/client/device-session/verify-otp');
     final verifyResp = await http
         .post(
-          verifyUri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'challenge_id': challengeId, 'otp': normalizedOtp}),
-        )
+      verifyUri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'challenge_id': challengeId, 'otp': normalizedOtp}),
+    )
         .timeout(
-          const Duration(seconds: 12),
-          onTimeout: () {
-            throw TimeoutException('OTP verification timed out');
-          },
-        );
+      const Duration(seconds: 12),
+      onTimeout: () {
+        throw TimeoutException('OTP verification timed out');
+      },
+    );
 
     Map<String, dynamic>? verifyDecoded;
     try {
@@ -436,9 +441,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     }
 
     bool isSow(Map<String, dynamic> p) {
-      final t = (p['template_type'] ?? p['templateType'] ?? p['template_key'] ?? '')
-          .toString()
-          .toLowerCase();
+      final t =
+          (p['template_type'] ?? p['templateType'] ?? p['template_key'] ?? '')
+              .toString()
+              .toLowerCase();
       return t.contains('sow');
     }
 
@@ -452,7 +458,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   String _documentLabel(Map<String, dynamic> doc) {
-    final t = (doc['template_type'] ?? doc['templateType'] ?? doc['template_key'] ?? '')
+    final t = (doc['template_type'] ??
+            doc['templateType'] ??
+            doc['template_key'] ??
+            '')
         .toString()
         .toLowerCase();
     if (t.contains('sow')) return 'SOW';
@@ -478,7 +487,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   Future<void> _showFallbackSignModal(Map<String, dynamic> doc) async {
     if (_accessToken == null || _accessToken!.isEmpty) return;
     final rawId = doc['id'];
-    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (proposalId == null) return;
 
     final nameController = TextEditingController();
@@ -499,7 +509,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 return;
               }
               if (!consent) {
-                setModalState(() => error = 'Please confirm you agree to sign.');
+                setModalState(
+                    () => error = 'Please confirm you agree to sign.');
                 return;
               }
 
@@ -510,7 +521,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
               try {
                 final resp = await http.post(
-                  Uri.parse('$baseUrl/api/client/proposals/$proposalId/sign_token'),
+                  Uri.parse(
+                      '$baseUrl/api/client/proposals/$proposalId/sign_token'),
                   headers: {
                     'Content-Type': 'application/json',
                     if (_deviceId != null && _deviceId!.isNotEmpty)
@@ -576,7 +588,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                           value: consent,
                           onChanged: submitting
                               ? null
-                              : (v) => setModalState(() => consent = v ?? false),
+                              : (v) =>
+                                  setModalState(() => consent = v ?? false),
                         ),
                         const Expanded(
                           child: Text(
@@ -597,7 +610,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               ),
               actions: [
                 TextButton(
-                  onPressed: submitting ? null : () => Navigator.of(context).pop(),
+                  onPressed:
+                      submitting ? null : () => Navigator.of(context).pop(),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
@@ -633,12 +647,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? Colors.white.withValues(alpha: 0.12) : Colors.transparent,
+            color: selected
+                ? Colors.white.withValues(alpha: 0.12)
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
             children: [
-              Icon(icon, color: selected ? Colors.white : Colors.white70, size: 20),
+              Icon(icon,
+                  color: selected ? Colors.white : Colors.white70, size: 20),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -702,7 +719,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               _clientEmail ?? '',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+              style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
             ),
           ),
         ],
@@ -860,7 +878,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 const SizedBox(height: 4),
                 Text(
                   'Welcome back, ${_clientEmail ?? 'Client'}',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12),
                 ),
               ],
             ),
@@ -889,7 +909,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final docs = _filteredDocuments();
     final activeCount = docs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
-      return s.contains('sent') || s.contains('released') || s.contains('review');
+      return s.contains('sent') ||
+          s.contains('released') ||
+          s.contains('review');
     }).length;
     final signedCount = docs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
@@ -926,11 +948,14 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 children: [
                   Text(label,
                       style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
+                          color: Colors.white.withValues(alpha: 0.75),
+                          fontSize: 12)),
                   const SizedBox(height: 4),
                   Text(value,
                       style: const TextStyle(
-                          color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700)),
                 ],
               ),
             ),
@@ -943,9 +968,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < 860;
         final children = [
-          tile('Active Proposals', activeCount.toString(), Icons.description_outlined),
+          tile('Active Proposals', activeCount.toString(),
+              Icons.description_outlined),
           tile('Signed SOWs', signedCount.toString(), Icons.verified_outlined),
-          tile('Pending Approvals', pendingCount.toString(), Icons.pending_actions_outlined),
+          tile('Pending Approvals', pendingCount.toString(),
+              Icons.pending_actions_outlined),
         ];
         if (narrow) {
           return Column(
@@ -997,7 +1024,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               ),
               Text(
                 '${docs.length}',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
               ),
             ],
           ),
@@ -1018,8 +1046,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               ),
               itemBuilder: (context, index) {
                 final doc = docs[index];
-                final selected =
-                    _selectedDocument?['id']?.toString() == doc['id']?.toString();
+                final selected = _selectedDocument?['id']?.toString() ==
+                    doc['id']?.toString();
                 final status = (doc['status'] ?? '').toString();
 
                 Widget _statusChip(String rawStatus) {
@@ -1065,6 +1093,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                     ),
                   );
                 }
+
                 return InkWell(
                   onTap: () {
                     setState(() {
@@ -1074,8 +1103,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   child: Row(
                     children: [
                       Icon(
-                        selected ? Icons.check_box : Icons.check_box_outline_blank,
-                        color: selected ? Colors.lightBlueAccent : Colors.white70,
+                        selected
+                            ? Icons.check_box
+                            : Icons.check_box_outline_blank,
+                        color:
+                            selected ? Colors.lightBlueAccent : Colors.white70,
                         size: 18,
                       ),
                       const SizedBox(width: 10),
@@ -1116,7 +1148,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final doc = _selectedDocument;
     final title = doc?['title']?.toString() ?? 'Select a document';
     final status = doc?['status']?.toString() ?? '';
-    final hasSigning = (doc?['signing_url']?.toString() ?? '').trim().isNotEmpty;
+    final hasSigning =
+        (doc?['signing_url']?.toString() ?? '').trim().isNotEmpty;
     final statusLower = status.toLowerCase().trim();
     final isSignedStatus =
         statusLower.contains('client signed') || statusLower.contains('signed');
@@ -1158,12 +1191,14 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 6),
               Text(
                 status.isEmpty ? '' : status,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
               ),
               if (isSignedStatus) ...[
                 const SizedBox(height: 8),
@@ -1191,7 +1226,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.10)),
                 ),
                 alignment: Alignment.center,
                 child: Text(
@@ -1238,13 +1274,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             children: [
               Text(
                 'Open a document to view and post comments.',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
               ),
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
-                  onPressed: doc == null ? null : () => _openProposalComments(doc),
+                  onPressed:
+                      doc == null ? null : () => _openProposalComments(doc),
                   icon: const Icon(Icons.forum_outlined, size: 18),
                   label: const Text('Open Comments'),
                 ),
@@ -1261,7 +1299,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: doc == null ? null : () => _downloadPdfForDocument(doc),
+                      onPressed: doc == null
+                          ? null
+                          : () => _downloadPdfForDocument(doc),
                       icon: const Icon(Icons.download_outlined, size: 18),
                       label: const Text('Download PDF'),
                     ),
@@ -1324,7 +1364,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildMainLeftContent() {
-    if (_selectedNavIndex == 0 || _selectedNavIndex == 1 || _selectedNavIndex == 2) {
+    if (_selectedNavIndex == 0 ||
+        _selectedNavIndex == 1 ||
+        _selectedNavIndex == 2) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1436,21 +1478,19 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     try {
       final uri = Uri.parse('$baseUrl/api/client/proposals')
           .replace(queryParameters: {'token': token});
-      final response = await http
-          .get(
-            uri,
-            headers: {
-              if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
-              if (_clientSessionToken != null)
-                'X-Client-Session-Token': _clientSessionToken!,
-            },
-          )
-          .timeout(
-            const Duration(seconds: 8),
-            onTimeout: () {
-              throw TimeoutException('Request timed out');
-            },
-          );
+      final response = await http.get(
+        uri,
+        headers: {
+          if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
+          if (_clientSessionToken != null)
+            'X-Client-Session-Token': _clientSessionToken!,
+        },
+      ).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {
+          throw TimeoutException('Request timed out');
+        },
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -1465,9 +1505,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         if (!mounted) return;
         setState(() {
           _clientEmail = data['client_email'];
-          _proposals = proposalsRaw
-              .map((p) => Map<String, dynamic>.from(p))
-              .toList();
+          _proposals =
+              proposalsRaw.map((p) => Map<String, dynamic>.from(p)).toList();
 
           if (_selectedDocument != null) {
             final selId = _selectedDocument?['id']?.toString();
@@ -1521,8 +1560,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
         if (!mounted) return;
         setState(() {
-          _error = decoded?['detail']?.toString() ??
-              'Device verification required.';
+          _error =
+              decoded?['detail']?.toString() ?? 'Device verification required.';
           _isLoading = false;
         });
       } else if (response.statusCode == 423) {
@@ -1567,7 +1606,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   void _openProposal(Map<String, dynamic> proposal) {
     final rawId = proposal['id'];
-    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
       print(
           '[ClientDashboardHome] Cannot open proposal: invalid id=$rawId tokenPresent=${_accessToken != null && _accessToken!.isNotEmpty}');
@@ -1600,7 +1640,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   void _openProposalComments(Map<String, dynamic> proposal) {
     final rawId = proposal['id'];
-    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
       return;
     }
@@ -2093,7 +2134,21 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String _formatDate(dynamic date) {
     if (date == null) return 'N/A';
     try {
-      final dt = DateTime.parse(date.toString());
+      final raw = date.toString();
+      final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(raw);
+      final parsedRaw = DateTime.parse(raw);
+      final dt = hasTimezone
+          ? parsedRaw.toLocal()
+          : DateTime.utc(
+              parsedRaw.year,
+              parsedRaw.month,
+              parsedRaw.day,
+              parsedRaw.hour,
+              parsedRaw.minute,
+              parsedRaw.second,
+              parsedRaw.millisecond,
+              parsedRaw.microsecond,
+            ).toLocal();
       final now = DateTime.now();
       final diff = now.difference(dt);
 
