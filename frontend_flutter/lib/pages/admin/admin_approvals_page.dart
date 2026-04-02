@@ -1,6 +1,7 @@
 // ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
 
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -24,7 +25,7 @@ class AdminApprovalsPage extends StatefulWidget {
 }
 
 class _AdminApprovalsPageState extends State<AdminApprovalsPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   List<Map<String, dynamic>> _approvedProposals = [];
   bool _isLoading = true;
   double _totalApprovedValue = 0;
@@ -44,6 +45,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
   bool _isSidebarCollapsed = false;
   String _currentPage = 'Approvals';
+  Timer? _refreshTimer;
+  bool _isRefreshing = false;
 
   static const Color _adminBlockBase = Color(0xFF252525);
 
@@ -93,6 +96,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -100,6 +104,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _enforceAccessAndLoad();
+    });
+    _refreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      _loadData(silent: true);
     });
   }
 
@@ -129,9 +136,18 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
     _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadData(silent: true);
+    }
   }
 
   Future<void> _enforceAccessAndLoad() async {
@@ -147,10 +163,14 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     await _loadData();
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({bool silent = false}) async {
     if (!mounted) return;
+    if (_isRefreshing) return;
+    _isRefreshing = true;
 
-    setState(() => _isLoading = true);
+    if (!silent) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       AuthService.restoreSessionFromStorage();
@@ -163,7 +183,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
       if (token == null) {
         if (mounted) {
-          setState(() => _isLoading = false);
+          if (!silent) {
+            setState(() => _isLoading = false);
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('⚠️ Session expired. Please login again.'),
@@ -357,14 +379,18 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading data: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (!silent) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error loading data: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
+    } finally {
+      _isRefreshing = false;
     }
   }
 

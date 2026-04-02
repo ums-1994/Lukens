@@ -52,9 +52,22 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   );
   static const _currencySymbol = 'R';
 
+  String _resolvedScopeForCurrentUser() {
+    // Prevent empty analytics caused by invalid scope/role combinations.
+    final selected = _cycleTimeScope.trim().toLowerCase();
+    if (_isAdminUser()) {
+      return selected.isEmpty ? 'all' : selected;
+    }
+    if (selected == 'all') return 'self';
+    return selected.isEmpty ? 'self' : selected;
+  }
+
   @override
   void initState() {
     super.initState();
+    if (_isAdminUser()) {
+      _cycleTimeScope = 'all';
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final app = context.read<AppState>();
       app.fetchProposals();
@@ -82,6 +95,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final region = _globalRegionCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
+      final effectiveScope = _resolvedScopeForCurrentUser();
 
       final data = await context.read<AppState>().getClientEngagementAnalytics(
             startDate: startDate,
@@ -90,7 +104,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
             region: region.isEmpty ? null : region,
-            scope: _cycleTimeScope,
+            scope: effectiveScope,
             department: department.isEmpty ? null : department,
           );
       return data;
@@ -114,6 +128,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
       final app = context.read<AppState>();
+      final effectiveScope = _resolvedScopeForCurrentUser();
 
       final results = await Future.wait([
         app.getProposalPipelineAnalytics(
@@ -122,7 +137,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           owner: owner.isEmpty ? null : owner,
           proposalType: proposalType.isEmpty ? null : proposalType,
           client: client.isEmpty ? null : client,
-          scope: _cycleTimeScope,
+          scope: effectiveScope,
           department: department.isEmpty ? null : department,
           stage: _pipelineStageFilter,
         ),
@@ -132,7 +147,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           owner: owner.isEmpty ? null : owner,
           proposalType: proposalType.isEmpty ? null : proposalType,
           client: client.isEmpty ? null : client,
-          scope: _cycleTimeScope,
+          scope: effectiveScope,
           department: department.isEmpty ? null : department,
         ),
       ]);
@@ -3509,9 +3524,11 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               dropdownColor: const Color(0xFF0A0E27),
               style: const TextStyle(color: Colors.white),
               icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
-              items: const [
-                DropdownMenuItem(value: 'team', child: Text('Team')),
-                DropdownMenuItem(value: 'self', child: Text('My')),
+              items: [
+                if (_isAdminUser())
+                  const DropdownMenuItem(value: 'all', child: Text('All')),
+                const DropdownMenuItem(value: 'team', child: Text('Team')),
+                const DropdownMenuItem(value: 'self', child: Text('My')),
               ],
               onChanged: (v) {
                 if (v == null) return;
