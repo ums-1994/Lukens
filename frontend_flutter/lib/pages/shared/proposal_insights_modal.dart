@@ -484,7 +484,7 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
   String _formatTimeAgo(String? timestamp) {
     if (timestamp == null) return 'Unknown time';
     try {
-      final date = DateTime.parse(timestamp);
+      final date = DateTime.parse(timestamp).toLocal();
       final now = DateTime.now();
       final diff = now.difference(date);
 
@@ -501,7 +501,7 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
     if (date == null) return 'Never';
     if (date is String) {
       try {
-        final dt = DateTime.parse(date);
+        final dt = DateTime.parse(date).toLocal();
         return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
       } catch (e) {
         return date.toString();

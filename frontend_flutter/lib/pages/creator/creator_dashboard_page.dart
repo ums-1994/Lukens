@@ -15,7 +15,6 @@ import '../../theme/premium_theme.dart';
 import '../../theme/app_colors.dart';
 import '../shared/proposal_insights_modal.dart';
 import '../../widgets/app_side_nav.dart';
-import 'widgets/completion_rates_widget.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -732,8 +731,10 @@ class _DashboardPageState extends State<DashboardPage>
                     .toString()
                     .toLowerCase()
                     .trim();
-                final isAdmin = role == 'admin' || role == 'ceo' ||
-                    role == 'manager' || role == 'creator' ||
+                final isAdmin = role == 'admin' ||
+                    role == 'ceo' ||
+                    role == 'manager' ||
+                    role == 'creator' ||
                     role == 'financial manager';
                 return AppSideNav(
                   isCollapsed: app.isSidebarCollapsed,
@@ -1656,8 +1657,8 @@ class _DashboardPageState extends State<DashboardPage>
   DateTime _toSast(DateTime dt) {
     final utc = dt.isUtc
         ? dt
-        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute,
-            dt.second, dt.millisecond, dt.microsecond);
+        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second,
+            dt.millisecond, dt.microsecond);
     return utc.add(const Duration(hours: 2));
   }
 
