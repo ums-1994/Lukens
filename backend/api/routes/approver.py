@@ -227,26 +227,63 @@ def get_all_proposals_for_admin(username=None, user_id=None, email=None):
             else:
                 budget_expr = 'NULL::numeric'
 
+            cursor.execute(
+                """
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_name = 'risk_gate_runs'
+                LIMIT 1
+                """
+            )
+            has_risk_gate_runs = cursor.fetchone() is not None
+
+            risk_join = ""
+            risk_score_expr = "NULL::numeric"
+            risk_status_expr = "NULL::text"
+            if has_risk_gate_runs:
+                risk_join = """
+                LEFT JOIN LATERAL (
+                    SELECT status, risk_score
+                    FROM risk_gate_runs r
+                    WHERE r.proposal_id = p.id
+                    ORDER BY r.id DESC
+                    LIMIT 1
+                ) latest_risk ON TRUE
+                """
+                risk_score_expr = "latest_risk.risk_score"
+                risk_status_expr = "latest_risk.status"
+
             query = f'''
                 SELECT
-                    id,
-                    title,
-                    content,
+                    p.id,
+                    p.title,
+                    p.content,
                     {client_expr} AS client,
                     {client_email_expr} AS client_email,
                     {owner_expr} AS user_id,
-                    status,
-                    created_at,
-                    updated_at,
-                    {budget_expr} AS budget
-                FROM proposals
-                ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST
+                    p.status,
+                    p.created_at,
+                    p.updated_at,
+                    {budget_expr} AS budget,
+                    {risk_score_expr} AS risk_score,
+                    {risk_status_expr} AS risk_status
+                FROM proposals p
+                {risk_join}
+                ORDER BY p.updated_at DESC NULLS LAST, p.created_at DESC NULLS LAST
             '''
 
             cursor.execute(query)
             rows = cursor.fetchall() or []
             proposals = []
             for row in rows:
+                risk_status = (row.get('risk_status') or '').strip().upper() if isinstance(row, dict) else ''
+                risk_level = ''
+                if risk_status == 'PASS':
+                    risk_level = 'low'
+                elif risk_status == 'REVIEW':
+                    risk_level = 'medium'
+                elif risk_status == 'BLOCK':
+                    risk_level = 'high'
                 proposals.append({
                     'id': row.get('id'),
                     'title': row.get('title'),
@@ -258,6 +295,9 @@ def get_all_proposals_for_admin(username=None, user_id=None, email=None):
                     'user_id': row.get('user_id'),
                     'status': row.get('status'),
                     'budget': row.get('budget'),
+                    'risk_score': row.get('risk_score'),
+                    'risk_level': risk_level,
+                    'risk_status': row.get('risk_status'),
                     'created_at': row.get('created_at').isoformat() if row.get('created_at') else None,
                     'updated_at': row.get('updated_at').isoformat() if row.get('updated_at') else None,
                     'updatedAt': row.get('updated_at').isoformat() if row.get('updated_at') else None,
