@@ -504,6 +504,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     if (idx == 0) {
       return docs;
     }
+
+    bool isSow(Map<String, dynamic> p) {
+      final t =
+          (p['template_type'] ?? p['templateType'] ?? p['template_key'] ?? '')
+              .toString()
+              .toLowerCase();
+      return t.contains('sow');
+    }
+
     if (idx == 1) {
       return docs.where(_isAwaitingSignature).toList();
     }
@@ -720,15 +729,12 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             color: selected
                 ? Colors.white.withValues(alpha: 0.12)
                 : Colors.transparent,
-            border: selected
-                ? Border(
-                    left: BorderSide(color: PremiumTheme.primaryRed, width: 3),
-                  )
-                : null,
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
             children: [
+              Icon(icon,
+                  color: selected ? Colors.white : Colors.white70, size: 20),
               Icon(icon,
                   color: selected ? Colors.white : Colors.white70, size: 20),
               const SizedBox(width: 10),
@@ -1022,6 +1028,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return s.contains('sent') ||
           s.contains('released') ||
           s.contains('review');
+      return s.contains('sent') ||
+          s.contains('released') ||
+          s.contains('review');
     }).length;
     final signedCount = docs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
@@ -1056,16 +1065,22 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(label,
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontSize: 12)),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(value,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700)),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -1080,8 +1095,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         final children = [
           tile('Active Proposals', activeCount.toString(),
               Icons.description_outlined),
-          tile('Signed Documents', signedCount.toString(),
-              Icons.verified_outlined),
+          tile('Signed SOWs', signedCount.toString(), Icons.verified_outlined),
           tile('Pending Approvals', pendingCount.toString(),
               Icons.pending_actions_outlined),
         ];
@@ -1512,141 +1526,14 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildMainLeftContent() {
-    if (_isOverviewDashboard) {
-      if (_overviewError != null) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Dashboard',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _overviewError!,
-              style: const TextStyle(color: Colors.red),
-            ),
-          ],
-        );
-      }
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Dashboard',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _buildKpiCards(),
-          const SizedBox(height: 14),
-          _buildPipelineOverview(),
-          const SizedBox(height: 14),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final narrow = constraints.maxWidth < 980;
-              if (narrow) {
-                return Column(
-                  children: [
-                    _buildRecentActivity(),
-                    const SizedBox(height: 14),
-                    _buildQuickActions(),
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _buildRecentActivity()),
-                  const SizedBox(width: 14),
-                  SizedBox(width: 360, child: _buildQuickActions()),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 14),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final narrow = constraints.maxWidth < 980;
-              if (narrow) {
-                return Column(
-                  children: [
-                    _buildTrendChart(),
-                    const SizedBox(height: 14),
-                    _buildConversionChart(),
-                  ],
-                );
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: _buildTrendChart()),
-                  const SizedBox(width: 14),
-                  SizedBox(width: 420, child: _buildConversionChart()),
-                ],
-              );
-            },
-          ),
-        ],
-      );
-    }
-
-    if (!widget.showSummary && _selectedNavIndex == 1) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Proposals',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Review and sign documents awaiting your signature',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.70),
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 14),
-          _buildRecentDocuments(),
-        ],
-      );
-    }
-
     if (_selectedNavIndex == 0 ||
         _selectedNavIndex == 1 ||
         _selectedNavIndex == 2) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.showSummary) ...[
-            _buildSummaryTiles(),
-            const SizedBox(height: 16),
-          ],
+          _buildSummaryTiles(),
+          const SizedBox(height: 16),
           _buildRecentDocuments(),
         ],
       );
@@ -1836,6 +1723,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
         if (!mounted) return;
         setState(() {
+          _error =
+              decoded?['detail']?.toString() ?? 'Device verification required.';
           _error =
               decoded?['detail']?.toString() ?? 'Device verification required.';
           _isLoading = false;
@@ -3095,7 +2984,21 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String _formatDate(dynamic date) {
     if (date == null) return 'N/A';
     try {
-      final dt = DateTime.parse(date.toString());
+      final raw = date.toString();
+      final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(raw);
+      final parsedRaw = DateTime.parse(raw);
+      final dt = hasTimezone
+          ? parsedRaw.toLocal()
+          : DateTime.utc(
+              parsedRaw.year,
+              parsedRaw.month,
+              parsedRaw.day,
+              parsedRaw.hour,
+              parsedRaw.minute,
+              parsedRaw.second,
+              parsedRaw.millisecond,
+              parsedRaw.microsecond,
+            ).toLocal();
       final now = DateTime.now();
       final diff = now.difference(dt);
 

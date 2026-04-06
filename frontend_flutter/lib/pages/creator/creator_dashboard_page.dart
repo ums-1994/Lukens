@@ -1936,8 +1936,8 @@ class _DashboardPageState extends State<DashboardPage>
   DateTime _toSast(DateTime dt) {
     final utc = dt.isUtc
         ? dt
-        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute,
-            dt.second, dt.millisecond, dt.microsecond);
+        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second,
+            dt.millisecond, dt.microsecond);
     return utc.add(const Duration(hours: 2));
   }
 
@@ -2510,10 +2510,27 @@ class _DashboardPageState extends State<DashboardPage>
     if (createdAt == null) return 'Not viewed';
 
     try {
-      final date = DateTime.parse(createdAt);
+      final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(createdAt);
+      final parsedRaw = DateTime.parse(createdAt);
+      final parsed = hasTimezone
+          ? parsedRaw.toLocal()
+          : DateTime.utc(
+              parsedRaw.year,
+              parsedRaw.month,
+              parsedRaw.day,
+              parsedRaw.hour,
+              parsedRaw.minute,
+              parsedRaw.second,
+              parsedRaw.millisecond,
+              parsedRaw.microsecond,
+            ).toLocal();
       final now = DateTime.now();
-      final diff = now.difference(date);
 
+      bool isSameDay(DateTime a, DateTime b) {
+        return a.year == b.year && a.month == b.month && a.day == b.day;
+      }
+
+      final diff = now.difference(parsed);
       if (diff.inDays > 0) return 'Viewed ${diff.inDays}d ago';
       if (diff.inHours > 0) return 'Viewed ${diff.inHours}h ago';
       if (diff.inMinutes > 0) return 'Viewed ${diff.inMinutes}m ago';
@@ -2666,7 +2683,45 @@ class _DashboardPageState extends State<DashboardPage>
 
   String _formatDate(dynamic date) {
     if (date == null) return 'Unknown';
-    // Simple date formatting - you might want to use intl package for better formatting
+    if (date is String) {
+      try {
+        final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(date);
+        final parsedRaw = DateTime.parse(date);
+        final parsed = hasTimezone
+            ? parsedRaw.toLocal()
+            : DateTime.utc(
+                parsedRaw.year,
+                parsedRaw.month,
+                parsedRaw.day,
+                parsedRaw.hour,
+                parsedRaw.minute,
+                parsedRaw.second,
+                parsedRaw.millisecond,
+                parsedRaw.microsecond,
+              ).toLocal();
+        final now = DateTime.now();
+
+        bool isSameDay(DateTime a, DateTime b) {
+          return a.year == b.year && a.month == b.month && a.day == b.day;
+        }
+
+        final today = DateTime(now.year, now.month, now.day);
+        final parsedDay = DateTime(parsed.year, parsed.month, parsed.day);
+
+        if (isSameDay(parsedDay, today)) {
+          return 'Today, ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
+        }
+
+        final yesterday = today.subtract(const Duration(days: 1));
+        if (isSameDay(parsedDay, yesterday)) {
+          return 'Yesterday, ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
+        }
+
+        return '${parsed.day}/${parsed.month}/${parsed.year}';
+      } catch (_) {
+        return date.toString();
+      }
+    }
     return date.toString();
   }
 

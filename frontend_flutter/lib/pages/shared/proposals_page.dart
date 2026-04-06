@@ -816,17 +816,39 @@ class ProposalItem extends StatelessWidget {
     if (date == null) return 'Unknown';
     if (date is String) {
       try {
-        final parsed = DateTime.parse(date);
+        final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(date);
+        final parsedRaw = DateTime.parse(date);
+        final parsed = hasTimezone
+            ? parsedRaw.toLocal()
+            : DateTime.utc(
+                parsedRaw.year,
+                parsedRaw.month,
+                parsedRaw.day,
+                parsedRaw.hour,
+                parsedRaw.minute,
+                parsedRaw.second,
+                parsedRaw.millisecond,
+                parsedRaw.microsecond,
+              ).toLocal();
         final now = DateTime.now();
-        final difference = now.difference(parsed);
 
-        if (difference.inDays == 0) {
-          return 'Today, ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
-        } else if (difference.inDays == 1) {
-          return 'Yesterday, ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
-        } else {
-          return '${parsed.day}/${parsed.month}/${parsed.year}';
+        bool isSameDay(DateTime a, DateTime b) {
+          return a.year == b.year && a.month == b.month && a.day == b.day;
         }
+
+        final today = DateTime(now.year, now.month, now.day);
+        final parsedDay = DateTime(parsed.year, parsed.month, parsed.day);
+
+        if (isSameDay(parsedDay, today)) {
+          return 'Today, ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
+        }
+
+        final yesterday = today.subtract(const Duration(days: 1));
+        if (isSameDay(parsedDay, yesterday)) {
+          return 'Yesterday, ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
+        }
+
+        return '${parsed.day}/${parsed.month}/${parsed.year}';
       } catch (e) {
         return date.toString();
       }

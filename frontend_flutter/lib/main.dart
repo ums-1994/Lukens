@@ -238,7 +238,31 @@ class MyApp extends StatelessWidget {
       // Extract token from current URL query parameters
       final currentUrl = web.window.location.href;
       final uri = Uri.parse(currentUrl);
-      final token = uri.queryParameters['token'];
+      String? token = uri.queryParameters['token'];
+
+      // If not found in query params, try extracting from hash fragment or full URL
+      if (token == null || token.isEmpty) {
+        final hash = web.window.location.hash;
+        if (hash.contains('token=')) {
+          final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+          if (hashMatch != null) {
+            token = hashMatch.group(1);
+          }
+        }
+        // Try full URL as fallback
+        if (token == null || token.isEmpty) {
+          final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+          if (urlMatch != null) {
+            token = urlMatch.group(1);
+          }
+        }
+      }
+
+      if (token != null && token.isNotEmpty) {
+        try {
+          token = Uri.decodeComponent(token);
+        } catch (_) {}
+      }
       return MaterialPageRoute(
         builder: (context) => EmailVerificationPage(token: token),
       );
@@ -483,14 +507,60 @@ class MyApp extends StatelessWidget {
             // This will be handled by onGenerateRoute, but adding as fallback
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
-            final token = uri.queryParameters['token'];
+            String? token = uri.queryParameters['token'];
+
+            if (token == null || token.isEmpty) {
+              final hash = web.window.location.hash;
+              if (hash.contains('token=')) {
+                final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+                if (hashMatch != null) {
+                  token = hashMatch.group(1);
+                }
+              }
+              if (token == null || token.isEmpty) {
+                final urlMatch =
+                    RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+                if (urlMatch != null) {
+                  token = urlMatch.group(1);
+                }
+              }
+            }
+
+            if (token != null && token.isNotEmpty) {
+              try {
+                token = Uri.decodeComponent(token);
+              } catch (_) {}
+            }
             return EmailVerificationPage(token: token);
           },
           '/verify': (context) {
             // Direct verification route
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
-            final token = uri.queryParameters['token'];
+            String? token = uri.queryParameters['token'];
+
+            if (token == null || token.isEmpty) {
+              final hash = web.window.location.hash;
+              if (hash.contains('token=')) {
+                final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+                if (hashMatch != null) {
+                  token = hashMatch.group(1);
+                }
+              }
+              if (token == null || token.isEmpty) {
+                final urlMatch =
+                    RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+                if (urlMatch != null) {
+                  token = urlMatch.group(1);
+                }
+              }
+            }
+
+            if (token != null && token.isNotEmpty) {
+              try {
+                token = Uri.decodeComponent(token);
+              } catch (_) {}
+            }
             return EmailVerificationPage(token: token);
           },
           '/home': (context) => const DashboardPage(),
@@ -698,6 +768,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Future<void> _checkVerificationUrl() async {
     final currentUrl = web.window.location.href;
     final uri = Uri.parse(currentUrl);
+    final hash = web.window.location.hash;
 
     // Check for external Khonobuzz JWT login (source=khonobuzz&token=...)
     final source = uri.queryParameters['source'] ?? '';
@@ -906,13 +977,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final isCollaborationUrl = currentUrl.contains('/collaborate') ||
         uri.path.contains('/collaborate');
 
-    // Check if this is a verification URL (but not onboarding, client proposals, or collaboration)
-    if (!isOnboarding &&
-        !isCollaborationUrl &&
-        uri.queryParameters.containsKey('token')) {
-      final token = uri.queryParameters['token'];
+    // Only treat URLs as email verification when they actually target the
+    // verify-email route. Some external hubs use a generic `token` query param
+    // for their own auth, which should NOT route to email verification.
+    final isVerifyEmailUrl = currentUrl.contains('verify-email') ||
+        uri.path.contains('verify-email') ||
+        hash.contains('verify-email');
+
+    if (!isOnboarding && !isCollaborationUrl && isVerifyEmailUrl) {
+      final token = _extractTokenFromUrl(currentUrl);
       if (token != null && token.isNotEmpty) {
-        // Navigate to verification page
         WidgetsBinding.instance.addPostFrameCallback((_) {
           Navigator.push(
             context,
