@@ -6,7 +6,10 @@ import 'package:provider/provider.dart';
 import '../../api.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../theme/premium_theme.dart';
+import '../../theme/manager_theme_controller.dart';
 import '../../widgets/app_side_nav.dart';
+import '../../widgets/manager_page_background.dart';
+import '../../utils/manager_session_actions.dart';
 
 class ProposalsPage extends StatefulWidget {
   const ProposalsPage({super.key});
@@ -49,6 +52,8 @@ class _ProposalsPageState extends State<ProposalsPage>
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
+      case 'Account Profile':
+        break;
       case 'Logout':
         _handleLogout(context);
         break;
@@ -56,36 +61,7 @@ class _ProposalsPageState extends State<ProposalsPage>
   }
 
   void _handleLogout(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                final app = context.read<dynamic>();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushNamedAndRemoveUntil(
-                    context, '/login', (route) => false);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE74C3C),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
-    );
+    ManagerSessionActions.showLogoutDialog(context);
   }
 
   final ScrollController _scrollController = ScrollController();
@@ -358,6 +334,7 @@ class _ProposalsPageState extends State<ProposalsPage>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final chrome = context.watch<ManagerThemeController>().chrome;
     final userRole = app.currentUser?['role'] ?? 'Financial Manager';
 
     final filtered = proposals.where((p) {
@@ -376,8 +353,7 @@ class _ProposalsPageState extends State<ProposalsPage>
       backgroundColor: Colors.transparent,
       body: SafeArea(
         bottom: false,
-        child: Container(
-          color: Colors.transparent,
+        child: ManagerPageBackground(
           child: Row(
             children: [
               // Consistent Sidebar using AppSideNav
@@ -410,7 +386,7 @@ class _ProposalsPageState extends State<ProposalsPage>
                     // Header
                     Padding(
                       padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
-                      child: _buildHeader(context, app, userRole),
+                      child: _buildHeader(context, app, userRole, chrome),
                     ),
 
                     // Content Area
@@ -420,15 +396,18 @@ class _ProposalsPageState extends State<ProposalsPage>
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _buildToolbar(),
+                            _buildToolbar(chrome),
                             const SizedBox(height: 24),
                             Expanded(
                               child: CustomScrollbar(
                                 controller: _scrollController,
+                                thumbColor: chrome.scrollbarThumb,
+                                trackColor: chrome.scrollbarTrack,
+                                trackBorderColor: chrome.divider,
                                 child: SingleChildScrollView(
                                   controller: _scrollController,
                                   padding: const EdgeInsets.only(bottom: 24),
-                                  child: _buildFilterPanel(filtered),
+                                  child: _buildFilterPanel(filtered, chrome),
                                 ),
                               ),
                             ),
@@ -446,30 +425,29 @@ class _ProposalsPageState extends State<ProposalsPage>
     );
   }
 
-  Widget _buildHeader(BuildContext context, AppState app, String userRole) {
-    return GlassContainer(
-      borderRadius: 24,
+  Widget _buildHeader(BuildContext context, AppState app, String userRole,
+      ManagerChromeTheme chrome) {
+    return Container(
+      decoration: chrome.floatingPanelDecoration(radius: 10),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-      gradientStart: const Color(0xFF1D2B64),
-      gradientEnd: const Color(0xFF1D4350),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final isNarrow = constraints.maxWidth < 760;
           final titleBlock = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
+            children: [
               Text(
                 'Proposals',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: chrome.textPrimary,
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Text(
                 'Manage your business proposals and approvals',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
+                style: TextStyle(color: chrome.textSecondary, fontSize: 13),
               ),
             ],
           );
@@ -500,8 +478,8 @@ class _ProposalsPageState extends State<ProposalsPage>
                       _getUserName(app.currentUser),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: chrome.textPrimary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -509,15 +487,15 @@ class _ProposalsPageState extends State<ProposalsPage>
                       userRole,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style:
-                          const TextStyle(color: Colors.white70, fontSize: 12),
+                      style: TextStyle(
+                          color: chrome.textSecondary, fontSize: 12),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
               PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, color: Colors.white),
+                icon: Icon(Icons.more_vert, color: chrome.textSecondary),
                 onSelected: (value) {
                   if (value == 'logout') {
                     _handleLogout(context);
@@ -562,7 +540,7 @@ class _ProposalsPageState extends State<ProposalsPage>
     );
   }
 
-  Widget _buildToolbar() {
+  Widget _buildToolbar(ManagerChromeTheme chrome) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -570,15 +548,15 @@ class _ProposalsPageState extends State<ProposalsPage>
           flex: 3,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
+            children: [
               Text('Proposals',
                   style: TextStyle(
                       fontSize: 28,
                       fontWeight: FontWeight.w700,
-                      color: Colors.white)),
-              SizedBox(height: 6),
+                      color: chrome.textPrimary)),
+              const SizedBox(height: 6),
               Text('Manage all your business proposals and SOWs',
-                  style: TextStyle(color: Colors.white70)),
+                  style: TextStyle(color: chrome.textSecondary)),
             ],
           ),
         ),
@@ -588,34 +566,31 @@ class _ProposalsPageState extends State<ProposalsPage>
             padding: const EdgeInsets.only(right: 12.0),
             child: TextField(
               controller: _searchController,
+              style: TextStyle(color: chrome.textPrimary),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search),
                 hintText: 'Search proposals...',
                 filled: true,
-                fillColor: Colors.white.withValues(alpha: 0.05),
+                fillColor: chrome.fieldFill,
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.12),
-                  ),
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: chrome.fieldBorder),
                 ),
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: Colors.white.withValues(alpha: 0.08),
-                  ),
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: chrome.fieldBorder),
                 ),
                 focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(10),
                   borderSide: BorderSide(
                     color: PremiumTheme.purple.withValues(alpha: 0.8),
                   ),
                 ),
-                prefixIconColor: Colors.white70,
-                hintStyle: const TextStyle(
-                  color: Colors.white54,
+                prefixIconColor: chrome.textSecondary,
+                hintStyle: TextStyle(
+                  color: chrome.textMuted,
                 ),
               ),
               onChanged: (_) => setState(() {}),
@@ -652,9 +627,10 @@ class _ProposalsPageState extends State<ProposalsPage>
     );
   }
 
-  Widget _buildFilterPanel(List<Map<String, dynamic>> filtered) {
-    return GlassContainer(
-      borderRadius: 28,
+  Widget _buildFilterPanel(
+      List<Map<String, dynamic>> filtered, ManagerChromeTheme chrome) {
+    return Container(
+      decoration: chrome.floatingPanelDecoration(radius: 10),
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -664,7 +640,11 @@ class _ProposalsPageState extends State<ProposalsPage>
             children: [
               Text(
                 'All Proposals',
-                style: PremiumTheme.titleMedium,
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: chrome.textPrimary,
+                ),
               ),
               Row(
                 children: [
@@ -672,31 +652,28 @@ class _ProposalsPageState extends State<ProposalsPage>
                     width: 220,
                     child: TextField(
                       controller: _searchController,
+                      style: TextStyle(color: chrome.textPrimary),
                       decoration: InputDecoration(
                         hintText: 'Search proposals...',
                         prefixIcon: const Icon(
                           Icons.search,
                           size: 18,
                         ),
-                        hintStyle: const TextStyle(color: Colors.white54),
+                        hintStyle: TextStyle(color: chrome.textMuted),
                         filled: true,
-                        fillColor: Colors.white.withValues(alpha: 0.05),
+                        fillColor: chrome.fieldFill,
                         contentPadding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 10),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.12),
-                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: chrome.fieldBorder),
                         ),
                         enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: Colors.white.withValues(alpha: 0.08),
-                          ),
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide(color: chrome.fieldBorder),
                         ),
                         focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(10),
                           borderSide: BorderSide(
                             color: PremiumTheme.purple.withValues(alpha: 0.8),
                           ),
@@ -708,18 +685,19 @@ class _ProposalsPageState extends State<ProposalsPage>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.04),
-                      borderRadius: BorderRadius.circular(12),
+                      color: chrome.fieldFill,
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.08),
+                        color: chrome.fieldBorder,
                       ),
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         value: _filterStatus,
-                        dropdownColor: PremiumTheme.darkBg2,
-                        iconEnabledColor: Colors.white70,
-                        style: const TextStyle(color: Colors.white),
+                        dropdownColor: chrome.dropdownSurface,
+                        iconEnabledColor: chrome.textSecondary,
+                        style: TextStyle(
+                            color: chrome.textPrimary, fontSize: 14),
                         items: [
                           'All Statuses',
                           'Draft',
@@ -760,16 +738,16 @@ class _ProposalsPageState extends State<ProposalsPage>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(Icons.description_outlined,
-                        size: 64, color: Colors.grey[400]),
+                        size: 64, color: chrome.textMuted),
                     const SizedBox(height: 16),
-                    const Text('No proposals yet',
+                    Text('No proposals yet',
                         style: TextStyle(
                             fontSize: 20,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white)),
+                            color: chrome.textPrimary)),
                     const SizedBox(height: 8),
                     Text('Create your first proposal to get started',
-                        style: TextStyle(color: Colors.white70)),
+                        style: TextStyle(color: chrome.textSecondary)),
                     const SizedBox(height: 20),
                     ElevatedButton.icon(
                       onPressed: _showCreateNewDialog,
@@ -794,12 +772,14 @@ class _ProposalsPageState extends State<ProposalsPage>
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: filtered.length,
-              separatorBuilder: (context, index) => Divider(
-                  height: 1, color: Colors.white.withValues(alpha: 0.08)),
+              separatorBuilder: (context, index) =>
+                  Divider(height: 1, color: chrome.divider),
               itemBuilder: (context, index) {
                 final proposal = filtered[index];
                 return ProposalItem(
-                    proposal: proposal, onRefresh: _loadProposals);
+                    proposal: proposal,
+                    onRefresh: _loadProposals,
+                    chrome: chrome);
               },
             ),
         ],
@@ -823,9 +803,14 @@ class _ProposalsPageState extends State<ProposalsPage>
 class ProposalItem extends StatelessWidget {
   final Map<String, dynamic> proposal;
   final VoidCallback? onRefresh;
+  final ManagerChromeTheme chrome;
 
-  const ProposalItem({Key? key, required this.proposal, this.onRefresh})
-      : super(key: key);
+  const ProposalItem({
+    Key? key,
+    required this.proposal,
+    this.onRefresh,
+    required this.chrome,
+  }) : super(key: key);
 
   String _formatDate(dynamic date) {
     if (date == null) return 'Unknown';
@@ -880,12 +865,25 @@ class ProposalItem extends StatelessWidget {
         statusColor = PremiumTheme.error;
         break;
       default:
-        statusColor = Colors.white70;
+        statusColor = chrome.textMuted;
     }
 
-    final Color statusBgColor = statusColor == Colors.white70
-        ? Colors.white.withValues(alpha: 0.08)
-        : statusColor.withValues(alpha: 0.2);
+    const knownStatuses = {
+      'draft',
+      'pending',
+      'pending approval',
+      'pending ceo approval',
+      'sent',
+      'sent to client',
+      'approved',
+      'declined',
+      'rejected',
+    };
+    final isNeutralStatus = !knownStatuses.contains(status);
+
+    final Color statusBgColor = isNeutralStatus
+        ? chrome.fieldFill
+        : statusColor.withValues(alpha: chrome.isDark ? 0.2 : 0.18);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12.0),
@@ -896,20 +894,21 @@ class ProposalItem extends StatelessWidget {
             child:
                 Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(proposal['title'] ?? 'Untitled Proposal',
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w600, color: Colors.white)),
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: chrome.textPrimary)),
               const SizedBox(height: 8),
               Wrap(spacing: 16, children: [
                 Text(
                     'Last modified: ${_formatDate(proposal['updated_at'] ?? proposal['updatedAt'])}',
                     style:
-                        const TextStyle(fontSize: 13, color: Colors.white70)),
+                        TextStyle(fontSize: 13, color: chrome.textSecondary)),
                 if (proposal['client_name'] != null ||
                     proposal['client'] != null)
                   Text(
                       'Client: ${proposal['client_name'] ?? proposal['client']}',
                       style:
-                          const TextStyle(fontSize: 13, color: Colors.white70)),
+                          TextStyle(fontSize: 13, color: chrome.textSecondary)),
               ])
             ]),
           ),
@@ -919,12 +918,14 @@ class ProposalItem extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                     color: statusBgColor,
-                    borderRadius: BorderRadius.circular(20)),
+                    borderRadius: BorderRadius.circular(10)),
                 child: Text(proposal['status'] ?? 'Unknown',
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: statusColor))),
+                        color: isNeutralStatus
+                            ? chrome.textPrimary
+                            : statusColor))),
             const SizedBox(width: 8),
             ElevatedButton(
               onPressed: () {
@@ -960,7 +961,7 @@ class ProposalItem extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.white54),
+                icon: Icon(Icons.delete_outline, color: chrome.textSecondary),
                 onPressed: () async {
                   final confirm = await showDialog<bool>(
                       context: context,

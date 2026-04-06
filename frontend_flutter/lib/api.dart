@@ -1563,7 +1563,77 @@ class AppState extends ChangeNotifier {
       headers: {"Authorization": "Bearer $authToken"},
     );
     if (r.statusCode == 200) {
-      currentUser = jsonDecode(r.body);
+      final raw = jsonDecode(r.body);
+      currentUser = raw is Map<String, dynamic>
+          ? raw
+          : Map<String, dynamic>.from(raw as Map);
+      AuthService.setUserData(currentUser!, authToken!);
+      notifyListeners();
+    }
+  }
+
+  /// Persists Cloudinary profile photo on the user row (same upload flow as document editor).
+  Future<Map<String, dynamic>?> patchUserProfileAvatar({
+    required String profileImageUrl,
+    required String profileImagePublicId,
+  }) async {
+    final token = authToken ?? AuthService.token;
+    if (token == null) return null;
+    try {
+      // Use /api/user/profile (auth blueprint) — accepts Firebase ID tokens.
+      // Root /user/profile uses legacy app.py token_required (JWT only) → 401 for Firebase.
+      final r = await http.patch(
+        Uri.parse('$_apiBaseUrl/user/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'profile_image_url': profileImageUrl,
+          'profile_image_public_id': profileImagePublicId,
+        }),
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body) as Map<String, dynamic>;
+        currentUser = data;
+        authToken = token;
+        AuthService.setUserData(data, token);
+        notifyListeners();
+        return data;
+      }
+      print('patchUserProfileAvatar failed: ${r.statusCode} ${r.body}');
+      return null;
+    } catch (e) {
+      print('patchUserProfileAvatar error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> clearUserProfileAvatar() async {
+    final token = authToken ?? AuthService.token;
+    if (token == null) return null;
+    try {
+      final r = await http.patch(
+        Uri.parse('$_apiBaseUrl/user/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'clear_profile_image': true}),
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body) as Map<String, dynamic>;
+        currentUser = data;
+        authToken = token;
+        AuthService.setUserData(data, token);
+        notifyListeners();
+        return data;
+      }
+      print('clearUserProfileAvatar failed: ${r.statusCode} ${r.body}');
+      return null;
+    } catch (e) {
+      print('clearUserProfileAvatar error: $e');
+      return null;
     }
   }
 

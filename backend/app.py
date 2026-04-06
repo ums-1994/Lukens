@@ -71,6 +71,10 @@ import openai
 from dotenv import load_dotenv
 from api.utils.ai_safety import AISafetyError
 from api.utils.decorators import token_required as firebase_token_required
+from api.utils.profile_avatar import (
+    fetch_user_profile_dict_by_username,
+    patch_user_profile_avatar,
+)
 try:
     from hf_ai_assistant_service import HFAIAssistantError
 except ImportError:
@@ -507,8 +511,21 @@ def init_pg_schema():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
-        
-        
+
+        # Manager profile photo (Cloudinary); must match api/utils/database.py
+        try:
+            cursor.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS profile_image_url TEXT,
+                ADD COLUMN IF NOT EXISTS profile_image_public_id TEXT
+                """
+            )
+        except Exception as profile_col_err:
+            print(
+                f"[WARN] Could not add profile_image columns to users: {profile_col_err}"
+            )
+
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
         id SERIAL PRIMARY KEY,
         title VARCHAR(500) NOT NULL,
@@ -1899,26 +1916,9 @@ def forgot_password():
 @token_required
 def get_current_user(username):
     try:
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''SELECT id, username, email, full_name, role, department, is_active
-               FROM users WHERE username = %s''',
-            (username,)
-        )
-        result = cursor.fetchone()
-        release_pg_conn(conn)
-        if result:
-            return {
-                'id': result[0],
-                'username': result[1],
-                'email': result[2],
-                'full_name': result[3],
-                'role': result[4],
-                'department': result[5],
-                'is_active': result[6]
-            }
-        
+        user = fetch_user_profile_dict_by_username(username)
+        if user:
+            return user
         return {'detail': 'User not found'}, 404
     except Exception as e:
         return {'detail': str(e)}, 500
@@ -1928,26 +1928,22 @@ def get_current_user(username):
 def get_user_profile(username):
     """Alias for /me endpoint for Flutter compatibility"""
     try:
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''SELECT id, username, email, full_name, role, department, is_active
-               FROM users WHERE username = %s''',
-            (username,)
-        )
-        result = cursor.fetchone()
-        release_pg_conn(conn)
-        if result:
-            return {
-                'id': result[0],
-                'username': result[1],
-                'email': result[2],
-                'full_name': result[3],
-                'role': result[4],
-                'department': result[5],
-                'is_active': result[6]
-            }
+        user = fetch_user_profile_dict_by_username(username)
+        if user:
+            return user
         return {'detail': 'User not found'}, 404
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
+
+@app.patch("/user/profile")
+@token_required
+def patch_user_profile_app(username):
+    """Update profile photo (Cloudinary) or clear it (root path for Flutter AuthService)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        body, status = patch_user_profile_avatar(username, data)
+        return body, status
     except Exception as e:
         return {'detail': str(e)}, 500
 

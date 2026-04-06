@@ -17,6 +17,7 @@ import 'pages/creator/content_library_page.dart';
 import 'pages/creator/templates_page.dart';
 import 'pages/creator/template_builder.dart';
 import 'pages/creator/client_management_page.dart';
+import 'pages/creator/manager_account_profile_page.dart';
 import 'pages/admin/approver_dashboard_page.dart';
 import 'pages/admin/admin_approvals_page.dart';
 import 'pages/admin/proposal_review_page.dart';
@@ -44,6 +45,7 @@ import 'services/auth_service.dart';
 import 'services/role_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'theme/manager_theme_controller.dart';
 
 const String _buildSha =
     String.fromEnvironment('BUILD_SHA', defaultValue: 'dev');
@@ -419,6 +421,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (context) => AppState()),
         ChangeNotifierProvider(create: (context) => RoleService()),
+        ChangeNotifierProvider(create: (context) => ManagerThemeController()),
       ],
       child: MaterialApp(
         title: 'Lukens',
@@ -433,9 +436,11 @@ class MyApp extends StatelessWidget {
           return Stack(
             children: [
               Positioned.fill(
-                child: Image.asset(
-                  'assets/images/Global BG.jpg',
-                  fit: BoxFit.cover,
+                child: IgnorePointer(
+                  child: Image.asset(
+                    'assets/images/Global BG.jpg',
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
               if (child != null) child,
@@ -602,6 +607,8 @@ class MyApp extends StatelessWidget {
           '/admin_dashboard': (context) => const ApproverDashboardPage(),
           '/cinematic': (context) => const CinematicSequencePage(),
           '/client_management': (context) => const ClientManagementPage(),
+          '/manager_account_profile': (context) =>
+              const ManagerAccountProfilePage(),
           '/collaboration': (context) =>
               const ClientManagementPage(), // Redirected to Client Management
           // '/collaborate' is handled by onGenerateRoute to extract token

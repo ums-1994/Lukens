@@ -11,6 +11,10 @@ import psycopg2
 import psycopg2.extras
 
 from api.utils.database import get_db_connection, _pg_conn, release_pg_conn
+from api.utils.profile_avatar import (
+    fetch_user_profile_dict_by_username,
+    patch_user_profile_avatar,
+)
 from api.utils.decorators import token_required
 from api.utils.auth import verify_token, get_valid_tokens, generate_token, hash_password, verify_password, save_tokens
 from api.utils.firebase_auth import verify_firebase_token, get_user_from_token, firebase_token_required, initialize_firebase
@@ -443,26 +447,10 @@ def forgot_password():
 def get_current_user(username=None):
     """Get current user information"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                '''SELECT id, username, email, full_name, role, department, is_active
-                   FROM users WHERE username = %s''',
-                (username,)
-            )
-            result = cursor.fetchone()
-            if result:
-                return {
-                    'id': result[0],
-                    'username': result[1],
-                    'email': result[2],
-                    'full_name': result[3],
-                    'role': result[4],
-                    'department': result[5],
-                    'is_active': result[6]
-                }
-            
-            return {'detail': 'User not found'}, 404
+        user = fetch_user_profile_dict_by_username(username)
+        if user:
+            return user
+        return {'detail': 'User not found'}, 404
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -471,26 +459,22 @@ def get_current_user(username=None):
 def get_user_profile(username=None):
     """Get user profile (alias for /me)"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                '''SELECT id, username, email, full_name, role, department, is_active
-                   FROM users WHERE username = %s''',
-                (username,)
-            )
-            result = cursor.fetchone()
-            if result:
-                return {
-                    'id': result[0],
-                    'username': result[1],
-                    'email': result[2],
-                    'full_name': result[3],
-                    'role': result[4],
-                    'department': result[5],
-                    'is_active': result[6]
-                }
-            
-            return {'detail': 'User not found'}, 404
+        user = fetch_user_profile_dict_by_username(username)
+        if user:
+            return user
+        return {'detail': 'User not found'}, 404
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
+
+@bp.patch("/user/profile")
+@token_required
+def patch_user_profile(username=None):
+    """Update profile photo (Cloudinary) or clear it."""
+    try:
+        data = request.get_json(silent=True) or {}
+        body, status = patch_user_profile_avatar(username, data)
+        return body, status
     except Exception as e:
         return {'detail': str(e)}, 500
 

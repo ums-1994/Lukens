@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../services/auth_service.dart';
+import '../utils/manager_session_actions.dart';
 import '../widgets/fixed_sidebar.dart';
 
 mixin SidebarMixin<T extends StatefulWidget> on State<T> {
@@ -49,43 +48,17 @@ mixin SidebarMixin<T extends StatefulWidget> on State<T> {
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
+      case 'Account Profile':
+        ManagerSessionActions.goToAccountProfile(context);
+        break;
       case 'Logout':
-        handleLogout(context);
+        ManagerSessionActions.showLogoutDialog(context);
         break;
     }
   }
 
   void handleLogout(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                final app = context.read<dynamic>();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushNamedAndRemoveUntil(
-                    context, '/login', (route) => false);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE74C3C),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
-    );
+    ManagerSessionActions.showLogoutDialog(context);
   }
 
   Widget buildFixedSidebar(BuildContext context) {
@@ -94,7 +67,7 @@ mixin SidebarMixin<T extends StatefulWidget> on State<T> {
       isCollapsed: _isSidebarCollapsed,
       onToggle: toggleSidebar,
       onNavigate: (label) => navigateToPage(context, label),
-      onLogout: () => handleLogout(context),
+      onLogout: () => ManagerSessionActions.showLogoutDialog(context),
       customAssets: customAssets,
     );
   }

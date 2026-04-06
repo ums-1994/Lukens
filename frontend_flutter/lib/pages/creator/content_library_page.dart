@@ -14,10 +14,13 @@ import '../../services/auth_service.dart';
 import '../../services/content_library_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/manager_theme_controller.dart';
 import '../../mixins/sidebar_mixin.dart';
 import '../../widgets/ai_content_generator.dart';
 import '../../widgets/app_side_nav.dart';
+import '../../widgets/manager_page_background.dart';
 import '../../widgets/admin/admin_sidebar.dart';
+import '../../utils/manager_session_actions.dart';
 
 class ContentLibraryPage extends StatefulWidget {
   const ContentLibraryPage({super.key});
@@ -206,7 +209,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                         assetPath: 'assets/images/Logout_KhonoBuzz.png',
                         isSelected: false,
                         isCollapsed: effectiveCollapsed,
-                        onTap: () => _handleLogout(context),
+                        onTap: () => ManagerSessionActions.showLogoutDialog(context),
                       ),
                       const SizedBox(height: 20),
                     ],
@@ -448,6 +451,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     required BuildContext context,
     required AppState app,
     required Map<String, dynamic> item,
+    required ManagerChromeTheme chrome,
   }) {
     final isFolder = item["is_folder"] == true;
     if (isFolder) {
@@ -457,25 +461,25 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.04),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            color: chrome.floatingFill,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: chrome.divider),
           ),
           child: Row(
             children: [
-              const Icon(Icons.folder, color: Colors.white70, size: 28),
+              Icon(Icons.folder, color: chrome.textSecondary, size: 28),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
                   item["label"] ?? item["key"] ?? "Folder",
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: chrome.textPrimary,
                   ),
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.white54),
+              Icon(Icons.chevron_right, color: chrome.textMuted),
             ],
           ),
         ),
@@ -508,16 +512,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Colors.white.withOpacity(0.05),
-            Colors.white.withOpacity(0.02),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        color: chrome.floatingFill,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: chrome.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -530,19 +527,19 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                   children: [
                     Text(
                       label,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
-                        color: Colors.white,
+                        color: chrome.textPrimary,
                       ),
                     ),
                     if (updatedAt != null) ...[
                       const SizedBox(height: 4),
                       Text(
                         "Updated ${_formatDate(updatedAt)}",
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Colors.white54,
+                          color: chrome.textSecondary,
                         ),
                       ),
                     ],
@@ -551,15 +548,15 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
               ),
               IconButton(
                 tooltip: "Version history",
-                icon:
-                    const Icon(Icons.history, size: 18, color: Colors.white70),
+                icon: Icon(Icons.history,
+                    size: 18, color: chrome.textSecondary),
                 onPressed: () => _showVersionHistory(context, item),
               ),
               if (canEdit) ...[
                 IconButton(
                   tooltip: "Edit block",
-                  icon: const Icon(Icons.edit_outlined,
-                      size: 18, color: Colors.white70),
+                  icon: Icon(Icons.edit_outlined,
+                      size: 18, color: chrome.textSecondary),
                   onPressed: () => _showEditDialog(context, app, item),
                 ),
                 IconButton(
@@ -578,9 +575,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                 : "No preview available for this block.",
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: Colors.white70,
+              color: chrome.textSecondary,
               height: 1.4,
             ),
           ),
@@ -599,9 +596,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                   ),
                   child: Text(
                     tag,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
-                      color: Color(0xFF64B5F6),
+                      color: chrome.isDark
+                          ? const Color(0xFF64B5F6)
+                          : ManagerChromeTheme.leftAccentBlue,
                     ),
                   ),
                 );
@@ -613,9 +612,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
             children: [
               Text(
                 versionLabel,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: Colors.white60,
+                  color: chrome.textMuted,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -623,17 +622,17 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
               Container(
                 width: 4,
                 height: 4,
-                decoration: const BoxDecoration(
-                  color: Colors.white38,
+                decoration: BoxDecoration(
+                  color: chrome.textMuted,
                   shape: BoxShape.circle,
                 ),
               ),
               const SizedBox(width: 16),
               Text(
                 usesLabel,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: Colors.white60,
+                  color: chrome.textMuted,
                 ),
               ),
             ],
@@ -677,6 +676,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
     required BuildContext context,
     required AppState app,
     required Map<String, dynamic> item,
+    required ManagerChromeTheme chrome,
   }) {
     final _tRole = (app.currentUser?['role'] ?? '').toString().toLowerCase().trim();
     final canEdit = _tRole == 'admin' ||
@@ -771,13 +771,27 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       templateIcon = Icons.style;
     }
 
+    final titleColor =
+        chrome.isDark ? Colors.white : ManagerChromeTheme.textDark;
+    final metaColor = chrome.isDark
+        ? Colors.white54
+        : ManagerChromeTheme.textDark.withValues(alpha: 0.62);
+    final sectionChipBg = chrome.isDark
+        ? Colors.white.withOpacity(0.08)
+        : Colors.white.withValues(alpha: 0.65);
+    final sectionChipBorder = chrome.isDark
+        ? Colors.white.withOpacity(0.12)
+        : chrome.divider;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      decoration: PremiumTheme.glassCard(
-        borderRadius: 20,
-        gradientStart: templateColor,
-        gradientEnd: templateColor.withOpacity(0.6),
-      ),
+      decoration: chrome.isDark
+          ? PremiumTheme.glassCard(
+              borderRadius: 10,
+              gradientStart: templateColor,
+              gradientEnd: templateColor.withOpacity(0.6),
+            )
+          : chrome.floatingPanelDecoration(radius: 10),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -785,7 +799,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
             // Navigate to template editor or preview
             _showTemplatePreview(context, item);
           },
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(10),
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -798,7 +812,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
                         color: templateColor.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(10),
                       ),
                       child: Icon(templateIcon, color: templateColor, size: 24),
                     ),
@@ -809,19 +823,19 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                         children: [
                           Text(
                             label,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              color: titleColor,
                             ),
                           ),
                           if (updatedAt != null) ...[
                             const SizedBox(height: 4),
                             Text(
                               "Updated ${_formatDate(updatedAt)}",
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.white54,
+                                color: metaColor,
                               ),
                             ),
                           ],
@@ -831,8 +845,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     if (canEdit) ...[
                       IconButton(
                         tooltip: "Edit template",
-                        icon: const Icon(Icons.edit_outlined,
-                            size: 18, color: Colors.white70),
+                        icon: Icon(Icons.edit_outlined,
+                            size: 18, color: chrome.textSecondary),
                         onPressed: () => _showEditDialog(context, app, item),
                       ),
                       IconButton(
@@ -852,7 +866,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
                     color: templateColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: templateColor.withOpacity(0.3)),
                   ),
                   child: Text(
@@ -872,12 +886,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
 
                 if (sections.isNotEmpty) ...[
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     "Sections:",
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white70,
+                      color: chrome.textSecondary,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -889,10 +903,10 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.08),
+                          color: sectionChipBg,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: Colors.white.withOpacity(0.12),
+                            color: sectionChipBorder,
                           ),
                         ),
                         child: Row(
@@ -903,9 +917,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                             const SizedBox(width: 4),
                             Text(
                               section,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.white70,
+                                color: chrome.textPrimary,
                               ),
                             ),
                           ],
@@ -918,9 +932,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         "+ ${sections.length - 6} more sections",
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
-                          color: Colors.white54,
+                          color: chrome.textMuted,
                           fontStyle: FontStyle.italic,
                         ),
                       ),
@@ -931,9 +945,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                     _stripHtmlTags(content).length > 150
                         ? "${_stripHtmlTags(content).substring(0, 150)}..."
                         : _stripHtmlTags(content),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
-                      color: Colors.white70,
+                      color: chrome.textSecondary,
                       height: 1.4,
                     ),
                     maxLines: 3,
@@ -971,8 +985,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                       icon: const Icon(Icons.visibility_outlined, size: 16),
                       label: const Text("Preview"),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white70,
-                        side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                        foregroundColor: chrome.textSecondary,
+                        side: BorderSide(color: chrome.divider),
                         padding: const EdgeInsets.symmetric(
                             vertical: 10, horizontal: 12),
                         shape: RoundedRectangleBorder(
@@ -1522,6 +1536,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final chrome = context.watch<ManagerThemeController>().chrome;
 
     // Filter items by selected category and current folder
     List<dynamic> displayItems = [];
@@ -1607,8 +1622,9 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
           backgroundColor: Colors.transparent,
           body: SafeArea(
             bottom: false,
-            child: Row(
-              children: [
+            child: ManagerPageBackground(
+              child: Row(
+                children: [
                 // Consistent Sidebar using AppSideNav
                 Consumer<AppState>(
                   builder: (context, app, child) {
@@ -1651,7 +1667,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                   child: Padding(
                     padding: const EdgeInsets.all(24),
                     child: DefaultTextStyle.merge(
-                      style: const TextStyle(color: Colors.white),
+                      style: TextStyle(color: chrome.textPrimary),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -1659,17 +1675,20 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 24, vertical: 18),
                             decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                colors: const [
-                                  Color(0xFF0F172A),
-                                  Color(0xFF1E293B),
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(20),
+                              gradient: chrome.isDark
+                                  ? const LinearGradient(
+                                      colors: [
+                                        Color(0xFF0F172A),
+                                        Color(0xFF1E293B),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    )
+                                  : null,
+                              color: chrome.isDark ? null : chrome.floatingFill,
+                              borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: PremiumTheme.glassWhiteBorder,
+                                color: chrome.divider,
                                 width: 1,
                               ),
                             ),
@@ -1682,26 +1701,29 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                         .withValues(alpha: 0.25),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: const Icon(Icons.library_books,
-                                      size: 22, color: Colors.white),
+                                  child: Icon(Icons.library_books,
+                                      size: 22,
+                                      color: chrome.isDark
+                                          ? Colors.white
+                                          : ManagerChromeTheme.textDark),
                                 ),
                                 const SizedBox(width: 16),
                                 Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: const [
+                                  children: [
                                     Text(
                                       "Content Library",
                                       style: TextStyle(
                                         fontSize: 24,
                                         fontWeight: FontWeight.w700,
-                                        color: Colors.white,
+                                        color: chrome.textPrimary,
                                       ),
                                     ),
-                                    SizedBox(height: 4),
+                                    const SizedBox(height: 4),
                                     Text(
                                       "Manage reusable content blocks and images",
                                       style: TextStyle(
-                                        color: Colors.white70,
+                                        color: chrome.textSecondary,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -1752,6 +1774,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                             child: Row(
                               children: [
                                 _buildTabButton(
+                                  chrome: chrome,
                                   label: "Text Blocks",
                                   isActive: selectedCategory == "Sections",
                                   onTap: () {
@@ -1763,6 +1786,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                   },
                                 ),
                                 _buildTabButton(
+                                  chrome: chrome,
                                   label: "Image Library",
                                   isActive: selectedCategory == "Images",
                                   onTap: () {
@@ -1774,6 +1798,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                   },
                                 ),
                                 _buildTabButton(
+                                  chrome: chrome,
                                   label: "Templates",
                                   isActive: selectedCategory == "Templates" ||
                                       selectedCategory == "Template",
@@ -1798,32 +1823,29 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                     controller: searchCtrl,
                                     onChanged: (v) =>
                                         setState(() => searchQuery = v),
-                                    style: const TextStyle(color: Colors.white),
+                                    style: TextStyle(color: chrome.textPrimary),
                                     decoration: InputDecoration(
                                       prefixIcon: const Icon(Icons.search),
-                                      prefixIconColor: Colors.white70,
+                                      prefixIconColor: chrome.textSecondary,
                                       hintText: "Search content, tags...",
-                                      hintStyle: const TextStyle(
-                                          color: Colors.white54),
+                                      hintStyle:
+                                          TextStyle(color: chrome.textMuted),
                                       filled: true,
-                                      fillColor:
-                                          Colors.white.withValues(alpha: 0.05),
+                                      fillColor: chrome.fieldFill,
                                       border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(10),
                                         borderSide: BorderSide(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.12),
+                                          color: chrome.fieldBorder,
                                         ),
                                       ),
                                       enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(10),
                                         borderSide: BorderSide(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.08),
+                                          color: chrome.fieldBorder,
                                         ),
                                       ),
                                       focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
+                                        borderRadius: BorderRadius.circular(10),
                                         borderSide: BorderSide(
                                           color: PremiumTheme.purple
                                               .withValues(alpha: 0.8),
@@ -1837,20 +1859,20 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 12),
                                   decoration: BoxDecoration(
-                                    color: Colors.white.withValues(alpha: 0.04),
-                                    borderRadius: BorderRadius.circular(12),
+                                    color: chrome.fieldFill,
+                                    borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.08),
+                                      color: chrome.fieldBorder,
                                     ),
                                   ),
                                   child: DropdownButtonHideUnderline(
                                     child: DropdownButton<String>(
                                       value: typeFilter,
-                                      dropdownColor: PremiumTheme.darkBg2,
-                                      iconEnabledColor: Colors.white70,
-                                      style: const TextStyle(
-                                          color: Colors.white, fontSize: 13),
+                                      dropdownColor: chrome.dropdownSurface,
+                                      iconEnabledColor: chrome.textSecondary,
+                                      style: TextStyle(
+                                          color: chrome.textPrimary,
+                                          fontSize: 13),
                                       items: const [
                                         DropdownMenuItem(
                                             value: "all",
@@ -1873,25 +1895,26 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 12),
                             decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.05),
-                              borderRadius: BorderRadius.circular(16),
+                              color: chrome.floatingFill,
+                              borderRadius: BorderRadius.circular(10),
                               border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.08),
+                                color: chrome.divider,
                               ),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.sort,
-                                    size: 18, color: Colors.white70),
+                                Icon(Icons.sort,
+                                    size: 18, color: chrome.textSecondary),
                                 const SizedBox(width: 12),
                                 DropdownButtonHideUnderline(
                                   child: DropdownButton<String>(
                                     value: sortBy,
-                                    dropdownColor: PremiumTheme.darkBg2,
-                                    iconEnabledColor: Colors.white70,
+                                    dropdownColor: chrome.dropdownSurface,
+                                    iconEnabledColor: chrome.textSecondary,
                                     isDense: true,
-                                    style: const TextStyle(
-                                        fontSize: 13, color: Colors.white),
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        color: chrome.textPrimary),
                                     items: sortOptions.map((option) {
                                       return DropdownMenuItem(
                                         value: option,
@@ -1916,8 +1939,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                             children: [
                               Text(
                                 "${startIdx + 1}-${endIdx} of ${filteredItems.length}",
-                                style: const TextStyle(
-                                    fontSize: 12, color: Colors.white70),
+                                style: TextStyle(
+                                    fontSize: 12, color: chrome.textSecondary),
                               ),
                               Row(
                                 children: [
@@ -1927,7 +1950,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                         : null,
                                     icon: const Icon(Icons.chevron_left),
                                     iconSize: 20,
-                                    color: Colors.white70,
+                                    color: chrome.textSecondary,
                                   ),
                                   IconButton(
                                     onPressed: paginationPage < totalPages
@@ -1935,7 +1958,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                         : null,
                                     icon: const Icon(Icons.chevron_right),
                                     iconSize: 20,
-                                    color: Colors.white70,
+                                    color: chrome.textSecondary,
                                   ),
                                 ],
                               ),
@@ -1945,18 +1968,20 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                           // Content List or Grid
                           Expanded(
                             child: pagedItems.isEmpty
-                                ? const Center(
+                                ? Center(
                                     child: Text(
                                       "No items found",
-                                      style: TextStyle(color: Colors.white70),
+                                      style: TextStyle(
+                                          color: chrome.textSecondary),
                                     ),
                                   )
                                 : RawScrollbar(
                                     controller: _listScrollController,
                                     thumbVisibility: true,
                                     trackVisibility: true,
-                                    thumbColor: Colors.white38,
-                                    trackColor: Colors.white10,
+                                    thumbColor: chrome.scrollbarThumb
+                                        .withValues(alpha: 0.85),
+                                    trackColor: chrome.scrollbarTrack,
                                     radius: const Radius.circular(6),
                                     thickness: 6,
                                     child: (selectedCategory == "Images")
@@ -1982,13 +2007,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                   currentFolderId = item["id"]),
                                               child: Container(
                                                 decoration: BoxDecoration(
-                                                  color: Colors.white
-                                                      .withValues(alpha: 0.06),
+                                                  color: chrome.floatingFill,
                                                   borderRadius:
-                                                      BorderRadius.circular(16),
+                                                      BorderRadius.circular(10),
                                                   border: Border.all(
-                                                    color: Colors.white
-                                                        .withValues(alpha: 0.1),
+                                                    color: chrome.divider,
                                                   ),
                                                 ),
                                                 child: Column(
@@ -2013,11 +2036,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                             .ellipsis,
                                                         textAlign:
                                                             TextAlign.center,
-                                                        style: const TextStyle(
+                                                        style: TextStyle(
                                                           fontSize: 12,
                                                           fontWeight:
                                                               FontWeight.w600,
-                                                          color: Colors.white,
+                                                          color: chrome
+                                                              .textPrimary,
                                                         ),
                                                       ),
                                                     ),
@@ -2073,13 +2097,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                 : null,
                                             child: Container(
                                               decoration: BoxDecoration(
-                                                color: Colors.white
-                                                    .withValues(alpha: 0.04),
+                                                color: chrome.floatingFill,
                                                 borderRadius:
-                                                    BorderRadius.circular(16),
+                                                    BorderRadius.circular(10),
                                                 border: Border.all(
-                                                  color: Colors.white
-                                                      .withValues(alpha: 0.08),
+                                                  color: chrome.divider,
                                                 ),
                                               ),
                                               child: Column(
@@ -2180,11 +2202,11 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                                           _getFileExtension(item["label"] ??
                                                                               ""),
                                                                           style:
-                                                                              const TextStyle(
+                                                                              TextStyle(
                                                                             fontSize:
                                                                                 11,
                                                                             color:
-                                                                                Colors.white70,
+                                                                                chrome.textSecondary,
                                                                           ),
                                                                         ),
                                                                       ],
@@ -2285,13 +2307,12 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                           maxLines: 2,
                                                           overflow: TextOverflow
                                                               .ellipsis,
-                                                          style:
-                                                              const TextStyle(
+                                                          style: TextStyle(
                                                             fontSize: 12,
                                                             fontWeight:
                                                                 FontWeight.w600,
-                                                            color: Color(
-                                                                0xFF0066CC),
+                                                            color: chrome
+                                                                .textPrimary,
                                                           ),
                                                         ),
                                                         const SizedBox(
@@ -2302,8 +2323,8 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                               ""),
                                                           style: TextStyle(
                                                             fontSize: 10,
-                                                            color: Colors
-                                                                .grey[500],
+                                                            color: chrome
+                                                                .textMuted,
                                                           ),
                                                         ),
                                                         if (item["tags"]
@@ -2433,6 +2454,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                   context: context,
                                                   app: app,
                                                   item: item,
+                                                  chrome: chrome,
                                                 );
                                               } else {
                                                 // Show as template module/block (individual section)
@@ -2440,6 +2462,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                                   context: context,
                                                   app: app,
                                                   item: item,
+                                                  chrome: chrome,
                                                 );
                                               }
                                             },
@@ -2452,6 +2475,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                                               context: context,
                                               app: app,
                                               item: pagedItems[i],
+                                              chrome: chrome,
                                             ),
                                           ),
                                   ),
@@ -2462,6 +2486,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
                   ),
                 ),
               ],
+            ),
             ),
           ),
         ),
@@ -2476,6 +2501,7 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
   }
 
   Widget _buildTabButton({
+    required ManagerChromeTheme chrome,
     required String label,
     required bool isActive,
     required VoidCallback onTap,
@@ -2486,21 +2512,27 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isActive ? Colors.blue[50] : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
+              color: isActive
+                  ? const Color(0xFFE3F2FD)
+                  : chrome.filterInactiveBg,
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: isActive ? Colors.blue[300]! : Colors.grey[300]!,
+                color: isActive
+                    ? const Color(0xFF2196F3)
+                    : chrome.divider,
               ),
             ),
             child: Text(
               label,
               style: TextStyle(
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                color: isActive ? Colors.blue[700] : Colors.grey[700],
+                color: isActive
+                    ? const Color(0xFF1565C0)
+                    : chrome.textPrimary,
               ),
             ),
           ),
@@ -4255,46 +4287,14 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
       case 'Analytics (My Pipeline)':
         Navigator.pushNamed(context, '/analytics');
         break;
+      case 'Account Profile':
+        ManagerSessionActions.goToAccountProfile(context);
+        break;
       case 'Logout':
       case 'Sign Out':
-        _handleLogout(context);
+        ManagerSessionActions.showLogoutDialog(context);
         break;
     }
-  }
-
-  void _handleLogout(BuildContext context) {
-    // Show confirmation dialog
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                // Perform logout
-                final app = context.read<AppState>();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushNamedAndRemoveUntil(
-                    context, '/login', (route) => false);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE74C3C),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   void _addImageUrl(BuildContext context, AppState app) {
