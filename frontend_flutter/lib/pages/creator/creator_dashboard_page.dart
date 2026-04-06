@@ -18,7 +18,6 @@ import '../shared/proposal_insights_modal.dart';
 import '../../widgets/app_side_nav.dart';
 import '../../widgets/manager_page_background.dart';
 import '../../utils/manager_session_actions.dart';
-import 'widgets/completion_rates_widget.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
