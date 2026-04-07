@@ -543,6 +543,7 @@ class _CollaborationPageState extends State<CollaborationPage> {
         Navigator.pushNamed(context, '/creator_dashboard');
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushNamed(context, '/proposals');
         break;
       case 'Templates':

@@ -27,6 +27,137 @@ def _now_utc():
     return datetime.now(timezone.utc)
 
 
+def _ensure_client_activity_schema(cursor):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS proposal_client_activity (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            proposal_id UUID REFERENCES proposals(id) ON DELETE CASCADE,
+            client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
+            event_type VARCHAR(50) NOT NULL,
+            metadata JSONB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_activity_client_created
+        ON proposal_client_activity(client_id, created_at DESC)
+        """
+    )
+
+
+def _status_group_for_dashboard(raw_status: str | None) -> str:
+    s = (raw_status or '').lower().strip()
+    if not s:
+        return 'active'
+    if 'request' in s and 'change' in s:
+        return 'requested_changes'
+    if 'change requested' in s or 'requested changes' in s:
+        return 'requested_changes'
+    if 'reject' in s or 'declin' in s:
+        return 'rejected'
+    if 'signed' in s or 'client signed' in s or 'approved' in s:
+        return 'signed'
+    return 'active'
+
+
+def _dashboard_counts_from_status_rows(rows: list[dict]) -> dict:
+    counts = {
+        'active': 0,
+        'requested_changes': 0,
+        'signed': 0,
+        'rejected': 0,
+        'total': 0,
+    }
+    for r in rows or []:
+        grp = _status_group_for_dashboard(r.get('status'))
+        cnt = int(r.get('count') or 0)
+        counts[grp] += cnt
+        counts['total'] += cnt
+    return counts
+
+
+def _accessible_client_proposals(cursor, invitation_token: str, client_email: str, token_proposal_id):
+    column_info = _get_proposal_column_info(cursor)
+    client_name_expr = column_info['client_name_expr']
+    client_email_expr = column_info['client_email_expr']
+    columns = column_info['columns']
+
+    engagement_select_parts = []
+    if 'opportunity_id' in columns:
+        engagement_select_parts.append('p.opportunity_id')
+    if 'engagement_stage' in columns:
+        engagement_select_parts.append('p.engagement_stage')
+    if 'engagement_opened_at' in columns:
+        engagement_select_parts.append('p.engagement_opened_at')
+    if 'engagement_target_close_at' in columns:
+        engagement_select_parts.append('p.engagement_target_close_at')
+
+    engagement_select_sql = ''
+    if engagement_select_parts:
+        engagement_select_sql = ', ' + ', '.join(engagement_select_parts)
+
+    released_status_where = """
+        (
+            LOWER(COALESCE(p.status, '')) LIKE '%%sent to client%%'
+            OR LOWER(COALESCE(p.status, '')) LIKE '%%released%%'
+            OR LOWER(COALESCE(p.status, '')) LIKE '%%sent for signature%%'
+            OR LOWER(COALESCE(p.status, '')) LIKE '%%signed%%'
+            OR LOWER(COALESCE(p.status, '')) LIKE '%%client signed%%'
+            OR LOWER(COALESCE(p.status, '')) LIKE '%%declined%%'
+            OR LOWER(COALESCE(p.status, '')) LIKE '%%rejected%%'
+            OR LOWER(COALESCE(p.status, '')) LIKE '%%request%%change%%'
+        )
+    """
+
+    query = f"""
+        SELECT DISTINCT
+            p.id,
+            p.title,
+            p.status,
+            p.created_at,
+            p.updated_at,
+            {client_name_expr} AS client_name,
+            {client_email_expr} AS client_email
+            {engagement_select_sql}
+        FROM proposals p
+        LEFT JOIN collaboration_invitations ci ON ci.proposal_id = p.id
+        WHERE (
+            ci.invited_email = %s
+            OR ci.access_token = %s
+            OR (%s IS NOT NULL AND p.id = %s)
+        )
+        AND {released_status_where}
+        ORDER BY p.updated_at DESC
+    """
+    cursor.execute(query, (client_email, invitation_token, token_proposal_id, token_proposal_id))
+    return cursor.fetchall() or []
+
+
+def _resolve_client_context(cursor, token: str):
+    invitation_token = _resolve_invitation_token(cursor, token)
+    invitation, err, code = _lookup_invitation_by_token(cursor, invitation_token)
+    if err:
+        return None, err, code
+
+    device_id, session_token = _extract_client_device_session()
+    ok, session_err, session_code = _require_client_device_session(
+        cursor, invitation_token, device_id, session_token
+    )
+    if not ok:
+        return None, session_err, session_code
+
+    client_email = invitation.get('invited_email')
+    token_proposal_id = invitation.get('proposal_id')
+    return {
+        'invitation_token': invitation_token,
+        'client_email': client_email,
+        'token_proposal_id': token_proposal_id,
+    }, None, None
+
+
 def _as_utc_aware(value: datetime | None) -> datetime | None:
     if value is None or not isinstance(value, datetime):
         return None
@@ -2255,6 +2386,137 @@ def get_client_proposal(username=None, proposal_id=None):
                 }, 200
             return {'detail': 'Proposal not found'}, 404
     except Exception as e:
+        return {'detail': str(e)}, 500
+
+
+@bp.get("/api/client/dashboard/overview")
+def get_client_dashboard_overview_api():
+    """Client dashboard overview: KPIs, pipeline counts, recent activity, and analytics."""
+    try:
+        token = request.args.get('token')
+        token = _normalize_access_token(token)
+        if not token:
+            return {'detail': 'Access token required'}, 400
+
+        trend_points = int(request.args.get('trend_points') or 8)
+        trend_points = max(4, min(26, trend_points))
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+            _ensure_identity_schema(cursor)
+            _ensure_client_device_session_schema(cursor)
+            _ensure_client_activity_schema(cursor)
+
+            ctx, err, code = _resolve_client_context(cursor, token)
+            if err:
+                conn.commit()
+                return err, code
+
+            invitation_token = ctx['invitation_token']
+            client_email = ctx['client_email']
+            token_proposal_id = ctx['token_proposal_id']
+
+            proposals = _accessible_client_proposals(cursor, invitation_token, client_email, token_proposal_id)
+            proposal_ids = [str(p.get('id')) for p in proposals if p.get('id') is not None]
+
+            status_rows = []
+            if proposal_ids:
+                cursor.execute(
+                    """
+                    SELECT p.status as status, COUNT(*)::int as count
+                    FROM proposals p
+                    WHERE p.id::text = ANY(%s)
+                    GROUP BY p.status
+                    """,
+                    (proposal_ids,),
+                )
+                status_rows = cursor.fetchall() or []
+
+            counts = _dashboard_counts_from_status_rows(status_rows)
+
+            recent_activity = []
+            cursor.execute("SELECT id FROM clients WHERE lower(email) = lower(%s) LIMIT 1", (client_email,))
+            c_row = cursor.fetchone()
+            client_id = None
+            if c_row:
+                client_id = c_row.get('id') if isinstance(c_row, dict) else c_row[0]
+
+            if client_id and proposal_ids:
+                cursor.execute(
+                    """
+                    SELECT a.event_type, a.created_at, a.metadata,
+                           p.id::text as proposal_id, p.title as proposal_title, p.status as proposal_status
+                    FROM proposal_client_activity a
+                    JOIN proposals p ON p.id = a.proposal_id
+                    WHERE a.client_id = %s
+                      AND a.proposal_id::text = ANY(%s)
+                    ORDER BY a.created_at DESC
+                    LIMIT 10
+                    """,
+                    (client_id, proposal_ids),
+                )
+                recent_activity = cursor.fetchall() or []
+
+            cutoff_sql = "NOW() - (%s || ' weeks')::interval"
+            if proposal_ids:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        date_trunc('week', p.created_at)::date as period,
+                        COUNT(*)::int as created,
+                        COUNT(*) FILTER (WHERE LOWER(COALESCE(p.status,'')) LIKE '%%signed%%' OR LOWER(COALESCE(p.status,'')) LIKE '%%client signed%%' OR LOWER(COALESCE(p.status,'')) LIKE '%%approved%%')::int as signed,
+                        COUNT(*) FILTER (WHERE LOWER(COALESCE(p.status,'')) LIKE '%%rejected%%' OR LOWER(COALESCE(p.status,'')) LIKE '%%declined%%')::int as rejected
+                    FROM proposals p
+                    WHERE p.id::text = ANY(%s)
+                      AND p.created_at >= {cutoff_sql}
+                    GROUP BY 1
+                    ORDER BY 1 ASC
+                    """,
+                    (proposal_ids, trend_points),
+                )
+                trend_rows = cursor.fetchall() or []
+            else:
+                trend_rows = []
+
+            breakdown = {
+                'signed': counts['signed'],
+                'rejected': counts['rejected'],
+                'requested_changes': counts['requested_changes'],
+            }
+
+            return {
+                'client_email': client_email,
+                'kpis': {
+                    'active_proposals': counts['active'],
+                    'signed_proposals': counts['signed'],
+                    'requested_changes': counts['requested_changes'],
+                    'rejected_proposals': counts['rejected'],
+                },
+                'pipeline': {
+                    'active': counts['active'],
+                    'requested_changes': counts['requested_changes'],
+                    'signed': counts['signed'],
+                    'rejected': counts['rejected'],
+                    'total': counts['total'],
+                },
+                'activity': [dict(r) for r in recent_activity],
+                'analytics': {
+                    'trend': [
+                        {
+                            'period': (r.get('period').isoformat() if r.get('period') else None),
+                            'created': int(r.get('created') or 0),
+                            'signed': int(r.get('signed') or 0),
+                            'rejected': int(r.get('rejected') or 0),
+                        }
+                        for r in (trend_rows or [])
+                    ],
+                    'conversion_breakdown': breakdown,
+                },
+            }, 200
+
+    except Exception as e:
+        print(f"❌ Error getting client dashboard overview: {e}")
+        traceback.print_exc()
         return {'detail': str(e)}, 500
 
 @bp.post("/client/proposals/<int:proposal_id>/sign")

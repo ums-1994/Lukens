@@ -484,7 +484,20 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
   String _formatTimeAgo(String? timestamp) {
     if (timestamp == null) return 'Unknown time';
     try {
-      final date = DateTime.parse(timestamp);
+      final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(timestamp);
+      final parsedRaw = DateTime.parse(timestamp);
+      final date = hasTimezone
+          ? parsedRaw.toLocal()
+          : DateTime.utc(
+              parsedRaw.year,
+              parsedRaw.month,
+              parsedRaw.day,
+              parsedRaw.hour,
+              parsedRaw.minute,
+              parsedRaw.second,
+              parsedRaw.millisecond,
+              parsedRaw.microsecond,
+            ).toLocal();
       final now = DateTime.now();
       final diff = now.difference(date);
 
@@ -501,7 +514,20 @@ class _ProposalInsightsModalState extends State<ProposalInsightsModal>
     if (date == null) return 'Never';
     if (date is String) {
       try {
-        final dt = DateTime.parse(date);
+        final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(date);
+        final parsedRaw = DateTime.parse(date);
+        final dt = hasTimezone
+            ? parsedRaw.toLocal()
+            : DateTime.utc(
+                parsedRaw.year,
+                parsedRaw.month,
+                parsedRaw.day,
+                parsedRaw.hour,
+                parsedRaw.minute,
+                parsedRaw.second,
+                parsedRaw.millisecond,
+                parsedRaw.microsecond,
+              ).toLocal();
         return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
       } catch (e) {
         return date.toString();

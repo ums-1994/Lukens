@@ -35,7 +35,23 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   int _approvedThisMonthCount = 0;
   int _sentToClientCount = 0;
   int _clientApprovedCount = 0;
-  List<Map<String, dynamic>> _recentApprovals = [];
+
+  List<Map<String, dynamic>> _combinedProposals = [];
+  List<Map<String, dynamic>> _attentionBlocked = [];
+  List<Map<String, dynamic>> _attentionDelayed = [];
+  List<Map<String, dynamic>> _attentionNeedsApproval = [];
+  List<Map<String, dynamic>> _attentionAwaitingSignature = [];
+  List<Map<String, dynamic>> _attentionRecentlySigned = [];
+  int _attentionBlockedTotal = 0;
+  int _attentionDelayedTotal = 0;
+  int _attentionNeedsApprovalTotal = 0;
+  int _attentionAwaitingSignatureTotal = 0;
+  int _attentionRecentlySignedTotal = 0;
+  Map<String, int> _riskReasons = {};
+  int _draftCount = 0;
+  int _reviewCount = 0;
+  int _releasedCount = 0;
+  int _signedCount = 0;
 
   bool _isSidebarCollapsed = false;
   String _currentPage = 'Dashboard';
@@ -164,7 +180,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       int approvedThisMonthCount = 0;
       int sentToClientCount = 0;
       int clientApprovedCount = 0;
-      List<Map<String, dynamic>> recentApprovals = [];
+      List<Map<String, dynamic>> combinedForDashboard = [];
 
       try {
         List<Map<String, dynamic>> allProposals = [];
@@ -232,12 +248,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
 
         // Compute dashboard metrics from the combined set
         for (final proposal in combined) {
-          final riskScore = _parseDouble(proposal['risk_score']);
-          final riskLevel =
-              (proposal['risk_level'] ?? '').toString().toLowerCase().trim();
-          if ((riskScore != null && riskScore >= 70) ||
-              riskLevel == 'high' ||
-              riskLevel == 'critical') {
+          final riskScore = _extractRiskScore(proposal);
+          final riskLevel = _extractRiskLevel(proposal);
+          if (_isHighRisk(riskScore: riskScore, riskLevel: riskLevel)) {
             highRiskCount++;
           }
 
@@ -294,18 +307,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           }
         }
 
-        // Build recent approvals list from the combined proposals
-        recentApprovals = List<Map<String, dynamic>>.from(combined);
-        recentApprovals.sort((a, b) {
-          final aDate = _parseDate(a['updated_at'] ?? a['updatedAt']) ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          final bDate = _parseDate(b['updated_at'] ?? b['updatedAt']) ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          return bDate.compareTo(aDate);
-        });
-        if (recentApprovals.length > 5) {
-          recentApprovals = recentApprovals.sublist(0, 5);
-        }
+        combinedForDashboard = List<Map<String, dynamic>>.from(combined);
       } catch (e) {
         print('⚠️ Error computing approver metrics: $e');
       }
@@ -317,9 +319,11 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           _approvedThisMonthCount = approvedThisMonthCount;
           _sentToClientCount = sentToClientCount;
           _clientApprovedCount = clientApprovedCount;
-          _recentApprovals = recentApprovals;
+          _combinedProposals = combinedForDashboard;
           _isLoading = false;
         });
+
+        _computeOperationsModel();
       }
     } catch (e, stackTrace) {
       print('❌ Error loading approver data: $e');
@@ -378,7 +382,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                         context.read<AppState>().toggleAdminSidebar(),
                     onSelect: (label) {
                       setState(() => _currentPage = label);
-                      _navigateToPage(context, label);
+                      _navigateToPage(label);
                     },
                   ),
                 ),
@@ -422,17 +426,22 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                         _buildHeroSection(),
                                         SizedBox(height: compact ? 16 : 24),
                                         _buildSection(
-                                          'Proposals Awaiting Your Approval',
+                                          'Pipeline Health',
+                                          _buildPipelineHealthInline(),
+                                        ),
+                                        SizedBox(height: compact ? 16 : 24),
+                                        _buildSection(
+                                          'What Needs Attention',
+                                          _buildWhatNeedsAttentionInline(),
+                                        ),
+                                        SizedBox(height: compact ? 16 : 24),
+                                        _buildSection(
+                                          'Approval Queue',
                                           _isLoading
                                               ? const Center(
                                                   child:
                                                       CircularProgressIndicator())
                                               : _buildPendingApprovalsList(),
-                                        ),
-                                        SizedBox(height: compact ? 16 : 24),
-                                        _buildSection(
-                                          'Recent Proposals',
-                                          _buildRecentProposalsTable(),
                                         ),
                                       ],
                                     ),
@@ -447,105 +456,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecentProposalsTable() {
-    if (_recentApprovals.isEmpty) {
-      final compact = MediaQuery.sizeOf(context).height < 860;
-      return Padding(
-        padding: EdgeInsets.symmetric(vertical: compact ? 16 : 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
-              'No recent proposals requiring your review.',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      children: [
-        _buildRecentTableHeader(),
-        const SizedBox(height: 12),
-        ..._recentApprovals.map(_buildRecentProposalRow).toList(),
-      ],
-    );
-  }
-
-  Widget _buildRecentTableHeader() {
-    final headerStyle = PremiumTheme.labelMedium.copyWith(
-      color: Colors.white70,
-      letterSpacing: 1.0,
-    );
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Row(
-        children: [
-          Expanded(flex: 4, child: Text('PROPOSAL', style: headerStyle)),
-          Expanded(flex: 3, child: Text('CLIENT', style: headerStyle)),
-          Expanded(flex: 2, child: Text('DATE', style: headerStyle)),
-          Expanded(flex: 2, child: Text('STATUS', style: headerStyle)),
-          const SizedBox(width: 80),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecentProposalRow(Map<String, dynamic> proposal) {
-    final submittedDate = proposal['updated_at'] != null
-        ? DateTime.tryParse(proposal['updated_at'].toString())
-        : null;
-    final client = proposal['client_name'] ?? proposal['client'] ?? 'Unknown';
-    final status = proposal['status']?.toString() ?? 'Pending';
-    final dateLabel = submittedDate != null
-        ? DateFormat('dd MMM yyyy').format(submittedDate)
-        : '—';
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 4,
-            child: Text(
-              proposal['title'] ?? 'Untitled Proposal',
-              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              client,
-              style: PremiumTheme.bodyMedium,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              dateLabel,
-              style: PremiumTheme.bodyMedium,
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: _buildStatusPill(status),
-          ),
-          SizedBox(
-            width: 80,
-            child: TextButton(
-              onPressed: () => _openProposal(proposal),
-              child: const Text('Review'),
             ),
           ),
         ],
@@ -607,12 +517,12 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Approver Dashboard',
+              'Operations Control Center',
               style: PremiumTheme.titleLarge,
             ),
             const SizedBox(height: 4),
             const Text(
-              'Review and approve proposals assigned to you',
+              'Monitor pipeline health, governance, and priority actions',
               style: TextStyle(color: Colors.white70, fontSize: 13),
             ),
           ],
@@ -700,28 +610,19 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     );
   }
 
-  DateTime _toSast(DateTime dt) {
-    final utc = dt.isUtc
-        ? dt
-        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second,
-            dt.millisecond, dt.microsecond);
-    return utc.add(const Duration(hours: 2));
-  }
-
   String _formatNotificationTimestamp(dynamic raw) {
     if (raw == null) return '';
     final value = raw.toString().trim();
     if (value.isEmpty) return '';
     final dt = DateTime.tryParse(value);
     if (dt == null) return value;
-    final sast = _toSast(dt);
-    final now = _toSast(DateTime.now().toUtc());
-    final diff = now.difference(sast);
+    final local = dt.toLocal();
+    final diff = DateTime.now().difference(local);
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inHours < 1) return '${diff.inMinutes}m ago';
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return DateFormat('MMM d, y • HH:mm').format(sast);
+    return DateFormat('MMM d, y • HH:mm').format(local);
   }
 
   Future<void> _showNotificationsDialog(AppState app) async {
@@ -778,16 +679,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                               },
                               child: const Text('Mark all read'),
                             ),
-                          TextButton(
-                            onPressed: notifications.isEmpty
-                                ? null
-                                : () async {
-                                    await app.deleteAllNotifications();
-                                    await app.fetchNotifications();
-                                    setDialogState(() {});
-                                  },
-                            child: const Text('Delete all'),
-                          ),
                           IconButton(
                             onPressed: () => Navigator.of(dialogContext).pop(),
                             icon:
@@ -840,9 +731,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                       await app.fetchNotifications();
                                       setDialogState(() {});
                                     }
-                                    if (!mounted) return;
-                                    Navigator.of(dialogContext).pop();
-                                    _openNotificationTarget(item);
                                   },
                                   child: Container(
                                     padding: const EdgeInsets.all(12),
@@ -907,21 +795,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                             ],
                                           ),
                                         ),
-                                        if (notificationId != null)
-                                          IconButton(
-                                            tooltip: 'Delete',
-                                            onPressed: () async {
-                                              await app.deleteNotification(
-                                                  notificationId);
-                                              await app.fetchNotifications();
-                                              setDialogState(() {});
-                                            },
-                                            icon: const Icon(
-                                              Icons.delete_outline,
-                                              color: Colors.redAccent,
-                                              size: 18,
-                                            ),
-                                          ),
                                       ],
                                     ),
                                   ),
@@ -935,62 +808,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             );
           },
         );
-      },
-    );
-  }
-
-  Map<String, dynamic> _parseNotificationMetadata(dynamic raw) {
-    if (raw is Map<String, dynamic>) return raw;
-    if (raw is Map) return raw.cast<String, dynamic>();
-    if (raw is String && raw.trim().isNotEmpty) {
-      try {
-        final decoded = jsonDecode(raw);
-        if (decoded is Map<String, dynamic>) return decoded;
-        if (decoded is Map) return decoded.cast<String, dynamic>();
-      } catch (_) {}
-    }
-    return <String, dynamic>{};
-  }
-
-  String? _asIdString(dynamic value) {
-    if (value == null) return null;
-    final text = value.toString().trim();
-    if (text.isEmpty || text.toLowerCase() == 'null') return null;
-    return text;
-  }
-
-  int? _asInt(dynamic value) {
-    if (value is int) return value;
-    if (value == null) return null;
-    return int.tryParse(value.toString().trim());
-  }
-
-  void _openNotificationTarget(Map<String, dynamic> item) {
-    final metadata = _parseNotificationMetadata(item['metadata']);
-    final proposalId = _asIdString(
-      metadata['proposal_id'] ?? item['proposal_id'] ?? metadata['resource_id'],
-    );
-    if (proposalId == null) return;
-
-    final commentId = _asInt(metadata['comment_id']);
-    final sectionIndex = _asInt(metadata['section_index']);
-    final proposalTitle =
-        item['proposal_title']?.toString().trim().isNotEmpty == true
-            ? item['proposal_title'].toString().trim()
-            : item['title']?.toString().trim();
-
-    Navigator.of(context).pushNamed(
-      '/compose',
-      arguments: {
-        'proposalId': proposalId,
-        if (proposalTitle != null && proposalTitle.isNotEmpty)
-          'proposalTitle': proposalTitle,
-        // Admin gets full editing rights — left nav is suppressed via
-        // hideLeftSidebar in the editor based on role, so no isCollaborator needed.
-        'readOnly': false,
-        'forceCommentsPanelOpen': true,
-        if (commentId != null) 'initialCommentId': commentId,
-        if (sectionIndex != null) 'initialSectionIndex': sectionIndex,
       },
     );
   }
@@ -1169,18 +986,18 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       children: [
         Expanded(
           child: _buildGlassStatCard(
-            title: 'Sent to Client',
+            title: 'Released',
             value: _sentToClientCount.toString(),
-            subtitle: 'Released to client',
+            subtitle: 'Awaiting client action',
             icon: Icons.send,
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
           child: _buildGlassStatCard(
-            title: 'Client Approved',
+            title: 'Signed',
             value: _clientApprovedCount.toString(),
-            subtitle: 'Client signed',
+            subtitle: 'Client sign-off complete',
             icon: Icons.thumb_up_alt_outlined,
           ),
         ),
@@ -1233,6 +1050,259 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           ),
         ],
       ),
+    );
+  }
+
+  void _computeOperationsModel() {
+    if (!mounted) return;
+
+    final now = DateTime.now();
+    final blocked = <Map<String, dynamic>>[];
+    final delayed = <Map<String, dynamic>>[];
+    final needsApproval = <Map<String, dynamic>>[];
+    final awaitingSignature = <Map<String, dynamic>>[];
+    final recentlySigned = <Map<String, dynamic>>[];
+    final reasons = <String, int>{};
+    int highRiskTotal = 0;
+
+    int draft = 0, review = 0, released = 0, signed = 0;
+
+    String statusOf(Map<String, dynamic> p) {
+      final raw = p['status'] ?? p['stage'] ?? p['state'] ?? '';
+      return raw.toString().trim().toLowerCase().replaceAll('_', ' ');
+    }
+
+    bool isSigned(String s) => s == 'signed' || s == 'client signed' || s == 'completed';
+    bool isReleased(String s) => s.contains('released') || s.contains('sent to client') || s.contains('sent for signature') || s.contains('out for signature');
+    bool isReview(String s) => s.contains('review') || s.contains('submitted') || s.contains('pending');
+    bool isDraft(String s) => s.isEmpty || s == 'draft' || s.contains('pricing') || s.contains('in progress');
+
+    void bump(String k) => reasons[k] = (reasons[k] ?? 0) + 1;
+
+    for (final p in _combinedProposals) {
+      final status = statusOf(p);
+      final updatedAt = _parseDate(p['updated_at'] ?? p['updatedAt']);
+      final riskScore = _extractRiskScore(p);
+      final riskLevel = _extractRiskLevel(p);
+      final highRisk = _isHighRisk(riskScore: riskScore, riskLevel: riskLevel);
+      if (highRisk) highRiskTotal++;
+
+      if (isSigned(status)) {
+        signed++;
+      } else if (isReleased(status)) {
+        released++;
+      } else if (isReview(status)) {
+        review++;
+      } else if (isDraft(status)) {
+        draft++;
+      } else {
+        review++;
+      }
+
+      if (status.contains('pending')) needsApproval.add(p);
+      if (isReleased(status) && !isSigned(status)) awaitingSignature.add(p);
+      if (isSigned(status) && updatedAt != null && now.difference(updatedAt).inDays <= 14) {
+        recentlySigned.add(p);
+      }
+      if (!isSigned(status) && updatedAt != null && now.difference(updatedAt).inDays >= 14) {
+        delayed.add(p);
+      }
+
+      final title = (p['title'] ?? '').toString().trim();
+      final clientEmail = (p['client_email'] ?? p['clientEmail'] ?? '').toString().trim();
+      final budget = _parseBudget(p['budget']);
+      final missingTitle = title.isEmpty;
+      final missingBudget = budget <= 0;
+      final missingEmailForRelease = isReleased(status) && clientEmail.isEmpty;
+
+      if (highRisk || missingTitle || missingBudget || missingEmailForRelease) blocked.add(p);
+
+      if (highRisk) bump('High risk score');
+      if (missingEmailForRelease) bump('Missing client email');
+      if (missingBudget) bump('Missing budget');
+      if (missingTitle) bump('Missing title');
+    }
+
+    blocked.sort((a, b) => (_parseDate(b['updated_at'] ?? b['updatedAt']) ?? DateTime(1970))
+        .compareTo(_parseDate(a['updated_at'] ?? a['updatedAt']) ?? DateTime(1970)));
+
+    final topReasons = reasons.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final trimmedReasons = <String, int>{};
+    for (final e in topReasons.take(3)) {
+      trimmedReasons[e.key] = e.value;
+    }
+
+    setState(() {
+      _highRiskCount = highRiskTotal;
+      _attentionBlockedTotal = blocked.length;
+      _attentionDelayedTotal = delayed.length;
+      _attentionNeedsApprovalTotal = needsApproval.length;
+      _attentionAwaitingSignatureTotal = awaitingSignature.length;
+      _attentionRecentlySignedTotal = recentlySigned.length;
+      _attentionBlocked = blocked.take(5).toList();
+      _attentionDelayed = delayed.take(5).toList();
+      _attentionNeedsApproval = needsApproval.take(5).toList();
+      _attentionAwaitingSignature = awaitingSignature.take(5).toList();
+      _attentionRecentlySigned = recentlySigned.take(5).toList();
+      _riskReasons = trimmedReasons;
+      _draftCount = draft;
+      _reviewCount = review;
+      _releasedCount = released;
+      _signedCount = signed;
+    });
+  }
+
+  Widget _buildPipelineHealthInline() {
+    return Row(
+      children: [
+        Expanded(child: _buildStatusPill('Draft: $_draftCount')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildStatusPill('Review: $_reviewCount')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildStatusPill('Released: $_releasedCount')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildStatusPill('Signed: $_signedCount')),
+      ],
+    );
+  }
+
+  Widget _buildWhatNeedsAttentionInline() {
+    Widget row({
+      required String label,
+      required int count,
+      required VoidCallback onView,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$label: $count',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              onPressed: onView,
+              child: const Text('View'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        row(
+          label: 'Blocked proposals',
+          count: _attentionBlockedTotal,
+          onView: () {
+            Navigator.pushReplacementNamed(
+              context,
+              '/admin_approvals',
+              arguments: const {
+                'initialFilter': 'blocked',
+              },
+            );
+          },
+        ),
+        row(
+          label: 'Delayed (14+ days inactive)',
+          count: _attentionDelayedTotal,
+          onView: () {
+            Navigator.pushReplacementNamed(
+              context,
+              '/admin_approvals',
+              arguments: const {
+                'initialFilter': 'all',
+                'staleDays': 14,
+              },
+            );
+          },
+        ),
+        row(
+          label: 'Needs approval',
+          count: _attentionNeedsApprovalTotal,
+          onView: () {
+            Navigator.pushReplacementNamed(
+              context,
+              '/admin_approvals',
+              arguments: const {'initialFilter': 'ready'},
+            );
+          },
+        ),
+        row(
+          label: 'Released awaiting signature',
+          count: _attentionAwaitingSignatureTotal,
+          onView: () {
+            Navigator.pushReplacementNamed(
+              context,
+              '/admin_approvals',
+              arguments: const {
+                'initialFilter': 'approved',
+                'pipelineStage': 'released_awaiting_signature',
+              },
+            );
+          },
+        ),
+        row(
+          label: 'Recently signed',
+          count: _attentionRecentlySignedTotal,
+          onView: () {
+            Navigator.pushReplacementNamed(
+              context,
+              '/admin_approvals',
+              arguments: const {
+                'initialFilter': 'approved',
+                'pipelineStage': 'recently_signed',
+                'recentDays': 14,
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRiskGateInline() {
+    if (_riskReasons.isEmpty) {
+      return const Text('No risk signals available.', style: TextStyle(color: Colors.white70));
+    }
+    final items = _riskReasons.entries
+        .map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                '${e.key}: ${e.value}',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ))
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...items,
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () {
+              Navigator.pushReplacementNamed(
+                context,
+                '/admin_approvals',
+                arguments: const {
+                  'initialFilter': 'all',
+                  'minRiskScore': 70,
+                },
+              );
+            },
+            icon: const Icon(Icons.arrow_forward, size: 16),
+            label: const Text('Review high-risk'),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1369,7 +1439,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             child: InkWell(
               onTap: () {
                 setState(() => _currentPage = label);
-                _navigateToPage(context, label);
+                _navigateToPage(label);
               },
               borderRadius: BorderRadius.circular(30),
               child: Container(
@@ -1405,7 +1475,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           borderRadius: BorderRadius.circular(12),
           onTap: () {
             setState(() => _currentPage = label);
-            _navigateToPage(context, label);
+            _navigateToPage(label);
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1504,7 +1574,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             child: TextButton(
               onPressed: () {
                 setState(() => _currentPage = 'Approvals');
-                _navigateToPage(context, 'Approvals');
+                _navigateToPage('Approvals');
               },
               child: Text(
                 'View all (${_pendingApprovals.length})',
@@ -1513,6 +1583,15 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             ),
           ),
       ],
+    );
+  }
+
+  void _handleLogout() {
+    AuthService.logout();
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/login',
+      (Route<dynamic> route) => false,
     );
   }
 
@@ -1924,25 +2003,56 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     return null;
   }
 
+  double? _extractRiskScore(Map<String, dynamic> proposal) {
+    final raw = proposal['risk_score'] ??
+        proposal['riskScore'] ??
+        proposal['risk'] ??
+        proposal['risk_percent'] ??
+        proposal['riskPercent'] ??
+        proposal['risk_rating'] ??
+        proposal['riskRating'];
+    final parsed = _parseDouble(raw);
+    if (parsed == null) return null;
+
+    // Some backends store risk as 0..1; normalize to 0..100.
+    if (parsed > 0 && parsed <= 1) return parsed * 100;
+    return parsed;
+  }
+
+  String _extractRiskLevel(Map<String, dynamic> proposal) {
+    return (proposal['risk_level'] ?? proposal['riskLevel'] ?? proposal['riskLevelLabel'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim();
+  }
+
+  bool _isHighRisk({required double? riskScore, required String riskLevel}) {
+    if (riskScore != null && riskScore >= 70) return true;
+    if (riskLevel.isEmpty) return false;
+    return riskLevel == 'high' ||
+        riskLevel == 'critical' ||
+        riskLevel.contains('high') ||
+        riskLevel.contains('critical');
+  }
+
   String _formatCurrency(double value) {
     if (value == 0) return 'R0';
     return _currencyFormatter.format(value);
   }
 
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
+  void _navigateToPage(String page) {
+    setState(() => _currentPage = page);
+
+    switch (page) {
       case 'Dashboard':
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
       case 'Approvals':
-        // Go to the dedicated admin approvals view
-        Navigator.pushReplacementNamed(
-          context,
-          '/admin_approvals',
-          arguments: const {'initialFilter': 'pending'},
-        );
+        Navigator.pushReplacementNamed(context, '/admin_approvals');
         break;
       case 'Analytics':
+      case 'All analytics':
+      case 'My analytics':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
       case 'History':
@@ -1957,9 +2067,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
         Navigator.pushNamed(context, '/content_library');
         break;
       case 'Sign Out':
-        AuthService.logout();
-        Navigator.pushNamedAndRemoveUntil(
-            context, '/login', (Route<dynamic> route) => false);
+        _handleLogout();
         break;
     }
   }

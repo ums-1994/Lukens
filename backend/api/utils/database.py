@@ -315,6 +315,18 @@ def init_pg_schema():
         except Exception as e:
             print(f"[INFO] Unique index on firebase_uid not added (may already exist or duplicates present): {e}")
 
+        # Manager profile photo (Cloudinary URL + public_id for replace/delete)
+        try:
+            _exec_with_savepoint(
+                '''
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS profile_image_url TEXT,
+                ADD COLUMN IF NOT EXISTS profile_image_public_id TEXT
+                '''
+            )
+        except Exception as e:
+            print(f"[WARN] Could not add profile_image columns to users: {e}")
+
         # Proposals table
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
         id SERIAL PRIMARY KEY,

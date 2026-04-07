@@ -142,7 +142,7 @@ def proposal_pipeline(username=None, user_id=None, email=None):
 
             if scope == "all":
                 role_lower = str(my_role).strip().lower()
-                if role_lower not in {"admin", "ceo"}:
+                if role_lower not in {"admin", "ceo", "approver"}:
                     return jsonify({"detail": "Not authorized for scope=all"}), 403
                 team_owner_ids = None
             else:
@@ -450,7 +450,7 @@ def completion_rates(username=None, user_id=None, email=None):
 
             if scope == "all":
                 role_lower = str(my_role).strip().lower()
-                if role_lower not in {"admin", "ceo"}:
+                if role_lower not in {"admin", "ceo", "approver"}:
                     return jsonify({"detail": "Not authorized for scope=all"}), 403
                 team_owner_ids = None
             else:
@@ -607,18 +607,26 @@ def completion_rates(username=None, user_id=None, email=None):
             else:
                 failed += 1
 
+            normalized_status = (status or "").strip().lower()
             proposals.append(
                 {
+                    "id": int(pid),
                     "proposal_id": int(pid),
                     "title": title,
-                    "status": status,
+                    "status": status or "",
                     "client": client,
+                    "client_name": client,
                     "owner": owner,
                     "owner_id": int(owner_id_row) if owner_id_row is not None else None,
                     "created_at": created_at.isoformat() if created_at else None,
                     "updated_at": updated_at.isoformat() if updated_at else None,
                     "readiness_score": int(scored['score']),
                     "readiness_issues": issues,
+                    # Backward-compatible fields used by the Flutter completion widget
+                    "missing_sections": issues,
+                    "sections_complete": int(scored.get('complete') or 0),
+                    "sections_total": int(scored.get('total') or 0),
+                    "status_normalized": normalized_status,
                 }
             )
 
@@ -629,6 +637,70 @@ def completion_rates(username=None, user_id=None, email=None):
 
         low = [p for p in proposals if int(p.get("readiness_score") or 0) < _PASS_THRESHOLD]
         low.sort(key=lambda p: (int(p.get("readiness_score") or 0), str(p.get("title") or "")))
+
+        # Build status breakdown and 30-day trend for the dashboard widget.
+        status_breakdown = {
+            "draft": 0,
+            "in_review": 0,
+            "changes_requested": 0,
+            "approved": 0,
+            "signed": 0,
+            "other": 0,
+        }
+
+        def _bucket_for_status(status_text: str) -> str:
+            s = (status_text or "").strip().lower()
+            if not s or "draft" in s:
+                return "draft"
+            if "changes requested" in s or "changes_requested" in s:
+                return "changes_requested"
+            if "signed" in s or "client signed" in s:
+                return "signed"
+            if "approved" in s or "sent to client" in s or "sent for signature" in s:
+                return "approved"
+            if "pending" in s or "review" in s:
+                return "in_review"
+            return "other"
+
+        for p in proposals:
+            bucket = _bucket_for_status(str(p.get("status") or ""))
+            status_breakdown[bucket] = int(status_breakdown.get(bucket, 0)) + 1
+
+        # Last 30 calendar days trend (created volume + daily pass rate)
+        by_day = {}
+        for p in proposals:
+            created_at = p.get("created_at")
+            if not created_at:
+                continue
+            day_key = str(created_at)[:10]
+            if day_key not in by_day:
+                by_day[day_key] = {"created": 0, "passed": 0}
+            by_day[day_key]["created"] += 1
+            if int(p.get("readiness_score") or 0) >= _PASS_THRESHOLD:
+                by_day[day_key]["passed"] += 1
+
+        trend = []
+        for day_key in sorted(by_day.keys())[-30:]:
+            created = int(by_day[day_key]["created"])
+            passed_day = int(by_day[day_key]["passed"])
+            completion_rate_day = round((passed_day / created) * 100, 1) if created > 0 else 0.0
+            trend.append(
+                {
+                    "date": day_key,
+                    "created": created,
+                    "completion_rate": completion_rate_day,
+                }
+            )
+
+        avg_score = round(
+            (sum(int(p.get("readiness_score") or 0) for p in proposals) / total), 1
+        ) if total > 0 else 0.0
+        signed_or_approved = sum(
+            1
+            for p in proposals
+            if _bucket_for_status(str(p.get("status") or "")) in {"approved", "signed"}
+        )
+        sign_off_rate = round((signed_or_approved / total) * 100, 1) if total > 0 else 0.0
 
         return jsonify(
             {
@@ -650,6 +722,18 @@ def completion_rates(username=None, user_id=None, email=None):
                     "pass_rate": int(pass_rate),
                 },
                 "low_proposals": low[:25],
+                # Backward-compatible payload shape expected by completion_rates_widget.dart
+                "summary": {
+                    "total_proposals": total,
+                    "passing_readiness": int(passed),
+                    "completion_rate": float(pass_rate),
+                    "sign_off_rate": float(sign_off_rate),
+                    "avg_readiness_score": float(avg_score),
+                    "pass_threshold": int(_PASS_THRESHOLD),
+                },
+                "proposals": proposals,
+                "trend": trend,
+                "status_breakdown": status_breakdown,
             }
         ), 200
 
