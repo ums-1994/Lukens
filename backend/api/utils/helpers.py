@@ -1184,7 +1184,7 @@ def generate_proposal_pdf(
     return pdf_bytes
 
 
-def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, signer_title, return_url):
+def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, signer_title, return_url, client_user_id: str | None = None):
     """
     Create DocuSign envelope with redirect signing (works on HTTP)
     Uses redirect mode instead of embedded signing - user is redirected to DocuSign website
@@ -1264,13 +1264,15 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         
         tabs = Tabs(sign_here_tabs=[sign_here])
         
-        # Create signer - email notifications will be handled by DocuSign automatically
+        # Create signer.
+        # If client_user_id is set, the signer becomes a captive (embedded) recipient
+        # and DocuSign will not send an email to that recipient.
         signer = Signer(
             email=signer_email,
             name=signer_name,
             recipient_id='1',
             routing_order='1',
-            # client_user_id is NOT set - this enables redirect mode (works on HTTP)
+            client_user_id=client_user_id,
             tabs=tabs
         )
         
@@ -1315,11 +1317,11 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
             print(f"⚠️  Could not verify envelope status: {status_error}")
             # Don't fail if status check fails, but log it
         
-        # Create recipient view (redirect signing URL - works on HTTP)
-        # For redirect mode, we don't set client_user_id (that's only for embedded)
+        # Create recipient view (redirect/embedded signing URL).
+        # If client_user_id is set, include it to enable embedded signing.
         recipient_view_request = RecipientViewRequest(
             authentication_method='none',
-            # client_user_id is NOT set - this makes it redirect mode instead of embedded
+            client_user_id=client_user_id,
             recipient_id='1',
             return_url=return_url,
             user_name=signer_name,
@@ -1362,7 +1364,13 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         raise
 
 
-def create_docusign_signing_url(envelope_id: str, signer_name: str, signer_email: str, return_url: str):
+def create_docusign_signing_url(
+    envelope_id: str,
+    signer_name: str,
+    signer_email: str,
+    return_url: str,
+    client_user_id: str | None = None,
+):
     """Create a fresh DocuSign recipient view URL for an existing envelope.
 
     DocuSign recipient view URLs can expire quickly. This allows the client
@@ -1430,13 +1438,15 @@ def create_docusign_signing_url(envelope_id: str, signer_name: str, signer_email
         if not recipient_id:
             recipient_id = '1'
 
-        # Redirect mode: do NOT set client_user_id.
+        # Redirect mode: omit client_user_id.
+        # Embedded mode: include client_user_id.
         recipient_view_request = RecipientViewRequest(
             authentication_method='none',
             recipient_id=str(recipient_id),
             return_url=return_url,
             user_name=signer_name,
             email=signer_email,
+            client_user_id=client_user_id,
         )
 
         view_results = envelopes_api.create_recipient_view(
