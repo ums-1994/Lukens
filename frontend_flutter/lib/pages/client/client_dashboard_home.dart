@@ -906,12 +906,16 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         : isProposalsTab
             ? 'Awaiting Signature'
             : 'Recent Documents';
+    const recentDocsWidth = 466.59;
+    const recentDocsHeight = 308.28;
+
     return Align(
       alignment: Alignment.topLeft,
       child: SizedBox(
-        width: 466.59,
-        height: 308.28,
+        width: recentDocsWidth,
+        height: recentDocsHeight,
         child: Container(
+          clipBehavior: Clip.antiAlias,
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.14),
@@ -924,7 +928,6 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 spreadRadius: 0,
               ),
             ],
-            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
           ),
           child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1116,13 +1119,25 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final isSignedStatus =
         statusLower.contains('client signed') || statusLower.contains('signed');
 
-    Widget panelCard({required String title, required Widget child}) {
-      return Container(
+    Widget panelCard({
+      required String title,
+      required Widget child,
+      double? fixedHeight,
+    }) {
+      final card = Container(
+        clipBehavior: Clip.antiAlias,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          color: Colors.white.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(5.32),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              offset: const Offset(0, 3.55),
+              blurRadius: 3.55,
+              spreadRadius: 0,
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1140,6 +1155,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           ],
         ),
       );
+
+      if (fixedHeight != null) {
+        return SizedBox(height: fixedHeight, child: card);
+      }
+      return card;
     }
 
     return Column(
@@ -1218,6 +1238,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         ],
         panelCard(
           title: 'Project Chat',
+          fixedHeight: 145.17,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1242,6 +1263,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         const SizedBox(height: 12),
         panelCard(
           title: 'Documents & Downloads',
+          fixedHeight: 145.17,
           child: Column(
             children: [
               Row(
@@ -1336,6 +1358,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           const SizedBox(height: 14),
           LayoutBuilder(
             builder: (context, constraints) {
+              const rightPanelWidth = 466.59;
               final stackLowerCards = constraints.maxWidth < 980;
               if (stackLowerCards) {
                 return Column(
@@ -1343,7 +1366,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   children: [
                     _buildRecentDocuments(),
                     const SizedBox(height: 14),
-                    _buildRightPanel(),
+                    SizedBox(width: rightPanelWidth, child: _buildRightPanel()),
                   ],
                 );
               }
@@ -1352,7 +1375,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 children: [
                   _buildRecentDocuments(),
                   const SizedBox(width: 16),
-                  Expanded(child: _buildRightPanel()),
+                  SizedBox(width: rightPanelWidth, child: _buildRightPanel()),
                 ],
               );
             },
