@@ -2346,6 +2346,125 @@ def client_sign_proposal_token_api(proposal_id):
     return client_sign_proposal_token(proposal_id)
 
 
+@bp.post("/api/client/proposals/<int:proposal_id>/docusign/signing-url")
+def client_docusign_signing_url_api(proposal_id):
+    """Mint a fresh DocuSign recipient signing URL for an existing envelope.
+
+    Recipient view URLs can expire quickly. The client portal should call this
+    right before redirecting the client to DocuSign so the link is signable.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        token = unquote(str(data.get('token') or request.args.get('token') or '')).strip().strip('"').strip("'")
+        if not token:
+            return {'detail': 'Token is required'}, 400
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            _ensure_identity_schema(cursor)
+
+            invitation_token = _resolve_invitation_token(cursor, token)
+
+            inv_info = _get_invitation_column_info(cursor)
+            token_col = inv_info['token_col']
+            email_col = inv_info['email_col']
+            expires_col = inv_info['expires_col']
+            if not token_col or not email_col:
+                return {'detail': 'Client invitations not configured'}, 500
+
+            expires_select = (
+                sql.Identifier(expires_col)
+                if expires_col
+                else sql.SQL('NULL::timestamp')
+            )
+            cursor.execute(
+                sql.SQL(
+                    """
+                    SELECT proposal_id, {email_col} as invited_email, {expires_col} as expires_at
+                    FROM collaboration_invitations
+                    WHERE {token_col} = %s
+                    """
+                ).format(
+                    email_col=sql.Identifier(email_col),
+                    expires_col=expires_select,
+                    token_col=sql.Identifier(token_col),
+                ),
+                (invitation_token,),
+            )
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
+                return {'detail': 'Access token has expired'}, 403
+
+            token_proposal_id = invitation.get('proposal_id')
+            if token_proposal_id is not None and str(token_proposal_id) != str(proposal_id):
+                return {'detail': 'Token is not valid for this proposal'}, 403
+
+            bypass_identity = os.getenv("DEV_BYPASS_CLIENT_IDENTITY", "false").lower() == "true"
+            if not bypass_identity:
+                configured, err_or_hash, status = _require_identity_configured(cursor, int(proposal_id))
+                if not configured:
+                    return err_or_hash, status
+
+                allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, int(proposal_id))
+                if not allowed:
+                    return err_payload, status
+
+            signer_email = (invitation.get('invited_email') or '').strip() or None
+            signer_name = (data.get('signer_name') or '').strip() or None
+            if not signer_name:
+                signer_name = signer_email
+            if not signer_email:
+                return {'detail': 'Client email not found for this invitation'}, 500
+
+            cursor.execute(
+                """
+                SELECT envelope_id, status
+                FROM proposal_signatures
+                WHERE proposal_id = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+                """,
+                (proposal_id,),
+            )
+            sig = cursor.fetchone()
+            if not sig or not (sig.get('envelope_id') if isinstance(sig, dict) else None):
+                return {'detail': 'No DocuSign envelope found for this proposal'}, 404
+
+            envelope_id = sig.get('envelope_id')
+
+            from api.utils.helpers import get_frontend_url, create_docusign_signing_url
+            frontend_url = get_frontend_url()
+            return_url = f"{frontend_url}/#/client/proposals?token={invitation_token}&signed=true"
+
+            result = create_docusign_signing_url(
+                envelope_id=envelope_id,
+                signer_name=signer_name,
+                signer_email=signer_email,
+                return_url=return_url,
+            )
+
+            if isinstance(result, dict) and result.get('disabled'):
+                return result, 501
+
+            signing_url = (result or {}).get('signing_url') if isinstance(result, dict) else None
+            if not signing_url:
+                return {'detail': 'Unable to create signing URL'}, 500
+
+            return {
+                'envelope_id': envelope_id,
+                'signing_url': signing_url,
+            }, 200
+    except Exception as e:
+        print(f"❌ Error creating client DocuSign signing URL: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
 @bp.get("/api/client/proposals")
 def get_client_proposals_api():
     return get_client_proposals()
