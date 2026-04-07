@@ -2291,15 +2291,13 @@ def client_sign_proposal_token(proposal_id=None):
             # simple sign_token flow. When DEV_BYPASS_CLIENT_IDENTITY=true we
             # rely on the existing token + OTP gating and skip the
             # identity_last4 check.
-            bypass_identity = os.getenv("DEV_BYPASS_CLIENT_IDENTITY", "false").lower() == "true"
-            if not bypass_identity:
-                configured, err_or_hash, status = _require_identity_configured(cursor, int(proposal_id))
-                if not configured:
-                    return err_or_hash, status
-
-                allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, int(proposal_id))
-                if not allowed:
-                    return err_payload, status
+            # Signing URLs must be accessible from the client portal using only the
+            # collaboration invitation token. Identity-unlock gating can block
+            # embedded signing (returning 403) even when the token is valid.
+            # This endpoint therefore relies on:
+            # - invitation token validity + expiry
+            # - proposal scope validation
+            # and does not require identity unlock.
 
             signer_email = (invitation.get('invited_email') or '').strip() or None
 
@@ -2429,17 +2427,42 @@ def client_docusign_signing_url_api(proposal_id):
 
             token_proposal_id = invitation.get('proposal_id')
             if token_proposal_id is not None and str(token_proposal_id) != str(proposal_id):
-                return {'detail': 'Token is not valid for this proposal'}, 403
+                # Some deployments may have a legacy/mismatched schema where
+                # collaboration_invitations.proposal_id is not directly comparable
+                # to proposals.id (e.g., uuid vs int). Fall back to validating
+                # the invited email against the proposal's client_email.
+                try:
+                    cursor.execute(
+                        """
+                        SELECT client_email
+                        FROM proposals
+                        WHERE id = %s
+                        """,
+                        (proposal_id,),
+                    )
+                    prow = cursor.fetchone()
+                    proposal_email = (prow.get('client_email') if isinstance(prow, dict) else None) or ''
+                    invited_email = (invitation.get('invited_email') or '').strip()
+                    if not proposal_email or not invited_email or proposal_email.strip().lower() != invited_email.strip().lower():
+                        print(
+                            "[CLIENT_PORTAL] signing-url blocked: token_proposal_id mismatch "
+                            f"token_proposal_id={token_proposal_id} proposal_id={proposal_id} invited_email={invited_email} proposal_email={proposal_email}"
+                        )
+                        return {'detail': 'Token is not valid for this proposal'}, 403
+                    print(
+                        "[CLIENT_PORTAL] signing-url: token_proposal_id mismatch but email matches; allowing access "
+                        f"token_proposal_id={token_proposal_id} proposal_id={proposal_id}"
+                    )
+                except Exception:
+                    return {'detail': 'Token is not valid for this proposal'}, 403
 
-            bypass_identity = os.getenv("DEV_BYPASS_CLIENT_IDENTITY", "false").lower() == "true"
-            if not bypass_identity:
-                configured, err_or_hash, status = _require_identity_configured(cursor, int(proposal_id))
-                if not configured:
-                    return err_or_hash, status
-
-                allowed, err_payload, status = _require_unlocked_for_invitation(cursor, invitation_token, int(proposal_id))
-                if not allowed:
-                    return err_payload, status
+            # Signing URLs must be accessible from the client portal using only the
+            # collaboration invitation token. Identity-unlock gating can block
+            # embedded signing (returning 403) even when the token is valid.
+            # This endpoint therefore relies on:
+            # - invitation token validity + expiry
+            # - proposal scope validation
+            # and does not require identity unlock.
 
             signer_email = (invitation.get('invited_email') or '').strip() or None
             signer_name = (data.get('signer_name') or '').strip() or None
