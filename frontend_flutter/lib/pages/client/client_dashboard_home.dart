@@ -2222,6 +2222,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return;
     }
 
+    final signingUrl = proposal['signing_url']?.toString() ?? '';
+    final statusLower = (proposal['status'] ?? '').toString().toLowerCase();
+    final isSigned = statusLower.contains('client signed') ||
+        (statusLower.contains('signed') && !statusLower.contains('sent'));
+    if (!isSigned && signingUrl.trim().isNotEmpty) {
+      _openSigningUrl(proposal);
+      return;
+    }
+
     print('[ClientDashboardHome] Opening proposal in app: id=$proposalId');
 
     Navigator.push(
