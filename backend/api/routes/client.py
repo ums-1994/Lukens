@@ -2421,6 +2421,10 @@ def client_docusign_signing_url_api(proposal_id):
             if not signer_email:
                 return {'detail': 'Client email not found for this invitation'}, 500
 
+            # For portal signing we use a captive (embedded) signer so DocuSign
+            # will not send a signing email and the portal URL is signable.
+            client_user_id = invitation_token
+
             cursor.execute(
                 """
                 SELECT envelope_id, status
@@ -2432,20 +2436,141 @@ def client_docusign_signing_url_api(proposal_id):
                 (proposal_id,),
             )
             sig = cursor.fetchone()
-            if not sig or not (sig.get('envelope_id') if isinstance(sig, dict) else None):
-                return {'detail': 'No DocuSign envelope found for this proposal'}, 404
 
-            envelope_id = sig.get('envelope_id')
+            envelope_id = sig.get('envelope_id') if isinstance(sig, dict) else None
 
-            from api.utils.helpers import get_frontend_url, create_docusign_signing_url
+            from api.utils.helpers import (
+                get_frontend_url,
+                create_docusign_signing_url,
+                create_docusign_envelope,
+                generate_proposal_pdf,
+            )
             frontend_url = get_frontend_url()
             return_url = f"{frontend_url}/#/client/proposals?token={invitation_token}&signed=true"
+
+            # If an envelope exists, ensure it's a captive recipient envelope.
+            # If not (legacy remote signing), create a new envelope for portal signing.
+            needs_new_envelope = envelope_id is None
+            if envelope_id is not None:
+                try:
+                    from docusign_esign import ApiClient, EnvelopesApi
+                    from api.utils.docusign_utils import get_docusign_jwt_token
+                    access_token = get_docusign_jwt_token()
+                    account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
+                    base_path = os.getenv('DOCUSIGN_BASE_PATH') or os.getenv(
+                        'DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi'
+                    )
+                    api_client = ApiClient()
+                    api_client.host = base_path
+                    api_client.set_default_header("Authorization", f"Bearer {access_token}")
+                    env_api = EnvelopesApi(api_client)
+                    recipients = env_api.list_recipients(account_id, envelope_id)
+                    signers = getattr(recipients, 'signers', None) or []
+                    target = (signer_email or '').strip().lower()
+                    found = None
+                    for s in signers:
+                        try:
+                            if (getattr(s, 'email', '') or '').strip().lower() == target:
+                                found = s
+                                break
+                        except Exception:
+                            continue
+                    existing_client_user_id = getattr(found, 'client_user_id', None) if found is not None else None
+                    if not existing_client_user_id:
+                        needs_new_envelope = True
+                except Exception:
+                    # If we cannot inspect recipients, fall back to the existing envelope.
+                    needs_new_envelope = False
+
+            if needs_new_envelope:
+                # Fetch proposal content and generate a fresh PDF
+                cursor.execute(
+                    """
+                    SELECT title, content
+                    FROM proposals
+                    WHERE id = %s
+                    """,
+                    (proposal_id,),
+                )
+                prow = cursor.fetchone()
+                if not prow:
+                    return {'detail': 'Proposal not found'}, 404
+                title = prow.get('title') if isinstance(prow, dict) else None
+                content = prow.get('content') if isinstance(prow, dict) else None
+                pdf_content = generate_proposal_pdf(
+                    proposal_id=proposal_id,
+                    title=title or f"Proposal {proposal_id}",
+                    content=content or '',
+                    client_name=signer_name,
+                    client_email=signer_email,
+                )
+                env = create_docusign_envelope(
+                    proposal_id=proposal_id,
+                    pdf_bytes=pdf_content,
+                    signer_name=signer_name,
+                    signer_email=signer_email,
+                    signer_title='',
+                    return_url=return_url,
+                    client_user_id=client_user_id,
+                )
+                if isinstance(env, dict) and env.get('disabled'):
+                    return env, 501
+                envelope_id = env.get('envelope_id') if isinstance(env, dict) else None
+                if not envelope_id:
+                    return {'detail': 'Unable to create DocuSign envelope'}, 500
+
+                # Upsert signature record (portal envelope)
+                cursor.execute(
+                    """
+                    SELECT id
+                    FROM proposal_signatures
+                    WHERE proposal_id = %s
+                    """,
+                    (proposal_id,),
+                )
+                existing = cursor.fetchone()
+                signing_url = env.get('signing_url') if isinstance(env, dict) else None
+                if existing:
+                    cursor.execute(
+                        """
+                        UPDATE proposal_signatures
+                        SET envelope_id = %s,
+                            signer_name = %s,
+                            signer_email = %s,
+                            signer_title = %s,
+                            signing_url = %s,
+                            status = %s,
+                            sent_at = NOW()
+                        WHERE proposal_id = %s
+                        """,
+                        (envelope_id, signer_name, signer_email, '', signing_url, 'sent', proposal_id),
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        INSERT INTO proposal_signatures
+                        (proposal_id, envelope_id, signer_name, signer_email, signer_title, signing_url, status, created_by)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, NULL)
+                        """,
+                        (proposal_id, envelope_id, signer_name, signer_email, '', signing_url, 'sent'),
+                    )
+
+                cursor.execute(
+                    """
+                    UPDATE proposals
+                    SET status = 'Sent for Signature', updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (proposal_id,),
+                )
+                conn.commit()
 
             result = create_docusign_signing_url(
                 envelope_id=envelope_id,
                 signer_name=signer_name,
                 signer_email=signer_email,
                 return_url=return_url,
+                client_user_id=client_user_id,
             )
 
             if isinstance(result, dict) and result.get('disabled'):
