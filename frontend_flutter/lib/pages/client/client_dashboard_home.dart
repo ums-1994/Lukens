@@ -1105,11 +1105,21 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < 860;
         final children = [
-          tile('Active Proposals', activeCount.toString(),
-              Icons.description_outlined),
-          tile('Signed SOWs', signedCount.toString(), Icons.verified_outlined),
-          tile('Pending Approvals', pendingCount.toString(),
-              Icons.pending_actions_outlined),
+          tile(
+            label: 'Active Proposals',
+            value: activeCount.toString(),
+            icon: Icons.description_outlined,
+          ),
+          tile(
+            label: 'Signed SOWs',
+            value: signedCount.toString(),
+            icon: Icons.verified_outlined,
+          ),
+          tile(
+            label: 'Pending Approvals',
+            value: pendingCount.toString(),
+            icon: Icons.pending_actions_outlined,
+          ),
         ];
         if (narrow) {
           return Column(
