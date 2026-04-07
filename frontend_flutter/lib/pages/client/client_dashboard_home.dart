@@ -1334,7 +1334,29 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           const SizedBox(height: 14),
           _buildSummaryTiles(),
           const SizedBox(height: 14),
-          _buildRecentDocuments(),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stackLowerCards = constraints.maxWidth < 980;
+              if (stackLowerCards) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildRecentDocuments(),
+                    const SizedBox(height: 14),
+                    _buildRightPanel(),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildRecentDocuments(),
+                  const SizedBox(width: 16),
+                  Expanded(child: _buildRightPanel()),
+                ],
+              );
+            },
+          ),
         ],
       );
     }
@@ -2426,8 +2448,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                       children: [
                                         leftContent,
                                         const SizedBox(height: 16),
-                                        if ((_selectedNavIndex == 0 ||
-                                                _selectedNavIndex == 1 ||
+                                        if ((_selectedNavIndex == 1 ||
                                                 _selectedNavIndex == 2) &&
                                             widget.showSummary)
                                           _buildRightPanel(),
@@ -2441,8 +2462,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                     children: [
                                       Expanded(child: leftContent),
                                       const SizedBox(width: 16),
-                                      if ((_selectedNavIndex == 0 ||
-                                              _selectedNavIndex == 1 ||
+                                      if ((_selectedNavIndex == 1 ||
                                               _selectedNavIndex == 2) &&
                                           widget.showSummary)
                                         SizedBox(
