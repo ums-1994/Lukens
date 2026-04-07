@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
+import 'dart:ui' as ui;
 import 'package:http/http.dart' as http;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:web/web.dart' as web;
@@ -57,31 +58,43 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   Widget _filterChip(String label, String value) {
     final selected = _dashboardDocFilter == value;
+    const chipHeight = 44.0;
+    const chipRadius = 22.0;
+    const chipBorderWidth = 1.2;
+    const chipBorderColor = Color(0xFF6A6A6A);
+
     return InkWell(
       onTap: () {
         setState(() {
           _dashboardDocFilter = value;
         });
       },
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected
-              ? PremiumTheme.primaryRed.withValues(alpha: 0.85)
-              : Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-              color: selected
-                  ? PremiumTheme.primaryRed.withValues(alpha: 0.9)
-                  : Colors.white.withValues(alpha: 0.12)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+      borderRadius: BorderRadius.circular(chipRadius),
+      child: SizedBox(
+        height: chipHeight,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFFC10D00)
+                : Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(chipRadius),
+            border: Border.all(
+                color: selected ? const Color(0xFFC10D00) : chipBorderColor,
+                width: chipBorderWidth),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                height: 1.0,
+              ),
+            ),
           ),
         ),
       ),
@@ -224,9 +237,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return docs.where((d) {
         final status = (d['status'] ?? '').toString().toLowerCase();
         switch (_dashboardDocFilter) {
+          case 'draft':
+            return status.contains('draft');
           case 'released':
             return status.contains('sent to client') ||
                 status.contains('released');
+          case 'pending':
+            return status.contains('pending') ||
+                status.contains('review') ||
+                status.contains('sent for signature');
           case 'signed':
             return status.contains('signed');
           case 'changes_requested':
@@ -962,15 +981,19 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           ),
           const SizedBox(height: 12),
           if (_selectedNavIndex == 0)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _filterChip('View All', 'all'),
-                _filterChip('Released', 'released'),
-                _filterChip('Signed', 'signed'),
-                _filterChip('Changes Requested', 'changes_requested'),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _filterChip('View All', 'all'),
+                  const SizedBox(width: 10),
+                  _filterChip('Released', 'released'),
+                  const SizedBox(width: 10),
+                  _filterChip('Signed', 'signed'),
+                  const SizedBox(width: 10),
+                  _filterChip('Changes Requested', 'changes_requested'),
+                ],
+              ),
             ),
           if (_selectedNavIndex == 0) const SizedBox(height: 12),
           if (docs.isEmpty)
@@ -1062,15 +1085,53 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '${_documentLabel(doc)} #${doc['id']} - ${doc['title'] ?? 'Untitled'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
+                            Builder(
+                              builder: (context) {
+                                final lead =
+                                    '${_documentLabel(doc)} #${doc['id']}';
+                                final rawTitle =
+                                    (doc['title'] ?? 'Untitled').toString();
+
+                                // Figma text treatment: lead is bold small-caps, project part is italic.
+                                return SizedBox(
+                                  height: 18.44,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                        maxWidth: 402.59),
+                                    child: RichText(
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      text: TextSpan(
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontFamily: 'Poppins',
+                                          fontSize: 9.22,
+                                          height: 1.017,
+                                          letterSpacing: 0.09,
+                                        ),
+                                        children: [
+                                          TextSpan(
+                                            text: '$lead ',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              fontFeatures: [
+                                                ui.FontFeature.enable('smcp')
+                                              ],
+                                            ),
+                                          ),
+                                          TextSpan(
+                                            text: '- $rawTitle',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              fontStyle: FontStyle.italic,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
                             const SizedBox(height: 2),
                             _statusChip(status),
