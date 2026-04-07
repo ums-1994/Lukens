@@ -1318,11 +1318,6 @@ def get_client_proposals():
             if expires_at and _now_utc() > expires_at:
                 return {'detail': 'Access token has expired'}, 403
 
-            ok, session_err, session_code = _require_client_device_session(cursor, invitation_token, device_id, session_token)
-            if not ok:
-                conn.commit()
-                return session_err, session_code
-
             client_email = invitation['invited_email']
             token_proposal_id = invitation.get('proposal_id')
             

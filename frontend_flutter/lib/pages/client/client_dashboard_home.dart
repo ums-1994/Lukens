@@ -33,14 +33,13 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String? _clientEmail;
   String? _deviceId;
   String? _clientSessionToken;
-  String? _pendingDeviceOtpChallengeId;
-  DateTime? _pendingDeviceOtpExpiresAt;
   List<Map<String, dynamic>> _proposals = [];
   Map<String, dynamic>? _selectedDocument;
   int _selectedNavIndex = 0;
   bool _overviewLoading = false;
   String? _overviewError;
   Map<String, dynamic>? _overview;
+  String _dashboardDocFilter = 'all';
   Map<String, int> _statusCounts = {
     'pending': 0,
     'approved': 0,
@@ -54,6 +53,39 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             .toString()
             .toLowerCase();
     return t.contains('sow');
+  }
+
+  Widget _filterChip(String label, String value) {
+    final selected = _dashboardDocFilter == value;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _dashboardDocFilter = value;
+        });
+      },
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? PremiumTheme.primaryRed.withValues(alpha: 0.85)
+              : Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+              color: selected
+                  ? PremiumTheme.primaryRed.withValues(alpha: 0.9)
+                  : Colors.white.withValues(alpha: 0.12)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
   }
 
   bool _isProposalRequiringAction(Map<String, dynamic> p) {
@@ -184,335 +216,26 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     } catch (_) {}
   }
 
-  void _saveCachedClientSession(String? token) {
-    if (!kIsWeb) return;
-    try {
-      if (token == null || token.trim().isEmpty) {
-        web.window.localStorage.removeItem('lukens_client_session_token');
-      } else {
-        web.window.localStorage['lukens_client_session_token'] = token.trim();
-      }
-    } catch (_) {}
-  }
-
-  Future<String?> _promptForOtp() async {
-    String? result;
-    final controller = TextEditingController();
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Enter verification code'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Check your email for a 6-digit code.'),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                keyboardType: TextInputType.number,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: '6-digit code',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                result = null;
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                result = controller.text.trim();
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('Verify'),
-            ),
-          ],
-        );
-      },
-    );
-    return result;
-  }
-
-  String _normalizeOtp(String raw) {
-    return raw.replaceAll(RegExp(r'\D'), '');
-  }
-
-  Future<bool> _ensureDeviceSession({required String token}) async {
-    _deviceId ??= _getOrCreateDeviceId();
-    final deviceId = _deviceId;
-    if (deviceId == null || deviceId.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to verify device (missing device id).'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
-    }
-
-    // If we already have a cached session token, try it first.
-    if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty) {
-      return true;
-    }
-
-    if (_pendingDeviceOtpChallengeId != null &&
-        _pendingDeviceOtpChallengeId!.isNotEmpty) {
-      final activeChallengeId = _pendingDeviceOtpChallengeId!;
-      final exp = _pendingDeviceOtpExpiresAt;
-      if (exp == null || exp.isAfter(DateTime.now())) {
-        final otp = await _promptForOtp();
-        if (otp == null || otp.trim().isEmpty) {
-          return false;
-        }
-
-        final normalizedOtp = _normalizeOtp(otp.trim());
-        if (normalizedOtp.length != 6) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Please enter the 6-digit code.'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-          return false;
-        }
-
-        final verifyUri =
-            Uri.parse('$baseUrl/api/client/device-session/verify-otp');
-        final verifyResp = await http
-            .post(
-          verifyUri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({
-            'challenge_id': activeChallengeId,
-            'otp': normalizedOtp,
-          }),
-        )
-            .timeout(
-          const Duration(seconds: 12),
-          onTimeout: () {
-            throw TimeoutException('OTP verification timed out');
-          },
-        );
-
-        Map<String, dynamic>? verifyDecoded;
-        try {
-          final body = jsonDecode(verifyResp.body);
-          if (body is Map) {
-            verifyDecoded = Map<String, dynamic>.from(body);
-          }
-        } catch (_) {}
-
-        if (verifyResp.statusCode != 200) {
-          if (mounted) {
-            final msg = verifyDecoded?['detail']?.toString() ??
-                'OTP verification failed (HTTP ${verifyResp.statusCode})';
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(msg), backgroundColor: Colors.red),
-            );
-          }
-          return false;
-        }
-
-        final verifiedSession = verifyDecoded?['session_token']?.toString();
-        if (verifiedSession == null || verifiedSession.isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content:
-                    Text('OTP verified but no session token was returned.'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-          return false;
-        }
-
-        _clientSessionToken = verifiedSession;
-        _saveCachedClientSession(verifiedSession);
-        _pendingDeviceOtpChallengeId = null;
-        _pendingDeviceOtpExpiresAt = null;
-        return true;
-      }
-
-      _pendingDeviceOtpChallengeId = null;
-      _pendingDeviceOtpExpiresAt = null;
-    }
-
-    final startUri = Uri.parse('$baseUrl/api/client/device-session/start');
-    final startResp = await http
-        .post(
-      startUri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'token': token, 'device_id': deviceId}),
-    )
-        .timeout(
-      const Duration(seconds: 12),
-      onTimeout: () {
-        throw TimeoutException('Device session start timed out');
-      },
-    );
-
-    Map<String, dynamic>? decoded;
-    try {
-      final body = jsonDecode(startResp.body);
-      if (body is Map) {
-        decoded = Map<String, dynamic>.from(body);
-      }
-    } catch (_) {}
-
-    if (startResp.statusCode != 200) {
-      if (mounted) {
-        final msg = decoded?['detail']?.toString() ??
-            'Failed to start device session (HTTP ${startResp.statusCode})';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), backgroundColor: Colors.red),
-        );
-      }
-      return false;
-    }
-
-    final sessionToken = decoded?['session_token']?.toString();
-    final otpRequired = decoded?['otp_required'] == true;
-    if (!otpRequired && sessionToken != null && sessionToken.isNotEmpty) {
-      _clientSessionToken = sessionToken;
-      _saveCachedClientSession(sessionToken);
-      return true;
-    }
-
-    if (!otpRequired) {
-      // No OTP required but token missing: treat as failure.
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-                'Device session started but no session token was returned.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
-    }
-
-    final challengeId = decoded?['challenge_id']?.toString() ?? '';
-    if (challengeId.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('OTP challenge missing (no challenge_id).'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
-    }
-
-    _pendingDeviceOtpChallengeId = challengeId;
-    final expiresAtRaw = decoded?['expires_at']?.toString();
-    if (expiresAtRaw != null && expiresAtRaw.isNotEmpty) {
-      try {
-        _pendingDeviceOtpExpiresAt = DateTime.parse(expiresAtRaw);
-      } catch (_) {
-        _pendingDeviceOtpExpiresAt = null;
-      }
-    }
-
-    final otp = await _promptForOtp();
-    if (otp == null || otp.trim().isEmpty) {
-      return false;
-    }
-
-    final normalizedOtp = _normalizeOtp(otp.trim());
-    if (normalizedOtp.length != 6) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please enter the 6-digit code.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
-    }
-
-    final verifyUri =
-        Uri.parse('$baseUrl/api/client/device-session/verify-otp');
-    final verifyResp = await http
-        .post(
-      verifyUri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'challenge_id': challengeId, 'otp': normalizedOtp}),
-    )
-        .timeout(
-      const Duration(seconds: 12),
-      onTimeout: () {
-        throw TimeoutException('OTP verification timed out');
-      },
-    );
-
-    Map<String, dynamic>? verifyDecoded;
-    try {
-      final body = jsonDecode(verifyResp.body);
-      if (body is Map) {
-        verifyDecoded = Map<String, dynamic>.from(body);
-      }
-    } catch (_) {}
-
-    if (verifyResp.statusCode != 200) {
-      if (mounted) {
-        final msg = verifyDecoded?['detail']?.toString() ??
-            'OTP verification failed (HTTP ${verifyResp.statusCode})';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), backgroundColor: Colors.red),
-        );
-      }
-      return false;
-    }
-
-    final verifiedSession = verifyDecoded?['session_token']?.toString();
-    if (verifiedSession == null || verifiedSession.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('OTP verified but no session token was returned.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
-    }
-
-    _clientSessionToken = verifiedSession;
-    _saveCachedClientSession(verifiedSession);
-    return true;
-  }
-
   List<Map<String, dynamic>> _filteredDocuments() {
     final idx = _selectedNavIndex;
     final docs = List<Map<String, dynamic>>.from(_proposals);
     if (idx == 0) {
-      return docs;
+      if (_dashboardDocFilter == 'all') return docs;
+      return docs.where((d) {
+        final status = (d['status'] ?? '').toString().toLowerCase();
+        switch (_dashboardDocFilter) {
+          case 'released':
+            return status.contains('sent to client') ||
+                status.contains('released');
+          case 'signed':
+            return status.contains('signed');
+          case 'changes_requested':
+            return status.contains('change') || status.contains('request');
+          default:
+            return true;
+        }
+      }).toList();
     }
-
-    bool isSow(Map<String, dynamic> p) {
-      final t =
-          (p['template_type'] ?? p['templateType'] ?? p['template_key'] ?? '')
-              .toString()
-              .toLowerCase();
-      return t.contains('sow');
-    }
-
     if (idx == 1) {
       return docs.where(_isAwaitingSignature).toList();
     }
@@ -1029,8 +752,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildSummaryTiles() {
-    final docs = _filteredDocuments();
-    final activeCount = docs.where((d) {
+    final allDocs = List<Map<String, dynamic>>.from(_proposals);
+    final activeCount = allDocs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
       return s.contains('sent') ||
           s.contains('released') ||
@@ -1039,13 +762,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           s.contains('released') ||
           s.contains('review');
     }).length;
-    final signedCount = docs.where((d) {
+    final signedCount = allDocs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
       return s.contains('signed');
-    }).length;
-    final pendingCount = docs.where((d) {
-      final s = (d['status'] ?? '').toString().toLowerCase();
-      return s.contains('pending');
     }).length;
 
     Widget tile({
@@ -1054,47 +773,50 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       required IconData icon,
     }) {
       return Container(
-        height: 104,
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.zero,
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
         ),
         child: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: Colors.white70, size: 18),
-            ),
-            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.75),
-                      fontSize: 12,
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Text(
                     value,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 30,
+                      height: 1.0,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
               ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Icon(icon, color: PremiumTheme.primaryRed, size: 22),
             ),
           ],
         ),
@@ -1105,21 +827,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       builder: (context, constraints) {
         final narrow = constraints.maxWidth < 860;
         final children = [
-          tile(
-            label: 'Active Proposals',
-            value: activeCount.toString(),
-            icon: Icons.description_outlined,
-          ),
-          tile(
-            label: 'Signed SOWs',
-            value: signedCount.toString(),
-            icon: Icons.verified_outlined,
-          ),
-          tile(
-            label: 'Pending Approvals',
-            value: pendingCount.toString(),
-            icon: Icons.pending_actions_outlined,
-          ),
+          tile('Active Proposals', activeCount.toString(),
+              Icons.description_outlined),
+          tile('Signed Documents', signedCount.toString(),
+              Icons.verified_outlined),
         ];
         if (narrow) {
           return Column(
@@ -1127,8 +838,6 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               children[0],
               const SizedBox(height: 12),
               children[1],
-              const SizedBox(height: 12),
-              children[2],
             ],
           );
         }
@@ -1137,8 +846,6 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             Expanded(child: children[0]),
             const SizedBox(width: 12),
             Expanded(child: children[1]),
-            const SizedBox(width: 12),
-            Expanded(child: children[2]),
           ],
         );
       },
@@ -1179,16 +886,6 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         children: [
           Row(
             children: [
-              const Expanded(
-                child: Text(
-                  '',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
               Expanded(
                 child: Text(
                   listTitle,
@@ -1199,6 +896,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   ),
                 ),
               ),
+              if (_selectedNavIndex == 0)
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      _dashboardDocFilter = 'all';
+                    });
+                  },
+                  child: const Text('View All'),
+                ),
               Text(
                 '${docs.length}',
                 style: TextStyle(
@@ -1207,6 +913,18 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             ],
           ),
           const SizedBox(height: 12),
+          if (_selectedNavIndex == 0)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _filterChip('View All', 'all'),
+                _filterChip('Released', 'released'),
+                _filterChip('Signed', 'signed'),
+                _filterChip('Changes Requested', 'changes_requested'),
+              ],
+            ),
+          if (_selectedNavIndex == 0) const SizedBox(height: 12),
           if (docs.isEmpty)
             Text(
               isDocumentsTab
@@ -1381,91 +1099,78 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     return Column(
       children: [
-        panelCard(
-          title: 'View Document',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                status.isEmpty ? '' : status,
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
-              ),
-              if (isSignedStatus) ...[
-                const SizedBox(height: 8),
+        if (doc != null) ...[
+          panelCard(
+            title: 'View Document',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  status.isEmpty ? '' : status,
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.70),
+                      fontSize: 12),
+                ),
+                if (isSignedStatus) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle,
+                          size: 16, color: Color(0xFF2ECC71)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'This document has been signed. No further action is required.',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.75),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(Icons.check_circle,
-                        size: 16, color: Color(0xFF2ECC71)),
-                    const SizedBox(width: 6),
                     Expanded(
-                      child: Text(
-                        'This document has been signed. No further action is required.',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontSize: 12,
-                        ),
+                      child: ElevatedButton(
+                        onPressed: isSignedStatus
+                            ? null
+                            : () {
+                                if (hasSigning) {
+                                  _openSigningUrl(doc);
+                                } else {
+                                  _showFallbackSignModal(doc);
+                                }
+                              },
+                        child: const Text('View'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: isSignedStatus
+                            ? null
+                            : () => _openProposalComments(doc),
+                        child: const Text('Request Changes'),
                       ),
                     ),
                   ],
                 ),
               ],
-              const SizedBox(height: 12),
-              Container(
-                height: 88,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(12),
-                  border:
-                      Border.all(color: Colors.white.withValues(alpha: 0.10)),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  'Signature',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: doc == null || isSignedStatus
-                          ? null
-                          : () {
-                              if (hasSigning) {
-                                _openSigningUrl(doc);
-                              } else {
-                                _showFallbackSignModal(doc);
-                              }
-                            },
-                      child: const Text('View'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: doc == null || isSignedStatus
-                          ? null
-                          : () => _openProposalComments(doc),
-                      child: const Text('Request Changes'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
+          const SizedBox(height: 12),
+        ],
         panelCard(
           title: 'Project Chat',
           child: Column(
@@ -1563,6 +1268,58 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildMainLeftContent() {
+    if (_isOverviewDashboard) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Dashboard',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildSummaryTiles(),
+          const SizedBox(height: 14),
+          _buildRecentDocuments(),
+        ],
+      );
+    }
+
+    if (!widget.showSummary && _selectedNavIndex == 1) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Proposals',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Review and sign documents awaiting your signature',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.70),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildRecentDocuments(),
+        ],
+      );
+    }
+
     if (_selectedNavIndex == 0 ||
         _selectedNavIndex == 1 ||
         _selectedNavIndex == 2) {
@@ -1736,8 +1493,6 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           await _loadDashboardOverview();
         }
       } else if (response.statusCode == 428) {
-        _saveCachedClientSession(null);
-        _clientSessionToken = null;
         Map<String, dynamic>? decoded;
         try {
           final body = jsonDecode(response.body);
@@ -1746,24 +1501,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           }
         } catch (_) {}
 
-        final bool needsDevice = decoded?['requires_device_session'] == true ||
-            decoded?['otp_required'] == true;
-
-        if (needsDevice && _accessToken != null) {
-          final token = _sanitizeToken(_accessToken!);
-          final ok = await _ensureDeviceSession(token: token);
-          if (ok) {
-            await _loadClientProposals();
-            return;
-          }
-        }
-
         if (!mounted) return;
         setState(() {
-          _error =
-              decoded?['detail']?.toString() ?? 'Device verification required.';
-          _error =
-              decoded?['detail']?.toString() ?? 'Device verification required.';
+          _error = decoded?['detail']?.toString() ??
+              'Unable to open client dashboard.';
           _isLoading = false;
         });
       } else if (response.statusCode == 423) {
@@ -2643,8 +2384,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                         if ((_selectedNavIndex == 0 ||
                                                 _selectedNavIndex == 1 ||
                                                 _selectedNavIndex == 2) &&
-                                            widget.showSummary &&
-                                            !_isOverviewDashboard)
+                                            widget.showSummary)
                                           _buildRightPanel(),
                                       ],
                                     );
@@ -2659,8 +2399,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                       if ((_selectedNavIndex == 0 ||
                                               _selectedNavIndex == 1 ||
                                               _selectedNavIndex == 2) &&
-                                          widget.showSummary &&
-                                          !_isOverviewDashboard)
+                                          widget.showSummary)
                                         SizedBox(
                                           width: 380,
                                           child: _buildRightPanel(),
@@ -2974,7 +2713,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     final statusLower = status.toLowerCase();
     if (statusLower.contains('pending') ||
-        statusLower.contains('sent to client')) {
+        statusLower.contains('sent to client') ||
+        statusLower.contains('released')) {
       color = Colors.orange;
       icon = Icons.pending;
     } else if (statusLower.contains('approved') ||
