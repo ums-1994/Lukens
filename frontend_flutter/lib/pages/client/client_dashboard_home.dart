@@ -755,17 +755,23 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final allDocs = List<Map<String, dynamic>>.from(_proposals);
     final activeCount = allDocs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
-      return s.contains('sent') ||
-          s.contains('released') ||
-          s.contains('review');
+      if (s.contains('signed')) return false;
       return s.contains('sent') ||
           s.contains('released') ||
           s.contains('review');
     }).length;
-    final signedCount = allDocs.where((d) {
+    final signedSowCount = allDocs.where((d) {
+      if (!_isSow(d)) return false;
       final s = (d['status'] ?? '').toString().toLowerCase();
       return s.contains('signed');
     }).length;
+    final pendingApprovalsCount = _statusCounts['pending'] ?? 0;
+
+    const tileDescription =
+        'Additional description information can be included if required.';
+
+    const tileWidth = 306.62;
+    const tileHeight = 102.64;
 
     Widget tile({
       required String label,
@@ -773,34 +779,61 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       required IconData icon,
     }) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        width: tileWidth,
+        height: tileHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          color: Colors.white.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(5.32),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              offset: const Offset(0, 3.55),
+              blurRadius: 3.55,
+              spreadRadius: 0,
+            ),
+          ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        tileDescription,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: 10,
+                          height: 1.25,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
                   Text(
                     value,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 30,
+                      fontSize: 28,
                       height: 1.0,
                       fontWeight: FontWeight.w800,
                     ),
@@ -810,11 +843,18 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             ),
             const SizedBox(width: 12),
             Container(
-              width: 42,
-              height: 42,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(999),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    offset: const Offset(0, 1),
+                    blurRadius: 2,
+                  ),
+                ],
               ),
               child: Icon(icon, color: PremiumTheme.primaryRed, size: 22),
             ),
@@ -823,38 +863,37 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 860;
-        final children = [
-          tile(
-            label: 'Active Proposals',
-            value: activeCount.toString(),
-            icon: Icons.description_outlined,
-          ),
-          tile(
-            label: 'Signed Documents',
-            value: signedCount.toString(),
-            icon: Icons.verified_outlined,
-          ),
-        ];
-        if (narrow) {
-          return Column(
-            children: [
-              children[0],
-              const SizedBox(height: 12),
-              children[1],
-            ],
-          );
-        }
-        return Row(
-          children: [
-            Expanded(child: children[0]),
-            const SizedBox(width: 12),
-            Expanded(child: children[1]),
-          ],
-        );
-      },
+    final children = [
+      tile(
+        label: 'Active Proposals',
+        value: activeCount.toString(),
+        icon: Icons.adjust,
+      ),
+      tile(
+        label: "Signed SOW'S",
+        value: signedSowCount.toString(),
+        icon: Icons.check,
+      ),
+      tile(
+        label: 'Pending Approvals',
+        value: pendingApprovalsCount.toString(),
+        icon: Icons.remove_red_eye_outlined,
+      ),
+    ];
+
+    // Figma: three blocks side-by-side, 306.62 × 102.64 each; scroll horizontally if needed.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          children[0],
+          const SizedBox(width: 12),
+          children[1],
+          const SizedBox(width: 12),
+          children[2],
+        ],
+      ),
     );
   }
 
