@@ -2260,15 +2260,30 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         if (resp.statusCode >= 200 && resp.statusCode < 300) {
           final fresh = decoded?['signing_url']?.toString() ?? '';
           if (fresh.trim().isNotEmpty) {
-            await launchUrlString(fresh, mode: LaunchMode.externalApplication);
+            final uri = Uri.tryParse(fresh);
+            if (uri != null) {
+              if (kIsWeb) {
+                web.window.location.href = fresh;
+              } else {
+                await launchUrlString(fresh,
+                    mode: LaunchMode.externalApplication);
+              }
+            }
             return;
           }
         }
 
         final fallbackSigningUrl = proposal['signing_url']?.toString() ?? '';
         if (fallbackSigningUrl.trim().isNotEmpty) {
-          await launchUrlString(fallbackSigningUrl,
-              mode: LaunchMode.externalApplication);
+          final uri = Uri.tryParse(fallbackSigningUrl);
+          if (uri != null) {
+            if (kIsWeb) {
+              web.window.location.href = fallbackSigningUrl;
+            } else {
+              await launchUrlString(fallbackSigningUrl,
+                  mode: LaunchMode.externalApplication);
+            }
+          }
           return;
         }
 
@@ -2282,8 +2297,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       } catch (e) {
         final fallbackSigningUrl = proposal['signing_url']?.toString() ?? '';
         if (fallbackSigningUrl.trim().isNotEmpty) {
-          await launchUrlString(fallbackSigningUrl,
-              mode: LaunchMode.externalApplication);
+          final uri = Uri.tryParse(fallbackSigningUrl);
+          if (uri != null) {
+            if (kIsWeb) {
+              web.window.location.href = fallbackSigningUrl;
+            } else {
+              await launchUrlString(fallbackSigningUrl,
+                  mode: LaunchMode.externalApplication);
+            }
+          }
           return;
         }
         if (mounted) {
