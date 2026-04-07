@@ -1360,3 +1360,80 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         print(f"❌ Error creating DocuSign envelope: {e}")
         traceback.print_exc()
         raise
+
+
+def create_docusign_signing_url(envelope_id: str, signer_name: str, signer_email: str, return_url: str):
+    """Create a fresh DocuSign recipient view URL for an existing envelope.
+
+    DocuSign recipient view URLs can expire quickly. This allows the client
+    portal to mint a new redirect signing URL on demand.
+    """
+    if os.getenv('ENABLE_DOCUSIGN', 'false').lower() != 'true':
+        return {
+            'disabled': True,
+            'reason': 'docusign_disabled',
+            'detail': 'DocuSign is disabled on this server. Set ENABLE_DOCUSIGN=true to enable.',
+        }
+
+    try:
+        from docusign_esign import (
+            ApiClient,
+            EnvelopesApi,
+            RecipientViewRequest,
+        )
+        from docusign_esign.client.api_exception import ApiException
+    except ImportError as e:
+        raise Exception(
+            f"DocuSign SDK not installed. Install with: pip install docusign-esign. Error: {e}"
+        )
+
+    try:
+        from api.utils.docusign_utils import get_docusign_jwt_token
+
+        access_token = get_docusign_jwt_token()
+        account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
+        if not account_id:
+            raise Exception(
+                "DOCUSIGN_ACCOUNT_ID is required. Get it from: https://demo.docusign.net → Settings → My Account Information → Account ID"
+            )
+
+        base_path = os.getenv('DOCUSIGN_BASE_PATH') or os.getenv(
+            'DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi'
+        )
+
+        api_client = ApiClient()
+        api_client.host = base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+
+        envelopes_api = EnvelopesApi(api_client)
+
+        # Redirect mode: do NOT set client_user_id.
+        recipient_view_request = RecipientViewRequest(
+            authentication_method='none',
+            recipient_id='1',
+            return_url=return_url,
+            user_name=signer_name,
+            email=signer_email,
+        )
+
+        view_results = envelopes_api.create_recipient_view(
+            account_id,
+            envelope_id,
+            recipient_view_request=recipient_view_request,
+        )
+
+        signing_url = getattr(view_results, 'url', None)
+        if not signing_url:
+            raise Exception('DocuSign recipient view returned no URL')
+
+        return {
+            'envelope_id': envelope_id,
+            'signing_url': signing_url,
+        }
+    except ApiException as e:
+        print(f"❌ DocuSign API error: {e}")
+        raise
+    except Exception as e:
+        print(f"❌ Error creating DocuSign signing URL: {e}")
+        traceback.print_exc()
+        raise

@@ -2204,7 +2204,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     );
   }
 
-  void _openProposal(Map<String, dynamic> proposal) {
+  Future<void> _openProposal(Map<String, dynamic> proposal) async {
     final rawId = proposal['id'];
     final proposalId =
         rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
@@ -2222,13 +2222,79 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return;
     }
 
-    final signingUrl = proposal['signing_url']?.toString() ?? '';
     final statusLower = (proposal['status'] ?? '').toString().toLowerCase();
     final isSigned = statusLower.contains('client signed') ||
         (statusLower.contains('signed') && !statusLower.contains('sent'));
-    if (!isSigned && signingUrl.trim().isNotEmpty) {
-      _openSigningUrl(proposal);
-      return;
+
+    if (!isSigned) {
+      try {
+        final uri = Uri.parse(
+            '$baseUrl/api/client/proposals/$proposalId/docusign/signing-url');
+        final resp = await http
+            .post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'token': _accessToken,
+            'signer_name':
+                (proposal['client_name']?.toString().trim().isNotEmpty ?? false)
+                    ? proposal['client_name']?.toString().trim()
+                    : (_clientEmail ?? '').trim(),
+          }),
+        )
+            .timeout(
+          const Duration(seconds: 12),
+          onTimeout: () {
+            throw TimeoutException('Signing URL request timed out');
+          },
+        );
+
+        Map<String, dynamic>? decoded;
+        try {
+          final body = jsonDecode(resp.body);
+          if (body is Map) {
+            decoded = Map<String, dynamic>.from(body);
+          }
+        } catch (_) {}
+
+        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+          final fresh = decoded?['signing_url']?.toString() ?? '';
+          if (fresh.trim().isNotEmpty) {
+            await launchUrlString(fresh, mode: LaunchMode.externalApplication);
+            return;
+          }
+        }
+
+        final fallbackSigningUrl = proposal['signing_url']?.toString() ?? '';
+        if (fallbackSigningUrl.trim().isNotEmpty) {
+          await launchUrlString(fallbackSigningUrl,
+              mode: LaunchMode.externalApplication);
+          return;
+        }
+
+        if (mounted) {
+          final msg = decoded?['detail']?.toString() ??
+              'Unable to open DocuSign (HTTP ${resp.statusCode}).';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(msg), backgroundColor: Colors.red),
+          );
+        }
+      } catch (e) {
+        final fallbackSigningUrl = proposal['signing_url']?.toString() ?? '';
+        if (fallbackSigningUrl.trim().isNotEmpty) {
+          await launchUrlString(fallbackSigningUrl,
+              mode: LaunchMode.externalApplication);
+          return;
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Unable to open DocuSign: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
 
     print('[ClientDashboardHome] Opening proposal in app: id=$proposalId');
