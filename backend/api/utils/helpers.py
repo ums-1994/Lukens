@@ -1407,10 +1407,33 @@ def create_docusign_signing_url(envelope_id: str, signer_name: str, signer_email
 
         envelopes_api = EnvelopesApi(api_client)
 
+        # Determine the correct recipient_id for this envelope.
+        # Hardcoding recipient_id='1' can produce a view-only experience if the
+        # actual recipient id differs.
+        recipient_id = None
+        try:
+            recipients = envelopes_api.list_recipients(account_id, envelope_id)
+            signers = getattr(recipients, 'signers', None) or []
+            target = (signer_email or '').strip().lower()
+            for s in signers:
+                try:
+                    email = (getattr(s, 'email', None) or '').strip().lower()
+                    if target and email == target:
+                        recipient_id = getattr(s, 'recipient_id', None)
+                        break
+                except Exception:
+                    continue
+            if not recipient_id and signers:
+                recipient_id = getattr(signers[0], 'recipient_id', None)
+        except Exception:
+            recipient_id = None
+        if not recipient_id:
+            recipient_id = '1'
+
         # Redirect mode: do NOT set client_user_id.
         recipient_view_request = RecipientViewRequest(
             authentication_method='none',
-            recipient_id='1',
+            recipient_id=str(recipient_id),
             return_url=return_url,
             user_name=signer_name,
             email=signer_email,
