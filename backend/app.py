@@ -60,7 +60,7 @@ except ImportError:
     # DocuSign SDK missing: warn user (emoji-friendly message)
     print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
-from flask import Flask, request, jsonify, send_file, Response, send_from_directory, has_request_context
+from flask import Flask, request, jsonify, send_file, Response, send_from_directory, has_request_context, render_template, redirect, url_for, session
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -97,6 +97,160 @@ print(
 )
 
 app = Flask(__name__)
+
+# Session configuration (used by OTP-based client portal auth)
+app.secret_key = os.getenv('SECRET_KEY', os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-me'))
+app.config.setdefault('SESSION_COOKIE_HTTPONLY', True)
+app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config.setdefault('SESSION_COOKIE_SECURE', (os.getenv('SESSION_COOKIE_SECURE') or '').strip().lower() in ('1', 'true', 'yes'))
+
+_MOJO_API_KEY = (os.getenv('MOJO_API_KEY') or '').strip()
+_MOJO_BASE_URL = (os.getenv('MOJO_BASE_URL') or 'https://api.mojoauth.com').strip().rstrip('/')
+
+
+def _mojo_headers() -> dict:
+    if not _MOJO_API_KEY:
+        raise RuntimeError('MOJO_API_KEY is not configured')
+    return {
+        'x-api-key': _MOJO_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+    }
+
+
+def _mojo_send_email_otp(email: str) -> str:
+    """Send an email OTP via MojoAuth. Returns state_id."""
+    import requests
+
+    resp = requests.post(
+        f'{_MOJO_BASE_URL}/users/emailotp',
+        headers=_mojo_headers(),
+        json={'email': email},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f'MojoAuth send OTP failed (HTTP {resp.status_code}): {resp.text}')
+    data = resp.json() if resp.content else {}
+    state_id = (data.get('state_id') or data.get('stateId') or '').strip()
+    if not state_id:
+        raise RuntimeError('MojoAuth did not return state_id')
+    return state_id
+
+
+def _mojo_resend_email_otp(state_id: str) -> None:
+    import requests
+
+    resp = requests.post(
+        f'{_MOJO_BASE_URL}/users/emailotp/resend',
+        headers=_mojo_headers(),
+        json={'state_id': state_id},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f'MojoAuth resend OTP failed (HTTP {resp.status_code}): {resp.text}')
+
+
+def _mojo_verify_email_otp(state_id: str, otp: str) -> dict:
+    """Verify an email OTP via MojoAuth. Returns parsed JSON (often includes user + token)."""
+    import requests
+
+    resp = requests.post(
+        f'{_MOJO_BASE_URL}/users/emailotp/verify',
+        headers=_mojo_headers(),
+        json={'state_id': state_id, 'otp': otp},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f'MojoAuth verify OTP failed (HTTP {resp.status_code}): {resp.text}')
+    return resp.json() if resp.content else {}
+
+
+def _proposal_client_email(proposal_id: int) -> str | None:
+    """Return stored client_email for a proposal, or None if missing."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT client_email FROM proposals WHERE id = %s', (proposal_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            email = (row[0] or '').strip()
+            return email if email else None
+    except Exception:
+        return None
+
+
+def _session_key_for_proposal(proposal_id: int) -> str:
+    return f'proposal:{proposal_id}'
+
+
+def _is_proposal_verified(proposal_id: int, email: str) -> bool:
+    verified = session.get('verified_client_portal') or {}
+    if not isinstance(verified, dict):
+        return False
+    entry = verified.get(_session_key_for_proposal(proposal_id))
+    if not isinstance(entry, dict):
+        return False
+    if (entry.get('email') or '').strip().lower() != email.strip().lower():
+        return False
+    exp = entry.get('expires_at')
+    if not exp:
+        return False
+    try:
+        expires_at = datetime.fromisoformat(str(exp))
+    except Exception:
+        return False
+    return datetime.utcnow() < expires_at
+
+
+def _mark_proposal_verified(proposal_id: int, email: str, ttl_minutes: int = 30) -> None:
+    verified = session.get('verified_client_portal')
+    if not isinstance(verified, dict):
+        verified = {}
+    verified[_session_key_for_proposal(proposal_id)] = {
+        'email': email,
+        'verified_at': datetime.utcnow().isoformat(),
+        'expires_at': (datetime.utcnow() + timedelta(minutes=ttl_minutes)).isoformat(),
+    }
+    session['verified_client_portal'] = verified
+
+
+def _set_otp_state(proposal_id: int, email: str, state_id: str) -> None:
+    otp_state = session.get('otp_state')
+    if not isinstance(otp_state, dict):
+        otp_state = {}
+    otp_state[_session_key_for_proposal(proposal_id)] = {
+        'email': email,
+        'state_id': state_id,
+        'created_at': datetime.utcnow().isoformat(),
+        'last_sent_at': datetime.utcnow().isoformat(),
+    }
+    session['otp_state'] = otp_state
+
+
+def _get_otp_state(proposal_id: int) -> dict | None:
+    otp_state = session.get('otp_state')
+    if not isinstance(otp_state, dict):
+        return None
+    entry = otp_state.get(_session_key_for_proposal(proposal_id))
+    return entry if isinstance(entry, dict) else None
+
+
+def _can_resend_otp(proposal_id: int, cooldown_seconds: int = 30) -> tuple[bool, str | None]:
+    entry = _get_otp_state(proposal_id)
+    if not entry:
+        return True, None
+    last = entry.get('last_sent_at')
+    if not last:
+        return True, None
+    try:
+        last_dt = datetime.fromisoformat(str(last))
+    except Exception:
+        return True, None
+    delta = (datetime.utcnow() - last_dt).total_seconds()
+    if delta < cooldown_seconds:
+        return False, f'Please wait {int(cooldown_seconds - delta)}s before resending.'
+    return True, None
 
 def _normalize_origin(origin: str) -> str:
     raw = (origin or "").strip()
@@ -168,10 +322,14 @@ CORS(
         "Content-Type",
         "Authorization",
         "X-Requested-With",
-        "Accept",
-        "X-AI-Request-ID",
         "X-Client-Device-Id",
         "X-Client-Session-Token",
+        "x-client-device-id",
+        "x-client-session-token",
+        "X-Client-Role",
+        "X-Client-Token",
+        "X-Client-Session",
+        "X-Client-Request",
         "X-Device-Id",
     ],
     methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
