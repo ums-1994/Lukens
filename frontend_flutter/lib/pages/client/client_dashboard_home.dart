@@ -267,9 +267,93 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Future<void> _openSigningUrl(Map<String, dynamic> doc) async {
-    final signingUrl = doc['signing_url']?.toString() ?? '';
-    if (signingUrl.trim().isEmpty) return;
-    await launchUrlString(signingUrl, mode: LaunchMode.externalApplication);
+    final rawId = doc['id'];
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
+      return;
+    }
+
+    try {
+      final uri = Uri.parse(
+          '$baseUrl/api/client/proposals/$proposalId/docusign/signing-url');
+      final resp = await http
+          .post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'token': _accessToken,
+          'signer_name':
+              (doc['client_name']?.toString().trim().isNotEmpty ?? false)
+                  ? doc['client_name']?.toString().trim()
+                  : (_clientEmail ?? '').trim(),
+        }),
+      )
+          .timeout(
+        const Duration(seconds: 12),
+        onTimeout: () {
+          throw TimeoutException('Signing URL request timed out');
+        },
+      );
+
+      Map<String, dynamic>? decoded;
+      try {
+        final body = jsonDecode(resp.body);
+        if (body is Map) {
+          decoded = Map<String, dynamic>.from(body);
+        }
+      } catch (_) {}
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final fresh = decoded?['signing_url']?.toString() ?? '';
+        if (fresh.trim().isNotEmpty) {
+          if (kIsWeb) {
+            web.window.location.href = fresh;
+          } else {
+            await launchUrlString(fresh, mode: LaunchMode.externalApplication);
+          }
+          return;
+        }
+      }
+
+      final fallbackSigningUrl = doc['signing_url']?.toString() ?? '';
+      if (fallbackSigningUrl.trim().isNotEmpty) {
+        if (kIsWeb) {
+          web.window.location.href = fallbackSigningUrl;
+        } else {
+          await launchUrlString(fallbackSigningUrl,
+              mode: LaunchMode.externalApplication);
+        }
+        return;
+      }
+
+      if (mounted) {
+        final msg = decoded?['detail']?.toString() ??
+            'Unable to open DocuSign (HTTP ${resp.statusCode}).';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      final fallbackSigningUrl = doc['signing_url']?.toString() ?? '';
+      if (fallbackSigningUrl.trim().isNotEmpty) {
+        if (kIsWeb) {
+          web.window.location.href = fallbackSigningUrl;
+        } else {
+          await launchUrlString(fallbackSigningUrl,
+              mode: LaunchMode.externalApplication);
+        }
+        return;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unable to open DocuSign: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _showFallbackSignModal(Map<String, dynamic> doc) async {
