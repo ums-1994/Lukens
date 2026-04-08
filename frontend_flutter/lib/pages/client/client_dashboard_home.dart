@@ -58,9 +58,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   Widget _filterChip(String label, String value) {
     final selected = _dashboardDocFilter == value;
-    const chipHeight = 44.0;
-    const chipRadius = 22.0;
-    const chipBorderWidth = 1.2;
+    const chipHeight = 18.06;
+    const chipRadius = 20.14;
+    const chipBorderWidth = 1.23;
     const chipBorderColor = Color(0xFF6A6A6A);
 
     return InkWell(
@@ -73,7 +73,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       child: SizedBox(
         height: chipHeight,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 7),
           decoration: BoxDecoration(
             color: selected
                 ? const Color(0xFFC10D00)
@@ -90,7 +90,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 16,
+                fontSize: 7.5,
                 fontWeight: FontWeight.w700,
                 height: 1.0,
               ),
