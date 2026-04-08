@@ -1,7 +1,8 @@
 """
 Client role routes - Viewing proposals, commenting, approving/rejecting, signing
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
+from io import BytesIO
 import os
 import json
 import traceback
@@ -2663,6 +2664,142 @@ def client_docusign_signing_url_api(proposal_id):
             }, 200
     except Exception as e:
         print(f"❌ Error creating client DocuSign signing URL: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.get("/api/client/proposals/<int:proposal_id>/docusign/signed-pdf")
+def client_docusign_signed_pdf_api(proposal_id):
+    """Download the completed DocuSign combined PDF for a proposal.
+
+    Access is authorized via the client portal invitation token.
+    """
+    try:
+        token = unquote(str(request.args.get('token') or '')).strip().strip('"').strip("'")
+        if not token:
+            return {'detail': 'Token is required'}, 400
+
+        if os.getenv('ENABLE_DOCUSIGN', 'false').lower() != 'true':
+            return {
+                'disabled': True,
+                'reason': 'docusign_disabled',
+                'detail': 'DocuSign is disabled on this server. Set ENABLE_DOCUSIGN=true to enable.',
+            }, 501
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            invitation_token = _resolve_invitation_token(cursor, token)
+
+            inv_info = _get_invitation_column_info(cursor)
+            token_col = inv_info['token_col']
+            email_col = inv_info['email_col']
+            expires_col = inv_info['expires_col']
+            if not token_col or not email_col:
+                return {'detail': 'Client invitations not configured'}, 500
+
+            expires_select = (
+                sql.Identifier(expires_col)
+                if expires_col
+                else sql.SQL('NULL::timestamp')
+            )
+            cursor.execute(
+                sql.SQL(
+                    """
+                    SELECT proposal_id, {email_col} as invited_email, {expires_col} as expires_at
+                    FROM collaboration_invitations
+                    WHERE {token_col} = %s
+                    """
+                ).format(
+                    email_col=sql.Identifier(email_col),
+                    expires_col=expires_select,
+                    token_col=sql.Identifier(token_col),
+                ),
+                (invitation_token,),
+            )
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
+                return {'detail': 'Access token has expired'}, 403
+
+            token_proposal_id = invitation.get('proposal_id')
+            if token_proposal_id is not None and str(token_proposal_id) != str(proposal_id):
+                try:
+                    cursor.execute(
+                        """
+                        SELECT client_email
+                        FROM proposals
+                        WHERE id = %s
+                        """,
+                        (proposal_id,),
+                    )
+                    prow = cursor.fetchone()
+                    proposal_email = (prow.get('client_email') if isinstance(prow, dict) else None) or ''
+                    invited_email = (invitation.get('invited_email') or '').strip()
+                    if not proposal_email or not invited_email or proposal_email.strip().lower() != invited_email.strip().lower():
+                        return {'detail': 'Token is not valid for this proposal'}, 403
+                except Exception:
+                    return {'detail': 'Token is not valid for this proposal'}, 403
+
+            cursor.execute(
+                """
+                SELECT envelope_id
+                FROM proposal_signatures
+                WHERE proposal_id = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+                """,
+                (proposal_id,),
+            )
+            sig = cursor.fetchone()
+            envelope_id = sig.get('envelope_id') if isinstance(sig, dict) else None
+            if not envelope_id:
+                return {'detail': 'No DocuSign envelope found for this proposal'}, 404
+
+            cursor.execute(
+                """
+                SELECT title
+                FROM proposals
+                WHERE id = %s
+                """,
+                (proposal_id,),
+            )
+            prow = cursor.fetchone()
+            title = (prow.get('title') if isinstance(prow, dict) else None) or f"Proposal {proposal_id}"
+
+        # Fetch signed combined PDF from DocuSign
+        from docusign_esign import ApiClient, EnvelopesApi
+        from api.utils.docusign_utils import get_docusign_jwt_token
+
+        access_token = get_docusign_jwt_token()
+        account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
+        base_path = os.getenv('DOCUSIGN_BASE_PATH') or os.getenv(
+            'DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi'
+        )
+
+        api_client = ApiClient()
+        api_client.host = base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+        envelopes_api = EnvelopesApi(api_client)
+
+        # 'combined' returns a PDF that includes all docs plus the certificate
+        pdf_bytes = envelopes_api.get_document(account_id, envelope_id, document_id='combined')
+        if isinstance(pdf_bytes, str):
+            pdf_bytes = pdf_bytes.encode('utf-8')
+
+        filename = f"{title}.signed.pdf"
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename,
+        )
+
+    except Exception as e:
+        print(f"❌ Error downloading signed DocuSign PDF: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 

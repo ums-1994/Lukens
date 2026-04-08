@@ -261,8 +261,13 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (id == null || _accessToken == null || _accessToken!.isEmpty) return;
 
-    final url =
-        '$baseUrl/api/client/proposals/$id/export/pdf?token=${Uri.encodeComponent(_accessToken!)}&download=1';
+    final statusLower = (doc['status'] ?? '').toString().toLowerCase();
+    final isSigned = statusLower.contains('client signed') ||
+        (statusLower.contains('signed') && !statusLower.contains('sent'));
+
+    final url = isSigned
+        ? '$baseUrl/api/client/proposals/$id/docusign/signed-pdf?token=${Uri.encodeComponent(_accessToken!)}'
+        : '$baseUrl/api/client/proposals/$id/export/pdf?token=${Uri.encodeComponent(_accessToken!)}&download=1';
     web.window.open(url, '_blank');
   }
 
