@@ -1024,41 +1024,55 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   final normalizedLabel = _normalizeStatus(rawStatus);
                   final lower = normalizedLabel.toLowerCase().trim();
                   Color bg = Colors.white.withValues(alpha: 0.10);
-                  Color fg = Colors.white.withValues(alpha: 0.80);
+                  Color fg = Colors.white;
                   String label = normalizedLabel.isEmpty
                       ? (rawStatus.isEmpty ? 'Unknown' : rawStatus)
                       : normalizedLabel;
+                  double chipWidth = 87.89;
 
                   if (lower.contains('signed')) {
-                    bg = const Color(0xFF27AE60).withValues(alpha: 0.18);
-                    fg = const Color(0xFF2ECC71);
+                    bg = const Color(0xFF6CA510);
+                    fg = Colors.white;
+                    chipWidth = 87.89;
                   } else if (lower.contains('pending') ||
                       lower.contains('released') ||
                       lower.contains('sent for signature') ||
                       lower.contains('in review')) {
-                    bg = const Color(0xFFF39C12).withValues(alpha: 0.20);
-                    fg = const Color(0xFFF1C40F);
+                    bg = const Color(0xFFEA990C);
+                    fg = Colors.white;
+                    chipWidth = 88.51;
+                    if (lower.contains('pending')) {
+                      label = 'Request Sent';
+                    }
                   } else if (lower.contains('rejected') ||
                       lower.contains('declined')) {
-                    bg = const Color(0xFFE74C3C).withValues(alpha: 0.18);
-                    fg = const Color(0xFFE74C3C);
+                    bg = const Color(0xFFE74C3C);
+                    fg = Colors.white;
+                    chipWidth = 88.51;
                   }
 
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: bg,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: fg,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
+                  return SizedBox(
+                    width: chipWidth,
+                    height: 23.36,
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(15.69, 11.77, 15.69, 11.77),
+                      decoration: BoxDecoration(
+                        color: bg,
+                        borderRadius: BorderRadius.circular(26.06),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: fg,
+                            fontSize: 7.8,
+                            fontWeight: FontWeight.w700,
+                            height: 1.0,
+                          ),
+                        ),
                       ),
                     ),
                   );
@@ -1094,40 +1108,40 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
                                 // Figma text treatment: lead is bold small-caps, project part is italic.
                                 return SizedBox(
+                                  width: 402.59,
                                   height: 18.44,
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                        maxWidth: 402.59),
-                                    child: RichText(
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      text: TextSpan(
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontFamily: 'Poppins',
-                                          fontSize: 9.22,
-                                          height: 1.017,
-                                          letterSpacing: 0.09,
-                                        ),
-                                        children: [
-                                          TextSpan(
-                                            text: '$lead ',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontFeatures: [
-                                                ui.FontFeature.enable('smcp')
-                                              ],
-                                            ),
-                                          ),
-                                          TextSpan(
-                                            text: '- $rawTitle',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w500,
-                                              fontStyle: FontStyle.italic,
-                                            ),
-                                          ),
-                                        ],
+                                  child: RichText(
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    text: TextSpan(
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontFamily: 'Poppins',
+                                        fontSize: 9.22,
+                                        height: 1.0174,
+                                        letterSpacing: 0.0922,
                                       ),
+                                      children: [
+                                        TextSpan(
+                                          text: '$lead ',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontFeatures: [
+                                              ui.FontFeature.enable('smcp')
+                                            ],
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: '- $rawTitle',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                            fontStyle: FontStyle.italic,
+                                            fontFeatures: [
+                                              ui.FontFeature.enable('smcp')
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
                                 );
@@ -1144,19 +1158,65 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                           child: const Text('Download'),
                         )
                       else if (isProposalsTab)
-                        TextButton(
+                        SizedBox(
+                          width: 48.56,
+                          height: 23.36,
+                          child: TextButton(
+                            style: TextButton.styleFrom(
+                              backgroundColor: const Color(0xFF7F7F7F),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.fromLTRB(
+                                  15.69, 11.77, 15.69, 11.77),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(26.06),
+                              ),
+                            ),
                           onPressed: () {
                             setState(() {
                               _selectedDocument = doc;
                             });
                             _openSigningUrl(doc);
                           },
-                          child: const Text('View'),
+                            child: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'VIEW',
+                                style: TextStyle(
+                                  fontSize: 7.8,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.0,
+                                ),
+                              ),
+                            ),
+                          ),
                         )
                       else
-                        TextButton(
-                          onPressed: () => _openProposal(doc),
-                          child: const Text('View'),
+                        SizedBox(
+                          width: 48.56,
+                          height: 23.36,
+                          child: TextButton(
+                            style: TextButton.styleFrom(
+                              backgroundColor: const Color(0xFF7F7F7F),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.fromLTRB(
+                                  15.69, 11.77, 15.69, 11.77),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(26.06),
+                              ),
+                            ),
+                            onPressed: () => _openProposal(doc),
+                            child: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'VIEW',
+                                style: TextStyle(
+                                  fontSize: 7.8,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.0,
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                     ],
                   ),
