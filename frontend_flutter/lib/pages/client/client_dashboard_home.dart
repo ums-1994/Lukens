@@ -290,7 +290,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         }),
       )
           .timeout(
-        const Duration(seconds: 12),
+        const Duration(seconds: 45),
         onTimeout: () {
           throw TimeoutException('Signing URL request timed out');
         },

@@ -2379,6 +2379,7 @@ def client_docusign_signing_url_api(proposal_id):
     right before redirecting the client to DocuSign so the link is signable.
     """
     try:
+        import time
         data = request.get_json(silent=True) or {}
         token = unquote(str(data.get('token') or request.args.get('token') or '')).strip().strip('"').strip("'")
         if not token:
@@ -2475,6 +2476,9 @@ def client_docusign_signing_url_api(proposal_id):
             # will not send a signing email and the portal URL is signable.
             client_user_id = invitation_token
 
+            t0 = time.monotonic()
+            print(f"[CLIENT_PORTAL] signing-url start proposal_id={proposal_id}")
+
             cursor.execute(
                 """
                 SELECT envelope_id, status
@@ -2503,6 +2507,7 @@ def client_docusign_signing_url_api(proposal_id):
             needs_new_envelope = envelope_id is None
             if envelope_id is not None:
                 try:
+                    t_recips0 = time.monotonic()
                     from docusign_esign import ApiClient, EnvelopesApi
                     from api.utils.docusign_utils import get_docusign_jwt_token
                     access_token = get_docusign_jwt_token()
@@ -2528,12 +2533,17 @@ def client_docusign_signing_url_api(proposal_id):
                     existing_client_user_id = getattr(found, 'client_user_id', None) if found is not None else None
                     if not existing_client_user_id:
                         needs_new_envelope = True
+                    print(
+                        "[CLIENT_PORTAL] signing-url inspected existing envelope "
+                        f"envelope_id={envelope_id} ms={(time.monotonic() - t_recips0) * 1000:.0f} captive={'yes' if existing_client_user_id else 'no'}"
+                    )
                 except Exception:
                     # If we cannot inspect recipients, fall back to the existing envelope.
                     needs_new_envelope = False
 
             if needs_new_envelope:
                 # Fetch proposal content and generate a fresh PDF
+                t_pdf0 = time.monotonic()
                 cursor.execute(
                     """
                     SELECT title, content
@@ -2554,6 +2564,9 @@ def client_docusign_signing_url_api(proposal_id):
                     client_name=signer_name,
                     client_email=signer_email,
                 )
+                print(f"[CLIENT_PORTAL] signing-url pdf generated ms={(time.monotonic() - t_pdf0) * 1000:.0f}")
+
+                t_env0 = time.monotonic()
                 env = create_docusign_envelope(
                     proposal_id=proposal_id,
                     pdf_bytes=pdf_content,
@@ -2563,11 +2576,16 @@ def client_docusign_signing_url_api(proposal_id):
                     return_url=return_url,
                     client_user_id=client_user_id,
                 )
+                print(f"[CLIENT_PORTAL] signing-url envelope created ms={(time.monotonic() - t_env0) * 1000:.0f}")
                 if isinstance(env, dict) and env.get('disabled'):
                     return env, 501
                 envelope_id = env.get('envelope_id') if isinstance(env, dict) else None
                 if not envelope_id:
                     return {'detail': 'Unable to create DocuSign envelope'}, 500
+
+                # If create_docusign_envelope already minted a recipient-view URL,
+                # reuse it to avoid an extra DocuSign roundtrip.
+                signing_url = env.get('signing_url') if isinstance(env, dict) else None
 
                 # Upsert signature record (portal envelope)
                 cursor.execute(
@@ -2579,7 +2597,6 @@ def client_docusign_signing_url_api(proposal_id):
                     (proposal_id,),
                 )
                 existing = cursor.fetchone()
-                signing_url = env.get('signing_url') if isinstance(env, dict) else None
                 if existing:
                     cursor.execute(
                         """
@@ -2615,6 +2632,14 @@ def client_docusign_signing_url_api(proposal_id):
                 )
                 conn.commit()
 
+                if signing_url:
+                    print(f"[CLIENT_PORTAL] signing-url done proposal_id={proposal_id} ms={(time.monotonic() - t0) * 1000:.0f} reused_url=yes")
+                    return {
+                        'envelope_id': envelope_id,
+                        'signing_url': signing_url,
+                    }, 200
+
+            t_view0 = time.monotonic()
             result = create_docusign_signing_url(
                 envelope_id=envelope_id,
                 signer_name=signer_name,
@@ -2622,6 +2647,7 @@ def client_docusign_signing_url_api(proposal_id):
                 return_url=return_url,
                 client_user_id=client_user_id,
             )
+            print(f"[CLIENT_PORTAL] signing-url recipient-view ms={(time.monotonic() - t_view0) * 1000:.0f}")
 
             if isinstance(result, dict) and result.get('disabled'):
                 return result, 501
@@ -2630,6 +2656,7 @@ def client_docusign_signing_url_api(proposal_id):
             if not signing_url:
                 return {'detail': 'Unable to create signing URL'}, 500
 
+            print(f"[CLIENT_PORTAL] signing-url done proposal_id={proposal_id} ms={(time.monotonic() - t0) * 1000:.0f} reused_url=no")
             return {
                 'envelope_id': envelope_id,
                 'signing_url': signing_url,
