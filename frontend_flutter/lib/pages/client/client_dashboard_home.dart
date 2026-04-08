@@ -916,6 +916,32 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     );
   }
 
+  Widget _buildTopCornerAssetIcon(String assetPath) {
+    return SizedBox(
+      width: 44.87,
+      height: 44.87,
+      child: Image.asset(
+        assetPath,
+        width: 44.87,
+        height: 44.87,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) {
+          return Container(
+            width: 44.87,
+            height: 44.87,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(22.435),
+              border: Border.all(color: Colors.white24),
+            ),
+            child: const Icon(Icons.image_not_supported_outlined,
+                color: Colors.white70, size: 18),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildRecentDocuments() {
     final docs = _filteredDocuments();
     final isDocumentsTab = _selectedNavIndex == 2;
@@ -1054,24 +1080,48 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   return SizedBox(
                     width: chipWidth,
                     height: 23.36,
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(15.69, 11.77, 15.69, 11.77),
+                    child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: bg,
-                        borderRadius: BorderRadius.circular(26.06),
-                      ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
+                          color: bg, borderRadius: BorderRadius.circular(26.06)),
+                      child: Center(
                         child: Text(
                           label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: fg,
-                            fontSize: 7.8,
+                            fontSize: 10,
                             fontWeight: FontWeight.w700,
                             height: 1.0,
                           ),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                Widget _viewChip(VoidCallback onPressed) {
+                  return SizedBox(
+                    width: 48.56,
+                    height: 23.36,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: const Color(0xFF7F7F7F),
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(48.56, 23.36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(26.06),
+                        ),
+                      ),
+                      onPressed: onPressed,
+                      child: const Text(
+                        'VIEW',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          height: 1.0,
                         ),
                       ),
                     ),
@@ -1096,60 +1146,51 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Builder(
-                              builder: (context) {
-                                final lead =
-                                    '${_documentLabel(doc)} #${doc['id']}';
-                                final rawTitle =
-                                    (doc['title'] ?? 'Untitled').toString();
+                        child: Builder(
+                          builder: (context) {
+                            final lead = '${_documentLabel(doc)} #${doc['id']}';
+                            final rawTitle =
+                                (doc['title'] ?? 'Untitled').toString();
 
-                                // Figma text treatment: lead is bold small-caps, project part is italic.
-                                return SizedBox(
-                                  width: 402.59,
-                                  height: 18.44,
-                                  child: RichText(
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    text: TextSpan(
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontFamily: 'Poppins',
-                                        fontSize: 9.22,
-                                        height: 1.0174,
-                                        letterSpacing: 0.0922,
-                                      ),
-                                      children: [
-                                        TextSpan(
-                                          text: '$lead ',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontFeatures: [
-                                              ui.FontFeature.enable('smcp')
-                                            ],
-                                          ),
-                                        ),
-                                        TextSpan(
-                                          text: '- $rawTitle',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w500,
-                                            fontStyle: FontStyle.italic,
-                                            fontFeatures: [
-                                              ui.FontFeature.enable('smcp')
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
+                            // Figma text treatment: lead is bold small-caps, project part is italic.
+                            return SizedBox(
+                              height: 18.44,
+                              child: RichText(
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                text: TextSpan(
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontFamily: 'Poppins',
+                                    fontSize: 9.22,
+                                    height: 1.0174,
+                                    letterSpacing: 0.0922,
                                   ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 2),
-                            _statusChip(status),
-                          ],
+                                  children: [
+                                    TextSpan(
+                                      text: '$lead ',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontFeatures: [
+                                          ui.FontFeature.enable('smcp')
+                                        ],
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: '- $rawTitle',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                        fontStyle: FontStyle.italic,
+                                        fontFeatures: [
+                                          ui.FontFeature.enable('smcp')
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ),
                       if (isDocumentsTab)
@@ -1158,65 +1199,27 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                           child: const Text('Download'),
                         )
                       else if (isProposalsTab)
-                        SizedBox(
-                          width: 48.56,
-                          height: 23.36,
-                          child: TextButton(
-                            style: TextButton.styleFrom(
-                              backgroundColor: const Color(0xFF7F7F7F),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.fromLTRB(
-                                  15.69, 11.77, 15.69, 11.77),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(26.06),
-                              ),
-                            ),
-                          onPressed: () {
-                            setState(() {
-                              _selectedDocument = doc;
-                            });
-                            _openSigningUrl(doc);
-                          },
-                            child: const FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                'VIEW',
-                                style: TextStyle(
-                                  fontSize: 7.8,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.0,
-                                ),
-                              ),
-                            ),
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _statusChip(status),
+                            const SizedBox(width: 7.84),
+                            _viewChip(() {
+                              setState(() {
+                                _selectedDocument = doc;
+                              });
+                              _openSigningUrl(doc);
+                            }),
+                          ],
                         )
                       else
-                        SizedBox(
-                          width: 48.56,
-                          height: 23.36,
-                          child: TextButton(
-                            style: TextButton.styleFrom(
-                              backgroundColor: const Color(0xFF7F7F7F),
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.fromLTRB(
-                                  15.69, 11.77, 15.69, 11.77),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(26.06),
-                              ),
-                            ),
-                            onPressed: () => _openProposal(doc),
-                            child: const FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                'VIEW',
-                                style: TextStyle(
-                                  fontSize: 7.8,
-                                  fontWeight: FontWeight.w700,
-                                  height: 1.0,
-                                ),
-                              ),
-                            ),
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _statusChip(status),
+                            const SizedBox(width: 7.84),
+                            _viewChip(() => _openProposal(doc)),
+                          ],
                         ),
                     ],
                   ),
@@ -1471,6 +1474,14 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildTopCornerAssetIcon('assets/images/Group 391 (2).png'),
+                  const SizedBox(width: 8),
+                  _buildTopCornerAssetIcon('assets/images/Group 398 (1).png'),
+                ],
               ),
             ],
           ),
