@@ -27,6 +27,9 @@ class ClientDashboardHome extends StatefulWidget {
 }
 
 class _ClientDashboardHomeState extends State<ClientDashboardHome> {
+  static bool _globalOtpDialogOpen = false;
+  static Future<void>? _globalVerificationFuture;
+
   bool _isLoading = true;
   String? _error;
   String? _accessToken;
@@ -35,6 +38,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String? _clientSessionToken;
   bool _verificationInProgress = false;
   bool _otpDialogOpen = false;
+  Future<void>? _loadProposalsFuture;
   List<Map<String, dynamic>> _proposals = [];
   Map<String, dynamic>? _selectedDocument;
   int _selectedNavIndex = 0;
@@ -290,6 +294,19 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Future<void> _ensureDeviceVerifiedAndRetry({required String token}) async {
+    if (_globalVerificationFuture != null) {
+      return _globalVerificationFuture!;
+    }
+
+    _globalVerificationFuture =
+        _runVerificationFlow(token: token).whenComplete(() {
+      _globalVerificationFuture = null;
+    });
+
+    return _globalVerificationFuture!;
+  }
+
+  Future<void> _runVerificationFlow({required String token}) async {
     if (_verificationInProgress || _otpDialogOpen) return;
     _verificationInProgress = true;
 
@@ -326,6 +343,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       }
 
       await _showOtpDialog(token: token, challengeId: challengeId);
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
     } finally {
       _verificationInProgress = false;
     }
@@ -335,8 +357,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     required String token,
     required String challengeId,
   }) async {
+    if (_globalOtpDialogOpen) return;
     if (_otpDialogOpen) return;
     _otpDialogOpen = true;
+    _globalOtpDialogOpen = true;
     final controller = TextEditingController();
     bool submitting = false;
     String? error;
@@ -344,11 +368,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     try {
       await showDialog<void>(
         context: context,
+        useRootNavigator: true,
         barrierDismissible: !submitting,
-        builder: (context) {
+        builder: (dialogContext) {
           return StatefulBuilder(
             builder: (context, setModalState) {
+              bool verificationComplete = false;
+
               Future<void> verify() async {
+                if (submitting || verificationComplete) return;
                 final otp = controller.text.trim();
                 if (otp.isEmpty) {
                   setModalState(
@@ -365,9 +393,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   final result = await _verifyClientDeviceOtp(challengeId, otp);
                   final sessionToken = result?['session_token']?.toString();
                   if (sessionToken != null && sessionToken.trim().isNotEmpty) {
+                    verificationComplete = true;
                     _persistClientSessionToken(sessionToken);
-                    if (mounted) Navigator.of(context).pop();
-                    await _loadClientProposals();
+                    try {
+                      Navigator.of(dialogContext, rootNavigator: true).pop();
+                    } catch (_) {
+                      try {
+                        Navigator.of(dialogContext).pop();
+                      } catch (_) {}
+                    }
                     return;
                   }
 
@@ -376,7 +410,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 } catch (e) {
                   setModalState(() => error = e.toString());
                 } finally {
-                  setModalState(() => submitting = false);
+                  if (!verificationComplete) {
+                    setModalState(() => submitting = false);
+                  }
                 }
               }
 
@@ -431,8 +467,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 ),
                 actions: [
                   TextButton(
-                    onPressed:
-                        submitting ? null : () => Navigator.of(context).pop(),
+                    onPressed: submitting
+                        ? null
+                        : () =>
+                            Navigator.of(context, rootNavigator: true).pop(),
                     child: const Text('Cancel'),
                   ),
                   TextButton(
@@ -457,7 +495,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       );
     } finally {
       _otpDialogOpen = false;
-      controller.dispose();
+      _globalOtpDialogOpen = false;
     }
   }
 
@@ -1721,6 +1759,18 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Future<void> _loadClientProposals() async {
+    if (_loadProposalsFuture != null) {
+      return _loadProposalsFuture!;
+    }
+
+    _loadProposalsFuture = _loadClientProposalsInternal().whenComplete(() {
+      _loadProposalsFuture = null;
+    });
+
+    return _loadProposalsFuture!;
+  }
+
+  Future<void> _loadClientProposalsInternal() async {
     if (_accessToken == null) return;
 
     final token = _sanitizeToken(_accessToken!);
@@ -1739,8 +1789,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     });
 
     try {
-      final uri = Uri.parse('$baseUrl/api/client/proposals')
-          .replace(queryParameters: {'token': token});
+      final uri = Uri.parse('$baseUrl/api/client/proposals').replace(
+        queryParameters: {
+          'token': token,
+          if (_deviceId != null && _deviceId!.isNotEmpty)
+            'device_id': _deviceId!,
+          if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty)
+            'session_token': _clientSessionToken!,
+        },
+      );
       final response = await http.get(
         uri,
         headers: {
@@ -1755,6 +1812,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         },
       );
 
+      print(
+          '[ClientPortal] proposals status=${response.statusCode} device_id=${_deviceId ?? ""} session_token_present=${(_clientSessionToken ?? "").isNotEmpty}');
+
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         if (decoded is! Map) {
@@ -1765,11 +1825,28 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         if (proposalsRaw is! List) {
           throw Exception('Invalid token response (missing proposals)');
         }
+        print(
+            '[ClientPortal] proposals decoded ok count=${proposalsRaw.length}');
+
+        List<Map<String, dynamic>> parsedProposals;
+        try {
+          parsedProposals = proposalsRaw
+              .whereType<Map>()
+              .map((p) => Map<String, dynamic>.from(p))
+              .toList();
+        } catch (e) {
+          throw Exception('Failed to parse proposals: $e');
+        }
+
+        if (parsedProposals.length != proposalsRaw.length) {
+          throw Exception(
+              'Invalid proposals payload (expected ${proposalsRaw.length} items, got ${parsedProposals.length} objects)');
+        }
+
         if (!mounted) return;
         setState(() {
           _clientEmail = data['client_email'];
-          _proposals =
-              proposalsRaw.map((p) => Map<String, dynamic>.from(p)).toList();
+          _proposals = parsedProposals;
 
           if (_selectedDocument != null) {
             final selId = _selectedDocument?['id']?.toString();
@@ -1814,7 +1891,28 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         final requiresDeviceSession =
             decoded?['requires_device_session'] == true;
         if (requiresDeviceSession) {
+          if (!mounted) return;
+          setState(() {
+            _isLoading = true;
+            _error = null;
+          });
           await _ensureDeviceVerifiedAndRetry(token: token);
+
+          // Verification may have completed in another widget instance.
+          // Refresh from localStorage so this instance picks up the session token.
+          _loadCachedClientSession();
+
+          if (!mounted) return;
+          if ((_clientSessionToken ?? '').trim().isEmpty) {
+            setState(() {
+              _error = 'Device verification required. Please retry.';
+              _isLoading = false;
+            });
+            return;
+          }
+
+          // Verification succeeded; retry proposals fetch now that we have a session token.
+          await _loadClientProposalsInternal();
           return;
         }
 
@@ -1876,8 +1974,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     try {
       final clean = _sanitizeToken(token);
-      final uri = Uri.parse('$baseUrl/api/client/dashboard/overview')
-          .replace(queryParameters: {'token': clean});
+      final uri = Uri.parse('$baseUrl/api/client/dashboard/overview').replace(
+        queryParameters: {
+          'token': clean,
+          if (_deviceId != null && _deviceId!.isNotEmpty)
+            'device_id': _deviceId!,
+          if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty)
+            'session_token': _clientSessionToken!,
+        },
+      );
 
       final resp = await http.get(
         uri,
