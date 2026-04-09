@@ -970,6 +970,16 @@ def init_db():
     # which will cause browsers to block the request due to failed preflight.
     if request.method == 'OPTIONS':
         return {}, 200
+
+    # Local-dev escape hatch:
+    # When Firebase auth is explicitly configured to bypass DB access,
+    # skip schema initialization for the Firebase auth endpoint so login
+    # can proceed even if external Postgres is temporarily unreachable.
+    if (
+        os.getenv("DEV_BYPASS_DB_FOR_FIREBASE", "false").lower() == "true"
+        and request.path == "/api/firebase"
+    ):
+        return
     if _db_initialized:
         return
     

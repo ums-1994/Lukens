@@ -47,6 +47,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     'rejected': 0,
     'viewed': 0,
   };
+  bool _isSidebarCollapsed = false;
+  int? _hoverSidebarIndex;
+
+  static const List<Map<String, dynamic>> _clientNavItems = [
+    {'index': 0, 'label': 'Dashboard', 'icon': Icons.dashboard_outlined},
+    {'index': 1, 'label': 'Proposals', 'icon': Icons.description_outlined},
+    {'index': 2, 'label': 'Documents', 'icon': Icons.folder_outlined},
+    {'index': 3, 'label': 'Profile', 'icon': Icons.person_outline},
+  ];
 
   bool _isSow(Map<String, dynamic> p) {
     final t =
@@ -439,128 +448,290 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     );
   }
 
-  Widget _buildSidebar() {
-    Widget navItem(int index, IconData icon, String label,
-        {VoidCallback? afterTap}) {
-      final selected = _selectedNavIndex == index;
-      final badgeCount =
-          label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
-      return InkWell(
-        onTap: () {
-          if (index == 0) {
-            if (!widget.showSummary) {
-              _navigateClient('/client/dashboard');
-            }
-            return;
-          }
-          if (index == 1) {
-            if (widget.showSummary) {
-              _navigateClient('/client/proposals');
-            }
-            return;
-          }
-          setState(() {
-            _selectedNavIndex = index;
-          });
-          afterTap?.call();
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: selected
-                ? Colors.white.withValues(alpha: 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              Icon(icon,
-                  color: selected ? Colors.white : Colors.white70, size: 20),
-              Icon(icon,
-                  color: selected ? Colors.white : Colors.white70, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: selected ? Colors.white : Colors.white70,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-              ),
-              if (badgeCount > 0)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.primaryRed,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    badgeCount > 99 ? '99+' : badgeCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
+  void _handleNavTap(int index, {bool closeDrawer = false}) {
+    if (index == 0) {
+      if (closeDrawer) Navigator.of(context).pop();
+      if (!widget.showSummary) {
+        _navigateClient('/client/dashboard');
+      }
+      return;
     }
+    if (index == 1) {
+      if (closeDrawer) Navigator.of(context).pop();
+      if (widget.showSummary) {
+        _navigateClient('/client/proposals');
+      }
+      return;
+    }
+    setState(() {
+      _selectedNavIndex = index;
+    });
+    if (closeDrawer) Navigator.of(context).pop();
+  }
 
-    return Container(
-      width: 220,
+  Widget _buildSidebar() {
+    const Color activeColor = Color(0xFFC10D00);
+    const Color sidebarBg = Color(0xFF2A2A2A);
+    const Color hoverFill = Color(0xFF3A3A3A);
+    const Color iconCircleIdle = Color(0xFF4A4A4A);
+    const Color leftAccent = Color(0xFF1565C0);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: _isSidebarCollapsed ? 80 : 300,
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1220).withValues(alpha: 0.96),
+        color: sidebarBg,
         border: Border(
+          left: const BorderSide(color: leftAccent, width: 3),
           right: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: const [
-                Icon(Icons.grid_view_rounded, color: Colors.white),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Client Portal',
-                    style: TextStyle(
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_isSidebarCollapsed)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
+                child: InkWell(
+                  onTap: () => setState(() => _isSidebarCollapsed = false),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: hoverFill,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.keyboard_arrow_right,
                       color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                      size: 24,
                     ),
                   ),
                 ),
-              ],
+              )
+            else
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 30, 16, 20),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: InkWell(
+                        onTap: () => setState(() => _isSidebarCollapsed = true),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: hoverFill,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.keyboard_arrow_left,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Column(
+                      children: [
+                        const SizedBox(height: 4),
+                        Image.asset(
+                          'assets/images/new icons for manager/khonology_logo.png',
+                          height: 36,
+                          fit: BoxFit.contain,
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Welcome to',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Proposal & SOW Builder',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 22),
+                        const Divider(color: Color(0x33FFFFFF), height: 1),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  children: [
+                    for (final item in _clientNavItems)
+                      _buildSidebarNavItem(
+                        index: item['index'] as int,
+                        label: item['label'] as String,
+                        icon: item['icon'] as IconData,
+                        isCollapsed: _isSidebarCollapsed,
+                        activeColor: activeColor,
+                        hoverFill: hoverFill,
+                        iconCircleIdle: iconCircleIdle,
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          navItem(0, Icons.dashboard_outlined, 'Dashboard'),
-          navItem(1, Icons.description_outlined, 'Proposals'),
-          navItem(2, Icons.folder_outlined, 'Documents'),
-          navItem(3, Icons.person_outline, 'Profile'),
-          const Spacer(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-            child: Text(
-              _clientEmail ?? '',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+            if (!_isSidebarCollapsed)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.14),
+              ),
+            Padding(
+              padding: EdgeInsets.only(
+                left: _isSidebarCollapsed ? 6 : 16,
+                right: _isSidebarCollapsed ? 6 : 16,
+                bottom: 18,
+              ),
+              child: _isSidebarCollapsed
+                  ? Tooltip(
+                      message: _clientEmail ?? '',
+                      child: const Icon(
+                        Icons.alternate_email_rounded,
+                        color: Colors.white70,
+                        size: 18,
+                      ),
+                    )
+                  : Text(
+                      _clientEmail ?? '',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.65),
+                        fontSize: 12,
+                      ),
+                    ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarNavItem({
+    required int index,
+    required String label,
+    required IconData icon,
+    required bool isCollapsed,
+    required Color activeColor,
+    required Color hoverFill,
+    required Color iconCircleIdle,
+  }) {
+    final bool selected = _selectedNavIndex == index;
+    final bool isHovering = _hoverSidebarIndex == index;
+    final int badgeCount = label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoverSidebarIndex = index),
+      onExit: (_) => setState(() => _hoverSidebarIndex = null),
+      child: Padding(
+        padding: isCollapsed
+            ? const EdgeInsets.symmetric(vertical: 5)
+            : const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Tooltip(
+          message: isCollapsed ? label : '',
+          child: InkWell(
+            onTap: () => _handleNavTap(index),
+            borderRadius: BorderRadius.circular(10),
+            child: isCollapsed
+                ? Center(
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? activeColor
+                            : isHovering
+                                ? hoverFill
+                                : iconCircleIdle,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: Colors.white, size: 24),
+                    ),
+                  )
+                : Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? activeColor
+                          : isHovering
+                              ? hoverFill
+                              : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? Colors.white.withValues(alpha: 0.22)
+                                : iconCircleIdle,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(icon, color: Colors.white, size: 24),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight:
+                                  selected ? FontWeight.w600 : FontWeight.w500,
+                              height: 1.2,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (badgeCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              badgeCount > 99 ? '99+' : badgeCount.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -638,25 +809,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
     return InkWell(
       onTap: () {
-        if (index == 0) {
-          Navigator.of(context).pop();
-          if (!widget.showSummary) {
-            _navigateClient('/client/dashboard');
-          }
-          return;
-        }
-        if (index == 1) {
-          Navigator.of(context).pop();
-          if (widget.showSummary) {
-            _navigateClient('/client/proposals');
-          }
-          return;
-        }
-        setState(() {
-          _selectedNavIndex = index;
-        });
+        _handleNavTap(index, closeDrawer: true);
         onTap?.call();
-        Navigator.of(context).pop();
       },
       child: Container(
         width: itemWidth,
