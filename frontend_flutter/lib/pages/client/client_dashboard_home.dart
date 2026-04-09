@@ -34,6 +34,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String? _clientEmail;
   String? _deviceId;
   String? _clientSessionToken;
+  bool _verificationInProgress = false;
+  bool _otpDialogOpen = false;
   List<Map<String, dynamic>> _proposals = [];
   Map<String, dynamic>? _selectedDocument;
   int _selectedNavIndex = 0;
@@ -229,6 +231,249 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     } catch (_) {}
   }
 
+  void _persistClientSessionToken(String token) {
+    final clean = token.trim();
+    if (clean.isEmpty) return;
+    _clientSessionToken = clean;
+    if (!kIsWeb) return;
+    try {
+      web.window.localStorage['lukens_client_session_token'] = clean;
+    } catch (_) {}
+  }
+
+  Future<Map<String, dynamic>?> _startClientDeviceSession(
+    String token, {
+    bool resend = false,
+  }) async {
+    if (_deviceId == null || _deviceId!.isEmpty) {
+      _deviceId = _getOrCreateDeviceId();
+    }
+
+    final resp = await http.post(
+      Uri.parse('$baseUrl/client/device-session/start'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (_deviceId != null && _deviceId!.isNotEmpty)
+          'X-Client-Device-Id': _deviceId!,
+        if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty)
+          'X-Client-Session-Token': _clientSessionToken!,
+      },
+      body: jsonEncode({
+        'token': token,
+        'device_id': _deviceId,
+        if (resend) 'resend': true,
+      }),
+    );
+
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      return null;
+    }
+    final decoded = jsonDecode(resp.body);
+    if (decoded is! Map) return null;
+    return Map<String, dynamic>.from(decoded);
+  }
+
+  Future<Map<String, dynamic>?> _verifyClientDeviceOtp(
+    String challengeId,
+    String otp,
+  ) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/client/device-session/verify-otp'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (_deviceId != null && _deviceId!.isNotEmpty)
+          'X-Client-Device-Id': _deviceId!,
+        if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty)
+          'X-Client-Session-Token': _clientSessionToken!,
+      },
+      body: jsonEncode({
+        'challenge_id': challengeId,
+        'otp': otp,
+      }),
+    );
+
+    final decoded = jsonDecode(resp.body);
+    if (decoded is! Map) return null;
+    final data = Map<String, dynamic>.from(decoded);
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      data['__http_status'] = resp.statusCode;
+      return data;
+    }
+    return data;
+  }
+
+  Future<void> _ensureDeviceVerifiedAndRetry({required String token}) async {
+    if (_verificationInProgress || _otpDialogOpen) return;
+    _verificationInProgress = true;
+
+    try {
+      final start = await _startClientDeviceSession(token);
+      if (start == null) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Unable to start verification. Please retry.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      final otpRequired = start['otp_required'] == true;
+      final sessionToken = start['session_token']?.toString();
+
+      if (!otpRequired &&
+          sessionToken != null &&
+          sessionToken.trim().isNotEmpty) {
+        _persistClientSessionToken(sessionToken);
+        await _loadClientProposals();
+        return;
+      }
+
+      final challengeId = start['challenge_id']?.toString() ?? '';
+      if (challengeId.trim().isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Verification required, but no challenge was created.';
+          _isLoading = false;
+        });
+        return;
+      }
+
+      await _showOtpDialog(token: token, challengeId: challengeId);
+    } finally {
+      _verificationInProgress = false;
+    }
+  }
+
+  Future<void> _showOtpDialog({
+    required String token,
+    required String challengeId,
+  }) async {
+    if (_otpDialogOpen) return;
+    _otpDialogOpen = true;
+    final controller = TextEditingController();
+    bool submitting = false;
+    String? error;
+
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: !submitting,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (context, setModalState) {
+              Future<void> verify() async {
+                final otp = controller.text.trim();
+                if (otp.isEmpty) {
+                  setModalState(
+                      () => error = 'Enter the code sent to your email.');
+                  return;
+                }
+
+                setModalState(() {
+                  submitting = true;
+                  error = null;
+                });
+
+                try {
+                  final result = await _verifyClientDeviceOtp(challengeId, otp);
+                  final sessionToken = result?['session_token']?.toString();
+                  if (sessionToken != null && sessionToken.trim().isNotEmpty) {
+                    _persistClientSessionToken(sessionToken);
+                    if (mounted) Navigator.of(context).pop();
+                    await _loadClientProposals();
+                    return;
+                  }
+
+                  final msg = result?['detail']?.toString() ?? 'Invalid code.';
+                  setModalState(() => error = msg);
+                } catch (e) {
+                  setModalState(() => error = e.toString());
+                } finally {
+                  setModalState(() => submitting = false);
+                }
+              }
+
+              Future<void> resend() async {
+                setModalState(() {
+                  submitting = true;
+                  error = null;
+                });
+                try {
+                  await _startClientDeviceSession(token, resend: true);
+                  setModalState(() {
+                    submitting = false;
+                    error = 'A new code has been sent.';
+                  });
+                } catch (e) {
+                  setModalState(() {
+                    submitting = false;
+                    error = e.toString();
+                  });
+                }
+              }
+
+              return AlertDialog(
+                title: const Text('Verify your device'),
+                content: SizedBox(
+                  width: 420,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Enter the code sent to your email'),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: controller,
+                        decoration: const InputDecoration(
+                          labelText: 'OTP code',
+                          border: OutlineInputBorder(),
+                        ),
+                        enabled: !submitting,
+                        keyboardType: TextInputType.number,
+                        onSubmitted: (_) => verify(),
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          error!,
+                          style: TextStyle(color: Colors.red.shade300),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed:
+                        submitting ? null : () => Navigator.of(context).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: submitting ? null : resend,
+                    child: const Text('Resend'),
+                  ),
+                  ElevatedButton(
+                    onPressed: submitting ? null : verify,
+                    child: submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Verify'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      _otpDialogOpen = false;
+      controller.dispose();
+    }
+  }
+
   List<Map<String, dynamic>> _filteredDocuments() {
     final idx = _selectedNavIndex;
     final docs = List<Map<String, dynamic>>.from(_proposals);
@@ -280,15 +525,104 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (id == null || _accessToken == null || _accessToken!.isEmpty) return;
 
-    final url =
-        '$baseUrl/api/client/proposals/$id/export/pdf?token=${Uri.encodeComponent(_accessToken!)}&download=1';
+    final statusLower = (doc['status'] ?? '').toString().toLowerCase();
+    final isSigned = statusLower.contains('client signed') ||
+        (statusLower.contains('signed') && !statusLower.contains('sent'));
+
+    final url = isSigned
+        ? '$baseUrl/api/client/proposals/$id/docusign/signed-pdf?token=${Uri.encodeComponent(_accessToken!)}'
+        : '$baseUrl/api/client/proposals/$id/export/pdf?token=${Uri.encodeComponent(_accessToken!)}&download=1';
     web.window.open(url, '_blank');
   }
 
   Future<void> _openSigningUrl(Map<String, dynamic> doc) async {
-    final signingUrl = doc['signing_url']?.toString() ?? '';
-    if (signingUrl.trim().isEmpty) return;
-    await launchUrlString(signingUrl, mode: LaunchMode.externalApplication);
+    final rawId = doc['id'];
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
+      return;
+    }
+
+    try {
+      final uri = Uri.parse(
+          '$baseUrl/api/client/proposals/$proposalId/docusign/signing-url');
+      final resp = await http
+          .post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'token': _accessToken,
+          'signer_name':
+              (doc['client_name']?.toString().trim().isNotEmpty ?? false)
+                  ? doc['client_name']?.toString().trim()
+                  : (_clientEmail ?? '').trim(),
+        }),
+      )
+          .timeout(
+        const Duration(seconds: 45),
+        onTimeout: () {
+          throw TimeoutException('Signing URL request timed out');
+        },
+      );
+
+      Map<String, dynamic>? decoded;
+      try {
+        final body = jsonDecode(resp.body);
+        if (body is Map) {
+          decoded = Map<String, dynamic>.from(body);
+        }
+      } catch (_) {}
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final fresh = decoded?['signing_url']?.toString() ?? '';
+        if (fresh.trim().isNotEmpty) {
+          if (kIsWeb) {
+            web.window.location.href = fresh;
+          } else {
+            await launchUrlString(fresh, mode: LaunchMode.externalApplication);
+          }
+          return;
+        }
+      }
+
+      final fallbackSigningUrl = doc['signing_url']?.toString() ?? '';
+      if (fallbackSigningUrl.trim().isNotEmpty) {
+        if (kIsWeb) {
+          web.window.location.href = fallbackSigningUrl;
+        } else {
+          await launchUrlString(fallbackSigningUrl,
+              mode: LaunchMode.externalApplication);
+        }
+        return;
+      }
+
+      if (mounted) {
+        final msg = decoded?['detail']?.toString() ??
+            'Unable to open DocuSign (HTTP ${resp.statusCode}).';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      final fallbackSigningUrl = doc['signing_url']?.toString() ?? '';
+      if (fallbackSigningUrl.trim().isNotEmpty) {
+        if (kIsWeb) {
+          web.window.location.href = fallbackSigningUrl;
+        } else {
+          await launchUrlString(fallbackSigningUrl,
+              mode: LaunchMode.externalApplication);
+        }
+        return;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unable to open DocuSign: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _showFallbackSignModal(Map<String, dynamic> doc) async {
@@ -1656,6 +1990,13 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             decoded = Map<String, dynamic>.from(body);
           }
         } catch (_) {}
+
+        final requiresDeviceSession =
+            decoded?['requires_device_session'] == true;
+        if (requiresDeviceSession) {
+          await _ensureDeviceVerifiedAndRetry(token: token);
+          return;
+        }
 
         if (!mounted) return;
         setState(() {

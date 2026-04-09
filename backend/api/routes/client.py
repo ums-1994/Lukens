@@ -1,7 +1,8 @@
 """
 Client role routes - Viewing proposals, commenting, approving/rejecting, signing
 """
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
+from io import BytesIO
 import os
 import json
 import traceback
@@ -21,6 +22,70 @@ from api.utils.helpers import log_status_change
 from api.utils.email import send_email
 
 bp = Blueprint('client', __name__)
+
+
+def _mojo_api_key() -> str:
+    return (os.getenv('MOJO_API_KEY') or '').strip()
+
+
+def _mojo_base_url() -> str:
+    return (os.getenv('MOJO_BASE_URL') or 'https://api.mojoauth.com').strip().rstrip('/')
+
+
+def _mojo_headers() -> dict:
+    key = _mojo_api_key()
+    if not key:
+        raise RuntimeError('MOJO_API_KEY is not configured')
+    return {
+        'x-api-key': key,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+    }
+
+
+def _mojo_send_email_otp(email: str) -> str:
+    import requests
+
+    resp = requests.post(
+        f"{_mojo_base_url()}/users/emailotp",
+        headers=_mojo_headers(),
+        json={'email': email},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"MojoAuth send OTP failed (HTTP {resp.status_code}): {resp.text}")
+    data = resp.json() if resp.content else {}
+    state_id = (data.get('state_id') or data.get('stateId') or '').strip()
+    if not state_id:
+        raise RuntimeError('MojoAuth did not return state_id')
+    return state_id
+
+
+def _mojo_resend_email_otp(state_id: str) -> None:
+    import requests
+
+    resp = requests.post(
+        f"{_mojo_base_url()}/users/emailotp/resend",
+        headers=_mojo_headers(),
+        json={'state_id': state_id},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"MojoAuth resend OTP failed (HTTP {resp.status_code}): {resp.text}")
+
+
+def _mojo_verify_email_otp(state_id: str, otp: str) -> dict:
+    import requests
+
+    resp = requests.post(
+        f"{_mojo_base_url()}/users/emailotp/verify",
+        headers=_mojo_headers(),
+        json={'state_id': state_id, 'otp': otp},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f"MojoAuth verify OTP failed (HTTP {resp.status_code}): {resp.text}")
+    return resp.json() if resp.content else {}
 
 
 def _now_utc():
@@ -207,6 +272,7 @@ def _ensure_client_device_session_schema(cursor):
             device_id TEXT NOT NULL,
             challenge_salt TEXT NOT NULL,
             otp_hash TEXT NOT NULL,
+            mojo_state_id TEXT NULL,
             attempts INTEGER NOT NULL DEFAULT 0,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             expires_at TIMESTAMPTZ NOT NULL,
@@ -214,6 +280,21 @@ def _ensure_client_device_session_schema(cursor):
         )
         """
     )
+
+    # Backfill: add mojo_state_id column if table existed before this feature.
+    try:
+        cursor.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name='client_device_otp_challenges' AND column_name='mojo_state_id'
+            """
+        )
+        has_col = cursor.fetchone() is not None
+        if not has_col:
+            cursor.execute("ALTER TABLE client_device_otp_challenges ADD COLUMN mojo_state_id TEXT")
+    except Exception:
+        pass
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS client_device_sessions (
@@ -625,6 +706,7 @@ def start_client_device_session():
         payload = request.get_json(silent=True) or {}
         token = payload.get('token') or request.args.get('token')
         device_id = (payload.get('device_id') or payload.get('deviceId') or '').strip()
+        resend = bool(payload.get('resend') or payload.get('resend_otp') or payload.get('resendOtp'))
         if not token:
             return {'detail': 'Access token required'}, 400
         if not device_id:
@@ -702,84 +784,76 @@ def start_client_device_session():
                   AND expires_at > %s
                 ORDER BY created_at DESC
                 LIMIT 1
-                """,
+                """
+                ,
                 (invitation_token, device_id, now),
             )
             existing = cursor.fetchone()
             if existing:
+                challenge_id = (existing.get('id') if isinstance(existing, dict) else existing[0])
+                if resend:
+                    # Only resend when explicitly requested by the client.
+                    try:
+                        cursor.execute(
+                            """
+                            SELECT mojo_state_id
+                            FROM client_device_otp_challenges
+                            WHERE id = %s
+                            """
+                            ,
+                            (challenge_id,),
+                        )
+                        sid_row = cursor.fetchone()
+                        mojo_state_id = None
+                        if sid_row:
+                            mojo_state_id = sid_row.get('mojo_state_id') if isinstance(sid_row, dict) else sid_row[0]
+                        if mojo_state_id:
+                            _mojo_resend_email_otp(str(mojo_state_id))
+                    except Exception as resend_exc:
+                        print(f"[CLIENT_PORTAL] MojoAuth resend failed (existing challenge): {resend_exc}")
+
                 expires_at = existing.get('expires_at') if isinstance(existing, dict) else None
                 conn.commit()
                 return {
                     'otp_required': True,
-                    'challenge_id': (existing.get('id') if isinstance(existing, dict) else existing[0]),
+                    'challenge_id': challenge_id,
                     'expires_at': expires_at.isoformat() if hasattr(expires_at, 'isoformat') else None,
                 }, 200
 
-            otp_code = f"{secrets.randbelow(1_000_000):06d}"
             challenge_id = secrets.token_urlsafe(24)
             challenge_salt = secrets.token_urlsafe(16)
-            otp_hash = _hash_client_otp(otp_code, challenge_salt)
             expires_at = now + timedelta(minutes=10)
+
+            invited_email = invitation.get('invited_email')
+            mojo_state_id = None
+            try:
+                if invited_email:
+                    mojo_state_id = _mojo_send_email_otp(invited_email)
+            except Exception as mojo_exc:
+                print(f"[CLIENT_PORTAL] MojoAuth send OTP failed: {mojo_exc}")
+                traceback.print_exc()
+                return {'detail': 'Failed to send OTP. Please try again.'}, 502
+
             cursor.execute(
                 """
-                INSERT INTO client_device_otp_challenges (id, invitation_token, device_id, challenge_salt, otp_hash, attempts, created_at, expires_at)
-                VALUES (%s, %s, %s, %s, %s, 0, %s, %s)
-                """,
-                (challenge_id, invitation_token, device_id, challenge_salt, otp_hash, now, expires_at),
+                INSERT INTO client_device_otp_challenges (id, invitation_token, device_id, challenge_salt, otp_hash, mojo_state_id, attempts, created_at, expires_at)
+                VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s)
+                """
+                ,
+                (challenge_id, invitation_token, device_id, challenge_salt, 'mojo', mojo_state_id, now, expires_at),
             )
             conn.commit()
-
-        invited_email = invitation.get('invited_email')
-        subject = 'Your client portal verification code'
-        html_content = f"""
-        <h2>Verification Code</h2>
-        <p>Use the code below to verify this new device for your client portal:</p>
-        <div style=\"text-align:center;margin:20px 0;\">
-          <div style=\"display:inline-block;background:#111;border:1px solid #333;border-radius:12px;padding:16px 24px;font-size:28px;letter-spacing:6px;color:#fff;font-weight:700;\">
-            {otp_code}
-          </div>
-        </div>
-        <p>This code expires in 10 minutes.</p>
-        """
-        try:
-            if invited_email:
-                ok = send_email(invited_email, subject, html_content)
-                print(f"[CLIENT_PORTAL] OTP email send attempted to={invited_email} ok={ok}")
-            else:
-                print("[CLIENT_PORTAL] OTP email not sent: invited_email missing")
-        except Exception as email_exc:
-            print(f"[CLIENT_PORTAL] OTP email send failed: {email_exc}")
-            traceback.print_exc()
 
         payload = {
             'otp_required': True,
             'challenge_id': challenge_id,
             'expires_at': expires_at.isoformat(),
         }
-        allow_otp_in_response = (os.getenv('ALLOW_OTP_IN_RESPONSE') or '').strip().lower() in (
-            '1',
-            'true',
-            'yes',
-        )
-        if allow_otp_in_response:
-            payload['otp_code'] = otp_code
-            print(f"[CLIENT_PORTAL] DEV otp_code disclosed challenge_id={challenge_id} otp_code={otp_code}")
-
         return payload, 200
     except Exception as e:
         print(f"[ERROR] start_client_device_session error: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
-
-
-@bp.post('/api/client/device-session/start')
-def start_client_device_session_api():
-    return start_client_device_session()
-
-
-@bp.post('/api/client/device-session/verify-otp')
-def verify_client_device_otp_api():
-    return verify_client_device_otp()
 
 
 @bp.post('/client/device-session/verify-otp')
@@ -798,10 +872,11 @@ def verify_client_device_otp():
             _ensure_client_device_session_schema(cursor)
             cursor.execute(
                 """
-                SELECT id, invitation_token, device_id, challenge_salt, otp_hash, attempts, expires_at, verified_at
+                SELECT id, invitation_token, device_id, challenge_salt, otp_hash, mojo_state_id, attempts, expires_at, verified_at
                 FROM client_device_otp_challenges
                 WHERE id = %s
-                """,
+                """
+                ,
                 (challenge_id,),
             )
             row = cursor.fetchone()
@@ -815,15 +890,21 @@ def verify_client_device_otp():
             attempts = int(row.get('attempts') or 0)
             if attempts >= 5:
                 return {'detail': 'Too many attempts'}, 429
-            expected = row.get('otp_hash')
-            actual = _hash_client_otp(otp, row.get('challenge_salt'))
-            if not hmac.compare_digest(str(expected or ''), str(actual or '')):
+
+            mojo_state_id = row.get('mojo_state_id')
+            if not mojo_state_id:
+                return {'detail': 'Invalid challenge_id'}, 404
+
+            try:
+                _mojo_verify_email_otp(str(mojo_state_id), otp)
+            except Exception:
                 cursor.execute(
                     """
                     UPDATE client_device_otp_challenges
                     SET attempts = attempts + 1
                     WHERE id = %s
-                    """,
+                    """
+                    ,
                     (challenge_id,),
                 )
                 conn.commit()
@@ -1320,6 +1401,12 @@ def get_client_proposals():
 
             client_email = invitation['invited_email']
             token_proposal_id = invitation.get('proposal_id')
+            
+            # Require device session verification (OTP) before returning proposals
+            ok, session_err, session_code = _require_client_device_session(cursor, invitation_token, device_id, session_token)
+            if not ok:
+                conn.commit()
+                return session_err, session_code
             
             column_info = _get_proposal_column_info(cursor)
             client_name_expr = column_info['client_name_expr']
@@ -2379,6 +2466,7 @@ def client_docusign_signing_url_api(proposal_id):
     right before redirecting the client to DocuSign so the link is signable.
     """
     try:
+        import time
         data = request.get_json(silent=True) or {}
         token = unquote(str(data.get('token') or request.args.get('token') or '')).strip().strip('"').strip("'")
         if not token:
@@ -2475,6 +2563,9 @@ def client_docusign_signing_url_api(proposal_id):
             # will not send a signing email and the portal URL is signable.
             client_user_id = invitation_token
 
+            t0 = time.monotonic()
+            print(f"[CLIENT_PORTAL] signing-url start proposal_id={proposal_id}")
+
             cursor.execute(
                 """
                 SELECT envelope_id, status
@@ -2503,6 +2594,7 @@ def client_docusign_signing_url_api(proposal_id):
             needs_new_envelope = envelope_id is None
             if envelope_id is not None:
                 try:
+                    t_recips0 = time.monotonic()
                     from docusign_esign import ApiClient, EnvelopesApi
                     from api.utils.docusign_utils import get_docusign_jwt_token
                     access_token = get_docusign_jwt_token()
@@ -2528,12 +2620,17 @@ def client_docusign_signing_url_api(proposal_id):
                     existing_client_user_id = getattr(found, 'client_user_id', None) if found is not None else None
                     if not existing_client_user_id:
                         needs_new_envelope = True
+                    print(
+                        "[CLIENT_PORTAL] signing-url inspected existing envelope "
+                        f"envelope_id={envelope_id} ms={(time.monotonic() - t_recips0) * 1000:.0f} captive={'yes' if existing_client_user_id else 'no'}"
+                    )
                 except Exception:
                     # If we cannot inspect recipients, fall back to the existing envelope.
                     needs_new_envelope = False
 
             if needs_new_envelope:
                 # Fetch proposal content and generate a fresh PDF
+                t_pdf0 = time.monotonic()
                 cursor.execute(
                     """
                     SELECT title, content
@@ -2554,6 +2651,9 @@ def client_docusign_signing_url_api(proposal_id):
                     client_name=signer_name,
                     client_email=signer_email,
                 )
+                print(f"[CLIENT_PORTAL] signing-url pdf generated ms={(time.monotonic() - t_pdf0) * 1000:.0f}")
+
+                t_env0 = time.monotonic()
                 env = create_docusign_envelope(
                     proposal_id=proposal_id,
                     pdf_bytes=pdf_content,
@@ -2563,11 +2663,16 @@ def client_docusign_signing_url_api(proposal_id):
                     return_url=return_url,
                     client_user_id=client_user_id,
                 )
+                print(f"[CLIENT_PORTAL] signing-url envelope created ms={(time.monotonic() - t_env0) * 1000:.0f}")
                 if isinstance(env, dict) and env.get('disabled'):
                     return env, 501
                 envelope_id = env.get('envelope_id') if isinstance(env, dict) else None
                 if not envelope_id:
                     return {'detail': 'Unable to create DocuSign envelope'}, 500
+
+                # If create_docusign_envelope already minted a recipient-view URL,
+                # reuse it to avoid an extra DocuSign roundtrip.
+                signing_url = env.get('signing_url') if isinstance(env, dict) else None
 
                 # Upsert signature record (portal envelope)
                 cursor.execute(
@@ -2579,7 +2684,6 @@ def client_docusign_signing_url_api(proposal_id):
                     (proposal_id,),
                 )
                 existing = cursor.fetchone()
-                signing_url = env.get('signing_url') if isinstance(env, dict) else None
                 if existing:
                     cursor.execute(
                         """
@@ -2615,6 +2719,14 @@ def client_docusign_signing_url_api(proposal_id):
                 )
                 conn.commit()
 
+                if signing_url:
+                    print(f"[CLIENT_PORTAL] signing-url done proposal_id={proposal_id} ms={(time.monotonic() - t0) * 1000:.0f} reused_url=yes")
+                    return {
+                        'envelope_id': envelope_id,
+                        'signing_url': signing_url,
+                    }, 200
+
+            t_view0 = time.monotonic()
             result = create_docusign_signing_url(
                 envelope_id=envelope_id,
                 signer_name=signer_name,
@@ -2622,6 +2734,7 @@ def client_docusign_signing_url_api(proposal_id):
                 return_url=return_url,
                 client_user_id=client_user_id,
             )
+            print(f"[CLIENT_PORTAL] signing-url recipient-view ms={(time.monotonic() - t_view0) * 1000:.0f}")
 
             if isinstance(result, dict) and result.get('disabled'):
                 return result, 501
@@ -2630,12 +2743,149 @@ def client_docusign_signing_url_api(proposal_id):
             if not signing_url:
                 return {'detail': 'Unable to create signing URL'}, 500
 
+            print(f"[CLIENT_PORTAL] signing-url done proposal_id={proposal_id} ms={(time.monotonic() - t0) * 1000:.0f} reused_url=no")
             return {
                 'envelope_id': envelope_id,
                 'signing_url': signing_url,
             }, 200
     except Exception as e:
         print(f"❌ Error creating client DocuSign signing URL: {e}")
+        traceback.print_exc()
+        return {'detail': str(e)}, 500
+
+
+@bp.get("/api/client/proposals/<int:proposal_id>/docusign/signed-pdf")
+def client_docusign_signed_pdf_api(proposal_id):
+    """Download the completed DocuSign combined PDF for a proposal.
+
+    Access is authorized via the client portal invitation token.
+    """
+    try:
+        token = unquote(str(request.args.get('token') or '')).strip().strip('"').strip("'")
+        if not token:
+            return {'detail': 'Token is required'}, 400
+
+        if os.getenv('ENABLE_DOCUSIGN', 'false').lower() != 'true':
+            return {
+                'disabled': True,
+                'reason': 'docusign_disabled',
+                'detail': 'DocuSign is disabled on this server. Set ENABLE_DOCUSIGN=true to enable.',
+            }, 501
+
+        with get_db_connection() as conn:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+            invitation_token = _resolve_invitation_token(cursor, token)
+
+            inv_info = _get_invitation_column_info(cursor)
+            token_col = inv_info['token_col']
+            email_col = inv_info['email_col']
+            expires_col = inv_info['expires_col']
+            if not token_col or not email_col:
+                return {'detail': 'Client invitations not configured'}, 500
+
+            expires_select = (
+                sql.Identifier(expires_col)
+                if expires_col
+                else sql.SQL('NULL::timestamp')
+            )
+            cursor.execute(
+                sql.SQL(
+                    """
+                    SELECT proposal_id, {email_col} as invited_email, {expires_col} as expires_at
+                    FROM collaboration_invitations
+                    WHERE {token_col} = %s
+                    """
+                ).format(
+                    email_col=sql.Identifier(email_col),
+                    expires_col=expires_select,
+                    token_col=sql.Identifier(token_col),
+                ),
+                (invitation_token,),
+            )
+            invitation = cursor.fetchone()
+            if not invitation:
+                return {'detail': 'Invalid access token'}, 404
+
+            expires_at = _as_utc_aware(invitation.get('expires_at'))
+            if expires_at and _now_utc() > expires_at:
+                return {'detail': 'Access token has expired'}, 403
+
+            token_proposal_id = invitation.get('proposal_id')
+            if token_proposal_id is not None and str(token_proposal_id) != str(proposal_id):
+                try:
+                    cursor.execute(
+                        """
+                        SELECT client_email
+                        FROM proposals
+                        WHERE id = %s
+                        """,
+                        (proposal_id,),
+                    )
+                    prow = cursor.fetchone()
+                    proposal_email = (prow.get('client_email') if isinstance(prow, dict) else None) or ''
+                    invited_email = (invitation.get('invited_email') or '').strip()
+                    if not proposal_email or not invited_email or proposal_email.strip().lower() != invited_email.strip().lower():
+                        return {'detail': 'Token is not valid for this proposal'}, 403
+                except Exception:
+                    return {'detail': 'Token is not valid for this proposal'}, 403
+
+            cursor.execute(
+                """
+                SELECT envelope_id
+                FROM proposal_signatures
+                WHERE proposal_id = %s
+                ORDER BY sent_at DESC
+                LIMIT 1
+                """,
+                (proposal_id,),
+            )
+            sig = cursor.fetchone()
+            envelope_id = sig.get('envelope_id') if isinstance(sig, dict) else None
+            if not envelope_id:
+                return {'detail': 'No DocuSign envelope found for this proposal'}, 404
+
+            cursor.execute(
+                """
+                SELECT title
+                FROM proposals
+                WHERE id = %s
+                """,
+                (proposal_id,),
+            )
+            prow = cursor.fetchone()
+            title = (prow.get('title') if isinstance(prow, dict) else None) or f"Proposal {proposal_id}"
+
+        # Fetch signed combined PDF from DocuSign
+        from docusign_esign import ApiClient, EnvelopesApi
+        from api.utils.docusign_utils import get_docusign_jwt_token
+
+        access_token = get_docusign_jwt_token()
+        account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
+        base_path = os.getenv('DOCUSIGN_BASE_PATH') or os.getenv(
+            'DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi'
+        )
+
+        api_client = ApiClient()
+        api_client.host = base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+        envelopes_api = EnvelopesApi(api_client)
+
+        # 'combined' returns a PDF that includes all docs plus the certificate
+        pdf_bytes = envelopes_api.get_document(account_id, envelope_id, document_id='combined')
+        if isinstance(pdf_bytes, str):
+            pdf_bytes = pdf_bytes.encode('utf-8')
+
+        filename = f"{title}.signed.pdf"
+        return send_file(
+            BytesIO(pdf_bytes),
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename,
+        )
+
+    except Exception as e:
+        print(f"❌ Error downloading signed DocuSign PDF: {e}")
         traceback.print_exc()
         return {'detail': str(e)}, 500
 
