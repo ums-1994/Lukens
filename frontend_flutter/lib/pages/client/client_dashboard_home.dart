@@ -60,9 +60,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   Widget _filterChip(String label, String value) {
     final selected = _dashboardDocFilter == value;
-    const chipHeight = 44.0;
-    const chipRadius = 22.0;
-    const chipBorderWidth = 1.2;
+    const chipHeight = 18.06;
+    const chipRadius = 20.14;
+    const chipBorderWidth = 1.23;
     const chipBorderColor = Color(0xFF6A6A6A);
 
     return InkWell(
@@ -75,7 +75,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       child: SizedBox(
         height: chipHeight,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+          padding: const EdgeInsets.symmetric(horizontal: 7),
           decoration: BoxDecoration(
             color: selected
                 ? const Color(0xFFC10D00)
@@ -92,7 +92,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 16,
+                fontSize: 7.5,
                 fontWeight: FontWeight.w700,
                 height: 1.0,
               ),
@@ -1253,6 +1253,32 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     );
   }
 
+  Widget _buildTopCornerAssetIcon(String assetPath) {
+    return SizedBox(
+      width: 44.87,
+      height: 44.87,
+      child: Image.asset(
+        assetPath,
+        width: 44.87,
+        height: 44.87,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) {
+          return Container(
+            width: 44.87,
+            height: 44.87,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(22.435),
+              border: Border.all(color: Colors.white24),
+            ),
+            child: const Icon(Icons.image_not_supported_outlined,
+                color: Colors.white70, size: 18),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildRecentDocuments() {
     final docs = _filteredDocuments();
     final isDocumentsTab = _selectedNavIndex == 2;
@@ -1361,41 +1387,79 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   final normalizedLabel = _normalizeStatus(rawStatus);
                   final lower = normalizedLabel.toLowerCase().trim();
                   Color bg = Colors.white.withValues(alpha: 0.10);
-                  Color fg = Colors.white.withValues(alpha: 0.80);
+                  Color fg = Colors.white;
                   String label = normalizedLabel.isEmpty
                       ? (rawStatus.isEmpty ? 'Unknown' : rawStatus)
                       : normalizedLabel;
+                  double chipWidth = 87.89;
 
                   if (lower.contains('signed')) {
-                    bg = const Color(0xFF27AE60).withValues(alpha: 0.18);
-                    fg = const Color(0xFF2ECC71);
+                    bg = const Color(0xFF6CA510);
+                    fg = Colors.white;
+                    chipWidth = 87.89;
                   } else if (lower.contains('pending') ||
                       lower.contains('released') ||
                       lower.contains('sent for signature') ||
                       lower.contains('in review')) {
-                    bg = const Color(0xFFF39C12).withValues(alpha: 0.20);
-                    fg = const Color(0xFFF1C40F);
+                    bg = const Color(0xFFEA990C);
+                    fg = Colors.white;
+                    chipWidth = 88.51;
+                    if (lower.contains('pending')) {
+                      label = 'Request Sent';
+                    }
                   } else if (lower.contains('rejected') ||
                       lower.contains('declined')) {
-                    bg = const Color(0xFFE74C3C).withValues(alpha: 0.18);
-                    fg = const Color(0xFFE74C3C);
+                    bg = const Color(0xFFE74C3C);
+                    fg = Colors.white;
+                    chipWidth = 88.51;
                   }
 
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: bg,
-                      borderRadius: BorderRadius.circular(999),
+                  return SizedBox(
+                    width: chipWidth,
+                    height: 23.36,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                          color: bg, borderRadius: BorderRadius.circular(26.06)),
+                      child: Center(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: fg,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            height: 1.0,
+                          ),
+                        ),
+                      ),
                     ),
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: fg,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
+                  );
+                }
+
+                Widget _viewChip(VoidCallback onPressed) {
+                  return SizedBox(
+                    width: 48.56,
+                    height: 23.36,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: const Color(0xFF7F7F7F),
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(48.56, 23.36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(26.06),
+                        ),
+                      ),
+                      onPressed: onPressed,
+                      child: const Text(
+                        'VIEW',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          height: 1.0,
+                        ),
                       ),
                     ),
                   );
@@ -1419,60 +1483,51 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Builder(
-                              builder: (context) {
-                                final lead =
-                                    '${_documentLabel(doc)} #${doc['id']}';
-                                final rawTitle =
-                                    (doc['title'] ?? 'Untitled').toString();
+                        child: Builder(
+                          builder: (context) {
+                            final lead = '${_documentLabel(doc)} #${doc['id']}';
+                            final rawTitle =
+                                (doc['title'] ?? 'Untitled').toString();
 
-                                // Figma text treatment: lead is bold small-caps, project part is italic.
-                                return SizedBox(
-                                  height: 18.44,
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                        maxWidth: 402.59),
-                                    child: RichText(
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      text: TextSpan(
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontFamily: 'Poppins',
-                                          fontSize: 9.22,
-                                          height: 1.017,
-                                          letterSpacing: 0.09,
-                                        ),
-                                        children: [
-                                          TextSpan(
-                                            text: '$lead ',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontFeatures: [
-                                                ui.FontFeature.enable('smcp')
-                                              ],
-                                            ),
-                                          ),
-                                          TextSpan(
-                                            text: '- $rawTitle',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w500,
-                                              fontStyle: FontStyle.italic,
-                                            ),
-                                          ),
+                            // Figma text treatment: lead is bold small-caps, project part is italic.
+                            return SizedBox(
+                              height: 18.44,
+                              child: RichText(
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                text: TextSpan(
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontFamily: 'Poppins',
+                                    fontSize: 9.22,
+                                    height: 1.0174,
+                                    letterSpacing: 0.0922,
+                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text: '$lead ',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontFeatures: [
+                                          ui.FontFeature.enable('smcp')
                                         ],
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 2),
-                            _statusChip(status),
-                          ],
+                                    TextSpan(
+                                      text: '- $rawTitle',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                        fontStyle: FontStyle.italic,
+                                        fontFeatures: [
+                                          ui.FontFeature.enable('smcp')
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ),
                       if (isDocumentsTab)
@@ -1481,19 +1536,27 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                           child: const Text('Download'),
                         )
                       else if (isProposalsTab)
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _selectedDocument = doc;
-                            });
-                            _openSigningUrl(doc);
-                          },
-                          child: const Text('View'),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _statusChip(status),
+                            const SizedBox(width: 7.84),
+                            _viewChip(() {
+                              setState(() {
+                                _selectedDocument = doc;
+                              });
+                              _openSigningUrl(doc);
+                            }),
+                          ],
                         )
                       else
-                        TextButton(
-                          onPressed: () => _openProposal(doc),
-                          child: const Text('View'),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _statusChip(status),
+                            const SizedBox(width: 7.84),
+                            _viewChip(() => _openProposal(doc)),
+                          ],
                         ),
                     ],
                   ),
@@ -1748,6 +1811,14 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildTopCornerAssetIcon('assets/images/Group 391 (2).png'),
+                  const SizedBox(width: 8),
+                  _buildTopCornerAssetIcon('assets/images/Group 398 (1).png'),
+                ],
               ),
             ],
           ),
