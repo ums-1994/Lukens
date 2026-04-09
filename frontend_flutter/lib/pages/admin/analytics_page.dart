@@ -11,10 +11,12 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import '../../api.dart';
 import '../../services/auth_service.dart';
+import '../../theme/manager_theme_controller.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/app_side_nav.dart';
 import '../../widgets/admin/admin_sidebar.dart';
+import '../../widgets/manager_page_background.dart';
 import '../creator/widgets/completion_rates_widget.dart';
 
 class AnalyticsPage extends StatefulWidget {
@@ -52,9 +54,22 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   );
   static const _currencySymbol = 'R';
 
+  String _resolvedScopeForCurrentUser() {
+    // Prevent empty analytics caused by invalid scope/role combinations.
+    final selected = _cycleTimeScope.trim().toLowerCase();
+    if (_isAdminUser()) {
+      return selected.isEmpty ? 'all' : selected;
+    }
+    if (selected == 'all') return 'self';
+    return selected.isEmpty ? 'self' : selected;
+  }
+
   @override
   void initState() {
     super.initState();
+    if (_isAdminUser()) {
+      _cycleTimeScope = 'all';
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final app = context.read<AppState>();
       app.fetchProposals();
@@ -82,6 +97,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final region = _globalRegionCtrl.text.trim();
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
+      final effectiveScope = _resolvedScopeForCurrentUser();
 
       final data = await context.read<AppState>().getClientEngagementAnalytics(
             startDate: startDate,
@@ -90,7 +106,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             proposalType: proposalType.isEmpty ? null : proposalType,
             client: client.isEmpty ? null : client,
             region: region.isEmpty ? null : region,
-            scope: _cycleTimeScope,
+            scope: effectiveScope,
             department: department.isEmpty ? null : department,
           );
       return data;
@@ -114,6 +130,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
       final currentUser = context.read<AppState>().currentUser;
       final department = (currentUser?['department'] ?? '').toString().trim();
       final app = context.read<AppState>();
+      final effectiveScope = _resolvedScopeForCurrentUser();
 
       final results = await Future.wait([
         app.getProposalPipelineAnalytics(
@@ -122,7 +139,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           owner: owner.isEmpty ? null : owner,
           proposalType: proposalType.isEmpty ? null : proposalType,
           client: client.isEmpty ? null : client,
-          scope: _cycleTimeScope,
+          scope: effectiveScope,
           department: department.isEmpty ? null : department,
           stage: _pipelineStageFilter,
         ),
@@ -132,7 +149,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           owner: owner.isEmpty ? null : owner,
           proposalType: proposalType.isEmpty ? null : proposalType,
           client: client.isEmpty ? null : client,
-          scope: _cycleTimeScope,
+          scope: effectiveScope,
           department: department.isEmpty ? null : department,
         ),
       ]);
@@ -148,12 +165,13 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   Widget _buildProposalPipelineView(Map<String, dynamic>? data) {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     final stagesRaw = (data?['stages'] as List?) ?? [];
     if (stagesRaw.isEmpty) {
       return Center(
         child: Text(
           'No pipeline proposals match these filters yet',
-          style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+          style: PremiumTheme.bodyMedium.copyWith(color: chrome.textSecondary),
         ),
       );
     }
@@ -220,7 +238,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   stage,
                   overflow: TextOverflow.ellipsis,
                   style: PremiumTheme.bodyMedium.copyWith(
-                    color: Colors.white,
+                    color: chrome.textPrimary,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -229,13 +247,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.25),
+                  color: chrome.isDark
+                      ? Colors.black.withValues(alpha: 0.25)
+                      : Colors.black.withValues(alpha: 0.06),
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: Text(
                   count.toString(),
                   style: PremiumTheme.labelMedium.copyWith(
-                    color: Colors.white,
+                    color: chrome.textPrimary,
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),
@@ -267,11 +287,14 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         },
         child: Container(
           padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-          ),
+          decoration: chrome.isDark
+              ? BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.10)),
+                )
+              : chrome.floatingPanelDecoration(radius: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -280,7 +303,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: PremiumTheme.bodyMedium.copyWith(
-                  color: Colors.white,
+                  color: chrome.textPrimary,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -292,7 +315,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                       client.isEmpty ? '-' : client,
                       overflow: TextOverflow.ellipsis,
                       style: PremiumTheme.bodyMedium.copyWith(
-                        color: Colors.white70,
+                        color: chrome.textSecondary,
                         fontSize: 12,
                       ),
                     ),
@@ -300,7 +323,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   Text(
                     formatDate(updated),
                     style: PremiumTheme.bodyMedium.copyWith(
-                      color: Colors.white70,
+                      color: chrome.textSecondary,
                       fontSize: 12,
                     ),
                   ),
@@ -314,7 +337,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                       owner.isEmpty ? '-' : owner,
                       overflow: TextOverflow.ellipsis,
                       style: PremiumTheme.bodyMedium.copyWith(
-                        color: Colors.white70,
+                        color: chrome.textSecondary,
                         fontSize: 12,
                       ),
                     ),
@@ -323,7 +346,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                     status.isEmpty ? '-' : status,
                     overflow: TextOverflow.ellipsis,
                     style: PremiumTheme.bodyMedium.copyWith(
-                      color: Colors.white70,
+                      color: chrome.textSecondary,
                       fontSize: 12,
                     ),
                   ),
@@ -359,7 +382,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                       child: Text(
                         'No proposals',
                         style: PremiumTheme.bodyMedium.copyWith(
-                          color: Colors.white54,
+                          color: chrome.textMuted,
                           fontSize: 12,
                         ),
                       ),
@@ -389,16 +412,18 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(999),
-                    border:
-                        Border.all(color: Colors.white.withValues(alpha: 0.18)),
-                  ),
+                  decoration: chrome.isDark
+                      ? BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.18)),
+                        )
+                      : chrome.floatingPanelDecoration(radius: 999),
                   child: Text(
                     'Filtered: ${_pipelineStageFilter!}',
                     style: PremiumTheme.bodyMedium.copyWith(
-                      color: Colors.white,
+                      color: chrome.textPrimary,
                       fontSize: 12,
                     ),
                   ),
@@ -2106,14 +2131,15 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     }).toList();
   }
 
-  Widget _buildGlobalFilterBar() {
-    Widget glassField({required Widget child}) {
+  Widget _analyticsFilterShell(ManagerChromeTheme chrome, Widget child) {
+    const pad = EdgeInsets.symmetric(horizontal: 10, vertical: 6);
+    if (chrome.isDark) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: pad,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.04),
               borderRadius: BorderRadius.circular(10),
@@ -2124,6 +2150,20 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         ),
       );
     }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: pad,
+        decoration: chrome.floatingPanelDecoration(radius: 10),
+        child: child,
+      ),
+    );
+  }
+
+  Widget _buildGlobalFilterBar() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    Widget glassField({required Widget child}) =>
+        _analyticsFilterShell(chrome, child);
 
     return Wrap(
       spacing: 10,
@@ -2135,12 +2175,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: glassField(
             child: TextField(
               controller: _globalClientCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: const InputDecoration(
+              style: TextStyle(color: chrome.textPrimary, fontSize: 12),
+              decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
                 hintText: 'Client (optional)',
-                hintStyle: TextStyle(color: Colors.white54),
+                hintStyle: TextStyle(color: chrome.textMuted),
               ),
               onSubmitted: (_) => setState(() {}),
             ),
@@ -2151,12 +2191,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: glassField(
             child: TextField(
               controller: _globalOwnerCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: const InputDecoration(
+              style: TextStyle(color: chrome.textPrimary, fontSize: 12),
+              decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
                 hintText: 'Owner (optional)',
-                hintStyle: TextStyle(color: Colors.white54),
+                hintStyle: TextStyle(color: chrome.textMuted),
               ),
               onSubmitted: (_) => setState(() {}),
             ),
@@ -2167,12 +2207,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: glassField(
             child: TextField(
               controller: _globalProposalTypeCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: const InputDecoration(
+              style: TextStyle(color: chrome.textPrimary, fontSize: 12),
+              decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
                 hintText: 'Proposal type (optional)',
-                hintStyle: TextStyle(color: Colors.white54),
+                hintStyle: TextStyle(color: chrome.textMuted),
               ),
               onSubmitted: (_) => setState(() {}),
             ),
@@ -2183,12 +2223,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: glassField(
             child: TextField(
               controller: _globalRegionCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: const InputDecoration(
+              style: TextStyle(color: chrome.textPrimary, fontSize: 12),
+              decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
                 hintText: 'Region (optional)',
-                hintStyle: TextStyle(color: Colors.white54),
+                hintStyle: TextStyle(color: chrome.textMuted),
               ),
               onSubmitted: (_) => setState(() {}),
             ),
@@ -2199,7 +2239,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             mainAxisSize: MainAxisSize.min,
             children: [
               IconButton(
-                icon: const Icon(Icons.clear, color: Colors.white, size: 18),
+                icon: Icon(Icons.clear, color: chrome.textPrimary, size: 18),
                 tooltip: 'Clear filters',
                 onPressed: () {
                   setState(() {
@@ -2353,8 +2393,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final isAdminUser = _isAdminUser();
     _calculatePipelineCounts(filtered);
     return Scaffold(
-      body: Container(
-        color: Colors.transparent,
+      backgroundColor: Colors.transparent,
+      body: ManagerPageBackground(
         child: Row(
           children: [
             isAdminUser
@@ -2746,47 +2786,53 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   Widget _buildGlassDropdown() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(8),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.05),
-            border: Border.all(color: const Color(0x33FFFFFF)),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedPeriod,
-                dropdownColor: const Color(0xFF1A1F26),
-                style: const TextStyle(color: Colors.white),
-                icon:
-                    const Icon(Icons.keyboard_arrow_down, color: Colors.white),
-                items: [
-                  'Last 7 Days',
-                  'Last 30 Days',
-                  'Last 90 Days',
-                  'This Year'
-                ].map((String value) {
-                  return DropdownMenuItem<String>(
-                    value: value,
-                    child: Text(value),
-                  );
-                }).toList(),
-                onChanged: (String? newValue) {
-                  setState(() {
-                    _selectedPeriod = newValue!;
-                    _cycleTimeRefreshTick++;
-                  });
-                },
-              ),
-            ),
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final inner = Container(
+      decoration: chrome.isDark
+          ? BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              border: Border.all(color: const Color(0x33FFFFFF)),
+              borderRadius: BorderRadius.circular(8),
+            )
+          : chrome.floatingPanelDecoration(radius: 8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: _selectedPeriod,
+            dropdownColor: chrome.dropdownSurface,
+            style: TextStyle(color: chrome.textPrimary),
+            icon: Icon(Icons.keyboard_arrow_down, color: chrome.textPrimary),
+            items: [
+              'Last 7 Days',
+              'Last 30 Days',
+              'Last 90 Days',
+              'This Year'
+            ].map((String value) {
+              return DropdownMenuItem<String>(
+                value: value,
+                child: Text(value,
+                    style: TextStyle(color: chrome.textPrimary)),
+              );
+            }).toList(),
+            onChanged: (String? newValue) {
+              setState(() {
+                _selectedPeriod = newValue!;
+                _cycleTimeRefreshTick++;
+              });
+            },
           ),
         ),
       ),
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: chrome.isDark
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: inner,
+            )
+          : inner,
     );
   }
 
@@ -2797,13 +2843,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     bool isPositive,
     String subtitle,
   ) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final radius = chrome.isDark ? 16.0 : 10.0;
+    final decoration = chrome.isDark
+        ? BoxDecoration(
             gradient: LinearGradient(
               colors: [
                 Colors.white.withValues(alpha: 0.1),
@@ -2812,67 +2855,82 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(radius),
             border: Border.all(
               color: PremiumTheme.glassWhiteBorder,
               width: 1.5,
             ),
+          )
+        : chrome.floatingPanelDecoration(radius: radius, borderWidth: 1.5);
+
+    final body = Container(
+      padding: const EdgeInsets.all(24),
+      decoration: decoration,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: PremiumTheme.bodyMedium.copyWith(
+              color: chrome.textSecondary,
+            ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: PremiumTheme.displayMedium.copyWith(
+              fontSize: 32,
+              color: chrome.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
             children: [
-              Text(
-                title,
-                style: PremiumTheme.bodyMedium.copyWith(
-                  color: PremiumTheme.textSecondary,
+              Icon(
+                isPositive ? Icons.trending_up : Icons.trending_down,
+                size: 16,
+                color: isPositive ? PremiumTheme.success : PremiumTheme.error,
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  change,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: isPositive
+                        ? PremiumTheme.success
+                        : PremiumTheme.error,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
-              Text(
-                value,
-                style: PremiumTheme.displayMedium.copyWith(fontSize: 32),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(
-                    isPositive ? Icons.trending_up : Icons.trending_down,
-                    size: 16,
-                    color:
-                        isPositive ? PremiumTheme.success : PremiumTheme.error,
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: chrome.textMuted,
                   ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Text(
-                      change,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isPositive
-                            ? PremiumTheme.success
-                            : PremiumTheme.error,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        color: Color(0xFF6B7280),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
-        ),
+        ],
       ),
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: chrome.isDark
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: body,
+            )
+          : body,
     );
   }
 
@@ -2881,13 +2939,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     Widget chart, {
     double height = 300,
   }) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final radius = chrome.isDark ? 16.0 : 10.0;
+    final decoration = chrome.isDark
+        ? BoxDecoration(
             gradient: LinearGradient(
               colors: [
                 Colors.white.withValues(alpha: 0.1),
@@ -2896,22 +2951,38 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(radius),
             border: Border.all(
               color: PremiumTheme.glassWhiteBorder,
               width: 1.5,
             ),
+          )
+        : chrome.floatingPanelDecoration(radius: radius, borderWidth: 1.5);
+
+    final body = Container(
+      padding: const EdgeInsets.all(24),
+      decoration: decoration,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: PremiumTheme.titleMedium.copyWith(color: chrome.textPrimary),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: PremiumTheme.titleMedium),
-              const SizedBox(height: 24),
-              SizedBox(height: height, child: chart),
-            ],
-          ),
-        ),
+          const SizedBox(height: 24),
+          SizedBox(height: height, child: chart),
+        ],
       ),
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: chrome.isDark
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: body,
+            )
+          : body,
     );
   }
 
@@ -3232,24 +3303,21 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   Widget _buildGlassPerformanceTable(List<_ProposalPerformanceRow> rows) {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     if (rows.isEmpty) {
       return SizedBox(
         height: 160,
         child: Center(
           child: Text(
             'No recent proposals yet',
-            style: PremiumTheme.bodyMedium,
+            style: PremiumTheme.bodyMedium.copyWith(color: chrome.textSecondary),
           ),
         ),
       );
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
+    final radius = chrome.isDark ? 16.0 : 10.0;
+    final outerDecoration = chrome.isDark
+        ? BoxDecoration(
             gradient: LinearGradient(
               colors: [
                 Colors.white.withValues(alpha: 0.1),
@@ -3258,68 +3326,95 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(radius),
             border: Border.all(
               color: PremiumTheme.glassWhiteBorder,
               width: 1.5,
             ),
+          )
+        : chrome.floatingPanelDecoration(radius: radius, borderWidth: 1.5);
+
+    final tableBorder = chrome.isDark
+        ? const Color(0xFF2D3748)
+        : chrome.divider;
+
+    final inner = Container(
+      padding: const EdgeInsets.all(24),
+      decoration: outerDecoration,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recent Proposals',
+            style: PremiumTheme.titleMedium.copyWith(color: chrome.textPrimary),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 24),
+          Table(
+            columnWidths: const {
+              0: FlexColumnWidth(3),
+              1: FlexColumnWidth(1.5),
+              2: FlexColumnWidth(1.5),
+              3: FlexColumnWidth(1),
+              4: FlexColumnWidth(1.5),
+            },
             children: [
-              Text('Recent Proposals', style: PremiumTheme.titleMedium),
-              const SizedBox(height: 24),
-              Table(
-                columnWidths: const {
-                  0: FlexColumnWidth(3),
-                  1: FlexColumnWidth(1.5),
-                  2: FlexColumnWidth(1.5),
-                  3: FlexColumnWidth(1),
-                  4: FlexColumnWidth(1.5),
-                },
-                children: [
-                  TableRow(
-                    decoration: const BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(
-                          color: Color(0xFF2D3748),
-                          width: 2,
-                        ),
-                      ),
+              TableRow(
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(
+                      color: tableBorder,
+                      width: 2,
                     ),
-                    children: [
-                      _buildTableHeader('PROPOSAL'),
-                      _buildTableHeader('VALUE'),
-                      _buildTableHeader('STATUS'),
-                      _buildTableHeader('DAYS'),
-                      _buildTableHeader('WIN PROBABILITY'),
-                    ],
                   ),
-                  for (final proposal in rows) _buildTableRow(proposal),
+                ),
+                children: [
+                  _buildTableHeader('PROPOSAL', chrome),
+                  _buildTableHeader('VALUE', chrome),
+                  _buildTableHeader('STATUS', chrome),
+                  _buildTableHeader('DAYS', chrome),
+                  _buildTableHeader('WIN PROBABILITY', chrome),
                 ],
               ),
+              for (final proposal in rows) _buildTableRow(proposal, chrome),
             ],
           ),
-        ),
+        ],
       ),
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: chrome.isDark
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+              child: inner,
+            )
+          : inner,
     );
   }
 
-  Widget _buildTableHeader(String text) {
+  Widget _buildTableHeader(String text, ManagerChromeTheme chrome) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
       child: Text(
         text,
-        style: PremiumTheme.labelMedium
-            .copyWith(color: PremiumTheme.textSecondary),
+        style: PremiumTheme.labelMedium.copyWith(color: chrome.textSecondary),
       ),
     );
   }
 
-  TableRow _buildTableRow(_ProposalPerformanceRow data) {
+  TableRow _buildTableRow(
+      _ProposalPerformanceRow data, ManagerChromeTheme chrome) {
+    final rowBorder = chrome.isDark
+        ? const Color(0xFF2D3748)
+        : chrome.divider;
+    final progressTrack = chrome.isDark
+        ? const Color(0xFF2D3748)
+        : Colors.black.withValues(alpha: 0.08);
+
     return TableRow(
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFF2D3748), width: 1)),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: rowBorder, width: 1)),
       ),
       children: [
         Padding(
@@ -3327,14 +3422,17 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: Text(
             data.title,
             style: PremiumTheme.bodyMedium.copyWith(
-              color: Colors.white,
+              color: chrome.textPrimary,
               fontWeight: FontWeight.w500,
             ),
           ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-          child: Text(data.valueLabel, style: PremiumTheme.bodyMedium),
+          child: Text(
+            data.valueLabel,
+            style: PremiumTheme.bodyMedium.copyWith(color: chrome.textSecondary),
+          ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
@@ -3359,7 +3457,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-          child: Text(data.daysOpen.toString(), style: PremiumTheme.bodyMedium),
+          child: Text(
+            data.daysOpen.toString(),
+            style: PremiumTheme.bodyMedium.copyWith(color: chrome.textSecondary),
+          ),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
@@ -3368,7 +3469,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               Expanded(
                 child: LinearProgressIndicator(
                   value: data.probability.clamp(0, 1),
-                  backgroundColor: const Color(0xFF2D3748),
+                  backgroundColor: progressTrack,
                   valueColor: AlwaysStoppedAnimation<Color>(data.statusColor),
                   minHeight: 6,
                   borderRadius: BorderRadius.circular(3),
@@ -3434,6 +3535,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
 
   Widget _buildCycleTimeContent(Map<String, dynamic>? cycleTimeAnalytics) {
     _cycleTimeRefreshTick;
+    final chrome = context.watch<ManagerThemeController>().chrome;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -3464,13 +3566,13 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                   child: Text(
                     'No proposals found for these filters.',
                     style: PremiumTheme.bodyMedium.copyWith(
-                      color: Colors.white70,
+                      color: chrome.textSecondary,
                     ),
                   ),
                 );
               }
 
-              return _buildCycleTimeCards(byStage, data?['bottleneck']);
+              return _buildCycleTimeCards(byStage, data?['bottleneck'], chrome);
             },
           ),
         ),
@@ -3479,23 +3581,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   Widget _buildCycleTimeFilterBar() {
-    Widget glassField({required Widget child}) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.04),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-            ),
-            child: child,
-          ),
-        ),
-      );
-    }
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    Widget glassField({required Widget child}) =>
+        _analyticsFilterShell(chrome, child);
 
     return Wrap(
       spacing: 10,
@@ -3506,12 +3594,23 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: _cycleTimeScope,
-              dropdownColor: const Color(0xFF0A0E27),
-              style: const TextStyle(color: Colors.white),
-              icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
-              items: const [
-                DropdownMenuItem(value: 'team', child: Text('Team')),
-                DropdownMenuItem(value: 'self', child: Text('My')),
+              dropdownColor: chrome.dropdownSurface,
+              style: TextStyle(color: chrome.textPrimary),
+              icon: Icon(Icons.keyboard_arrow_down, color: chrome.textPrimary),
+              items: [
+                if (_isAdminUser())
+                  DropdownMenuItem(
+                      value: 'all',
+                      child: Text('All',
+                          style: TextStyle(color: chrome.textPrimary))),
+                DropdownMenuItem(
+                    value: 'team',
+                    child: Text('Team',
+                        style: TextStyle(color: chrome.textPrimary))),
+                DropdownMenuItem(
+                    value: 'self',
+                    child: Text('My',
+                        style: TextStyle(color: chrome.textPrimary))),
               ],
               onChanged: (v) {
                 if (v == null) return;
@@ -3528,12 +3627,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: glassField(
             child: TextField(
               controller: _cycleTimeOwnerCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: const InputDecoration(
+              style: TextStyle(color: chrome.textPrimary, fontSize: 12),
+              decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
                 hintText: 'Owner (optional)',
-                hintStyle: TextStyle(color: Colors.white54),
+                hintStyle: TextStyle(color: chrome.textMuted),
               ),
               onSubmitted: (_) => setState(() => _cycleTimeRefreshTick++),
             ),
@@ -3544,12 +3643,12 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: glassField(
             child: TextField(
               controller: _cycleTimeProposalTypeCtrl,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
-              decoration: const InputDecoration(
+              style: TextStyle(color: chrome.textPrimary, fontSize: 12),
+              decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
                 hintText: 'Proposal type (optional)',
-                hintStyle: TextStyle(color: Colors.white54),
+                hintStyle: TextStyle(color: chrome.textMuted),
               ),
               onSubmitted: (_) => setState(() => _cycleTimeRefreshTick++),
             ),
@@ -3559,8 +3658,8 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('Auto',
-                  style: TextStyle(color: Colors.white, fontSize: 12)),
+              Text('Auto',
+                  style: TextStyle(color: chrome.textPrimary, fontSize: 12)),
               const SizedBox(width: 6),
               Switch(
                 value: _cycleTimeAutoRefresh,
@@ -3576,7 +3675,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
         ),
         glassField(
           child: IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white, size: 18),
+            icon: Icon(Icons.refresh, color: chrome.textPrimary, size: 18),
             onPressed: () => setState(() => _cycleTimeRefreshTick++),
             tooltip: 'Refresh',
           ),
@@ -3586,7 +3685,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   Widget _buildCycleTimeCards(
-      List<dynamic> byStage, Map<String, dynamic>? bottleneck) {
+    List<dynamic> byStage,
+    Map<String, dynamic>? bottleneck,
+    ManagerChromeTheme chrome,
+  ) {
     String formatDays(num? days) {
       if (days == null) return '-';
       if (days < 1) {
@@ -3608,6 +3710,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
             'Current Bottleneck: ${bottleneck['stage']}',
             style: PremiumTheme.bodyLarge.copyWith(
               fontWeight: FontWeight.bold,
+              color: chrome.textPrimary,
             ),
           ),
           const SizedBox(height: 8),
@@ -3626,19 +3729,31 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               final bottleneckStage = bottleneck?['stage']?.toString();
               final isBottleneck =
                   bottleneckStage != null && bottleneckStage == stage;
+              final borderColor = isBottleneck
+                  ? const Color(0xFFE74C3C)
+                  : (chrome.isDark
+                      ? Colors.white.withValues(alpha: 0.08)
+                      : chrome.divider);
               return Container(
                 width: 220,
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.03),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: isBottleneck
-                        ? const Color(0xFFE74C3C)
-                        : Colors.white.withValues(alpha: 0.08),
-                    width: isBottleneck ? 2 : 1,
-                  ),
-                ),
+                decoration: chrome.isDark
+                    ? BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.03),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: borderColor,
+                          width: isBottleneck ? 2 : 1,
+                        ),
+                      )
+                    : BoxDecoration(
+                        color: chrome.floatingFill,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: borderColor,
+                          width: isBottleneck ? 2 : 1,
+                        ),
+                      ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -3647,21 +3762,24 @@ class _AnalyticsPageState extends State<AnalyticsPage>
                       stage,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
+                      style: TextStyle(
+                        color: chrome.textPrimary,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       formatDays(avgDays),
-                      style: PremiumTheme.displayMedium.copyWith(fontSize: 22),
+                      style: PremiumTheme.displayMedium.copyWith(
+                        fontSize: 22,
+                        color: chrome.textPrimary,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '$samples samples',
                       style: PremiumTheme.bodyMedium.copyWith(
-                        color: PremiumTheme.textSecondary,
+                        color: chrome.textSecondary,
                       ),
                     ),
                   ],
@@ -3717,37 +3835,46 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     IconData icon,
     VoidCallback onPressed,
   ) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: InkWell(
-          onTap: onPressed,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final decoration = chrome.isDark
+        ? BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+          )
+        : chrome.floatingPanelDecoration(radius: 10);
+
+    final ink = InkWell(
+      onTap: onPressed,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: decoration,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: chrome.textPrimary, size: 16),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: chrome.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: Colors.white, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          ],
         ),
       ),
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: chrome.isDark
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: ink,
+            )
+          : ink,
     );
   }
 
@@ -3775,6 +3902,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               );
               break;
             case 'My Proposals':
+            case 'Proposals':
               Navigator.pushReplacementNamed(context, '/proposals');
               break;
             case 'Templates':

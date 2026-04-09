@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
+import 'dart:ui' as ui;
 import 'package:http/http.dart' as http;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:web/web.dart' as web;
@@ -52,6 +53,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     'rejected': 0,
     'viewed': 0,
   };
+  bool _isSidebarCollapsed = false;
+  int? _hoverSidebarIndex;
+
+  static const List<Map<String, dynamic>> _clientNavItems = [
+    {'index': 0, 'label': 'Dashboard', 'icon': Icons.dashboard_outlined},
+    {'index': 1, 'label': 'Proposals', 'icon': Icons.description_outlined},
+    {'index': 2, 'label': 'Documents', 'icon': Icons.folder_outlined},
+    {'index': 3, 'label': 'Profile', 'icon': Icons.person_outline},
+  ];
 
   bool _isSow(Map<String, dynamic> p) {
     final t =
@@ -63,31 +73,43 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   Widget _filterChip(String label, String value) {
     final selected = _dashboardDocFilter == value;
+    const chipHeight = 18.06;
+    const chipRadius = 20.14;
+    const chipBorderWidth = 1.23;
+    const chipBorderColor = Color(0xFF6A6A6A);
+
     return InkWell(
       onTap: () {
         setState(() {
           _dashboardDocFilter = value;
         });
       },
-      borderRadius: BorderRadius.circular(999),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected
-              ? PremiumTheme.primaryRed.withValues(alpha: 0.85)
-              : Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-              color: selected
-                  ? PremiumTheme.primaryRed.withValues(alpha: 0.9)
-                  : Colors.white.withValues(alpha: 0.12)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+      borderRadius: BorderRadius.circular(chipRadius),
+      child: SizedBox(
+        height: chipHeight,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFFC10D00)
+                : Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(chipRadius),
+            border: Border.all(
+                color: selected ? const Color(0xFFC10D00) : chipBorderColor,
+                width: chipBorderWidth),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 7.5,
+                fontWeight: FontWeight.w700,
+                height: 1.0,
+              ),
+            ),
           ),
         ),
       ),
@@ -507,9 +529,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return docs.where((d) {
         final status = (d['status'] ?? '').toString().toLowerCase();
         switch (_dashboardDocFilter) {
+          case 'draft':
+            return status.contains('draft');
           case 'released':
             return status.contains('sent to client') ||
                 status.contains('released');
+          case 'pending':
+            return status.contains('pending') ||
+                status.contains('review') ||
+                status.contains('sent for signature');
           case 'signed':
             return status.contains('signed');
           case 'changes_requested':
@@ -792,155 +820,311 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     );
   }
 
-  Widget _buildSidebar() {
-    Widget navItem(int index, IconData icon, String label,
-        {VoidCallback? afterTap}) {
-      final selected = _selectedNavIndex == index;
-      final badgeCount =
-          label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
-      return InkWell(
-        onTap: () {
-          if (index == 0) {
-            if (!widget.showSummary) {
-              _navigateClient('/client/dashboard');
-            }
-            return;
-          }
-          if (index == 1) {
-            if (widget.showSummary) {
-              _navigateClient('/client/proposals');
-            }
-            return;
-          }
-          setState(() {
-            _selectedNavIndex = index;
-          });
-          afterTap?.call();
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: selected
-                ? Colors.white.withValues(alpha: 0.12)
-                : Colors.transparent,
-            border: selected
-                ? Border(
-                    left: BorderSide(color: PremiumTheme.primaryRed, width: 3),
-                  )
-                : null,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              Icon(icon,
-                  color: selected ? Colors.white : Colors.white70, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: selected ? Colors.white : Colors.white70,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-              ),
-              if (badgeCount > 0)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: PremiumTheme.primaryRed,
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    badgeCount > 99 ? '99+' : badgeCount.toString(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      );
+  void _handleNavTap(int index, {bool closeDrawer = false}) {
+    if (index == 0) {
+      if (closeDrawer) Navigator.of(context).pop();
+      if (!widget.showSummary) {
+        _navigateClient('/client/dashboard');
+      }
+      return;
     }
+    if (index == 1) {
+      if (closeDrawer) Navigator.of(context).pop();
+      if (widget.showSummary) {
+        _navigateClient('/client/proposals');
+      }
+      return;
+    }
+    setState(() {
+      _selectedNavIndex = index;
+    });
+    if (closeDrawer) Navigator.of(context).pop();
+  }
 
-    return Container(
-      width: 220,
+  Widget _buildSidebar() {
+    const Color activeColor = Color(0xFFC10D00);
+    const Color sidebarBg = Color(0xFF2A2A2A);
+    const Color hoverFill = Color(0xFF3A3A3A);
+    const Color iconCircleIdle = Color(0xFF4A4A4A);
+    const Color leftAccent = Color(0xFF1565C0);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: _isSidebarCollapsed ? 80 : 300,
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1220).withValues(alpha: 0.96),
+        color: sidebarBg,
         border: Border(
+          left: const BorderSide(color: leftAccent, width: 3),
           right: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: const [
-                Icon(Icons.grid_view_rounded, color: Colors.white),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Client Portal',
-                    style: TextStyle(
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_isSidebarCollapsed)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
+                child: InkWell(
+                  onTap: () => setState(() => _isSidebarCollapsed = false),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: hoverFill,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.keyboard_arrow_right,
                       color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                      size: 24,
                     ),
                   ),
                 ),
-              ],
+              )
+            else
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 30, 16, 20),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: InkWell(
+                        onTap: () => setState(() => _isSidebarCollapsed = true),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: hoverFill,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.keyboard_arrow_left,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Column(
+                      children: [
+                        const SizedBox(height: 4),
+                        Image.asset(
+                          'assets/images/new icons for manager/khonology_logo.png',
+                          height: 36,
+                          fit: BoxFit.contain,
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Welcome to',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Proposal & SOW Builder',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 22),
+                        const Divider(color: Color(0x33FFFFFF), height: 1),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  children: [
+                    for (final item in _clientNavItems)
+                      _buildSidebarNavItem(
+                        index: item['index'] as int,
+                        label: item['label'] as String,
+                        icon: item['icon'] as IconData,
+                        isCollapsed: _isSidebarCollapsed,
+                        activeColor: activeColor,
+                        hoverFill: hoverFill,
+                        iconCircleIdle: iconCircleIdle,
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          navItem(0, Icons.dashboard_outlined, 'Dashboard'),
-          navItem(1, Icons.description_outlined, 'Proposals'),
-          navItem(2, Icons.folder_outlined, 'Documents'),
-          navItem(3, Icons.person_outline, 'Profile'),
-          const Spacer(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-            child: Text(
-              _clientEmail ?? '',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+            if (!_isSidebarCollapsed)
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.14),
+              ),
+            Padding(
+              padding: EdgeInsets.only(
+                left: _isSidebarCollapsed ? 6 : 16,
+                right: _isSidebarCollapsed ? 6 : 16,
+                bottom: 18,
+              ),
+              child: _isSidebarCollapsed
+                  ? Tooltip(
+                      message: _clientEmail ?? '',
+                      child: const Icon(
+                        Icons.alternate_email_rounded,
+                        color: Colors.white70,
+                        size: 18,
+                      ),
+                    )
+                  : Text(
+                      _clientEmail ?? '',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.65),
+                        fontSize: 12,
+                      ),
+                    ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarNavItem({
+    required int index,
+    required String label,
+    required IconData icon,
+    required bool isCollapsed,
+    required Color activeColor,
+    required Color hoverFill,
+    required Color iconCircleIdle,
+  }) {
+    final bool selected = _selectedNavIndex == index;
+    final bool isHovering = _hoverSidebarIndex == index;
+    final int badgeCount = label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoverSidebarIndex = index),
+      onExit: (_) => setState(() => _hoverSidebarIndex = null),
+      child: Padding(
+        padding: isCollapsed
+            ? const EdgeInsets.symmetric(vertical: 5)
+            : const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Tooltip(
+          message: isCollapsed ? label : '',
+          child: InkWell(
+            onTap: () => _handleNavTap(index),
+            borderRadius: BorderRadius.circular(10),
+            child: isCollapsed
+                ? Center(
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? activeColor
+                            : isHovering
+                                ? hoverFill
+                                : iconCircleIdle,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: Colors.white, size: 24),
+                    ),
+                  )
+                : Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? activeColor
+                          : isHovering
+                              ? hoverFill
+                              : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? Colors.white.withValues(alpha: 0.22)
+                                : iconCircleIdle,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(icon, color: Colors.white, size: 24),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight:
+                                  selected ? FontWeight.w600 : FontWeight.w500,
+                              height: 1.2,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (badgeCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              badgeCount > 99 ? '99+' : badgeCount.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
           ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildSidebarDrawer() {
     return Drawer(
-      backgroundColor: const Color(0xFF0B1220),
+      backgroundColor: const Color(0xFF2A2A2A),
       child: SafeArea(
         child: Builder(
           builder: (context) {
             return Container(
-              color: const Color(0xFF0B1220).withValues(alpha: 0.96),
-              child: Column(
+              color: const Color(0xFF2A2A2A),
+              child: SingleChildScrollView(
+                child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 14),
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.fromLTRB(18, 8, 8, 10),
                     child: Row(
                       children: [
-                        const Icon(Icons.grid_view_rounded,
-                            color: Colors.white),
-                        const SizedBox(width: 10),
                         const Expanded(
                           child: Text(
                             'Client Portal',
@@ -981,7 +1165,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                     ),
                   ),
                 ],
-              ),
+              )),
             );
           },
         ),
@@ -990,34 +1174,20 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildDrawerNavItem(
-      BuildContext context, int index, IconData icon, String label) {
+      BuildContext context, int index, IconData icon, String label,
+      {VoidCallback? onTap, double itemHeight = 37.77, double? itemWidth}) {
     final selected = _selectedNavIndex == index;
     final badgeCount =
         label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
     return InkWell(
       onTap: () {
-        if (index == 0) {
-          Navigator.of(context).pop();
-          if (!widget.showSummary) {
-            _navigateClient('/client/dashboard');
-          }
-          return;
-        }
-        if (index == 1) {
-          Navigator.of(context).pop();
-          if (widget.showSummary) {
-            _navigateClient('/client/proposals');
-          }
-          return;
-        }
-        setState(() {
-          _selectedNavIndex = index;
-        });
-        Navigator.of(context).pop();
+        _handleNavTap(index, closeDrawer: true);
+        onTap?.call();
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        width: itemWidth,
+        height: itemHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: selected
               ? Colors.white.withValues(alpha: 0.12)
@@ -1031,8 +1201,15 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         ),
         child: Row(
           children: [
-            Icon(icon,
-                color: selected ? Colors.white : Colors.white70, size: 20),
+            Container(
+              width: 26,
+              height: 26,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE5E7EB),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: const Color(0xFF1F2937), size: 14),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -1123,45 +1300,85 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final allDocs = List<Map<String, dynamic>>.from(_proposals);
     final activeCount = allDocs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
+      if (s.contains('signed')) return false;
       return s.contains('sent') ||
           s.contains('released') ||
           s.contains('review');
     }).length;
-    final signedCount = allDocs.where((d) {
+    final signedSowCount = allDocs.where((d) {
+      if (!_isSow(d)) return false;
       final s = (d['status'] ?? '').toString().toLowerCase();
       return s.contains('signed');
     }).length;
+    final pendingApprovalsCount = _statusCounts['pending'] ?? 0;
 
-    Widget tile(String label, String value, IconData icon) {
+    const tileDescription =
+        'Additional description information can be included if required.';
+
+    const tileWidth = 306.62;
+    const tileHeight = 102.64;
+
+    Widget tile({
+      required String label,
+      required String value,
+      required IconData icon,
+    }) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        width: tileWidth,
+        height: tileHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          color: Colors.white.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(5.32),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              offset: const Offset(0, 3.55),
+              blurRadius: 3.55,
+              spreadRadius: 0,
+            ),
+          ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        tileDescription,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: 10,
+                          height: 1.25,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
                   Text(
                     value,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 30,
+                      fontSize: 28,
                       height: 1.0,
                       fontWeight: FontWeight.w800,
                     ),
@@ -1171,11 +1388,18 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             ),
             const SizedBox(width: 12),
             Container(
-              width: 42,
-              height: 42,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(999),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    offset: const Offset(0, 1),
+                    blurRadius: 2,
+                  ),
+                ],
               ),
               child: Icon(icon, color: PremiumTheme.primaryRed, size: 22),
             ),
@@ -1184,32 +1408,63 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 860;
-        final children = [
-          tile('Active Proposals', activeCount.toString(),
-              Icons.description_outlined),
-          tile('Signed Documents', signedCount.toString(),
-              Icons.verified_outlined),
-        ];
-        if (narrow) {
-          return Column(
-            children: [
-              children[0],
-              const SizedBox(height: 12),
-              children[1],
-            ],
+    final children = [
+      tile(
+        label: 'Active Proposals',
+        value: activeCount.toString(),
+        icon: Icons.adjust,
+      ),
+      tile(
+        label: "Signed SOW'S",
+        value: signedSowCount.toString(),
+        icon: Icons.check,
+      ),
+      tile(
+        label: 'Pending Approvals',
+        value: pendingApprovalsCount.toString(),
+        icon: Icons.remove_red_eye_outlined,
+      ),
+    ];
+
+    // Figma: three blocks side-by-side, 306.62 × 102.64 each; scroll horizontally if needed.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          children[0],
+          const SizedBox(width: 12),
+          children[1],
+          const SizedBox(width: 12),
+          children[2],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopCornerAssetIcon(String assetPath) {
+    return SizedBox(
+      width: 44.87,
+      height: 44.87,
+      child: Image.asset(
+        assetPath,
+        width: 44.87,
+        height: 44.87,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) {
+          return Container(
+            width: 44.87,
+            height: 44.87,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(22.435),
+              border: Border.all(color: Colors.white24),
+            ),
+            child: const Icon(Icons.image_not_supported_outlined,
+                color: Colors.white70, size: 18),
           );
-        }
-        return Row(
-          children: [
-            Expanded(child: children[0]),
-            const SizedBox(width: 12),
-            Expanded(child: children[1]),
-          ],
-        );
-      },
+        },
+      ),
     );
   }
 
@@ -1222,14 +1477,30 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         : isProposalsTab
             ? 'Awaiting Signature'
             : 'Recent Documents';
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-      ),
-      child: Column(
+    const recentDocsWidth = 466.59;
+    const recentDocsHeight = 308.28;
+
+    return Align(
+      alignment: Alignment.topLeft,
+      child: SizedBox(
+        width: recentDocsWidth,
+        height: recentDocsHeight,
+        child: Container(
+          clipBehavior: Clip.antiAlias,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(5.32),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                offset: const Offset(0, 3.55),
+                blurRadius: 3.55,
+                spreadRadius: 0,
+              ),
+            ],
+          ),
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -1262,15 +1533,19 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           ),
           const SizedBox(height: 12),
           if (_selectedNavIndex == 0)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                _filterChip('View All', 'all'),
-                _filterChip('Released', 'released'),
-                _filterChip('Signed', 'signed'),
-                _filterChip('Changes Requested', 'changes_requested'),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _filterChip('View All', 'all'),
+                  const SizedBox(width: 10),
+                  _filterChip('Released', 'released'),
+                  const SizedBox(width: 10),
+                  _filterChip('Signed', 'signed'),
+                  const SizedBox(width: 10),
+                  _filterChip('Changes Requested', 'changes_requested'),
+                ],
+              ),
             ),
           if (_selectedNavIndex == 0) const SizedBox(height: 12),
           if (docs.isEmpty)
@@ -1301,41 +1576,79 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   final normalizedLabel = _normalizeStatus(rawStatus);
                   final lower = normalizedLabel.toLowerCase().trim();
                   Color bg = Colors.white.withValues(alpha: 0.10);
-                  Color fg = Colors.white.withValues(alpha: 0.80);
+                  Color fg = Colors.white;
                   String label = normalizedLabel.isEmpty
                       ? (rawStatus.isEmpty ? 'Unknown' : rawStatus)
                       : normalizedLabel;
+                  double chipWidth = 87.89;
 
                   if (lower.contains('signed')) {
-                    bg = const Color(0xFF27AE60).withValues(alpha: 0.18);
-                    fg = const Color(0xFF2ECC71);
+                    bg = const Color(0xFF6CA510);
+                    fg = Colors.white;
+                    chipWidth = 87.89;
                   } else if (lower.contains('pending') ||
                       lower.contains('released') ||
                       lower.contains('sent for signature') ||
                       lower.contains('in review')) {
-                    bg = const Color(0xFFF39C12).withValues(alpha: 0.20);
-                    fg = const Color(0xFFF1C40F);
+                    bg = const Color(0xFFEA990C);
+                    fg = Colors.white;
+                    chipWidth = 88.51;
+                    if (lower.contains('pending')) {
+                      label = 'Request Sent';
+                    }
                   } else if (lower.contains('rejected') ||
                       lower.contains('declined')) {
-                    bg = const Color(0xFFE74C3C).withValues(alpha: 0.18);
-                    fg = const Color(0xFFE74C3C);
+                    bg = const Color(0xFFE74C3C);
+                    fg = Colors.white;
+                    chipWidth = 88.51;
                   }
 
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: bg,
-                      borderRadius: BorderRadius.circular(999),
+                  return SizedBox(
+                    width: chipWidth,
+                    height: 23.36,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                          color: bg, borderRadius: BorderRadius.circular(26.06)),
+                      child: Center(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: fg,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            height: 1.0,
+                          ),
+                        ),
+                      ),
                     ),
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: fg,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
+                  );
+                }
+
+                Widget _viewChip(VoidCallback onPressed) {
+                  return SizedBox(
+                    width: 48.56,
+                    height: 23.36,
+                    child: TextButton(
+                      style: TextButton.styleFrom(
+                        backgroundColor: const Color(0xFF7F7F7F),
+                        foregroundColor: Colors.white,
+                        padding: EdgeInsets.zero,
+                        minimumSize: const Size(48.56, 23.36),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(26.06),
+                        ),
+                      ),
+                      onPressed: onPressed,
+                      child: const Text(
+                        'VIEW',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          height: 1.0,
+                        ),
                       ),
                     ),
                   );
@@ -1359,22 +1672,51 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${_documentLabel(doc)} #${doc['id']} - ${doc['title'] ?? 'Untitled'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
+                        child: Builder(
+                          builder: (context) {
+                            final lead = '${_documentLabel(doc)} #${doc['id']}';
+                            final rawTitle =
+                                (doc['title'] ?? 'Untitled').toString();
+
+                            // Figma text treatment: lead is bold small-caps, project part is italic.
+                            return SizedBox(
+                              height: 18.44,
+                              child: RichText(
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                text: TextSpan(
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontFamily: 'Poppins',
+                                    fontSize: 9.22,
+                                    height: 1.0174,
+                                    letterSpacing: 0.0922,
+                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text: '$lead ',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontFeatures: [
+                                          ui.FontFeature.enable('smcp')
+                                        ],
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: '- $rawTitle',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                        fontStyle: FontStyle.italic,
+                                        fontFeatures: [
+                                          ui.FontFeature.enable('smcp')
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 2),
-                            _statusChip(status),
-                          ],
+                            );
+                          },
                         ),
                       ),
                       if (isDocumentsTab)
@@ -1383,19 +1725,27 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                           child: const Text('Download'),
                         )
                       else if (isProposalsTab)
-                        TextButton(
-                          onPressed: () {
-                            setState(() {
-                              _selectedDocument = doc;
-                            });
-                            _openSigningUrl(doc);
-                          },
-                          child: const Text('View'),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _statusChip(status),
+                            const SizedBox(width: 7.84),
+                            _viewChip(() {
+                              setState(() {
+                                _selectedDocument = doc;
+                              });
+                              _openSigningUrl(doc);
+                            }),
+                          ],
                         )
                       else
-                        TextButton(
-                          onPressed: () => _openProposal(doc),
-                          child: const Text('View'),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _statusChip(status),
+                            const SizedBox(width: 7.84),
+                            _viewChip(() => _openProposal(doc)),
+                          ],
                         ),
                     ],
                   ),
@@ -1403,6 +1753,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               },
             ),
         ],
+          ),
+        ),
       ),
     );
   }
@@ -1417,13 +1769,25 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final isSignedStatus =
         statusLower.contains('client signed') || statusLower.contains('signed');
 
-    Widget panelCard({required String title, required Widget child}) {
-      return Container(
+    Widget panelCard({
+      required String title,
+      required Widget child,
+      double? fixedHeight,
+    }) {
+      final card = Container(
+        clipBehavior: Clip.antiAlias,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          color: Colors.white.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(5.32),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              offset: const Offset(0, 3.55),
+              blurRadius: 3.55,
+              spreadRadius: 0,
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1441,6 +1805,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           ],
         ),
       );
+
+      if (fixedHeight != null) {
+        return SizedBox(height: fixedHeight, child: card);
+      }
+      return card;
     }
 
     return Column(
@@ -1519,6 +1888,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         ],
         panelCard(
           title: 'Project Chat',
+          fixedHeight: 145.17,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1543,6 +1913,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         const SizedBox(height: 12),
         panelCard(
           title: 'Documents & Downloads',
+          fixedHeight: 145.17,
           child: Column(
             children: [
               Row(
@@ -1630,12 +2001,43 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   ),
                 ),
               ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildTopCornerAssetIcon('assets/images/Group 391 (2).png'),
+                  const SizedBox(width: 8),
+                  _buildTopCornerAssetIcon('assets/images/Group 398 (1).png'),
+                ],
+              ),
             ],
           ),
           const SizedBox(height: 14),
           _buildSummaryTiles(),
           const SizedBox(height: 14),
-          _buildRecentDocuments(),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const rightPanelWidth = 466.59;
+              final stackLowerCards = constraints.maxWidth < 980;
+              if (stackLowerCards) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildRecentDocuments(),
+                    const SizedBox(height: 14),
+                    SizedBox(width: rightPanelWidth, child: _buildRightPanel()),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildRecentDocuments(),
+                  const SizedBox(width: 16),
+                  SizedBox(width: rightPanelWidth, child: _buildRightPanel()),
+                ],
+              );
+            },
+          ),
         ],
       );
     }
@@ -1672,10 +2074,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (widget.showSummary) ...[
-            _buildSummaryTiles(),
-            const SizedBox(height: 16),
-          ],
+          _buildSummaryTiles(),
+          const SizedBox(height: 16),
           _buildRecentDocuments(),
         ],
       );
@@ -2859,7 +3259,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             children: [
               Positioned.fill(
                 child: Image.asset(
-                  'assets/images/Global BG.jpg',
+                  'assets/images/client_dashboard_bg.png',
                   fit: BoxFit.cover,
                 ),
               ),
@@ -2875,11 +3275,13 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   ),
                 ),
               ),
-              SafeArea(
-                child: Row(
-                  children: [
-                    if (!useDrawer) _buildSidebar(),
-                    Expanded(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!useDrawer) _buildSidebar(),
+                  Expanded(
+                    child: SafeArea(
+                      left: false,
                       child: Column(
                         children: [
                           _buildTopHeader(useDrawer: useDrawer),
@@ -2898,8 +3300,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                       children: [
                                         leftContent,
                                         const SizedBox(height: 16),
-                                        if ((_selectedNavIndex == 0 ||
-                                                _selectedNavIndex == 1 ||
+                                        if ((_selectedNavIndex == 1 ||
                                                 _selectedNavIndex == 2) &&
                                             widget.showSummary)
                                           _buildRightPanel(),
@@ -2913,8 +3314,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                     children: [
                                       Expanded(child: leftContent),
                                       const SizedBox(width: 16),
-                                      if ((_selectedNavIndex == 0 ||
-                                              _selectedNavIndex == 1 ||
+                                      if ((_selectedNavIndex == 1 ||
                                               _selectedNavIndex == 2) &&
                                           widget.showSummary)
                                         SizedBox(
@@ -2930,8 +3330,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -3280,7 +3680,21 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String _formatDate(dynamic date) {
     if (date == null) return 'N/A';
     try {
-      final dt = DateTime.parse(date.toString());
+      final raw = date.toString();
+      final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(raw);
+      final parsedRaw = DateTime.parse(raw);
+      final dt = hasTimezone
+          ? parsedRaw.toLocal()
+          : DateTime.utc(
+              parsedRaw.year,
+              parsedRaw.month,
+              parsedRaw.day,
+              parsedRaw.hour,
+              parsedRaw.minute,
+              parsedRaw.second,
+              parsedRaw.millisecond,
+              parsedRaw.microsecond,
+            ).toLocal();
       final now = DateTime.now();
       final diff = now.difference(dt);
 

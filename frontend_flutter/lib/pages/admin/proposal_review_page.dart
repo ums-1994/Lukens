@@ -613,10 +613,14 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
     try {
       final token = AuthService.token;
-      if (token == null) return;
+      if (token == null) {
+        throw Exception('Session expired. Please log in again.');
+      }
 
       final proposalId = int.tryParse(widget.proposalId);
-      if (proposalId == null) return;
+      if (proposalId == null) {
+        throw Exception('Invalid proposal ID.');
+      }
 
       final response = await http.post(
         Uri.parse(
@@ -660,7 +664,14 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           Navigator.pop(context, 'rejected');
         }
       } else {
-        throw Exception('Failed to request changes');
+        String detail = 'Failed to request changes';
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map && decoded['detail'] != null) {
+            detail = decoded['detail'].toString();
+          }
+        } catch (_) {}
+        throw Exception(detail);
       }
     } catch (e) {
       if (mounted) {

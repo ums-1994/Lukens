@@ -99,7 +99,7 @@ class ApiService {
   static Future<Map<String, dynamic>?> getUserProfile(String token) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/user/profile'),
+        Uri.parse('$baseUrl/api/user/profile'),
         headers: _getHeaders(token),
       );
 

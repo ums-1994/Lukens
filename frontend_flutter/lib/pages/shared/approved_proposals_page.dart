@@ -8,7 +8,10 @@ import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../theme/manager_theme_controller.dart';
 import '../../widgets/app_side_nav.dart';
+import '../../widgets/manager_page_background.dart';
+import '../../utils/manager_session_actions.dart';
 import 'dart:async';
 import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
@@ -275,6 +278,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         Navigator.pushReplacementNamed(context, '/creator-dashboard');
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
@@ -292,9 +296,11 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
+      case 'Account Profile':
+        ManagerSessionActions.goToAccountProfile(context);
+        break;
       case 'Logout':
-        AuthService.logout();
-        Navigator.pushReplacementNamed(context, '/login');
+        ManagerSessionActions.showLogoutDialog(context);
         break;
     }
   }
@@ -302,13 +308,15 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final chrome = context.watch<ManagerThemeController>().chrome;
 
     return Scaffold(
-      body: Container(
-        color: Colors.transparent,
-        height: MediaQuery.of(context).size.height,
-        child: Row(
-          children: [
+      backgroundColor: Colors.transparent,
+      body: ManagerPageBackground(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height,
+          child: Row(
+            children: [
             // Consistent Sidebar using AppSideNav
             Consumer<AppState>(
               builder: (context, app, child) {
@@ -337,25 +345,16 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
               child: Column(
                 children: [
                   // Header - Fixed at top
-                  Container(
+                  Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black.withValues(alpha: 0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                    ),
-                    child: _buildHeader(app),
+                    child: _buildHeader(app, chrome),
                   ),
                   const SizedBox(height: 24),
 
                   // Scrollable Content
                   Expanded(
                     child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -366,7 +365,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                           // Content
                           _isLoading
                               ? const Center(child: CircularProgressIndicator())
-                              : _buildApprovedList(),
+                              : _buildApprovedList(chrome),
                         ],
                       ),
                     ),
@@ -376,11 +375,12 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
             ),
           ],
         ),
+        ),
       ),
     );
   }
 
-  Widget _buildHeader(AppState app) {
+  Widget _buildHeader(AppState app, ManagerChromeTheme chrome) {
     final user = AuthService.currentUser ?? app.currentUser ?? {};
     final email = user['email']?.toString() ?? 'user@example.com';
     final backendRole = user['role']?.toString().toLowerCase() ?? 'manager';
@@ -388,7 +388,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Manager';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: chrome.floatingPanelDecoration(radius: 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -398,12 +399,14 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
             children: [
               Text(
                 'Approved Proposals',
-                style: PremiumTheme.titleLarge,
+                style: PremiumTheme.titleLarge.copyWith(
+                  color: chrome.textPrimary,
+                ),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 'View proposals that have been approved and signed by clients',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
+                style: TextStyle(color: chrome.textSecondary, fontSize: 13),
               ),
             ],
           ),
@@ -424,14 +427,14 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                 children: [
                   Text(
                     email,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: chrome.textPrimary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   Text(
                     displayRole,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    style: TextStyle(color: chrome.textSecondary, fontSize: 12),
                   ),
                 ],
               ),
@@ -451,7 +454,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
@@ -506,34 +509,35 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     );
   }
 
-  Widget _buildApprovedList() {
+  Widget _buildApprovedList(ManagerChromeTheme chrome) {
     if (_approvedProposals.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(24),
+          color: chrome.floatingFill,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: chrome.divider),
         ),
         child: Column(
           children: [
             Icon(
               Icons.inbox_outlined,
               size: 64,
-              color: Colors.white54,
+              color: chrome.textMuted,
             ),
             const SizedBox(height: 16),
             Text(
               'No approved proposals yet',
               style: TextStyle(
-                color: Colors.white70,
+                color: chrome.textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Proposals that clients approve and sign will appear here.',
-              style: TextStyle(color: Colors.white54, fontSize: 14),
+              style: TextStyle(color: chrome.textSecondary, fontSize: 14),
             ),
           ],
         ),
@@ -554,7 +558,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -590,7 +594,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -621,12 +625,14 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         const SizedBox(height: 24),
 
         // Proposals List
-        ..._approvedProposals.map((proposal) => _buildProposalCard(proposal)),
+        ..._approvedProposals.map(
+            (proposal) => _buildProposalCard(proposal, chrome)),
       ],
     );
   }
 
-  Widget _buildProposalCard(Map<String, dynamic> proposal) {
+  Widget _buildProposalCard(
+      Map<String, dynamic> proposal, ManagerChromeTheme chrome) {
     final title = proposal['title']?.toString() ?? 'Untitled Proposal';
     final client = proposal['client_name']?.toString() ??
         proposal['client']?.toString() ??
@@ -643,19 +649,12 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         : 'Approved';
 
     return InkWell(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(10),
       onTap: () => _openSignedProposal(proposal),
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.2),
-            width: 1,
-          ),
-        ),
+        decoration: chrome.floatingPanelDecoration(radius: 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -668,8 +667,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                     children: [
                       Text(
                         title,
-                        style: const TextStyle(
-                          color: Colors.white,
+                        style: TextStyle(
+                          color: chrome.textPrimary,
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
                         ),
@@ -677,8 +676,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                       const SizedBox(height: 4),
                       Text(
                         client,
-                        style: const TextStyle(
-                          color: Colors.white70,
+                        style: TextStyle(
+                          color: chrome.textSecondary,
                           fontSize: 14,
                         ),
                       ),
@@ -690,7 +689,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.green.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     statusLabel,
@@ -709,8 +708,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
               children: [
                 Text(
                   'Value: ${_currencyFormatter.format(double.tryParse(budget.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0)}',
-                  style: const TextStyle(
-                    color: Colors.white70,
+                  style: TextStyle(
+                    color: chrome.textSecondary,
                     fontSize: 14,
                   ),
                 ),
@@ -718,8 +717,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                   date != null
                       ? _formatDate(DateTime.tryParse(date))
                       : 'No date',
-                  style: const TextStyle(
-                    color: Colors.white54,
+                  style: TextStyle(
+                    color: chrome.textMuted,
                     fontSize: 12,
                   ),
                 ),
