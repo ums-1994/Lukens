@@ -55,7 +55,6 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   bool _isRefreshing = false;
 
   static const String _filterAll = 'all';
-  static const String _filterNeedsDecision = 'needs_decision';
   static const String _filterReady = 'ready';
   static const String _filterBlocked = 'blocked';
   static const String _filterChangesRequested = 'changes_requested';
@@ -134,7 +133,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     if (args is Map) {
       final raw = args['initialFilter'];
       final filter = raw is String ? raw.toLowerCase().trim() : null;
-      final mapped = _mapLegacyFilter(filter);
+      final mapped = _normalizeInitialFilter(filter);
       if (mapped != null) {
         setState(() {
           _activeFilter = mapped;
@@ -169,72 +168,123 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     super.dispose();
   }
 
-  String? _mapLegacyFilter(String? legacy) {
-    final v = (legacy ?? '').trim().toLowerCase();
-    if (v.isEmpty) return null;
+  String? _normalizeInitialFilter(String? value) {
+    final v = (value ?? '').toLowerCase().trim();
     switch (v) {
       case 'all':
         return _filterAll;
       case 'pending':
-        return _filterNeedsDecision;
+        return _filterReady;
       case 'approved':
         return _filterApproved;
       case 'rejected':
         return _filterDeclined;
-      case _filterNeedsDecision:
-      case _filterReady:
-      case _filterBlocked:
-      case _filterChangesRequested:
-        return v;
       default:
         return null;
     }
   }
 
-  DateTime? _getUpdatedAt(Map<String, dynamic> proposal) {
-    return _parseDate(proposal['updated_at'] ?? proposal['updatedAt']);
+  String _getDecisionKey(Map<String, dynamic> proposal) {
+    final blockers = _getBlockers(proposal);
+    if (blockers.isNotEmpty) {
+      return _filterBlocked;
+    }
+    final status = (proposal['status'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim()
+        .replaceAll('_', ' ');
+    if (status.contains('changes requested')) {
+      return _filterChangesRequested;
+    }
+    if (status == 'rejected' || status == 'declined' || status == 'lost') {
+      return _filterDeclined;
+    }
+
+    if (status == 'approved' ||
+        status == 'signed' ||
+        status == 'client signed' ||
+        status == 'client approved' ||
+        status == 'released' ||
+        status == 'sent to client' ||
+        status == 'sent for signature' ||
+        status.contains('sent to client') ||
+        status.contains('sent for signature') ||
+        status == 'completed') {
+      return _filterApproved;
+    }
+
+    if (_hasAllRequiredFields(proposal)) {
+      return _filterReady;
+    }
+
+    return _filterReady;
+  }
+
+  List<String> _getBlockers(Map<String, dynamic> proposal) {
+    final blockers = <String>[];
+
+    final budgetRaw = proposal['budget'];
+    final budget = budgetRaw is num
+        ? budgetRaw.toDouble()
+        : double.tryParse(
+            budgetRaw?.toString().replaceAll(RegExp(r'[^0-9.]'), '') ?? '',
+          );
+    if (budget == null || budget <= 0) {
+      blockers.add('Missing budget');
+    }
+
+    final client = (proposal['client_name'] ?? proposal['client'] ?? '')
+        .toString()
+        .trim();
+    if (client.isEmpty) {
+      blockers.add('Missing client');
+    }
+
+    final title = (proposal['title'] ?? '').toString().trim();
+    if (title.isEmpty) {
+      blockers.add('Missing title');
+    }
+
+    final risk = _parseDouble(proposal['risk_score'] ?? proposal['riskScore']);
+    if (risk != null && risk >= 80) {
+      blockers.add('High risk');
+    }
+
+    final updatedAt = _parseDate(proposal['updated_at'] ?? proposal['updatedAt']);
+    if (_staleDays != null && _staleDays! > 0 && updatedAt != null) {
+      final now = DateTime.now();
+      if (now.difference(updatedAt).inDays >= _staleDays!) {
+        blockers.add('Stalled');
+      }
+    }
+
+    return blockers;
+  }
+
+  bool _hasAllRequiredFields(Map<String, dynamic> proposal) {
+    return _getBlockers(proposal).isEmpty;
   }
 
   bool _matchesPipelineStage(Map<String, dynamic> proposal) {
     final stage = (_pipelineStage ?? '').trim().toLowerCase();
     if (stage.isEmpty) return true;
 
-    final status = (proposal['status'] ?? '')
+    final raw = (proposal['engagement_stage'] ??
+            proposal['pipeline_stage'] ??
+            proposal['pipelineStage'] ??
+            proposal['stage'] ??
+            '')
         .toString()
-        .toLowerCase()
         .trim()
+        .toLowerCase()
         .replaceAll('_', ' ');
-
-    final updatedAt = _getUpdatedAt(proposal);
-
-    bool isSignedLike() {
-      return status.contains('signed') || status == 'completed';
-    }
-
-    bool isReleasedLike() {
-      return status == 'released' ||
-          status.contains('sent to client') ||
-          status.contains('sent for signature') ||
-          status.contains('released');
-    }
-
-    switch (stage) {
-      case 'released_awaiting_signature':
-        return isReleasedLike() && !isSignedLike();
-      case 'recently_signed':
-        if (!isSignedLike()) return false;
-        final days = (_recentDays != null && _recentDays! > 0) ? _recentDays! : 14;
-        if (updatedAt == null) return false;
-        return DateTime.now().difference(updatedAt).inDays <= days;
-      default:
-        return true;
-    }
+    if (raw.isEmpty) return false;
+    return raw.contains(stage);
   }
 
   String _decisionLabel(String decisionKey) {
     switch (decisionKey) {
-      case _filterNeedsDecision:
-        return 'Needs decision';
       case _filterReady:
         return 'Ready for approval';
       case _filterBlocked:
@@ -252,12 +302,10 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
   Color _decisionColor(String decisionKey) {
     switch (decisionKey) {
-      case _filterNeedsDecision:
-        return PremiumTheme.orange;
       case _filterReady:
         return PremiumTheme.teal;
       case _filterBlocked:
-        return PremiumTheme.error;
+        return PremiumTheme.orange;
       case _filterChangesRequested:
         return PremiumTheme.pink;
       case _filterApproved:
@@ -267,94 +315,6 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       default:
         return Colors.white70;
     }
-  }
-
-  List<String> _getBlockers(Map<String, dynamic> proposal) {
-    final blockers = <String>[];
-
-    final status = (proposal['status'] ?? '')
-        .toString()
-        .toLowerCase()
-        .trim()
-        .replaceAll('_', ' ');
-    final isCompleted = status == 'approved' ||
-        status == 'signed' ||
-        status == 'client signed' ||
-        status == 'client approved' ||
-        status == 'released' ||
-        status.contains('sent to client') ||
-        status.contains('sent for signature') ||
-        status.contains('out for signature') ||
-        status == 'completed';
-
-    final title = (proposal['title'] ?? '').toString().trim();
-    if (title.isEmpty) {
-      blockers.add('Missing title');
-    }
-
-    if (!isCompleted) {
-      final parsedBudget = _inferBudget(proposal);
-      if (parsedBudget <= 0) {
-        blockers.add('Missing budget');
-      }
-    }
-
-    final clientEmail = (proposal['client_email'] ?? proposal['clientEmail'] ?? '')
-        .toString()
-        .trim();
-    if (clientEmail.isEmpty) {
-      blockers.add('Missing client email');
-    }
-
-    final risk = _parseDouble(proposal['risk_score'] ?? proposal['riskScore']);
-    if (risk != null && risk >= 70) {
-      blockers.add('High risk');
-    }
-
-    final updatedAt = _getUpdatedAt(proposal);
-    if (updatedAt != null) {
-      final thresholdDays = (_staleDays != null && _staleDays! > 0) ? _staleDays! : 14;
-      final age = DateTime.now().difference(updatedAt).inDays;
-      if (age >= thresholdDays) {
-        blockers.add('Stalled ${age}d');
-      }
-    }
-
-    return blockers;
-  }
-
-  String _getDecisionKey(Map<String, dynamic> proposal) {
-    final status = (proposal['status'] ?? '')
-        .toString()
-        .toLowerCase()
-        .trim()
-        .replaceAll('_', ' ');
-    final blockers = _getBlockers(proposal);
-
-    if (status.contains('changes requested')) return _filterChangesRequested;
-
-    if (status == 'rejected' || status == 'declined' || status == 'lost') {
-      return _filterDeclined;
-    }
-
-    if (status == 'approved' ||
-        status == 'signed' ||
-        status == 'client signed' ||
-        status == 'client approved' ||
-        status == 'released' ||
-        status.contains('sent to client') ||
-        status.contains('sent for signature') ||
-        status == 'completed') {
-      return _filterApproved;
-    }
-
-    if (blockers.isNotEmpty) return _filterBlocked;
-
-    if (status.contains('pending') || status.contains('resubmitted')) {
-      return _filterReady;
-    }
-
-    return _filterNeedsDecision;
   }
 
   @override
@@ -1120,7 +1080,6 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   Widget _buildStatusTabs() {
     final counts = <String, int>{
       _filterAll: 0,
-      _filterNeedsDecision: 0,
       _filterReady: 0,
       _filterBlocked: 0,
       _filterChangesRequested: 0,
@@ -1139,9 +1098,6 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       child: Row(
         children: [
           _buildStatusTab('All', _filterAll, counts[_filterAll] ?? 0),
-          const SizedBox(width: 8),
-          _buildStatusTab(
-              'Needs decision', _filterNeedsDecision, counts[_filterNeedsDecision] ?? 0),
           const SizedBox(width: 8),
           _buildStatusTab(
               'Ready for approval', _filterReady, counts[_filterReady] ?? 0),
@@ -1963,9 +1919,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       },
     ).then((result) async {
       if (result == 'approved') {
-        setState(() => _activeFilter = 'approved');
+        setState(() => _activeFilter = _filterApproved);
       } else if (result == 'rejected') {
-        setState(() => _activeFilter = 'rejected');
+        setState(() => _activeFilter = _filterDeclined);
       }
       await _loadData();
     });
@@ -2376,22 +2332,15 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
       case 'Approvals':
-        setState(() => _activeFilter = 'pending');
+        setState(() => _activeFilter = _filterReady);
         break;
       case 'Analytics':
       case 'All analytics':
       case 'My analytics':
-        Navigator.pushReplacementNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/admin_analytics');
         break;
       case 'History':
-        setState(() => _activeFilter = 'approved');
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
+        Navigator.pushReplacementNamed(context, '/admin_history');
         break;
       case 'Sign Out':
         AuthService.logout();

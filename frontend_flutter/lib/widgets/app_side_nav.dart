@@ -58,6 +58,29 @@ class AppSideNav extends StatefulWidget {
     },
   ];
 
+  static const List<Map<String, String>> _adminItems = [
+    {
+      'label': 'Dashboard',
+      'icon': 'assets/images/new icons for manager/Dashboard.png',
+    },
+    {
+      'label': 'Approvals',
+      'icon': 'assets/images/new icons for manager/Approved proposals.png',
+    },
+    {
+      'label': 'Analytics',
+      'icon': 'assets/images/analytics.png',
+    },
+    {
+      'label': 'History',
+      'icon': 'assets/images/new icons for manager/Approved proposals.png',
+    },
+    {
+      'label': 'Content Library',
+      'icon': 'assets/images/new icons for manager/content library.png',
+    },
+  ];
+
   @override
   State<AppSideNav> createState() => _AppSideNavState();
 }
@@ -68,6 +91,7 @@ class _AppSideNavState extends State<AppSideNav> {
   @override
   Widget build(BuildContext context) {
     final chrome = context.watch<ManagerThemeController>().chrome;
+    final items = widget.isAdmin ? AppSideNav._adminItems : AppSideNav._items;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -91,7 +115,7 @@ class _AppSideNavState extends State<AppSideNav> {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Column(
                   children: [
-                    for (final item in AppSideNav._items)
+                    for (final item in items)
                       _buildNavItem(
                         label: item['label']!,
                         assetPath: item['icon']!,

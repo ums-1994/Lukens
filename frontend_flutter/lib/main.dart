@@ -38,6 +38,7 @@ import 'pages/client/client_onboarding_page.dart';
 import 'pages/client/client_dashboard_home.dart';
 import 'pages/finance_manager/finance_analytics.dart';
 import 'pages/admin/analytics_page.dart' as admin;
+import 'pages/admin/admin_history_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
@@ -692,11 +693,19 @@ class MyApp extends StatelessWidget {
                 roleKey == 'finance_manager' ||
                 roleKey == 'financial manager' ||
                 roleKey == 'finance manager';
+            final isAdmin = roleKey == 'admin' || roleKey == 'ceo';
             if (isFinance) {
               return const FinanceAnalyticsPage();
             }
-            return const admin.AnalyticsPage();
+            if (isAdmin) {
+              return const admin.AnalyticsPage(mode: admin.AnalyticsPageMode.admin);
+            }
+            return const admin.AnalyticsPage(mode: admin.AnalyticsPageMode.creator);
           },
+          '/admin_analytics': (context) {
+            return const admin.AnalyticsPage(mode: admin.AnalyticsPageMode.admin);
+          },
+          '/admin_history': (context) => const AdminHistoryPage(),
           '/approved-proposals': (context) => const ApprovedProposalsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),
           '/settings': (context) => const SettingsPage(),
