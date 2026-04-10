@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'dart:ui';
 
 /// Premium glassmorphic theme inspired by executive dashboards
@@ -9,6 +9,7 @@ class PremiumTheme {
   static const darkBg3 = Color(0xFF243447);
 
   // Accent colors
+  static const primaryRed = Color(0xFFC10D00);
   static const teal = Color(0xFF20E3B2);
   static const tealDark = Color(0xFF17B897);
   static const cyan = Color(0xFF00D9FF);
@@ -290,9 +291,15 @@ class PremiumStatCard extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(title, style: titleStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(title,
+                            style: titleStyle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
                         const SizedBox(height: 4),
-                        Text(value, style: valueStyle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(value,
+                            style: valueStyle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
                       ],
                     ),
                   ),
@@ -307,7 +314,8 @@ class PremiumStatCard extends StatelessWidget {
             decoration: PremiumTheme.statCard(gradient),
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final tightH = constraints.maxHeight.isFinite && constraints.maxHeight < 110;
+                final tightH = constraints.maxHeight.isFinite &&
+                    constraints.maxHeight < 110;
                 final gap = (compact || tightH) ? 8.0 : 16.0;
                 final showSubtitle = subtitle != null && !compact && !tightH;
 

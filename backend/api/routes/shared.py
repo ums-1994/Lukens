@@ -113,12 +113,17 @@ def preview_proposal_pdf(username=None, proposal_id=None):
                     for c in cols
                 ]
 
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
 
             current_user_id = current_user['id'] if isinstance(current_user, dict) else current_user[0]
+            role_val = (current_user.get('role') if isinstance(current_user, dict) else (current_user[1] if len(current_user) > 1 else None))
+            role_key = (role_val or '').strip().lower()
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
 
             prop_cols = _get_table_columns('proposals')
             client_expr = 'client' if 'client' in prop_cols else ('client_name' if 'client_name' in prop_cols else None)
@@ -132,13 +137,19 @@ def preview_proposal_pdf(username=None, proposal_id=None):
             select_client = f"{client_expr} AS client_name" if client_expr else "NULL::text AS client_name"
             select_client_email = f"{client_email_expr} AS client_email" if client_email_expr else "NULL::text AS client_email"
 
+            where_sql = "id = %s"
+            params = [proposal_id]
+            if not (is_admin or is_finance or is_manager):
+                where_sql += f" AND {owner_expr} = %s"
+                params.append(current_user_id)
+
             cursor.execute(
                 f"""
                 SELECT id, title, {content_expr} AS content, {select_client}, {select_client_email}
                 FROM proposals
-                WHERE id = %s AND {owner_expr} = %s
+                WHERE {where_sql}
                 """,
-                (proposal_id, current_user_id),
+                tuple(params),
             )
 
             proposal = cursor.fetchone()
@@ -251,7 +262,7 @@ def get_notifications(username=None, user_id=None, email=None):
                 FROM notifications
                 WHERE user_id::text = %s::text
                 ORDER BY created_at DESC
-                LIMIT 50
+                LIMIT 500
             """, (str(user_id),))
 
             notifications = cursor.fetchall()
@@ -281,6 +292,40 @@ def get_notifications(username=None, user_id=None, email=None):
         return {'detail': str(e)}, 500
 
 
+def _resolve_notification_user_id(cursor, username=None, user_id=None, email=None):
+    """Resolve current user id for notification actions."""
+    if user_id:
+        try:
+            cursor.execute('SELECT id FROM users WHERE id = %s', (user_id,))
+            row = cursor.fetchone()
+            if row:
+                if isinstance(row, dict):
+                    return row.get('id')
+                return row[0]
+        except Exception:
+            # token_required already validated this user; trust it as fallback
+            return user_id
+        return user_id
+
+    if email:
+        cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
+        row = cursor.fetchone()
+        if row:
+            if isinstance(row, dict):
+                return row.get('id')
+            return row[0]
+
+    if username:
+        cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+        row = cursor.fetchone()
+        if row:
+            if isinstance(row, dict):
+                return row.get('id')
+            return row[0]
+
+    return None
+
+
 @bp.post("/notifications/<int:notification_id>/mark-read")
 @token_required
 def mark_notification_read(username=None, user_id=None, email=None, notification_id=None):
@@ -288,37 +333,19 @@ def mark_notification_read(username=None, user_id=None, email=None, notification
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Use the same simple lookup pattern as the user profile endpoint (which works)
-            # Try email first (most reliable since it's unique and comes from Firebase)
-            found_user_id = None
-            if email:
-                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
-                user = cursor.fetchone()
-                if user:
-                    found_user_id = user[0]
-            
-            # If email lookup failed, try username (same as user profile endpoint)
-            if not found_user_id and username:
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user = cursor.fetchone()
-                if user:
-                    found_user_id = user[0]
-            
-            # Use the found user_id
-            user_id = found_user_id
-            
-            if not user_id:
+
+            resolved_user_id = _resolve_notification_user_id(
+                cursor, username=username, user_id=user_id, email=email
+            )
+            if not resolved_user_id:
                 return {'detail': 'User not found'}, 404
-            
-            user_id = user[0]
-            
+
             # Update notification
             cursor.execute("""
                 UPDATE notifications
                 SET is_read = TRUE, read_at = NOW()
                 WHERE id = %s AND user_id = %s
-            """, (notification_id, user_id))
+            """, (notification_id, resolved_user_id))
             
             conn.commit()
             
@@ -339,27 +366,11 @@ def mark_all_notifications_read(username=None, user_id=None, email=None):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
-            
-            # Use the same simple lookup pattern as the user profile endpoint (which works)
-            # Try email first (most reliable since it's unique and comes from Firebase)
-            found_user_id = None
-            if email:
-                cursor.execute('SELECT id FROM users WHERE email = %s', (email,))
-                user = cursor.fetchone()
-                if user:
-                    found_user_id = user[0]
-            
-            # If email lookup failed, try username (same as user profile endpoint)
-            if not found_user_id and username:
-                cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
-                user = cursor.fetchone()
-                if user:
-                    found_user_id = user[0]
-            
-            # Use the found user_id
-            user_id = found_user_id
-            
-            if not user_id:
+
+            resolved_user_id = _resolve_notification_user_id(
+                cursor, username=username, user_id=user_id, email=email
+            )
+            if not resolved_user_id:
                 return {'detail': 'User not found'}, 404
             
             # Update all notifications
@@ -367,7 +378,7 @@ def mark_all_notifications_read(username=None, user_id=None, email=None):
                 UPDATE notifications
                 SET is_read = TRUE, read_at = NOW()
                 WHERE user_id = %s AND is_read = FALSE
-            """, (user_id,))
+            """, (resolved_user_id,))
             
             conn.commit()
             
@@ -375,6 +386,64 @@ def mark_all_notifications_read(username=None, user_id=None, email=None):
             
     except Exception as e:
         print(f"❌ Error marking all notifications as read: {e}")
+        return {'detail': str(e)}, 500
+
+
+@bp.delete("/notifications/<int:notification_id>")
+@token_required
+def delete_notification(username=None, user_id=None, email=None, notification_id=None):
+    """Delete one notification for the current user."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            resolved_user_id = _resolve_notification_user_id(
+                cursor, username=username, user_id=user_id, email=email
+            )
+            if not resolved_user_id:
+                return {'detail': 'User not found'}, 404
+
+            cursor.execute(
+                """
+                DELETE FROM notifications
+                WHERE id = %s AND user_id = %s
+                """,
+                (notification_id, resolved_user_id),
+            )
+            conn.commit()
+
+            if cursor.rowcount == 0:
+                return {'detail': 'Notification not found'}, 404
+            return {'message': 'Notification deleted'}, 200
+    except Exception as e:
+        print(f"❌ Error deleting notification: {e}")
+        return {'detail': str(e)}, 500
+
+
+@bp.delete("/notifications")
+@token_required
+def delete_all_notifications(username=None, user_id=None, email=None):
+    """Delete all notifications for the current user."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            resolved_user_id = _resolve_notification_user_id(
+                cursor, username=username, user_id=user_id, email=email
+            )
+            if not resolved_user_id:
+                return {'detail': 'User not found'}, 404
+
+            cursor.execute(
+                """
+                DELETE FROM notifications
+                WHERE user_id = %s
+                """,
+                (resolved_user_id,),
+            )
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return {'message': f'{deleted_count} notifications deleted'}, 200
+    except Exception as e:
+        print(f"❌ Error deleting all notifications: {e}")
         return {'detail': str(e)}, 500
 
 
@@ -954,10 +1023,15 @@ def create_suggestion(username=None, proposal_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, email, full_name, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
+
+            role_key = (current_user.get('role') or '').strip().lower()
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
             
             cursor.execute("""
                 SELECT ci.permission_level
@@ -1060,17 +1134,25 @@ def resolve_suggestion(username=None, proposal_id=None, suggestion_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, email, full_name, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
+
+            role_key = (current_user.get('role') or '').strip().lower()
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
             
             cursor.execute("""
                 SELECT user_id FROM proposals WHERE id = %s
             """, (proposal_id,))
             
             proposal = cursor.fetchone()
-            if not proposal or proposal['user_id'] != username:
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+
+            if not (is_admin or is_finance or is_manager) and proposal.get('user_id') != username:
                 return {'detail': 'Only proposal owner can resolve suggestions'}, 403
             
             cursor.execute("""
@@ -1170,21 +1252,38 @@ def unlock_section(username=None, proposal_id=None, section_id=None):
         with get_db_connection() as conn:
             cursor = conn.cursor()
             
-            cursor.execute('SELECT id FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
             
             user_id = current_user[0]
+            role_val = current_user[1] if len(current_user) > 1 else None
+            role_key = (role_val or '').strip().lower()
+            is_admin = role_key in ['admin', 'ceo', 'approver']
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
             
             # Delete lock (only if locked by current user or if user owns proposal)
-            cursor.execute("""
-                DELETE FROM section_locks
-                WHERE proposal_id = %s AND section_id = %s
-                AND (locked_by = %s OR EXISTS (
-                    SELECT 1 FROM proposals WHERE id = %s AND owner_id = %s
-                ))
-            """, (proposal_id, section_id, user_id, proposal_id, user_id))
+            if is_admin or is_finance or is_manager:
+                cursor.execute(
+                    """
+                    DELETE FROM section_locks
+                    WHERE proposal_id = %s AND section_id = %s
+                    """,
+                    (proposal_id, section_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    DELETE FROM section_locks
+                    WHERE proposal_id = %s AND section_id = %s
+                    AND (locked_by = %s OR EXISTS (
+                        SELECT 1 FROM proposals WHERE id = %s AND owner_id = %s
+                    ))
+                    """,
+                    (proposal_id, section_id, user_id, proposal_id, user_id),
+                )
             
             conn.commit()
             

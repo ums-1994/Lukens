@@ -1,6 +1,7 @@
 // ignore_for_file: unused_field, unused_element, unused_local_variable, deprecated_member_use
 
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -24,7 +25,7 @@ class AdminApprovalsPage extends StatefulWidget {
 }
 
 class _AdminApprovalsPageState extends State<AdminApprovalsPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   List<Map<String, dynamic>> _approvedProposals = [];
   bool _isLoading = true;
   double _totalApprovedValue = 0;
@@ -42,8 +43,23 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   String _searchQuery = '';
   bool _initialArgsApplied = false;
 
+  int? _staleDays;
+  double? _minRiskScore;
+
+  String? _pipelineStage;
+  int? _recentDays;
+
   bool _isSidebarCollapsed = false;
   String _currentPage = 'Approvals';
+  Timer? _refreshTimer;
+  bool _isRefreshing = false;
+
+  static const String _filterAll = 'all';
+  static const String _filterReady = 'ready';
+  static const String _filterBlocked = 'blocked';
+  static const String _filterChangesRequested = 'changes_requested';
+  static const String _filterApproved = 'approved';
+  static const String _filterDeclined = 'declined';
 
   static const Color _adminBlockBase = Color(0xFF252525);
 
@@ -93,6 +109,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -100,6 +117,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     _animationController.value = 1.0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _enforceAccessAndLoad();
+    });
+    _refreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      _loadData(silent: true);
     });
   }
 
@@ -113,25 +133,195 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     if (args is Map) {
       final raw = args['initialFilter'];
       final filter = raw is String ? raw.toLowerCase().trim() : null;
-      if (filter == 'pending' ||
-          filter == 'approved' ||
-          filter == 'rejected' ||
-          filter == 'all') {
+      final mapped = _normalizeInitialFilter(filter);
+      if (mapped != null) {
         setState(() {
-          _activeFilter = filter!;
-        });
-        setState(() {
-          _currentPage = filter == 'approved' ? 'History' : 'Approvals';
+          _activeFilter = mapped;
+          _currentPage = mapped == _filterApproved ? 'History' : 'Approvals';
         });
       }
+
+      final staleRaw = args['staleDays'];
+      final riskRaw = args['minRiskScore'];
+      final pipelineStageRaw = args['pipelineStage'];
+      final recentDaysRaw = args['recentDays'];
+      final stale = staleRaw is int ? staleRaw : int.tryParse(staleRaw?.toString() ?? '');
+      final minRisk = riskRaw is num ? riskRaw.toDouble() : double.tryParse(riskRaw?.toString() ?? '');
+      final recentDays = recentDaysRaw is int
+          ? recentDaysRaw
+          : int.tryParse(recentDaysRaw?.toString() ?? '');
+      setState(() {
+        _staleDays = stale;
+        _minRiskScore = minRisk;
+        _pipelineStage = pipelineStageRaw?.toString().trim().toLowerCase();
+        _recentDays = recentDays;
+      });
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _refreshTimer?.cancel();
     _animationController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  String? _normalizeInitialFilter(String? value) {
+    final v = (value ?? '').toLowerCase().trim();
+    switch (v) {
+      case 'all':
+        return _filterAll;
+      case 'pending':
+        return _filterReady;
+      case 'approved':
+        return _filterApproved;
+      case 'rejected':
+        return _filterDeclined;
+      default:
+        return null;
+    }
+  }
+
+  String _getDecisionKey(Map<String, dynamic> proposal) {
+    final blockers = _getBlockers(proposal);
+    if (blockers.isNotEmpty) {
+      return _filterBlocked;
+    }
+    final status = (proposal['status'] ?? '')
+        .toString()
+        .toLowerCase()
+        .trim()
+        .replaceAll('_', ' ');
+    if (status.contains('changes requested')) {
+      return _filterChangesRequested;
+    }
+    if (status == 'rejected' || status == 'declined' || status == 'lost') {
+      return _filterDeclined;
+    }
+
+    if (status == 'approved' ||
+        status == 'signed' ||
+        status == 'client signed' ||
+        status == 'client approved' ||
+        status == 'released' ||
+        status == 'sent to client' ||
+        status == 'sent for signature' ||
+        status.contains('sent to client') ||
+        status.contains('sent for signature') ||
+        status == 'completed') {
+      return _filterApproved;
+    }
+
+    if (_hasAllRequiredFields(proposal)) {
+      return _filterReady;
+    }
+
+    return _filterReady;
+  }
+
+  List<String> _getBlockers(Map<String, dynamic> proposal) {
+    final blockers = <String>[];
+
+    final budgetRaw = proposal['budget'];
+    final budget = budgetRaw is num
+        ? budgetRaw.toDouble()
+        : double.tryParse(
+            budgetRaw?.toString().replaceAll(RegExp(r'[^0-9.]'), '') ?? '',
+          );
+    if (budget == null || budget <= 0) {
+      blockers.add('Missing budget');
+    }
+
+    final client = (proposal['client_name'] ?? proposal['client'] ?? '')
+        .toString()
+        .trim();
+    if (client.isEmpty) {
+      blockers.add('Missing client');
+    }
+
+    final title = (proposal['title'] ?? '').toString().trim();
+    if (title.isEmpty) {
+      blockers.add('Missing title');
+    }
+
+    final risk = _parseDouble(proposal['risk_score'] ?? proposal['riskScore']);
+    if (risk != null && risk >= 80) {
+      blockers.add('High risk');
+    }
+
+    final updatedAt = _parseDate(proposal['updated_at'] ?? proposal['updatedAt']);
+    if (_staleDays != null && _staleDays! > 0 && updatedAt != null) {
+      final now = DateTime.now();
+      if (now.difference(updatedAt).inDays >= _staleDays!) {
+        blockers.add('Stalled');
+      }
+    }
+
+    return blockers;
+  }
+
+  bool _hasAllRequiredFields(Map<String, dynamic> proposal) {
+    return _getBlockers(proposal).isEmpty;
+  }
+
+  bool _matchesPipelineStage(Map<String, dynamic> proposal) {
+    final stage = (_pipelineStage ?? '').trim().toLowerCase();
+    if (stage.isEmpty) return true;
+
+    final raw = (proposal['engagement_stage'] ??
+            proposal['pipeline_stage'] ??
+            proposal['pipelineStage'] ??
+            proposal['stage'] ??
+            '')
+        .toString()
+        .trim()
+        .toLowerCase()
+        .replaceAll('_', ' ');
+    if (raw.isEmpty) return false;
+    return raw.contains(stage);
+  }
+
+  String _decisionLabel(String decisionKey) {
+    switch (decisionKey) {
+      case _filterReady:
+        return 'Ready for approval';
+      case _filterBlocked:
+        return 'Blocked';
+      case _filterChangesRequested:
+        return 'Changes requested';
+      case _filterApproved:
+        return 'Approved';
+      case _filterDeclined:
+        return 'Declined';
+      default:
+        return '—';
+    }
+  }
+
+  Color _decisionColor(String decisionKey) {
+    switch (decisionKey) {
+      case _filterReady:
+        return PremiumTheme.teal;
+      case _filterBlocked:
+        return PremiumTheme.orange;
+      case _filterChangesRequested:
+        return PremiumTheme.pink;
+      case _filterApproved:
+        return PremiumTheme.teal;
+      case _filterDeclined:
+        return PremiumTheme.error;
+      default:
+        return Colors.white70;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadData(silent: true);
+    }
   }
 
   Future<void> _enforceAccessAndLoad() async {
@@ -147,10 +337,14 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     await _loadData();
   }
 
-  Future<void> _loadData() async {
+  Future<void> _loadData({bool silent = false}) async {
     if (!mounted) return;
+    if (_isRefreshing) return;
+    _isRefreshing = true;
 
-    setState(() => _isLoading = true);
+    if (!silent) {
+      setState(() => _isLoading = true);
+    }
 
     try {
       AuthService.restoreSessionFromStorage();
@@ -163,7 +357,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
       if (token == null) {
         if (mounted) {
-          setState(() => _isLoading = false);
+          if (!silent) {
+            setState(() => _isLoading = false);
+          }
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('⚠️ Session expired. Please login again.'),
@@ -357,14 +553,18 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading data: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (!silent) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error loading data: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
+    } finally {
+      _isRefreshing = false;
     }
   }
 
@@ -401,12 +601,12 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
               children: [
                 Material(
                   child: AdminSidebar(
-                    isCollapsed: _isSidebarCollapsed,
+                    isCollapsed: app.isAdminSidebarCollapsed,
                     currentPage: _currentPage,
                     onToggle: _toggleSidebar,
                     onSelect: (label) {
                       setState(() => _currentPage = label);
-                      _navigateToPage(context, label);
+                      _navigateToPage(label);
                     },
                   ),
                 ),
@@ -697,7 +897,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             child: InkWell(
               onTap: () {
                 setState(() => _currentPage = label);
-                _navigateToPage(context, label);
+                _navigateToPage(label);
               },
               borderRadius: BorderRadius.circular(30),
               child: Container(
@@ -740,7 +940,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           borderRadius: BorderRadius.circular(12),
           onTap: () {
             setState(() => _currentPage = label);
-            _navigateToPage(context, label);
+            _navigateToPage(label);
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -794,7 +994,8 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   void _toggleSidebar() {
-    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
+    final app = context.read<AppState>();
+    app.setAdminSidebarCollapsed(!app.isAdminSidebarCollapsed);
   }
 
   Widget _buildApprovalsToolbar() {
@@ -877,18 +1078,38 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   Widget _buildStatusTabs() {
+    final counts = <String, int>{
+      _filterAll: 0,
+      _filterReady: 0,
+      _filterBlocked: 0,
+      _filterChangesRequested: 0,
+      _filterApproved: 0,
+      _filterDeclined: 0,
+    };
+
+    for (final proposal in _allProposals) {
+      counts[_filterAll] = (counts[_filterAll] ?? 0) + 1;
+      final key = _getDecisionKey(proposal);
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          _buildStatusTab('All', 'all', _allProposals.length),
+          _buildStatusTab('All', _filterAll, counts[_filterAll] ?? 0),
           const SizedBox(width: 8),
           _buildStatusTab(
-              'Request for Change', 'pending', _pendingProposals.length),
+              'Ready for approval', _filterReady, counts[_filterReady] ?? 0),
           const SizedBox(width: 8),
-          _buildStatusTab('Approved', 'approved', _approvedProposals.length),
+          _buildStatusTab('Blocked', _filterBlocked, counts[_filterBlocked] ?? 0),
           const SizedBox(width: 8),
-          _buildStatusTab('Rejected', 'rejected', _rejectedProposals.length),
+          _buildStatusTab(
+              'Changes requested', _filterChangesRequested, counts[_filterChangesRequested] ?? 0),
+          const SizedBox(width: 8),
+          _buildStatusTab('Approved', _filterApproved, counts[_filterApproved] ?? 0),
+          const SizedBox(width: 8),
+          _buildStatusTab('Declined', _filterDeclined, counts[_filterDeclined] ?? 0),
         ],
       ),
     );
@@ -953,36 +1174,57 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   List<Map<String, dynamic>> _getVisibleProposals() {
-    List<Map<String, dynamic>> source;
-    switch (_activeFilter) {
-      case 'pending':
-        source = _pendingProposals;
-        break;
-      case 'approved':
-        source = _approvedProposals;
-        break;
-      case 'rejected':
-        source = _rejectedProposals;
-        break;
-      default:
-        source = _allProposals;
-    }
-
-    if (_searchQuery.isEmpty) {
-      return List<Map<String, dynamic>>.from(source);
-    }
+    final source = _allProposals;
 
     final query = _searchQuery.toLowerCase();
+    final now = DateTime.now();
+
     return source.where((proposal) {
-      final id = proposal['id']?.toString().toLowerCase() ?? '';
-      final title = proposal['title']?.toString().toLowerCase() ?? '';
-      final client = (proposal['client_name'] ?? proposal['client'] ?? '')
-          .toString()
-          .toLowerCase();
-      return id.contains(query) ||
-          title.contains(query) ||
-          client.contains(query);
+      if (_activeFilter != _filterAll) {
+        if (_getDecisionKey(proposal) != _activeFilter) return false;
+      }
+
+      if (!_matchesPipelineStage(proposal)) return false;
+
+      if (query.isNotEmpty) {
+        final id = proposal['id']?.toString().toLowerCase() ?? '';
+        final title = proposal['title']?.toString().toLowerCase() ?? '';
+        final client = (proposal['client_name'] ?? proposal['client'] ?? '')
+            .toString()
+            .toLowerCase();
+        final matches = id.contains(query) || title.contains(query) || client.contains(query);
+        if (!matches) return false;
+      }
+
+      if (_minRiskScore != null) {
+        final risk = _parseDouble(proposal['risk_score'] ?? proposal['riskScore']);
+        if (risk == null || risk < _minRiskScore!) return false;
+      }
+
+      if (_staleDays != null && _staleDays! > 0) {
+        final updatedAt = _parseDate(proposal['updated_at'] ?? proposal['updatedAt']);
+        if (updatedAt == null) return false;
+        if (now.difference(updatedAt).inDays < _staleDays!) return false;
+      }
+
+      return true;
     }).toList();
+  }
+
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    if (value is DateTime) return value;
+    final s = value.toString();
+    if (s.isEmpty) return null;
+    return DateTime.tryParse(s);
+  }
+
+  double? _parseDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    final s = value.toString().trim();
+    if (s.isEmpty) return null;
+    return double.tryParse(s);
   }
 
   Widget _buildApprovalsTable() {
@@ -1061,7 +1303,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
 
   Widget _buildTableHeader() {
     return Row(
-      children: const [
+      children: [
         Expanded(
           flex: 1,
           child: Text(
@@ -1075,21 +1317,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           ),
         ),
         Expanded(
-          flex: 4,
+          flex: 2,
           child: Text(
-            'Proposal',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 3,
-          child: Text(
-            'Client',
+            'Decision',
             style: TextStyle(
               color: Colors.white70,
               fontSize: 12,
@@ -1101,31 +1331,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
         Expanded(
           flex: 2,
           child: Text(
-            'Created',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 2,
-          child: Text(
-            'Status',
-            style: TextStyle(
-              color: Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ),
-        Expanded(
-          flex: 2,
-          child: Text(
-            'Risk',
+            'Blockers',
             style: TextStyle(
               color: Colors.white70,
               fontSize: 12,
@@ -1139,7 +1345,7 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
           child: Align(
             alignment: Alignment.centerRight,
             child: Text(
-              'Action',
+              'Actions',
               style: TextStyle(
                 color: Colors.white70,
                 fontSize: 12,
@@ -1161,13 +1367,49 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     final created = _formatProposalDate(
       proposal['created_at'] ?? proposal['createdAt'],
     );
-    final rawStatus = (proposal['status'] ?? '').toString();
-    final statusLabel = _formatStatusLabel(rawStatus);
-    final statusColor = _getStatusColor(rawStatus);
-    final riskLabel = _getRiskLabel(proposal);
-    final riskColor = _getRiskColor(proposal);
+    final decisionKey = _getDecisionKey(proposal);
+    final decisionLabel = _decisionLabel(decisionKey);
+    final decisionColor = _decisionColor(decisionKey);
+    final blockers = _getBlockers(proposal);
     final owner =
         (proposal['owner_email'] ?? proposal['owner'] ?? '').toString().trim();
+
+    void showBlockersDialog() {
+      showDialog<void>(
+        context: context,
+        builder: (_) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1F2840),
+            title: const Text('Blockers', style: TextStyle(color: Colors.white)),
+            content: SizedBox(
+              width: 360,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: blockers
+                      .map(
+                        (b) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            '• $b',
+                            style: const TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -1227,35 +1469,288 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
             flex: 2,
             child: Align(
               alignment: Alignment.centerLeft,
-              child: _buildStatusChip(statusLabel, statusColor),
+              child: _buildStatusChip(decisionLabel, decisionColor),
             ),
           ),
           Expanded(
             flex: 2,
             child: Align(
               alignment: Alignment.centerLeft,
-              child: _buildRiskChip(riskLabel, riskColor),
+              child: blockers.isEmpty
+                  ? _buildStatusChip('—', Colors.white70)
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: _buildRiskChip(
+                            blockers.first,
+                            blockers.any((b) =>
+                                        b.toLowerCase().contains('missing') ||
+                                        b.toLowerCase().contains('stalled') ||
+                                        b.toLowerCase().contains('high risk'))
+                                ? PremiumTheme.orange
+                                : Colors.white70,
+                          ),
+                        ),
+                        if (blockers.length > 1) ...[
+                          const SizedBox(width: 6),
+                          InkWell(
+                            onTap: showBlockersDialog,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.expand_more,
+                                size: 18,
+                                color: Colors.white.withValues(alpha: 0.75),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
             ),
           ),
           Expanded(
             flex: 2,
             child: Align(
               alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => _openReview(proposal),
-                style: TextButton.styleFrom(
-                  foregroundColor: const Color(0xFF3498DB),
-                ),
-                child: const Text(
-                  'Review',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                alignment: WrapAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => _openReview(proposal),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF3498DB),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    ),
+                    child: const Text(
+                      'Review',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _approveFromRow(Map<String, dynamic> proposal) async {
+    final id = proposal['id']?.toString();
+    if (id == null || id.isEmpty) return;
+
+    final token = AuthService.token;
+    if (token == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Session expired. Please login again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$id/approve'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({}),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✅ Approved'),
+            backgroundColor: PremiumTheme.teal,
+          ),
+        );
+        await _loadData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to approve: ${response.statusCode}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error approving: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _declineFromRow(Map<String, dynamic> proposal) async {
+    final id = proposal['id']?.toString();
+    if (id == null || id.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Decline proposal?'),
+        content: const Text('This will return the proposal to Draft.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Decline'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final token = AuthService.token;
+    if (token == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Session expired. Please login again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$id/reject'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({}),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✅ Declined'),
+            backgroundColor: PremiumTheme.error,
+          ),
+        );
+        await _loadData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to decline: ${response.statusCode}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error declining: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _requestChangesFromRow(Map<String, dynamic> proposal) async {
+    final id = proposal['id']?.toString();
+    if (id == null || id.isEmpty) return;
+
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Request changes from'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: const Text('Manager'),
+              onTap: () => Navigator.pop(context, 'manager'),
+            ),
+            ListTile(
+              title: const Text('Finance Manager'),
+              onTap: () => Navigator.pop(context, 'finance'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (selected == null) return;
+
+    final token = AuthService.token;
+    if (token == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Session expired. Please login again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/api/proposals/$id/request-changes'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode({'target': selected}),
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('✅ Changes requested'),
+            backgroundColor: PremiumTheme.pink,
+          ),
+        );
+        await _loadData();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to request changes: ${response.statusCode}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error requesting changes: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   String _formatProposalDate(dynamic date) {
@@ -1424,9 +1919,9 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
       },
     ).then((result) async {
       if (result == 'approved') {
-        setState(() => _activeFilter = 'approved');
+        setState(() => _activeFilter = _filterApproved);
       } else if (result == 'rejected') {
-        setState(() => _activeFilter = 'rejected');
+        setState(() => _activeFilter = _filterDeclined);
       }
       await _loadData();
     });
@@ -1693,10 +2188,124 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     if (value == null) return 0;
     if (value is num) return value.toDouble();
     if (value is String) {
-      final cleaned = value.replaceAll(RegExp(r'[^\d.]'), '');
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return 0;
+      final cleaned = trimmed
+          .replaceAll(RegExp(r'[^\d.,-]'), '')
+          .replaceAll(',', '');
       return double.tryParse(cleaned) ?? 0;
     }
     return 0;
+  }
+
+  double _inferBudget(Map<String, dynamic> proposal) {
+    final direct = _parseBudget(
+      proposal['budget'] ??
+          proposal['deal_value'] ??
+          proposal['dealValue'] ??
+          proposal['value'] ??
+          proposal['amount'],
+    );
+    if (direct > 0) return direct;
+
+    final content = proposal['content'];
+    if (content == null) return 0;
+
+    dynamic tryDecode(dynamic value) {
+      if (value is String) {
+        final trimmed = value.trim();
+        if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+          try {
+            return jsonDecode(trimmed);
+          } catch (_) {
+            return value;
+          }
+        }
+      }
+      return value;
+    }
+
+    double sumFromPriceTable(dynamic table) {
+      if (table is! Map) return 0;
+      if ((table['type'] ?? '').toString().toLowerCase() != 'price') return 0;
+
+      final cells = table['cells'];
+      if (cells is! List || cells.isEmpty) return 0;
+
+      final header = cells.first;
+      if (header is! List) return 0;
+
+      int totalIndex = -1;
+      for (int i = 0; i < header.length; i++) {
+        final h = (header[i] ?? '').toString().toLowerCase().trim();
+        if (h == 'total') {
+          totalIndex = i;
+          break;
+        }
+      }
+
+      double sum = 0;
+      for (int r = 1; r < cells.length; r++) {
+        final row = cells[r];
+        if (row is! List || row.isEmpty) continue;
+
+        dynamic v;
+        if (totalIndex >= 0 && totalIndex < row.length) {
+          v = row[totalIndex];
+        } else {
+          v = row.last;
+        }
+        sum += _parseBudget(v);
+      }
+      return sum;
+    }
+
+    double scan(dynamic node) {
+      node = tryDecode(node);
+
+      if (node is Map) {
+        double total = 0;
+
+        // Common wrappers used by the editor
+        final positioned = node['positionedPricingTables'];
+        if (positioned is List) {
+          for (final item in positioned) {
+            final it = tryDecode(item);
+            if (it is Map && it['table'] != null) {
+              total += sumFromPriceTable(tryDecode(it['table']));
+            }
+          }
+        }
+
+        final tables = node['tables'];
+        if (tables is List) {
+          for (final t in tables) {
+            total += sumFromPriceTable(tryDecode(t));
+          }
+        }
+
+        // If the node itself looks like a table
+        total += sumFromPriceTable(node);
+
+        // Recurse into all values (handles nested content, double-encoded JSON, etc.)
+        for (final v in node.values) {
+          total += scan(v);
+        }
+        return total;
+      }
+
+      if (node is List) {
+        double total = 0;
+        for (final item in node) {
+          total += scan(item);
+        }
+        return total;
+      }
+
+      return 0;
+    }
+
+    return scan(content);
   }
 
   String _formatCurrency(double value) {
@@ -1715,33 +2324,23 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
     return '${diff.inDays} days ago';
   }
 
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
+  void _navigateToPage(String page) {
+    setState(() => _currentPage = page);
+
+    switch (page) {
       case 'Dashboard':
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
       case 'Approvals':
-        setState(() => _activeFilter = 'pending');
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
+        setState(() => _activeFilter = _filterReady);
         break;
       case 'Analytics':
-        Navigator.pushReplacementNamed(context, '/analytics');
+      case 'All analytics':
+      case 'My analytics':
+        Navigator.pushReplacementNamed(context, '/admin_analytics');
         break;
       case 'History':
-        setState(() => _activeFilter = 'approved');
-        if (_scrollController.hasClients) {
-          _scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
+        Navigator.pushReplacementNamed(context, '/admin_history');
         break;
       case 'Sign Out':
         AuthService.logout();

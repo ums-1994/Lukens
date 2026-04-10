@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
+import 'dart:ui' as ui;
 import 'package:http/http.dart' as http;
+import 'package:fl_chart/fl_chart.dart';
 import 'package:web/web.dart' as web;
 import 'dart:async';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -11,31 +13,143 @@ import '../../theme/premium_theme.dart';
 
 class ClientDashboardHome extends StatefulWidget {
   final String? initialToken;
+  final int? initialNavIndex;
+  final bool showSummary;
 
-  const ClientDashboardHome({super.key, this.initialToken});
+  const ClientDashboardHome({
+    super.key,
+    this.initialToken,
+    this.initialNavIndex,
+    this.showSummary = true,
+  });
 
   @override
   State<ClientDashboardHome> createState() => _ClientDashboardHomeState();
 }
 
 class _ClientDashboardHomeState extends State<ClientDashboardHome> {
+  static bool _globalOtpDialogOpen = false;
+  static Future<void>? _globalVerificationFuture;
+
   bool _isLoading = true;
   String? _error;
   String? _accessToken;
   String? _clientEmail;
   String? _deviceId;
   String? _clientSessionToken;
-  String? _pendingDeviceOtpChallengeId;
-  DateTime? _pendingDeviceOtpExpiresAt;
+  bool _verificationInProgress = false;
+  bool _otpDialogOpen = false;
+  Future<void>? _loadProposalsFuture;
   List<Map<String, dynamic>> _proposals = [];
   Map<String, dynamic>? _selectedDocument;
   int _selectedNavIndex = 0;
+  bool _overviewLoading = false;
+  String? _overviewError;
+  Map<String, dynamic>? _overview;
+  String _dashboardDocFilter = 'all';
   Map<String, int> _statusCounts = {
     'pending': 0,
     'approved': 0,
     'rejected': 0,
     'viewed': 0,
   };
+  bool _isSidebarCollapsed = false;
+  int? _hoverSidebarIndex;
+
+  static const List<Map<String, dynamic>> _clientNavItems = [
+    {'index': 0, 'label': 'Dashboard', 'icon': Icons.dashboard_outlined},
+    {'index': 1, 'label': 'Proposals', 'icon': Icons.description_outlined},
+    {'index': 2, 'label': 'Documents', 'icon': Icons.folder_outlined},
+    {'index': 3, 'label': 'Profile', 'icon': Icons.person_outline},
+  ];
+
+  bool _isSow(Map<String, dynamic> p) {
+    final t =
+        (p['template_type'] ?? p['templateType'] ?? p['template_key'] ?? '')
+            .toString()
+            .toLowerCase();
+    return t.contains('sow');
+  }
+
+  Widget _filterChip(String label, String value) {
+    final selected = _dashboardDocFilter == value;
+    const chipHeight = 18.06;
+    const chipRadius = 20.14;
+    const chipBorderWidth = 1.23;
+    const chipBorderColor = Color(0xFF6A6A6A);
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _dashboardDocFilter = value;
+        });
+      },
+      borderRadius: BorderRadius.circular(chipRadius),
+      child: SizedBox(
+        height: chipHeight,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFFC10D00)
+                : Colors.white.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(chipRadius),
+            border: Border.all(
+                color: selected ? const Color(0xFFC10D00) : chipBorderColor,
+                width: chipBorderWidth),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 7.5,
+                fontWeight: FontWeight.w700,
+                height: 1.0,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _isProposalRequiringAction(Map<String, dynamic> p) {
+    if (_isSow(p)) return false;
+    final s = (p['status'] ?? '').toString().toLowerCase();
+    return s.contains('sent') ||
+        s.contains('released') ||
+        s.contains('review') ||
+        s.contains('pending') ||
+        s.contains('signature');
+  }
+
+  bool _isSignedDocument(Map<String, dynamic> p) {
+    if (_isSow(p)) return false;
+    final statusLower = (p['status'] ?? '').toString().toLowerCase().trim();
+    return statusLower.contains('client signed') ||
+        statusLower.contains('signed');
+  }
+
+  bool _isAwaitingSignature(Map<String, dynamic> p) {
+    if (_isSow(p)) return false;
+    if (_isSignedDocument(p)) return false;
+
+    final statusLower = (p['status'] ?? '').toString().toLowerCase().trim();
+
+    return statusLower.contains('sent for signature') ||
+        statusLower.contains('sent to client') ||
+        statusLower.contains('released') ||
+        statusLower.contains('in review') ||
+        statusLower.contains('review') ||
+        statusLower.contains('sent');
+  }
+
+  int _proposalsRequiringActionCount() {
+    return _proposals.where(_isProposalRequiringAction).length;
+  }
 
   String _normalizeStatus(String rawStatus) {
     final lower = rawStatus.toLowerCase().trim();
@@ -72,9 +186,20 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   @override
   void initState() {
     super.initState();
+    _selectedNavIndex = widget.initialNavIndex ?? 0;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _extractTokenAndLoad();
     });
+  }
+
+  bool get _isOverviewDashboard => widget.showSummary && _selectedNavIndex == 0;
+
+  void _navigateClient(String route) {
+    final token = _accessToken;
+    final suffix = (token != null && token.isNotEmpty)
+        ? '?token=${Uri.encodeComponent(token)}'
+        : '';
+    Navigator.pushReplacementNamed(context, '$route$suffix');
   }
 
   String _sanitizeToken(String token) {
@@ -99,7 +224,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       final existing = web.window.localStorage['lukens_client_device_id'];
       final clean = existing?.trim();
       if (clean != null && clean.isNotEmpty) return clean;
-      final id = 'dev_${DateTime.now().millisecondsSinceEpoch}_${(100000 + (DateTime.now().microsecondsSinceEpoch % 900000))}';
+      final id =
+          'dev_${DateTime.now().millisecondsSinceEpoch}_${(100000 + (DateTime.now().microsecondsSinceEpoch % 900000))}';
       web.window.localStorage['lukens_client_device_id'] = id;
       return id;
     } catch (_) {
@@ -118,341 +244,323 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     } catch (_) {}
   }
 
-  void _saveCachedClientSession(String? token) {
+  void _persistClientSessionToken(String token) {
+    final clean = token.trim();
+    if (clean.isEmpty) return;
+    _clientSessionToken = clean;
     if (!kIsWeb) return;
     try {
-      if (token == null || token.trim().isEmpty) {
-        web.window.localStorage.removeItem('lukens_client_session_token');
-      } else {
-        web.window.localStorage['lukens_client_session_token'] = token.trim();
-      }
+      web.window.localStorage['lukens_client_session_token'] = clean;
     } catch (_) {}
   }
 
-  Future<String?> _promptForOtp() async {
-    String? result;
-    final controller = TextEditingController();
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Enter verification code'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Check your email for a 6-digit code.'),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                keyboardType: TextInputType.number,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: '6-digit code',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                result = null;
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                result = controller.text.trim();
-                Navigator.of(ctx).pop();
-              },
-              child: const Text('Verify'),
-            ),
-          ],
-        );
+  Future<Map<String, dynamic>?> _startClientDeviceSession(
+    String token, {
+    bool resend = false,
+  }) async {
+    if (_deviceId == null || _deviceId!.isEmpty) {
+      _deviceId = _getOrCreateDeviceId();
+    }
+
+    final resp = await http.post(
+      Uri.parse('$baseUrl/client/device-session/start'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (_deviceId != null && _deviceId!.isNotEmpty)
+          'X-Client-Device-Id': _deviceId!,
+        if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty)
+          'X-Client-Session-Token': _clientSessionToken!,
       },
+      body: jsonEncode({
+        'token': token,
+        'device_id': _deviceId,
+        if (resend) 'resend': true,
+      }),
     );
-    return result;
+
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      return null;
+    }
+    final decoded = jsonDecode(resp.body);
+    if (decoded is! Map) return null;
+    return Map<String, dynamic>.from(decoded);
   }
 
-  String _normalizeOtp(String raw) {
-    return raw.replaceAll(RegExp(r'\D'), '');
+  Future<Map<String, dynamic>?> _verifyClientDeviceOtp(
+    String challengeId,
+    String otp,
+  ) async {
+    final resp = await http.post(
+      Uri.parse('$baseUrl/client/device-session/verify-otp'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (_deviceId != null && _deviceId!.isNotEmpty)
+          'X-Client-Device-Id': _deviceId!,
+        if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty)
+          'X-Client-Session-Token': _clientSessionToken!,
+      },
+      body: jsonEncode({
+        'challenge_id': challengeId,
+        'otp': otp,
+      }),
+    );
+
+    final decoded = jsonDecode(resp.body);
+    if (decoded is! Map) return null;
+    final data = Map<String, dynamic>.from(decoded);
+    if (resp.statusCode < 200 || resp.statusCode >= 300) {
+      data['__http_status'] = resp.statusCode;
+      return data;
+    }
+    return data;
   }
 
-  Future<bool> _ensureDeviceSession({required String token}) async {
-    _deviceId ??= _getOrCreateDeviceId();
-    final deviceId = _deviceId;
-    if (deviceId == null || deviceId.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Unable to verify device (missing device id).'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
+  Future<void> _ensureDeviceVerifiedAndRetry({required String token}) async {
+    if (_globalVerificationFuture != null) {
+      return _globalVerificationFuture!;
     }
 
-    // If we already have a cached session token, try it first.
-    if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty) {
-      return true;
-    }
+    _globalVerificationFuture =
+        _runVerificationFlow(token: token).whenComplete(() {
+      _globalVerificationFuture = null;
+    });
 
-    if (_pendingDeviceOtpChallengeId != null &&
-        _pendingDeviceOtpChallengeId!.isNotEmpty) {
-      final activeChallengeId = _pendingDeviceOtpChallengeId!;
-      final exp = _pendingDeviceOtpExpiresAt;
-      if (exp == null || exp.isAfter(DateTime.now())) {
-        final otp = await _promptForOtp();
-        if (otp == null || otp.trim().isEmpty) {
-          return false;
-        }
+    return _globalVerificationFuture!;
+  }
 
-        final normalizedOtp = _normalizeOtp(otp.trim());
-        if (normalizedOtp.length != 6) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Please enter the 6-digit code.'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-          return false;
-        }
+  Future<void> _runVerificationFlow({required String token}) async {
+    if (_verificationInProgress || _otpDialogOpen) return;
+    _verificationInProgress = true;
 
-        final verifyUri = Uri.parse('$baseUrl/api/client/device-session/verify-otp');
-        final verifyResp = await http
-            .post(
-              verifyUri,
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'challenge_id': activeChallengeId,
-                'otp': normalizedOtp,
-              }),
-            )
-            .timeout(
-              const Duration(seconds: 12),
-              onTimeout: () {
-                throw TimeoutException('OTP verification timed out');
-              },
-            );
-
-        Map<String, dynamic>? verifyDecoded;
-        try {
-          final body = jsonDecode(verifyResp.body);
-          if (body is Map) {
-            verifyDecoded = Map<String, dynamic>.from(body);
-          }
-        } catch (_) {}
-
-        if (verifyResp.statusCode != 200) {
-          if (mounted) {
-            final msg = verifyDecoded?['detail']?.toString() ??
-                'OTP verification failed (HTTP ${verifyResp.statusCode})';
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(msg), backgroundColor: Colors.red),
-            );
-          }
-          return false;
-        }
-
-        final verifiedSession = verifyDecoded?['session_token']?.toString();
-        if (verifiedSession == null || verifiedSession.isEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('OTP verified but no session token was returned.'),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
-          return false;
-        }
-
-        _clientSessionToken = verifiedSession;
-        _saveCachedClientSession(verifiedSession);
-        _pendingDeviceOtpChallengeId = null;
-        _pendingDeviceOtpExpiresAt = null;
-        return true;
-      }
-
-      _pendingDeviceOtpChallengeId = null;
-      _pendingDeviceOtpExpiresAt = null;
-    }
-
-    final startUri = Uri.parse('$baseUrl/api/client/device-session/start');
-    final startResp = await http
-        .post(
-          startUri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'token': token, 'device_id': deviceId}),
-        )
-        .timeout(
-          const Duration(seconds: 12),
-          onTimeout: () {
-            throw TimeoutException('Device session start timed out');
-          },
-        );
-
-    Map<String, dynamic>? decoded;
     try {
-      final body = jsonDecode(startResp.body);
-      if (body is Map) {
-        decoded = Map<String, dynamic>.from(body);
+      final start = await _startClientDeviceSession(token);
+      if (start == null) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Unable to start verification. Please retry.';
+          _isLoading = false;
+        });
+        return;
       }
-    } catch (_) {}
 
-    if (startResp.statusCode != 200) {
-      if (mounted) {
-        final msg = decoded?['detail']?.toString() ??
-            'Failed to start device session (HTTP ${startResp.statusCode})';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), backgroundColor: Colors.red),
-        );
+      final otpRequired = start['otp_required'] == true;
+      final sessionToken = start['session_token']?.toString();
+
+      if (!otpRequired &&
+          sessionToken != null &&
+          sessionToken.trim().isNotEmpty) {
+        _persistClientSessionToken(sessionToken);
+        await _loadClientProposals();
+        return;
       }
-      return false;
-    }
 
-    final sessionToken = decoded?['session_token']?.toString();
-    final otpRequired = decoded?['otp_required'] == true;
-    if (!otpRequired && sessionToken != null && sessionToken.isNotEmpty) {
-      _clientSessionToken = sessionToken;
-      _saveCachedClientSession(sessionToken);
-      return true;
-    }
-
-    if (!otpRequired) {
-      // No OTP required but token missing: treat as failure.
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Device session started but no session token was returned.'),
-            backgroundColor: Colors.red,
-          ),
-        );
+      final challengeId = start['challenge_id']?.toString() ?? '';
+      if (challengeId.trim().isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Verification required, but no challenge was created.';
+          _isLoading = false;
+        });
+        return;
       }
-      return false;
+
+      await _showOtpDialog(token: token, challengeId: challengeId);
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    } finally {
+      _verificationInProgress = false;
     }
+  }
 
-    final challengeId = decoded?['challenge_id']?.toString() ?? '';
-    if (challengeId.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('OTP challenge missing (no challenge_id).'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
-    }
+  Future<void> _showOtpDialog({
+    required String token,
+    required String challengeId,
+  }) async {
+    if (_globalOtpDialogOpen) return;
+    if (_otpDialogOpen) return;
+    _otpDialogOpen = true;
+    _globalOtpDialogOpen = true;
+    final controller = TextEditingController();
+    bool submitting = false;
+    String? error;
 
-    _pendingDeviceOtpChallengeId = challengeId;
-    final expiresAtRaw = decoded?['expires_at']?.toString();
-    if (expiresAtRaw != null && expiresAtRaw.isNotEmpty) {
-      try {
-        _pendingDeviceOtpExpiresAt = DateTime.parse(expiresAtRaw);
-      } catch (_) {
-        _pendingDeviceOtpExpiresAt = null;
-      }
-    }
-
-    final otp = await _promptForOtp();
-    if (otp == null || otp.trim().isEmpty) {
-      return false;
-    }
-
-    final normalizedOtp = _normalizeOtp(otp.trim());
-    if (normalizedOtp.length != 6) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please enter the 6-digit code.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
-    }
-
-    final verifyUri = Uri.parse('$baseUrl/api/client/device-session/verify-otp');
-    final verifyResp = await http
-        .post(
-          verifyUri,
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'challenge_id': challengeId, 'otp': normalizedOtp}),
-        )
-        .timeout(
-          const Duration(seconds: 12),
-          onTimeout: () {
-            throw TimeoutException('OTP verification timed out');
-          },
-        );
-
-    Map<String, dynamic>? verifyDecoded;
     try {
-      final body = jsonDecode(verifyResp.body);
-      if (body is Map) {
-        verifyDecoded = Map<String, dynamic>.from(body);
-      }
-    } catch (_) {}
+      await showDialog<void>(
+        context: context,
+        useRootNavigator: true,
+        barrierDismissible: !submitting,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setModalState) {
+              bool verificationComplete = false;
 
-    if (verifyResp.statusCode != 200) {
-      if (mounted) {
-        final msg = verifyDecoded?['detail']?.toString() ??
-            'OTP verification failed (HTTP ${verifyResp.statusCode})';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg), backgroundColor: Colors.red),
-        );
-      }
-      return false;
+              Future<void> verify() async {
+                if (submitting || verificationComplete) return;
+                final otp = controller.text.trim();
+                if (otp.isEmpty) {
+                  setModalState(
+                      () => error = 'Enter the code sent to your email.');
+                  return;
+                }
+
+                setModalState(() {
+                  submitting = true;
+                  error = null;
+                });
+
+                try {
+                  final result = await _verifyClientDeviceOtp(challengeId, otp);
+                  final sessionToken = result?['session_token']?.toString();
+                  if (sessionToken != null && sessionToken.trim().isNotEmpty) {
+                    verificationComplete = true;
+                    _persistClientSessionToken(sessionToken);
+                    try {
+                      Navigator.of(dialogContext, rootNavigator: true).pop();
+                    } catch (_) {
+                      try {
+                        Navigator.of(dialogContext).pop();
+                      } catch (_) {}
+                    }
+                    return;
+                  }
+
+                  final msg = result?['detail']?.toString() ?? 'Invalid code.';
+                  setModalState(() => error = msg);
+                } catch (e) {
+                  setModalState(() => error = e.toString());
+                } finally {
+                  if (!verificationComplete) {
+                    setModalState(() => submitting = false);
+                  }
+                }
+              }
+
+              Future<void> resend() async {
+                setModalState(() {
+                  submitting = true;
+                  error = null;
+                });
+                try {
+                  await _startClientDeviceSession(token, resend: true);
+                  setModalState(() {
+                    submitting = false;
+                    error = 'A new code has been sent.';
+                  });
+                } catch (e) {
+                  setModalState(() {
+                    submitting = false;
+                    error = e.toString();
+                  });
+                }
+              }
+
+              return AlertDialog(
+                title: const Text('Verify your device'),
+                content: SizedBox(
+                  width: 420,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Enter the code sent to your email'),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: controller,
+                        decoration: const InputDecoration(
+                          labelText: 'OTP code',
+                          border: OutlineInputBorder(),
+                        ),
+                        enabled: !submitting,
+                        keyboardType: TextInputType.number,
+                        onSubmitted: (_) => verify(),
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 10),
+                        Text(
+                          error!,
+                          style: TextStyle(color: Colors.red.shade300),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: submitting
+                        ? null
+                        : () =>
+                            Navigator.of(context, rootNavigator: true).pop(),
+                    child: const Text('Cancel'),
+                  ),
+                  TextButton(
+                    onPressed: submitting ? null : resend,
+                    child: const Text('Resend'),
+                  ),
+                  ElevatedButton(
+                    onPressed: submitting ? null : verify,
+                    child: submitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Verify'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      _otpDialogOpen = false;
+      _globalOtpDialogOpen = false;
     }
-
-    final verifiedSession = verifyDecoded?['session_token']?.toString();
-    if (verifiedSession == null || verifiedSession.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('OTP verified but no session token was returned.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      return false;
-    }
-
-    _clientSessionToken = verifiedSession;
-    _saveCachedClientSession(verifiedSession);
-    return true;
   }
 
   List<Map<String, dynamic>> _filteredDocuments() {
     final idx = _selectedNavIndex;
     final docs = List<Map<String, dynamic>>.from(_proposals);
     if (idx == 0) {
-      return docs;
+      if (_dashboardDocFilter == 'all') return docs;
+      return docs.where((d) {
+        final status = (d['status'] ?? '').toString().toLowerCase();
+        switch (_dashboardDocFilter) {
+          case 'draft':
+            return status.contains('draft');
+          case 'released':
+            return status.contains('sent to client') ||
+                status.contains('released');
+          case 'pending':
+            return status.contains('pending') ||
+                status.contains('review') ||
+                status.contains('sent for signature');
+          case 'signed':
+            return status.contains('signed');
+          case 'changes_requested':
+            return status.contains('change') || status.contains('request');
+          default:
+            return true;
+        }
+      }).toList();
     }
-
-    bool isSow(Map<String, dynamic> p) {
-      final t = (p['template_type'] ?? p['templateType'] ?? p['template_key'] ?? '')
-          .toString()
-          .toLowerCase();
-      return t.contains('sow');
-    }
-
     if (idx == 1) {
-      return docs.where((p) => !isSow(p)).toList();
+      return docs.where(_isAwaitingSignature).toList();
     }
     if (idx == 2) {
-      return docs.where(isSow).toList();
+      return docs.where(_isSignedDocument).toList();
     }
     return docs;
   }
 
   String _documentLabel(Map<String, dynamic> doc) {
-    final t = (doc['template_type'] ?? doc['templateType'] ?? doc['template_key'] ?? '')
+    final t = (doc['template_type'] ??
+            doc['templateType'] ??
+            doc['template_key'] ??
+            '')
         .toString()
         .toLowerCase();
     if (t.contains('sow')) return 'SOW';
@@ -464,21 +572,111 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final id = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (id == null || _accessToken == null || _accessToken!.isEmpty) return;
 
-    final url =
-        '$baseUrl/api/client/proposals/$id/export/pdf?token=${Uri.encodeComponent(_accessToken!)}&download=1';
+    final statusLower = (doc['status'] ?? '').toString().toLowerCase();
+    final isSigned = statusLower.contains('client signed') ||
+        (statusLower.contains('signed') && !statusLower.contains('sent'));
+
+    final url = isSigned
+        ? '$baseUrl/api/client/proposals/$id/docusign/signed-pdf?token=${Uri.encodeComponent(_accessToken!)}'
+        : '$baseUrl/api/client/proposals/$id/export/pdf?token=${Uri.encodeComponent(_accessToken!)}&download=1';
     web.window.open(url, '_blank');
   }
 
   Future<void> _openSigningUrl(Map<String, dynamic> doc) async {
-    final signingUrl = doc['signing_url']?.toString() ?? '';
-    if (signingUrl.trim().isEmpty) return;
-    await launchUrlString(signingUrl, mode: LaunchMode.externalApplication);
+    final rawId = doc['id'];
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
+      return;
+    }
+
+    try {
+      final uri = Uri.parse(
+          '$baseUrl/api/client/proposals/$proposalId/docusign/signing-url');
+      final resp = await http
+          .post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'token': _accessToken,
+          'signer_name':
+              (doc['client_name']?.toString().trim().isNotEmpty ?? false)
+                  ? doc['client_name']?.toString().trim()
+                  : (_clientEmail ?? '').trim(),
+        }),
+      )
+          .timeout(
+        const Duration(seconds: 45),
+        onTimeout: () {
+          throw TimeoutException('Signing URL request timed out');
+        },
+      );
+
+      Map<String, dynamic>? decoded;
+      try {
+        final body = jsonDecode(resp.body);
+        if (body is Map) {
+          decoded = Map<String, dynamic>.from(body);
+        }
+      } catch (_) {}
+
+      if (resp.statusCode >= 200 && resp.statusCode < 300) {
+        final fresh = decoded?['signing_url']?.toString() ?? '';
+        if (fresh.trim().isNotEmpty) {
+          if (kIsWeb) {
+            web.window.location.href = fresh;
+          } else {
+            await launchUrlString(fresh, mode: LaunchMode.externalApplication);
+          }
+          return;
+        }
+      }
+
+      final fallbackSigningUrl = doc['signing_url']?.toString() ?? '';
+      if (fallbackSigningUrl.trim().isNotEmpty) {
+        if (kIsWeb) {
+          web.window.location.href = fallbackSigningUrl;
+        } else {
+          await launchUrlString(fallbackSigningUrl,
+              mode: LaunchMode.externalApplication);
+        }
+        return;
+      }
+
+      if (mounted) {
+        final msg = decoded?['detail']?.toString() ??
+            'Unable to open DocuSign (HTTP ${resp.statusCode}).';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red),
+        );
+      }
+    } catch (e) {
+      final fallbackSigningUrl = doc['signing_url']?.toString() ?? '';
+      if (fallbackSigningUrl.trim().isNotEmpty) {
+        if (kIsWeb) {
+          web.window.location.href = fallbackSigningUrl;
+        } else {
+          await launchUrlString(fallbackSigningUrl,
+              mode: LaunchMode.externalApplication);
+        }
+        return;
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unable to open DocuSign: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _showFallbackSignModal(Map<String, dynamic> doc) async {
     if (_accessToken == null || _accessToken!.isEmpty) return;
     final rawId = doc['id'];
-    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (proposalId == null) return;
 
     final nameController = TextEditingController();
@@ -499,7 +697,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 return;
               }
               if (!consent) {
-                setModalState(() => error = 'Please confirm you agree to sign.');
+                setModalState(
+                    () => error = 'Please confirm you agree to sign.');
                 return;
               }
 
@@ -510,7 +709,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
               try {
                 final resp = await http.post(
-                  Uri.parse('$baseUrl/api/client/proposals/$proposalId/sign_token'),
+                  Uri.parse(
+                      '$baseUrl/api/client/proposals/$proposalId/sign_token'),
                   headers: {
                     'Content-Type': 'application/json',
                     if (_deviceId != null && _deviceId!.isNotEmpty)
@@ -576,7 +776,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                           value: consent,
                           onChanged: submitting
                               ? null
-                              : (v) => setModalState(() => consent = v ?? false),
+                              : (v) =>
+                                  setModalState(() => consent = v ?? false),
                         ),
                         const Expanded(
                           child: Text(
@@ -597,7 +798,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
               ),
               actions: [
                 TextButton(
-                  onPressed: submitting ? null : () => Navigator.of(context).pop(),
+                  onPressed:
+                      submitting ? null : () => Navigator.of(context).pop(),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton(
@@ -618,118 +820,313 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     );
   }
 
-  Widget _buildSidebar() {
-    Widget navItem(int index, IconData icon, String label,
-        {VoidCallback? afterTap}) {
-      final selected = _selectedNavIndex == index;
-      return InkWell(
-        onTap: () {
-          setState(() {
-            _selectedNavIndex = index;
-          });
-          afterTap?.call();
-        },
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? Colors.white.withValues(alpha: 0.12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, color: selected ? Colors.white : Colors.white70, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: selected ? Colors.white : Colors.white70,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+  void _handleNavTap(int index, {bool closeDrawer = false}) {
+    if (index == 0) {
+      if (closeDrawer) Navigator.of(context).pop();
+      if (!widget.showSummary) {
+        _navigateClient('/client/dashboard');
+      }
+      return;
     }
+    if (index == 1) {
+      if (closeDrawer) Navigator.of(context).pop();
+      if (widget.showSummary) {
+        _navigateClient('/client/proposals');
+      }
+      return;
+    }
+    setState(() {
+      _selectedNavIndex = index;
+    });
+    if (closeDrawer) Navigator.of(context).pop();
+  }
 
-    return Container(
-      width: 220,
+  Widget _buildSidebar() {
+    const Color activeColor = Color(0xFFC10D00);
+    const Color sidebarBg = Color(0xFF2A2A2A);
+    const Color hoverFill = Color(0xFF3A3A3A);
+    const Color iconCircleIdle = Color(0xFF4A4A4A);
+    const Color leftAccent = Color(0xFF1565C0);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: _isSidebarCollapsed ? 80 : 300,
       decoration: BoxDecoration(
-        color: const Color(0xFF0B1220).withValues(alpha: 0.96),
+        color: sidebarBg,
         border: Border(
+          left: const BorderSide(color: leftAccent, width: 3),
           right: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 18),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Row(
-              children: const [
-                Icon(Icons.grid_view_rounded, color: Colors.white),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Client Portal',
-                    style: TextStyle(
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_isSidebarCollapsed)
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 20, horizontal: 10),
+                child: InkWell(
+                  onTap: () => setState(() => _isSidebarCollapsed = false),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: hoverFill,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.keyboard_arrow_right,
                       color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                      size: 24,
                     ),
                   ),
                 ),
-              ],
+              )
+            else
+              Container(
+                padding: const EdgeInsets.fromLTRB(16, 30, 16, 20),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: InkWell(
+                        onTap: () => setState(() => _isSidebarCollapsed = true),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: hoverFill,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.keyboard_arrow_left,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Column(
+                      children: [
+                        const SizedBox(height: 4),
+                        Image.asset(
+                          'assets/images/new icons for manager/khonology_logo.png',
+                          height: 36,
+                          fit: BoxFit.contain,
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Welcome to',
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w400,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Proposal & SOW Builder',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 22),
+                        const Divider(color: Color(0x33FFFFFF), height: 1),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Column(
+                  children: [
+                    for (final item in _clientNavItems)
+                      _buildSidebarNavItem(
+                        index: item['index'] as int,
+                        label: item['label'] as String,
+                        icon: item['icon'] as IconData,
+                        isCollapsed: _isSidebarCollapsed,
+                        activeColor: activeColor,
+                        hoverFill: hoverFill,
+                        iconCircleIdle: iconCircleIdle,
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          navItem(0, Icons.dashboard_outlined, 'Dashboard'),
-          navItem(1, Icons.description_outlined, 'Proposals'),
-          navItem(2, Icons.assignment_outlined, 'SOWs'),
-          navItem(3, Icons.receipt_long_outlined, 'Invoices'),
-          navItem(4, Icons.mail_outline, 'Messages'),
-          navItem(5, Icons.folder_outlined, 'Documents'),
-          navItem(6, Icons.person_outline, 'Profile'),
-          const Spacer(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
-            child: Text(
-              _clientEmail ?? '',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.65), fontSize: 12),
+            if (!_isSidebarCollapsed)
+              Container(
+                margin:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                height: 1,
+                color: Colors.white.withValues(alpha: 0.14),
+              ),
+            Padding(
+              padding: EdgeInsets.only(
+                left: _isSidebarCollapsed ? 6 : 16,
+                right: _isSidebarCollapsed ? 6 : 16,
+                bottom: 18,
+              ),
+              child: _isSidebarCollapsed
+                  ? Tooltip(
+                      message: _clientEmail ?? '',
+                      child: const Icon(
+                        Icons.alternate_email_rounded,
+                        color: Colors.white70,
+                        size: 18,
+                      ),
+                    )
+                  : Text(
+                      _clientEmail ?? '',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.65),
+                        fontSize: 12,
+                      ),
+                    ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSidebarNavItem({
+    required int index,
+    required String label,
+    required IconData icon,
+    required bool isCollapsed,
+    required Color activeColor,
+    required Color hoverFill,
+    required Color iconCircleIdle,
+  }) {
+    final bool selected = _selectedNavIndex == index;
+    final bool isHovering = _hoverSidebarIndex == index;
+    final int badgeCount =
+        label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hoverSidebarIndex = index),
+      onExit: (_) => setState(() => _hoverSidebarIndex = null),
+      child: Padding(
+        padding: isCollapsed
+            ? const EdgeInsets.symmetric(vertical: 5)
+            : const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Tooltip(
+          message: isCollapsed ? label : '',
+          child: InkWell(
+            onTap: () => _handleNavTap(index),
+            borderRadius: BorderRadius.circular(10),
+            child: isCollapsed
+                ? Center(
+                    child: Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? activeColor
+                            : isHovering
+                                ? hoverFill
+                                : iconCircleIdle,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(icon, color: Colors.white, size: 24),
+                    ),
+                  )
+                : Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? activeColor
+                          : isHovering
+                              ? hoverFill
+                              : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? Colors.white.withValues(alpha: 0.22)
+                                : iconCircleIdle,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(icon, color: Colors.white, size: 24),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 15,
+                              fontWeight:
+                                  selected ? FontWeight.w600 : FontWeight.w500,
+                              height: 1.2,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (badgeCount > 0)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              badgeCount > 99 ? '99+' : badgeCount.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
           ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildSidebarDrawer() {
     return Drawer(
-      backgroundColor: const Color(0xFF0B1220),
+      backgroundColor: const Color(0xFF2A2A2A),
       child: SafeArea(
         child: Builder(
           builder: (context) {
             return Container(
-              color: const Color(0xFF0B1220).withValues(alpha: 0.96),
-              child: Column(
+              color: const Color(0xFF2A2A2A),
+              child: SingleChildScrollView(
+                  child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 14),
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
+                    padding: const EdgeInsets.fromLTRB(18, 8, 8, 10),
                     child: Row(
                       children: [
-                        const Icon(Icons.grid_view_rounded,
-                            color: Colors.white),
-                        const SizedBox(width: 10),
                         const Expanded(
                           child: Text(
                             'Client Portal',
@@ -754,15 +1151,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   _buildDrawerNavItem(
                       context, 1, Icons.description_outlined, 'Proposals'),
                   _buildDrawerNavItem(
-                      context, 2, Icons.assignment_outlined, 'SOWs'),
+                      context, 2, Icons.folder_outlined, 'Documents'),
                   _buildDrawerNavItem(
-                      context, 3, Icons.receipt_long_outlined, 'Invoices'),
-                  _buildDrawerNavItem(
-                      context, 4, Icons.mail_outline, 'Messages'),
-                  _buildDrawerNavItem(
-                      context, 5, Icons.folder_outlined, 'Documents'),
-                  _buildDrawerNavItem(
-                      context, 6, Icons.person_outline, 'Profile'),
+                      context, 3, Icons.person_outline, 'Profile'),
                   const Spacer(),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
@@ -776,7 +1167,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                     ),
                   ),
                 ],
-              ),
+              )),
             );
           },
         ),
@@ -785,28 +1176,42 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildDrawerNavItem(
-      BuildContext context, int index, IconData icon, String label) {
+      BuildContext context, int index, IconData icon, String label,
+      {VoidCallback? onTap, double itemHeight = 37.77, double? itemWidth}) {
     final selected = _selectedNavIndex == index;
+    final badgeCount =
+        label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
     return InkWell(
       onTap: () {
-        setState(() {
-          _selectedNavIndex = index;
-        });
-        Navigator.of(context).pop();
+        _handleNavTap(index, closeDrawer: true);
+        onTap?.call();
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        width: itemWidth,
+        height: itemHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
           color: selected
               ? Colors.white.withValues(alpha: 0.12)
               : Colors.transparent,
+          border: selected
+              ? Border(
+                  left: BorderSide(color: PremiumTheme.primaryRed, width: 3),
+                )
+              : null,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
-            Icon(icon,
-                color: selected ? Colors.white : Colors.white70, size: 20),
+            Container(
+              width: 26,
+              height: 26,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE5E7EB),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: const Color(0xFF1F2937), size: 14),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -818,6 +1223,22 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 ),
               ),
             ),
+            if (badgeCount > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: PremiumTheme.primaryRed,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  badgeCount > 99 ? '99+' : badgeCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -860,25 +1281,17 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                 const SizedBox(height: 4),
                 Text(
                   'Welcome back, ${_clientEmail ?? 'Client'}',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.75), fontSize: 12),
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.75),
+                      fontSize: 12),
                 ),
               ],
             ),
           ),
           IconButton(
             onPressed: () {},
-            icon: const Icon(Icons.mail_outline, color: Colors.white70),
-            tooltip: 'Messages',
-          ),
-          IconButton(
-            onPressed: () {},
             icon: const Icon(Icons.notifications_none, color: Colors.white70),
             tooltip: 'Notifications',
-          ),
-          IconButton(
-            onPressed: _loadClientProposals,
-            icon: const Icon(Icons.refresh, color: Colors.white70),
-            tooltip: 'Refresh',
           ),
         ],
       ),
@@ -886,228 +1299,468 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildSummaryTiles() {
-    final docs = _filteredDocuments();
-    final activeCount = docs.where((d) {
+    final allDocs = List<Map<String, dynamic>>.from(_proposals);
+    final activeCount = allDocs.where((d) {
       final s = (d['status'] ?? '').toString().toLowerCase();
-      return s.contains('sent') || s.contains('released') || s.contains('review');
+      if (s.contains('signed')) return false;
+      return s.contains('sent') ||
+          s.contains('released') ||
+          s.contains('review');
     }).length;
-    final signedCount = docs.where((d) {
+    final signedSowCount = allDocs.where((d) {
+      if (!_isSow(d)) return false;
       final s = (d['status'] ?? '').toString().toLowerCase();
       return s.contains('signed');
     }).length;
-    final pendingCount = docs.where((d) {
-      final s = (d['status'] ?? '').toString().toLowerCase();
-      return s.contains('pending');
-    }).length;
+    final pendingApprovalsCount = _statusCounts['pending'] ?? 0;
 
-    Widget tile(String label, String value, IconData icon) {
+    const tileDescription =
+        'Additional description information can be included if required.';
+
+    const tileWidth = 306.62;
+    const tileHeight = 102.64;
+
+    Widget tile({
+      required String label,
+      required String value,
+      required IconData icon,
+    }) {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        width: tileWidth,
+        height: tileHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          color: Colors.white.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(5.32),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              offset: const Offset(0, 3.55),
+              blurRadius: 3.55,
+              spreadRadius: 0,
+            ),
+          ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: Colors.white70, size: 18),
-            ),
-            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(label,
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75), fontSize: 12)),
-                  const SizedBox(height: 4),
-                  Text(value,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        tileDescription,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: 10,
+                          height: 1.25,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 28,
+                      height: 1.0,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ],
               ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.12),
+                    offset: const Offset(0, 1),
+                    blurRadius: 2,
+                  ),
+                ],
+              ),
+              child: Icon(icon, color: PremiumTheme.primaryRed, size: 22),
             ),
           ],
         ),
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final narrow = constraints.maxWidth < 860;
-        final children = [
-          tile('Active Proposals', activeCount.toString(), Icons.description_outlined),
-          tile('Signed SOWs', signedCount.toString(), Icons.verified_outlined),
-          tile('Pending Approvals', pendingCount.toString(), Icons.pending_actions_outlined),
-        ];
-        if (narrow) {
-          return Column(
-            children: [
-              children[0],
-              const SizedBox(height: 12),
-              children[1],
-              const SizedBox(height: 12),
-              children[2],
-            ],
+    final children = [
+      tile(
+        label: 'Active Proposals',
+        value: activeCount.toString(),
+        icon: Icons.adjust,
+      ),
+      tile(
+        label: "Signed SOW'S",
+        value: signedSowCount.toString(),
+        icon: Icons.check,
+      ),
+      tile(
+        label: 'Pending Approvals',
+        value: pendingApprovalsCount.toString(),
+        icon: Icons.remove_red_eye_outlined,
+      ),
+    ];
+
+    // Figma: three blocks side-by-side, 306.62 × 102.64 each; scroll horizontally if needed.
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          children[0],
+          const SizedBox(width: 12),
+          children[1],
+          const SizedBox(width: 12),
+          children[2],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopCornerAssetIcon(String assetPath) {
+    return SizedBox(
+      width: 44.87,
+      height: 44.87,
+      child: Image.asset(
+        assetPath,
+        width: 44.87,
+        height: 44.87,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) {
+          return Container(
+            width: 44.87,
+            height: 44.87,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(22.435),
+              border: Border.all(color: Colors.white24),
+            ),
+            child: const Icon(Icons.image_not_supported_outlined,
+                color: Colors.white70, size: 18),
           );
-        }
-        return Row(
-          children: [
-            Expanded(child: children[0]),
-            const SizedBox(width: 12),
-            Expanded(child: children[1]),
-            const SizedBox(width: 12),
-            Expanded(child: children[2]),
-          ],
-        );
-      },
+        },
+      ),
     );
   }
 
   Widget _buildRecentDocuments() {
     final docs = _filteredDocuments();
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'Recent Documents',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              Text(
-                '${docs.length}',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+    final isDocumentsTab = _selectedNavIndex == 2;
+    final isProposalsTab = _selectedNavIndex == 1;
+    final listTitle = isDocumentsTab
+        ? 'Signed Documents'
+        : isProposalsTab
+            ? 'Awaiting Signature'
+            : 'Recent Documents';
+    const recentDocsWidth = 466.59;
+    const recentDocsHeight = 308.28;
+
+    return Align(
+      alignment: Alignment.topLeft,
+      child: SizedBox(
+        width: recentDocsWidth,
+        height: recentDocsHeight,
+        child: Container(
+          clipBehavior: Clip.antiAlias,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(5.32),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                offset: const Offset(0, 3.55),
+                blurRadius: 3.55,
+                spreadRadius: 0,
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          if (docs.isEmpty)
-            Text(
-              'No documents available for this link.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
-            )
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: docs.length > 6 ? 6 : docs.length,
-              separatorBuilder: (_, __) => Divider(
-                height: 14,
-                color: Colors.white.withValues(alpha: 0.08),
-              ),
-              itemBuilder: (context, index) {
-                final doc = docs[index];
-                final selected =
-                    _selectedDocument?['id']?.toString() == doc['id']?.toString();
-                final status = (doc['status'] ?? '').toString();
-
-                Widget _statusChip(String rawStatus) {
-                  final normalizedLabel = _normalizeStatus(rawStatus);
-                  final lower = normalizedLabel.toLowerCase().trim();
-                  Color bg = Colors.white.withValues(alpha: 0.10);
-                  Color fg = Colors.white.withValues(alpha: 0.80);
-                  String label = normalizedLabel.isEmpty
-                      ? (rawStatus.isEmpty ? 'Unknown' : rawStatus)
-                      : normalizedLabel;
-
-                  if (lower.contains('signed')) {
-                    bg = const Color(0xFF27AE60).withValues(alpha: 0.18);
-                    fg = const Color(0xFF2ECC71);
-                  } else if (lower.contains('pending') ||
-                      lower.contains('released') ||
-                      lower.contains('sent for signature') ||
-                      lower.contains('in review')) {
-                    bg = const Color(0xFFF39C12).withValues(alpha: 0.20);
-                    fg = const Color(0xFFF1C40F);
-                  } else if (lower.contains('rejected') ||
-                      lower.contains('declined')) {
-                    bg = const Color(0xFFE74C3C).withValues(alpha: 0.18);
-                    fg = const Color(0xFFE74C3C);
-                  }
-
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: bg,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
                     child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: fg,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
+                      listTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  );
-                }
-                return InkWell(
-                  onTap: () {
-                    setState(() {
-                      _selectedDocument = doc;
-                    });
-                  },
+                  ),
+                  if (_selectedNavIndex == 0)
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _dashboardDocFilter = 'all';
+                        });
+                      },
+                      child: const Text('View All'),
+                    ),
+                  Text(
+                    '${docs.length}',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.70),
+                        fontSize: 12),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (_selectedNavIndex == 0)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      Icon(
-                        selected ? Icons.check_box : Icons.check_box_outline_blank,
-                        color: selected ? Colors.lightBlueAccent : Colors.white70,
-                        size: 18,
-                      ),
+                      _filterChip('View All', 'all'),
                       const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '${_documentLabel(doc)} #${doc['id']} - ${doc['title'] ?? 'Untitled'}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            _statusChip(status),
-                          ],
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => _openProposal(doc),
-                        child: const Text('View'),
-                      ),
+                      _filterChip('Released', 'released'),
+                      const SizedBox(width: 10),
+                      _filterChip('Signed', 'signed'),
+                      const SizedBox(width: 10),
+                      _filterChip('Changes Requested', 'changes_requested'),
                     ],
                   ),
-                );
-              },
-            ),
-        ],
+                ),
+              if (_selectedNavIndex == 0) const SizedBox(height: 12),
+              if (docs.isEmpty)
+                Text(
+                  isDocumentsTab
+                      ? 'No signed documents available yet.'
+                      : isProposalsTab
+                          ? 'No proposals are currently awaiting signature.'
+                          : 'No documents available for this link.',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: docs.length > 6 ? 6 : docs.length,
+                  separatorBuilder: (_, __) => Divider(
+                    height: 14,
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
+                  itemBuilder: (context, index) {
+                    final doc = docs[index];
+                    final selected = _selectedDocument?['id']?.toString() ==
+                        doc['id']?.toString();
+                    final status = (doc['status'] ?? '').toString();
+
+                    Widget _statusChip(String rawStatus) {
+                      final normalizedLabel = _normalizeStatus(rawStatus);
+                      final lower = normalizedLabel.toLowerCase().trim();
+                      Color bg = Colors.white.withValues(alpha: 0.10);
+                      Color fg = Colors.white;
+                      String label = normalizedLabel.isEmpty
+                          ? (rawStatus.isEmpty ? 'Unknown' : rawStatus)
+                          : normalizedLabel;
+                      double chipWidth = 87.89;
+
+                      if (lower.contains('signed')) {
+                        bg = const Color(0xFF6CA510);
+                        fg = Colors.white;
+                        chipWidth = 87.89;
+                      } else if (lower.contains('pending') ||
+                          lower.contains('released') ||
+                          lower.contains('sent for signature') ||
+                          lower.contains('in review')) {
+                        bg = const Color(0xFFEA990C);
+                        fg = Colors.white;
+                        chipWidth = 88.51;
+                        if (lower.contains('pending')) {
+                          label = 'Request Sent';
+                        }
+                      } else if (lower.contains('rejected') ||
+                          lower.contains('declined')) {
+                        bg = const Color(0xFFE74C3C);
+                        fg = Colors.white;
+                        chipWidth = 88.51;
+                      }
+
+                      return SizedBox(
+                        width: chipWidth,
+                        height: 23.36,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                              color: bg,
+                              borderRadius: BorderRadius.circular(26.06)),
+                          child: Center(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: fg,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    Widget _viewChip(VoidCallback onPressed) {
+                      return SizedBox(
+                        width: 48.56,
+                        height: 23.36,
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            backgroundColor: const Color(0xFF7F7F7F),
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(48.56, 23.36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(26.06),
+                            ),
+                          ),
+                          onPressed: onPressed,
+                          child: const Text(
+                            'VIEW',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              height: 1.0,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedDocument = doc;
+                        });
+                      },
+                      child: Row(
+                        children: [
+                          Icon(
+                            selected
+                                ? Icons.check_box
+                                : Icons.check_box_outline_blank,
+                            color: selected
+                                ? Colors.lightBlueAccent
+                                : Colors.white70,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Builder(
+                              builder: (context) {
+                                final lead =
+                                    '${_documentLabel(doc)} #${doc['id']}';
+                                final rawTitle =
+                                    (doc['title'] ?? 'Untitled').toString();
+
+                                // Figma text treatment: lead is bold small-caps, project part is italic.
+                                return SizedBox(
+                                  height: 18.44,
+                                  child: RichText(
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    text: TextSpan(
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontFamily: 'Poppins',
+                                        fontSize: 9.22,
+                                        height: 1.0174,
+                                        letterSpacing: 0.0922,
+                                      ),
+                                      children: [
+                                        TextSpan(
+                                          text: '$lead ',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontFeatures: [
+                                              ui.FontFeature.enable('smcp')
+                                            ],
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: '- $rawTitle',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                            fontStyle: FontStyle.italic,
+                                            fontFeatures: [
+                                              ui.FontFeature.enable('smcp')
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          if (isDocumentsTab)
+                            TextButton(
+                              onPressed: () => _downloadPdfForDocument(doc),
+                              child: const Text('Download'),
+                            )
+                          else if (isProposalsTab)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _statusChip(status),
+                                const SizedBox(width: 7.84),
+                                _viewChip(() {
+                                  setState(() {
+                                    _selectedDocument = doc;
+                                  });
+                                  _openSigningUrl(doc);
+                                }),
+                              ],
+                            )
+                          else
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _statusChip(status),
+                                const SizedBox(width: 7.84),
+                                _viewChip(() => _openProposal(doc)),
+                              ],
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1116,18 +1769,31 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     final doc = _selectedDocument;
     final title = doc?['title']?.toString() ?? 'Select a document';
     final status = doc?['status']?.toString() ?? '';
-    final hasSigning = (doc?['signing_url']?.toString() ?? '').trim().isNotEmpty;
+    final hasSigning =
+        (doc?['signing_url']?.toString() ?? '').trim().isNotEmpty;
     final statusLower = status.toLowerCase().trim();
     final isSignedStatus =
         statusLower.contains('client signed') || statusLower.contains('signed');
 
-    Widget panelCard({required String title, required Widget child}) {
-      return Container(
+    Widget panelCard({
+      required String title,
+      required Widget child,
+      double? fixedHeight,
+    }) {
+      final card = Container(
+        clipBehavior: Clip.antiAlias,
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+          color: Colors.white.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(5.32),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.25),
+              offset: const Offset(0, 3.55),
+              blurRadius: 3.55,
+              spreadRadius: 0,
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1145,106 +1811,104 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           ],
         ),
       );
+
+      if (fixedHeight != null) {
+        return SizedBox(height: fixedHeight, child: card);
+      }
+      return card;
     }
 
     return Column(
       children: [
-        panelCard(
-          title: 'Sign Document',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                status.isEmpty ? '' : status,
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
-              ),
-              if (isSignedStatus) ...[
-                const SizedBox(height: 8),
+        if (doc != null) ...[
+          panelCard(
+            title: 'View Document',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      color: Colors.white, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  status.isEmpty ? '' : status,
+                  style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.70),
+                      fontSize: 12),
+                ),
+                if (isSignedStatus) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle,
+                          size: 16, color: Color(0xFF2ECC71)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'This document has been signed. No further action is required.',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.75),
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(Icons.check_circle,
-                        size: 16, color: Color(0xFF2ECC71)),
-                    const SizedBox(width: 6),
                     Expanded(
-                      child: Text(
-                        'This document has been signed. No further action is required.',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.75),
-                          fontSize: 12,
-                        ),
+                      child: ElevatedButton(
+                        onPressed: isSignedStatus
+                            ? null
+                            : () {
+                                if (hasSigning) {
+                                  _openSigningUrl(doc);
+                                } else {
+                                  _showFallbackSignModal(doc);
+                                }
+                              },
+                        child: const Text('View'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: isSignedStatus
+                            ? null
+                            : () => _openProposalComments(doc),
+                        child: const Text('Request Changes'),
                       ),
                     ),
                   ],
                 ),
               ],
-              const SizedBox(height: 12),
-              Container(
-                height: 88,
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  'Signature',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.55)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: doc == null || isSignedStatus
-                          ? null
-                          : () {
-                              if (hasSigning) {
-                                _openSigningUrl(doc);
-                              } else {
-                                _showFallbackSignModal(doc);
-                              }
-                            },
-                      child: const Text('Sign Now'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: doc == null || isSignedStatus
-                          ? null
-                          : () => _openProposalComments(doc),
-                      child: const Text('Request Changes'),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
+          const SizedBox(height: 12),
+        ],
         panelCard(
           title: 'Project Chat',
+          fixedHeight: 145.17,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'Open a document to view and post comments.',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
               ),
               const SizedBox(height: 10),
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
-                  onPressed: doc == null ? null : () => _openProposalComments(doc),
+                  onPressed:
+                      doc == null ? null : () => _openProposalComments(doc),
                   icon: const Icon(Icons.forum_outlined, size: 18),
                   label: const Text('Open Comments'),
                 ),
@@ -1255,13 +1919,16 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         const SizedBox(height: 12),
         panelCard(
           title: 'Documents & Downloads',
+          fixedHeight: 145.17,
           child: Column(
             children: [
               Row(
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: doc == null ? null : () => _downloadPdfForDocument(doc),
+                      onPressed: doc == null
+                          ? null
+                          : () => _downloadPdfForDocument(doc),
                       icon: const Icon(Icons.download_outlined, size: 18),
                       label: const Text('Download PDF'),
                     ),
@@ -1324,22 +1991,106 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Widget _buildMainLeftContent() {
-    if (_selectedNavIndex == 0 || _selectedNavIndex == 1 || _selectedNavIndex == 2) {
+    if (_isOverviewDashboard) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Dashboard',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildTopCornerAssetIcon('assets/images/Group 391 (2).png'),
+                  const SizedBox(width: 8),
+                  _buildTopCornerAssetIcon('assets/images/Group 398 (1).png'),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
           _buildSummaryTiles(),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const rightPanelWidth = 466.59;
+              final stackLowerCards = constraints.maxWidth < 980;
+              if (stackLowerCards) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildRecentDocuments(),
+                    const SizedBox(height: 14),
+                    SizedBox(width: rightPanelWidth, child: _buildRightPanel()),
+                  ],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildRecentDocuments(),
+                  const SizedBox(width: 16),
+                  SizedBox(width: rightPanelWidth, child: _buildRightPanel()),
+                ],
+              );
+            },
+          ),
+        ],
+      );
+    }
+
+    if (!widget.showSummary && _selectedNavIndex == 1) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Proposals',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Review and sign documents awaiting your signature',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.70),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _buildRecentDocuments(),
+        ],
+      );
+    }
+
+    if (_selectedNavIndex == 0 ||
+        _selectedNavIndex == 1 ||
+        _selectedNavIndex == 2) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (widget.showSummary) ...[
+            _buildSummaryTiles(),
+            const SizedBox(height: 16),
+          ],
           _buildRecentDocuments(),
         ],
       );
     }
 
     final titles = {
-      3: 'Invoices',
-      4: 'Messages',
-      5: 'Documents',
-      6: 'Profile',
+      3: 'Profile',
     };
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1416,6 +2167,18 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }
 
   Future<void> _loadClientProposals() async {
+    if (_loadProposalsFuture != null) {
+      return _loadProposalsFuture!;
+    }
+
+    _loadProposalsFuture = _loadClientProposalsInternal().whenComplete(() {
+      _loadProposalsFuture = null;
+    });
+
+    return _loadProposalsFuture!;
+  }
+
+  Future<void> _loadClientProposalsInternal() async {
     if (_accessToken == null) return;
 
     final token = _sanitizeToken(_accessToken!);
@@ -1434,23 +2197,31 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     });
 
     try {
-      final uri = Uri.parse('$baseUrl/api/client/proposals')
-          .replace(queryParameters: {'token': token});
-      final response = await http
-          .get(
-            uri,
-            headers: {
-              if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
-              if (_clientSessionToken != null)
-                'X-Client-Session-Token': _clientSessionToken!,
-            },
-          )
-          .timeout(
-            const Duration(seconds: 8),
-            onTimeout: () {
-              throw TimeoutException('Request timed out');
-            },
-          );
+      final uri = Uri.parse('$baseUrl/api/client/proposals').replace(
+        queryParameters: {
+          'token': token,
+          if (_deviceId != null && _deviceId!.isNotEmpty)
+            'device_id': _deviceId!,
+          if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty)
+            'session_token': _clientSessionToken!,
+        },
+      );
+      final response = await http.get(
+        uri,
+        headers: {
+          if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
+          if (_clientSessionToken != null)
+            'X-Client-Session-Token': _clientSessionToken!,
+        },
+      ).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () {
+          throw TimeoutException('Request timed out');
+        },
+      );
+
+      print(
+          '[ClientPortal] proposals status=${response.statusCode} device_id=${_deviceId ?? ""} session_token_present=${(_clientSessionToken ?? "").isNotEmpty}');
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -1462,12 +2233,28 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         if (proposalsRaw is! List) {
           throw Exception('Invalid token response (missing proposals)');
         }
+        print(
+            '[ClientPortal] proposals decoded ok count=${proposalsRaw.length}');
+
+        List<Map<String, dynamic>> parsedProposals;
+        try {
+          parsedProposals = proposalsRaw
+              .whereType<Map>()
+              .map((p) => Map<String, dynamic>.from(p))
+              .toList();
+        } catch (e) {
+          throw Exception('Failed to parse proposals: $e');
+        }
+
+        if (parsedProposals.length != proposalsRaw.length) {
+          throw Exception(
+              'Invalid proposals payload (expected ${proposalsRaw.length} items, got ${parsedProposals.length} objects)');
+        }
+
         if (!mounted) return;
         setState(() {
           _clientEmail = data['client_email'];
-          _proposals = proposalsRaw
-              .map((p) => Map<String, dynamic>.from(p))
-              .toList();
+          _proposals = parsedProposals;
 
           if (_selectedDocument != null) {
             final selId = _selectedDocument?['id']?.toString();
@@ -1496,9 +2283,11 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
           _isLoading = false;
         });
+
+        if (_isOverviewDashboard) {
+          await _loadDashboardOverview();
+        }
       } else if (response.statusCode == 428) {
-        _saveCachedClientSession(null);
-        _clientSessionToken = null;
         Map<String, dynamic>? decoded;
         try {
           final body = jsonDecode(response.body);
@@ -1507,22 +2296,38 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
           }
         } catch (_) {}
 
-        final bool needsDevice = decoded?['requires_device_session'] == true ||
-            decoded?['otp_required'] == true;
+        final requiresDeviceSession =
+            decoded?['requires_device_session'] == true;
+        if (requiresDeviceSession) {
+          if (!mounted) return;
+          setState(() {
+            _isLoading = true;
+            _error = null;
+          });
+          await _ensureDeviceVerifiedAndRetry(token: token);
 
-        if (needsDevice && _accessToken != null) {
-          final token = _sanitizeToken(_accessToken!);
-          final ok = await _ensureDeviceSession(token: token);
-          if (ok) {
-            await _loadClientProposals();
+          // Verification may have completed in another widget instance.
+          // Refresh from localStorage so this instance picks up the session token.
+          _loadCachedClientSession();
+
+          if (!mounted) return;
+          if ((_clientSessionToken ?? '').trim().isEmpty) {
+            setState(() {
+              _error = 'Device verification required. Please retry.';
+              _isLoading = false;
+            });
             return;
           }
+
+          // Verification succeeded; retry proposals fetch now that we have a session token.
+          await _loadClientProposalsInternal();
+          return;
         }
 
         if (!mounted) return;
         setState(() {
           _error = decoded?['detail']?.toString() ??
-              'Device verification required.';
+              'Unable to open client dashboard.';
           _isLoading = false;
         });
       } else if (response.statusCode == 423) {
@@ -1565,9 +2370,698 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
     }
   }
 
-  void _openProposal(Map<String, dynamic> proposal) {
+  Future<void> _loadDashboardOverview() async {
+    final token = _accessToken;
+    if (token == null || token.isEmpty) return;
+
+    if (!mounted) return;
+    setState(() {
+      _overviewLoading = true;
+      _overviewError = null;
+    });
+
+    try {
+      final clean = _sanitizeToken(token);
+      final uri = Uri.parse('$baseUrl/api/client/dashboard/overview').replace(
+        queryParameters: {
+          'token': clean,
+          if (_deviceId != null && _deviceId!.isNotEmpty)
+            'device_id': _deviceId!,
+          if (_clientSessionToken != null && _clientSessionToken!.isNotEmpty)
+            'session_token': _clientSessionToken!,
+        },
+      );
+
+      final resp = await http.get(
+        uri,
+        headers: {
+          if (_deviceId != null) 'X-Client-Device-Id': _deviceId!,
+          if (_clientSessionToken != null)
+            'X-Client-Session-Token': _clientSessionToken!,
+        },
+      ).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException('Request timed out'),
+      );
+
+      Map<String, dynamic>? decoded;
+      try {
+        final body = jsonDecode(resp.body);
+        if (body is Map) decoded = Map<String, dynamic>.from(body);
+      } catch (_) {}
+
+      if (resp.statusCode != 200) {
+        final msg = decoded?['detail']?.toString() ??
+            'Failed to load dashboard (HTTP ${resp.statusCode})';
+        if (!mounted) return;
+        setState(() {
+          _overviewError = msg;
+          _overviewLoading = false;
+        });
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _overview = decoded;
+        _overviewLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _overviewError = e is TimeoutException
+            ? 'Dashboard request timed out. Please retry.'
+            : 'Error: $e';
+        _overviewLoading = false;
+      });
+    }
+  }
+
+  int _kpi(String key) {
+    final kpis = _overview?['kpis'];
+    if (kpis is Map && kpis[key] != null) {
+      return int.tryParse(kpis[key].toString()) ?? 0;
+    }
+    return 0;
+  }
+
+  int _pipe(String key) {
+    final pipe = _overview?['pipeline'];
+    if (pipe is Map && pipe[key] != null) {
+      return int.tryParse(pipe[key].toString()) ?? 0;
+    }
+    return 0;
+  }
+
+  List<Map<String, dynamic>> _activity() {
+    final a = _overview?['activity'];
+    if (a is List) {
+      return a.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    return [];
+  }
+
+  List<Map<String, dynamic>> _trend() {
+    final analytics = _overview?['analytics'];
+    if (analytics is Map) {
+      final t = analytics['trend'];
+      if (t is List) {
+        return t.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      }
+    }
+    return [];
+  }
+
+  Map<String, int> _conversionBreakdown() {
+    final analytics = _overview?['analytics'];
+    if (analytics is Map) {
+      final b = analytics['conversion_breakdown'];
+      if (b is Map) {
+        return {
+          'signed': int.tryParse(b['signed']?.toString() ?? '0') ?? 0,
+          'rejected': int.tryParse(b['rejected']?.toString() ?? '0') ?? 0,
+          'requested_changes':
+              int.tryParse(b['requested_changes']?.toString() ?? '0') ?? 0,
+        };
+      }
+    }
+    return {'signed': 0, 'rejected': 0, 'requested_changes': 0};
+  }
+
+  String _timeAgo(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inSeconds < 45) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours} hours ago';
+    if (diff.inDays < 7) return '${diff.inDays} days ago';
+    final weeks = (diff.inDays / 7).floor();
+    if (weeks < 5) return '${weeks} weeks ago';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
+
+  IconData _activityIcon(String eventType) {
+    final e = eventType.toLowerCase().trim();
+    if (e.contains('view') || e.contains('open'))
+      return Icons.visibility_outlined;
+    if (e.contains('sign')) return Icons.check_circle_outline;
+    if (e.contains('download')) return Icons.download_outlined;
+    if (e.contains('comment') || e.contains('change')) {
+      return Icons.mode_comment_outlined;
+    }
+    return Icons.bolt_outlined;
+  }
+
+  String _activityLabel(Map<String, dynamic> a) {
+    final proposalId = a['proposal_id']?.toString();
+    final event = (a['event_type'] ?? '').toString();
+    final ev = event.toLowerCase().trim();
+    String verb;
+    if (ev.contains('view') || ev.contains('open')) {
+      verb = 'viewed';
+    } else if (ev.contains('sign')) {
+      verb = 'signed';
+    } else if (ev.contains('download')) {
+      verb = 'downloaded';
+    } else if (ev.contains('comment')) {
+      verb = 'commented';
+    } else if (ev.contains('change')) {
+      verb = 'requested changes';
+    } else {
+      verb = event.isEmpty ? 'updated' : event;
+    }
+    if (proposalId == null || proposalId.isEmpty) return 'Proposal $verb';
+    return 'Proposal #$proposalId $verb';
+  }
+
+  Widget _sectionCard({required String title, required Widget child}) {
+    return GlassContainer(
+      borderRadius: 18,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKpiCards() {
+    final cards = [
+      (
+        'Active Proposals',
+        _kpi('active_proposals').toString(),
+        Icons.play_circle_outline,
+        PremiumTheme.blueGradient,
+        '/client/proposals'
+      ),
+      (
+        'Signed Proposals',
+        _kpi('signed_proposals').toString(),
+        Icons.check_circle_outline,
+        PremiumTheme.tealGradient,
+        '/client/proposals'
+      ),
+      (
+        'Requested for Change',
+        _kpi('requested_changes').toString(),
+        Icons.edit_note,
+        PremiumTheme.orangeGradient,
+        '/client/proposals'
+      ),
+      (
+        'Rejected Proposals',
+        _kpi('rejected_proposals').toString(),
+        Icons.cancel_outlined,
+        PremiumTheme.redGradient,
+        '/client/proposals'
+      ),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 980;
+        final children = cards
+            .map(
+              (c) => SizedBox(
+                width:
+                    narrow ? double.infinity : (constraints.maxWidth - 48) / 4,
+                height: 109,
+                child: PremiumStatCard(
+                  title: c.$1,
+                  value: c.$2,
+                  subtitle: null,
+                  icon: c.$3,
+                  gradient: c.$4,
+                  onTap: () => _navigateClient(c.$5),
+                ),
+              ),
+            )
+            .toList();
+
+        if (narrow) {
+          return Column(
+            children: [
+              for (int i = 0; i < children.length; i++) ...[
+                children[i],
+                if (i != children.length - 1) const SizedBox(height: 12),
+              ]
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            for (int i = 0; i < children.length; i++) ...[
+              Expanded(child: children[i]),
+              if (i != children.length - 1) const SizedBox(width: 12),
+            ]
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildPipelineOverview() {
+    final active = _pipe('active');
+    final changes = _pipe('requested_changes');
+    final signed = _pipe('signed');
+    final rejected = _pipe('rejected');
+    final total = _pipe('total');
+    final denom = total <= 0 ? 1 : total;
+
+    Widget segment({
+      required int count,
+      required Color color,
+      required String label,
+    }) {
+      final flex =
+          (count <= 0) ? 0 : (count * 1000 / denom).round().clamp(1, 1000);
+      if (count <= 0) {
+        return const SizedBox.shrink();
+      }
+      return Expanded(
+        flex: flex,
+        child: Container(
+          height: 14,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+      );
+    }
+
+    Widget pill(String label, int count, Color color) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.10)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$label: $count',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.85),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return _sectionCard(
+      title: 'Pipeline Overview',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              segment(count: active, color: PremiumTheme.info, label: 'Active'),
+              const SizedBox(width: 6),
+              segment(
+                  count: changes,
+                  color: PremiumTheme.warning,
+                  label: 'Changes'),
+              const SizedBox(width: 6),
+              segment(
+                  count: signed, color: PremiumTheme.success, label: 'Signed'),
+              const SizedBox(width: 6),
+              segment(
+                  count: rejected,
+                  color: PremiumTheme.error,
+                  label: 'Rejected'),
+              if (active + changes + signed + rejected == 0)
+                Expanded(
+                  child: Container(
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              pill('Active', active, PremiumTheme.info),
+              pill('Requested Changes', changes, PremiumTheme.warning),
+              pill('Signed', signed, PremiumTheme.success),
+              pill('Rejected', rejected, PremiumTheme.error),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecentActivity() {
+    final items = _activity();
+    return _sectionCard(
+      title: 'Recent Activity',
+      child: Column(
+        children: [
+          if (items.isEmpty)
+            Text(
+              _overviewLoading
+                  ? 'Loading activity...'
+                  : 'No recent activity yet.',
+              style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
+            )
+          else
+            for (int i = 0; i < items.length; i++) ...[
+              Builder(
+                builder: (context) {
+                  final a = items[i];
+                  DateTime? created;
+                  try {
+                    final raw = a['created_at']?.toString();
+                    if (raw != null && raw.isNotEmpty) {
+                      created = DateTime.parse(raw);
+                    }
+                  } catch (_) {}
+
+                  final eventType = (a['event_type'] ?? '').toString();
+                  return Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.10)),
+                          ),
+                          child: Icon(
+                            _activityIcon(eventType),
+                            size: 18,
+                            color: Colors.white.withValues(alpha: 0.85),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _activityLabel(a),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                created == null
+                                    ? ''
+                                    : _timeAgo(created.toLocal()),
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.60),
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              if (i != items.length - 1)
+                Divider(color: Colors.white.withValues(alpha: 0.06), height: 1),
+            ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickActions() {
+    return _sectionCard(
+      title: 'Quick Actions',
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () => _navigateClient('/client/proposals'),
+              icon: const Icon(Icons.description_outlined, size: 18),
+              label: const Text('View Proposals'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () => _navigateClient('/client/documents'),
+              icon: const Icon(Icons.folder_outlined, size: 18),
+              label: const Text('Download Documents'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrendChart() {
+    final points = _trend();
+    if (points.isEmpty) {
+      return _sectionCard(
+        title: 'Proposals Trend',
+        child: Text(
+          _overviewLoading ? 'Loading trend...' : 'No trend data yet.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
+        ),
+      );
+    }
+
+    final created = <FlSpot>[];
+    final signed = <FlSpot>[];
+    final rejected = <FlSpot>[];
+    for (int i = 0; i < points.length; i++) {
+      final p = points[i];
+      created.add(FlSpot(i.toDouble(), (p['created'] ?? 0).toDouble()));
+      signed.add(FlSpot(i.toDouble(), (p['signed'] ?? 0).toDouble()));
+      rejected.add(FlSpot(i.toDouble(), (p['rejected'] ?? 0).toDouble()));
+    }
+
+    String bottomTitle(double value) {
+      final idx = value.round();
+      if (idx < 0 || idx >= points.length) return '';
+      final raw = points[idx]['period']?.toString();
+      if (raw == null || raw.isEmpty) return '';
+      try {
+        final dt = DateTime.parse(raw);
+        return '${dt.day}/${dt.month}';
+      } catch (_) {
+        return '';
+      }
+    }
+
+    return _sectionCard(
+      title: 'Proposals Trend',
+      child: SizedBox(
+        height: 240,
+        child: LineChart(
+          LineChartData(
+            gridData: const FlGridData(show: false),
+            borderData: FlBorderData(show: false),
+            titlesData: FlTitlesData(
+              topTitles:
+                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              rightTitles:
+                  const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              leftTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 34,
+                  interval: 1,
+                  getTitlesWidget: (v, meta) => Text(
+                    v.toInt().toString(),
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.60),
+                        fontSize: 11),
+                  ),
+                ),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 28,
+                  interval: (points.length / 4).ceilToDouble().clamp(1, 999),
+                  getTitlesWidget: (v, meta) => Text(
+                    bottomTitle(v),
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.60),
+                        fontSize: 11),
+                  ),
+                ),
+              ),
+            ),
+            lineBarsData: [
+              LineChartBarData(
+                spots: created,
+                isCurved: true,
+                barWidth: 3,
+                color: PremiumTheme.cyan,
+                dotData: const FlDotData(show: false),
+              ),
+              LineChartBarData(
+                spots: signed,
+                isCurved: true,
+                barWidth: 3,
+                color: PremiumTheme.success,
+                dotData: const FlDotData(show: false),
+              ),
+              LineChartBarData(
+                spots: rejected,
+                isCurved: true,
+                barWidth: 3,
+                color: PremiumTheme.error,
+                dotData: const FlDotData(show: false),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConversionChart() {
+    final b = _conversionBreakdown();
+    final signed = b['signed'] ?? 0;
+    final rejected = b['rejected'] ?? 0;
+    final changes = b['requested_changes'] ?? 0;
+    final total = signed + rejected + changes;
+    if (total <= 0) {
+      return _sectionCard(
+        title: 'Conversion Breakdown',
+        child: Text(
+          _overviewLoading ? 'Loading breakdown...' : 'No conversion data yet.',
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
+        ),
+      );
+    }
+
+    return _sectionCard(
+      title: 'Conversion Breakdown',
+      child: SizedBox(
+        height: 220,
+        child: Row(
+          children: [
+            Expanded(
+              child: PieChart(
+                PieChartData(
+                  sectionsSpace: 3,
+                  centerSpaceRadius: 36,
+                  sections: [
+                    PieChartSectionData(
+                      value: signed.toDouble(),
+                      color: PremiumTheme.success,
+                      title: '',
+                      radius: 62,
+                    ),
+                    PieChartSectionData(
+                      value: rejected.toDouble(),
+                      color: PremiumTheme.error,
+                      title: '',
+                      radius: 62,
+                    ),
+                    PieChartSectionData(
+                      value: changes.toDouble(),
+                      color: PremiumTheme.warning,
+                      title: '',
+                      radius: 62,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 170,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _legendRow('Signed', signed, PremiumTheme.success),
+                  const SizedBox(height: 10),
+                  _legendRow('Rejected', rejected, PremiumTheme.error),
+                  const SizedBox(height: 10),
+                  _legendRow(
+                      'Requested Changes', changes, PremiumTheme.warning),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _legendRow(String label, int value, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+              color: color, borderRadius: BorderRadius.circular(99)),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.80), fontSize: 12),
+          ),
+        ),
+        Text(
+          value.toString(),
+          style:
+              const TextStyle(color: Colors.white, fontWeight: FontWeight.w800),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _openProposal(Map<String, dynamic> proposal) async {
     final rawId = proposal['id'];
-    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
       print(
           '[ClientDashboardHome] Cannot open proposal: invalid id=$rawId tokenPresent=${_accessToken != null && _accessToken!.isNotEmpty}');
@@ -1580,6 +3074,103 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
         );
       }
       return;
+    }
+
+    final statusLower = (proposal['status'] ?? '').toString().toLowerCase();
+    final isSigned = statusLower.contains('client signed') ||
+        (statusLower.contains('signed') && !statusLower.contains('sent'));
+
+    if (!isSigned) {
+      try {
+        final uri = Uri.parse(
+            '$baseUrl/api/client/proposals/$proposalId/docusign/signing-url');
+        final resp = await http
+            .post(
+          uri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'token': _accessToken,
+            'signer_name':
+                (proposal['client_name']?.toString().trim().isNotEmpty ?? false)
+                    ? proposal['client_name']?.toString().trim()
+                    : (_clientEmail ?? '').trim(),
+          }),
+        )
+            .timeout(
+          const Duration(seconds: 12),
+          onTimeout: () {
+            throw TimeoutException('Signing URL request timed out');
+          },
+        );
+
+        Map<String, dynamic>? decoded;
+        try {
+          final body = jsonDecode(resp.body);
+          if (body is Map) {
+            decoded = Map<String, dynamic>.from(body);
+          }
+        } catch (_) {}
+
+        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+          final fresh = decoded?['signing_url']?.toString() ?? '';
+          if (fresh.trim().isNotEmpty) {
+            final uri = Uri.tryParse(fresh);
+            if (uri != null) {
+              if (kIsWeb) {
+                web.window.location.href = fresh;
+              } else {
+                await launchUrlString(fresh,
+                    mode: LaunchMode.externalApplication);
+              }
+            }
+            return;
+          }
+        }
+
+        final fallbackSigningUrl = proposal['signing_url']?.toString() ?? '';
+        if (fallbackSigningUrl.trim().isNotEmpty) {
+          final uri = Uri.tryParse(fallbackSigningUrl);
+          if (uri != null) {
+            if (kIsWeb) {
+              web.window.location.href = fallbackSigningUrl;
+            } else {
+              await launchUrlString(fallbackSigningUrl,
+                  mode: LaunchMode.externalApplication);
+            }
+          }
+          return;
+        }
+
+        if (mounted) {
+          final msg = decoded?['detail']?.toString() ??
+              'Unable to open DocuSign (HTTP ${resp.statusCode}).';
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(msg), backgroundColor: Colors.red),
+          );
+        }
+      } catch (e) {
+        final fallbackSigningUrl = proposal['signing_url']?.toString() ?? '';
+        if (fallbackSigningUrl.trim().isNotEmpty) {
+          final uri = Uri.tryParse(fallbackSigningUrl);
+          if (uri != null) {
+            if (kIsWeb) {
+              web.window.location.href = fallbackSigningUrl;
+            } else {
+              await launchUrlString(fallbackSigningUrl,
+                  mode: LaunchMode.externalApplication);
+            }
+          }
+          return;
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Unable to open DocuSign: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
     }
 
     print('[ClientDashboardHome] Opening proposal in app: id=$proposalId');
@@ -1600,7 +3191,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
   void _openProposalComments(Map<String, dynamic> proposal) {
     final rawId = proposal['id'];
-    final proposalId = rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
+    final proposalId =
+        rawId is int ? rawId : int.tryParse(rawId?.toString() ?? '');
     if (proposalId == null || _accessToken == null || _accessToken!.isEmpty) {
       return;
     }
@@ -1675,7 +3267,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             children: [
               Positioned.fill(
                 child: Image.asset(
-                  'assets/images/Global BG.jpg',
+                  'assets/images/client_dashboard_bg.png',
                   fit: BoxFit.cover,
                 ),
               ),
@@ -1691,11 +3283,13 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                   ),
                 ),
               ),
-              SafeArea(
-                child: Row(
-                  children: [
-                    if (!useDrawer) _buildSidebar(),
-                    Expanded(
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!useDrawer) _buildSidebar(),
+                  Expanded(
+                    child: SafeArea(
+                      left: false,
                       child: Column(
                         children: [
                           _buildTopHeader(useDrawer: useDrawer),
@@ -1714,9 +3308,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                       children: [
                                         leftContent,
                                         const SizedBox(height: 16),
-                                        if (_selectedNavIndex == 0 ||
-                                            _selectedNavIndex == 1 ||
-                                            _selectedNavIndex == 2)
+                                        if ((_selectedNavIndex == 1 ||
+                                                _selectedNavIndex == 2) &&
+                                            widget.showSummary)
                                           _buildRightPanel(),
                                       ],
                                     );
@@ -1728,9 +3322,9 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                                     children: [
                                       Expanded(child: leftContent),
                                       const SizedBox(width: 16),
-                                      if (_selectedNavIndex == 0 ||
-                                          _selectedNavIndex == 1 ||
-                                          _selectedNavIndex == 2)
+                                      if ((_selectedNavIndex == 1 ||
+                                              _selectedNavIndex == 2) &&
+                                          widget.showSummary)
                                         SizedBox(
                                           width: 380,
                                           child: _buildRightPanel(),
@@ -1744,8 +3338,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
                         ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2044,7 +3638,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
 
     final statusLower = status.toLowerCase();
     if (statusLower.contains('pending') ||
-        statusLower.contains('sent to client')) {
+        statusLower.contains('sent to client') ||
+        statusLower.contains('released')) {
       color = Colors.orange;
       icon = Icons.pending;
     } else if (statusLower.contains('approved') ||

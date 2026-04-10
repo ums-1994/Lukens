@@ -29,6 +29,7 @@ dependencies:
   flutter_dotenv: ^5.1.0
   jwt_decode: ^0.3.1
   flutter_quill: ^11.5.0
+  shared_preferences: ^2.3.3
 
 dev_dependencies:
   flutter_test:
@@ -42,4 +43,5 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/images/new icons for manager/
     - assets/

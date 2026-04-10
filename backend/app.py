@@ -60,7 +60,7 @@ except ImportError:
     # DocuSign SDK missing: warn user (emoji-friendly message)
     print("⚠️ DocuSign SDK not installed. Run: pip install docusign-esign")
 from cryptography.fernet import Fernet
-from flask import Flask, request, jsonify, send_file, Response, send_from_directory, has_request_context
+from flask import Flask, request, jsonify, send_file, Response, send_from_directory, has_request_context, render_template, redirect, url_for, session
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -71,6 +71,10 @@ import openai
 from dotenv import load_dotenv
 from api.utils.ai_safety import AISafetyError
 from api.utils.decorators import token_required as firebase_token_required
+from api.utils.profile_avatar import (
+    fetch_user_profile_dict_by_username,
+    patch_user_profile_avatar,
+)
 try:
     from hf_ai_assistant_service import HFAIAssistantError
 except ImportError:
@@ -97,6 +101,169 @@ print(
 )
 
 app = Flask(__name__)
+
+# Session configuration (used by OTP-based client portal auth)
+app.secret_key = os.getenv('SECRET_KEY', os.getenv('FLASK_SECRET_KEY', 'dev-secret-key-change-me'))
+app.config.setdefault('SESSION_COOKIE_HTTPONLY', True)
+app.config.setdefault('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config.setdefault('SESSION_COOKIE_SECURE', (os.getenv('SESSION_COOKIE_SECURE') or '').strip().lower() in ('1', 'true', 'yes'))
+
+_MOJO_API_KEY = (os.getenv('MOJO_API_KEY') or '').strip()
+_MOJO_BASE_URL = (os.getenv('MOJO_BASE_URL') or 'https://api.mojoauth.com').strip().rstrip('/')
+
+
+def _mojo_headers() -> dict:
+    if not _MOJO_API_KEY:
+        raise RuntimeError('MOJO_API_KEY is not configured')
+    return {
+        'x-api-key': _MOJO_API_KEY,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+    }
+
+
+def _mojo_send_email_otp(email: str) -> str:
+    """Send an email OTP via MojoAuth. Returns state_id."""
+    import requests
+
+    resp = requests.post(
+        f'{_MOJO_BASE_URL}/users/emailotp',
+        headers=_mojo_headers(),
+        json={'email': email},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f'MojoAuth send OTP failed (HTTP {resp.status_code}): {resp.text}')
+    data = resp.json() if resp.content else {}
+    state_id = (data.get('state_id') or data.get('stateId') or '').strip()
+    if not state_id:
+        raise RuntimeError('MojoAuth did not return state_id')
+    return state_id
+
+
+def _mojo_resend_email_otp(state_id: str) -> None:
+    import requests
+
+    resp = requests.post(
+        f'{_MOJO_BASE_URL}/users/emailotp/resend',
+        headers=_mojo_headers(),
+        json={'state_id': state_id},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f'MojoAuth resend OTP failed (HTTP {resp.status_code}): {resp.text}')
+
+
+def _mojo_verify_email_otp(state_id: str, otp: str) -> dict:
+    """Verify an email OTP via MojoAuth. Returns parsed JSON (often includes user + token)."""
+    import requests
+
+    resp = requests.post(
+        f'{_MOJO_BASE_URL}/users/emailotp/verify',
+        headers=_mojo_headers(),
+        json={'state_id': state_id, 'otp': otp},
+        timeout=20,
+    )
+    if resp.status_code >= 400:
+        raise RuntimeError(f'MojoAuth verify OTP failed (HTTP {resp.status_code}): {resp.text}')
+    return resp.json() if resp.content else {}
+
+
+def _proposal_client_email(proposal_id: int) -> str | None:
+    """Return stored client_email for a proposal, or None if missing."""
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT client_email FROM proposals WHERE id = %s', (proposal_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            email = (row[0] or '').strip()
+            return email if email else None
+    except Exception:
+        return None
+
+
+def _session_key_for_proposal(proposal_id: int) -> str:
+    return f'proposal:{proposal_id}'
+
+
+def _is_proposal_verified(proposal_id: int, email: str) -> bool:
+    verified = session.get('verified_client_portal') or {}
+    if not isinstance(verified, dict):
+        return False
+    entry = verified.get(_session_key_for_proposal(proposal_id))
+    if not isinstance(entry, dict):
+        return False
+    if (entry.get('email') or '').strip().lower() != email.strip().lower():
+        return False
+    exp = entry.get('expires_at')
+    if not exp:
+        return False
+    try:
+        expires_at = datetime.fromisoformat(str(exp))
+    except Exception:
+        return False
+    return datetime.utcnow() < expires_at
+
+
+def _mark_proposal_verified(proposal_id: int, email: str, ttl_minutes: int = 30) -> None:
+    verified = session.get('verified_client_portal')
+    if not isinstance(verified, dict):
+        verified = {}
+    verified[_session_key_for_proposal(proposal_id)] = {
+        'email': email,
+        'verified_at': datetime.utcnow().isoformat(),
+        'expires_at': (datetime.utcnow() + timedelta(minutes=ttl_minutes)).isoformat(),
+    }
+    session['verified_client_portal'] = verified
+
+
+def _set_otp_state(proposal_id: int, email: str, state_id: str) -> None:
+    otp_state = session.get('otp_state')
+    if not isinstance(otp_state, dict):
+        otp_state = {}
+    otp_state[_session_key_for_proposal(proposal_id)] = {
+        'email': email,
+        'state_id': state_id,
+        'created_at': datetime.utcnow().isoformat(),
+        'last_sent_at': datetime.utcnow().isoformat(),
+    }
+    session['otp_state'] = otp_state
+
+
+def _get_otp_state(proposal_id: int) -> dict | None:
+    otp_state = session.get('otp_state')
+    if not isinstance(otp_state, dict):
+        return None
+    entry = otp_state.get(_session_key_for_proposal(proposal_id))
+    return entry if isinstance(entry, dict) else None
+
+
+def _can_resend_otp(proposal_id: int, cooldown_seconds: int = 30) -> tuple[bool, str | None]:
+    entry = _get_otp_state(proposal_id)
+    if not entry:
+        return True, None
+    last = entry.get('last_sent_at')
+    if not last:
+        return True, None
+    try:
+        last_dt = datetime.fromisoformat(str(last))
+    except Exception:
+        return True, None
+    delta = (datetime.utcnow() - last_dt).total_seconds()
+    if delta < cooldown_seconds:
+        return False, f'Please wait {int(cooldown_seconds - delta)}s before resending.'
+    return True, None
+
+def _normalize_origin(origin: str) -> str:
+    raw = (origin or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return raw.rstrip("/")
 
 # Flask-Cors origin matching is strict unless you provide regex objects.
 # Use compiled regexes so localhost dev ports (Flutter web) are allowed.
@@ -128,15 +295,24 @@ except Exception:
     # Never fail app startup due to CORS parsing.
     pass
 
+# Optional env-driven allowlist extension for local + deployed frontends.
+_extra_cors = (os.getenv("CORS_ALLOWED_ORIGINS") or "").strip()
+if _extra_cors:
+    for item in _extra_cors.split(","):
+        origin = _normalize_origin(item)
+        if origin:
+            _cors_origins.append(origin)
+
 
 def _is_allowed_origin(origin: str) -> bool:
-    if not origin:
+    candidate = _normalize_origin(origin)
+    if not candidate:
         return False
     for allowed in _cors_origins:
         try:
-            if isinstance(allowed, str) and origin == allowed:
+            if isinstance(allowed, str) and candidate == allowed:
                 return True
-            if hasattr(allowed, "match") and allowed.match(origin):
+            if hasattr(allowed, "match") and allowed.match(candidate):
                 return True
         except Exception:
             continue
@@ -150,10 +326,14 @@ CORS(
         "Content-Type",
         "Authorization",
         "X-Requested-With",
-        "Accept",
-        "X-AI-Request-ID",
         "X-Client-Device-Id",
         "X-Client-Session-Token",
+        "x-client-device-id",
+        "x-client-session-token",
+        "X-Client-Role",
+        "X-Client-Token",
+        "X-Client-Session",
+        "X-Client-Request",
         "X-Device-Id",
     ],
     methods=["GET", "HEAD", "POST", "OPTIONS", "PUT", "PATCH", "DELETE"],
@@ -489,8 +669,21 @@ def init_pg_schema():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )''')
-        
-        
+
+        # Manager profile photo (Cloudinary); must match api/utils/database.py
+        try:
+            cursor.execute(
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS profile_image_url TEXT,
+                ADD COLUMN IF NOT EXISTS profile_image_public_id TEXT
+                """
+            )
+        except Exception as profile_col_err:
+            print(
+                f"[WARN] Could not add profile_image columns to users: {profile_col_err}"
+            )
+
         cursor.execute('''CREATE TABLE IF NOT EXISTS proposals (
         id SERIAL PRIMARY KEY,
         title VARCHAR(500) NOT NULL,
@@ -935,6 +1128,16 @@ def init_db():
     # which will cause browsers to block the request due to failed preflight.
     if request.method == 'OPTIONS':
         return {}, 200
+
+    # Local-dev escape hatch:
+    # When Firebase auth is explicitly configured to bypass DB access,
+    # skip schema initialization for the Firebase auth endpoint so login
+    # can proceed even if external Postgres is temporarily unreachable.
+    if (
+        os.getenv("DEV_BYPASS_DB_FOR_FIREBASE", "false").lower() == "true"
+        and request.path == "/api/firebase"
+    ):
+        return
     if _db_initialized:
         return
     
@@ -1132,15 +1335,46 @@ def process_mentions(comment_id, comment_text, mentioned_by_user_id, proposal_id
             commenter_name = commenter['full_name'] if commenter else 'Someone'
             
             for mention in mentions:
-                # Try to find user by username or email
-                cursor.execute("""
-                    SELECT id, full_name, email FROM users 
-                    WHERE username = %s OR email = %s OR email LIKE %s
-                """, (mention, mention, f'{mention}@%'))
-                
-                mentioned_user = cursor.fetchone()
+                mention_value = mention.strip()
+                mention_base = mention_value
+                mention_role = None
+
+                # Support persona-tag mentions such as "@yohyoh-admin"
+                # by resolving username + role combination first.
+                if '@' not in mention_value and '-' in mention_value:
+                    base_candidate, role_candidate = mention_value.rsplit('-', 1)
+                    if base_candidate and role_candidate:
+                        mention_base = base_candidate
+                        mention_role = role_candidate.replace('_', ' ').lower().strip()
+
+                if mention_role:
+                    cursor.execute("""
+                        SELECT id, full_name, email FROM users
+                        WHERE username = %s
+                          AND LOWER(COALESCE(role, '')) IN (%s, %s)
+                    """, (mention_base, mention_role, mention_role.replace('_', ' ')))
+                    mentioned_user = cursor.fetchone()
+                else:
+                    mentioned_user = None
+
                 if not mentioned_user:
-                    print(f"⚠️ Mentioned user not found: @{mention}")
+                    # Try to find user by username or email
+                    cursor.execute("""
+                        SELECT id, full_name, email FROM users 
+                        WHERE username = %s OR email = %s OR email LIKE %s
+                    """, (mention_value, mention_value, f'{mention_value}@%'))
+                    mentioned_user = cursor.fetchone()
+
+                if not mentioned_user and mention_base != mention_value:
+                    # Fallback to username-only for persona-tag format
+                    cursor.execute("""
+                        SELECT id, full_name, email FROM users
+                        WHERE username = %s
+                    """, (mention_base,))
+                    mentioned_user = cursor.fetchone()
+
+                if not mentioned_user:
+                    print(f"⚠️ Mentioned user not found: @{mention_value}")
                     continue
                 
                 # Don't mention yourself
@@ -1850,26 +2084,9 @@ def forgot_password():
 @token_required
 def get_current_user(username):
     try:
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''SELECT id, username, email, full_name, role, department, is_active
-               FROM users WHERE username = %s''',
-            (username,)
-        )
-        result = cursor.fetchone()
-        release_pg_conn(conn)
-        if result:
-            return {
-                'id': result[0],
-                'username': result[1],
-                'email': result[2],
-                'full_name': result[3],
-                'role': result[4],
-                'department': result[5],
-                'is_active': result[6]
-            }
-        
+        user = fetch_user_profile_dict_by_username(username)
+        if user:
+            return user
         return {'detail': 'User not found'}, 404
     except Exception as e:
         return {'detail': str(e)}, 500
@@ -1879,26 +2096,22 @@ def get_current_user(username):
 def get_user_profile(username):
     """Alias for /me endpoint for Flutter compatibility"""
     try:
-        conn = _pg_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            '''SELECT id, username, email, full_name, role, department, is_active
-               FROM users WHERE username = %s''',
-            (username,)
-        )
-        result = cursor.fetchone()
-        release_pg_conn(conn)
-        if result:
-            return {
-                'id': result[0],
-                'username': result[1],
-                'email': result[2],
-                'full_name': result[3],
-                'role': result[4],
-                'department': result[5],
-                'is_active': result[6]
-            }
+        user = fetch_user_profile_dict_by_username(username)
+        if user:
+            return user
         return {'detail': 'User not found'}, 404
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
+
+@app.patch("/user/profile")
+@token_required
+def patch_user_profile_app(username):
+    """Update profile photo (Cloudinary) or clear it (root path for Flutter AuthService)."""
+    try:
+        data = request.get_json(silent=True) or {}
+        body, status = patch_user_profile_avatar(username, data)
+        return body, status
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -2307,12 +2520,26 @@ def send_for_approval(username, proposal_id):
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor()
+
+            cursor.execute('SELECT role FROM users WHERE username = %s', (username,))
+            role_row = cursor.fetchone()
+            role_key = (role_row[0] if role_row else '')
+            role_key = (role_key or '').strip().lower()
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_admin = role_key in ['admin', 'ceo', 'approver']
             
             # Check if proposal exists and belongs to user
-            cursor.execute(
-                'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
-                (proposal_id, username)
-            )
+            if is_admin or is_finance or is_manager:
+                cursor.execute(
+                    'SELECT id, title, status FROM proposals WHERE id = %s',
+                    (proposal_id,)
+                )
+            else:
+                cursor.execute(
+                    'SELECT id, title, status FROM proposals WHERE id = %s AND user_id = %s',
+                    (proposal_id, username)
+                )
             proposal = cursor.fetchone()
             
             if not proposal:
@@ -3691,14 +3918,20 @@ def users_search():
                 with get_db_connection() as conn:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                         cur.execute("""
-                            SELECT u.id, u.username, u.full_name, u.email
+                            SELECT u.id, u.username, u.full_name, u.email, u.role
                             FROM users u
                             WHERE u.id = (SELECT owner_id FROM proposals WHERE id = %s)
                             OR u.email IN (SELECT invited_email FROM collaboration_invitations WHERE proposal_id = %s)
                             LIMIT 50
                         """, (proposal_id, proposal_id))
                         rows = cur.fetchall()
-                        return [dict(r) for r in rows], 200
+                        out = []
+                        for r in rows:
+                            item = dict(r)
+                            role = (item.get('role') or '').strip().lower().replace(' ', '_')
+                            item['mention_key'] = f"{item.get('username')}-{role}" if role else item.get('username')
+                            out.append(item)
+                        return out, 200
             return [], 200
 
         like = f"%{q}%"
@@ -3715,7 +3948,7 @@ def users_search():
 
                     # Build SQL using the detected owner column name (safe because we only allow known names)
                     sql = f"""
-                        SELECT u.id, u.username, u.full_name, u.email
+                        SELECT u.id, u.username, u.full_name, u.email, u.role
                         FROM users u
                         WHERE (u.username ILIKE %s OR u.full_name ILIKE %s OR u.email ILIKE %s)
                         AND (
@@ -3730,14 +3963,20 @@ def users_search():
                     if not authed_username:
                         return {'detail': 'Authorization required for global search'}, 401
                     cur.execute("""
-                        SELECT id, username, full_name, email
+                        SELECT id, username, full_name, email, role
                         FROM users
                         WHERE username ILIKE %s OR full_name ILIKE %s OR email ILIKE %s
                         LIMIT 50
                     """, (like, like, like))
 
                 rows = cur.fetchall()
-                return [dict(r) for r in rows], 200
+                out = []
+                for r in rows:
+                    item = dict(r)
+                    role = (item.get('role') or '').strip().lower().replace(' ', '_')
+                    item['mention_key'] = f"{item.get('username')}-{role}" if role else item.get('username')
+                    out.append(item)
+                return out, 200
 
     except Exception as e:
         print(f"❌ Error searching users: {e}")
@@ -5460,10 +5699,15 @@ def resolve_suggestion(username, proposal_id, suggestion_id):
             cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
             # Get user details
-            cursor.execute('SELECT id, email, full_name FROM users WHERE username = %s', (username,))
+            cursor.execute('SELECT id, email, full_name, role FROM users WHERE username = %s', (username,))
             current_user = cursor.fetchone()
             if not current_user:
                 return {'detail': 'User not found'}, 404
+
+            role_key = (current_user.get('role') or '').strip().lower()
+            is_manager = role_key in ['manager', 'creator', 'user'] or not role_key
+            is_finance = role_key.startswith('finance') or role_key in ['finance', 'finance_manager', 'financial manager', 'financial_manager']
+            is_admin = role_key in ['admin', 'ceo', 'approver']
             
             # Verify user owns the proposal
             cursor.execute("""
@@ -5471,7 +5715,10 @@ def resolve_suggestion(username, proposal_id, suggestion_id):
             """, (proposal_id,))
             
             proposal = cursor.fetchone()
-            if not proposal or proposal['user_id'] != username:
+            if not proposal:
+                return {'detail': 'Proposal not found or access denied'}, 404
+
+            if not (is_admin or is_finance or is_manager) and proposal.get('user_id') != username:
                 return {'detail': 'Only proposal owner can resolve suggestions'}, 403
             
             # Update suggestion

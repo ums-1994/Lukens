@@ -401,7 +401,8 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> markNotificationRead(int notificationId) async {
-    if (authToken == null) return;
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) return;
 
     try {
       final response = await http.post(
@@ -410,6 +411,26 @@ class AppState extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
+        // Optimistic local update so badge clears immediately.
+        notifications = notifications.map((rawItem) {
+          final Map<String, dynamic> item = rawItem is Map<String, dynamic>
+              ? Map<String, dynamic>.from(rawItem)
+              : (rawItem is Map
+                  ? Map<String, dynamic>.from(rawItem.cast<String, dynamic>())
+                  : <String, dynamic>{});
+          final idRaw = item['id'];
+          final id =
+              idRaw is int ? idRaw : int.tryParse(idRaw?.toString() ?? '');
+          if (id == notificationId) {
+            item['is_read'] = true;
+          }
+          return item;
+        }).toList();
+        unreadNotifications =
+            notifications.where((n) => n is Map && n['is_read'] != true).length;
+        notifyListeners();
+
+        // Sync with backend to avoid drift.
         await fetchNotifications();
       } else {
         print(
@@ -421,7 +442,8 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> markAllNotificationsRead() async {
-    if (authToken == null) return;
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) return;
 
     try {
       final response = await http.post(
@@ -430,6 +452,20 @@ class AppState extends ChangeNotifier {
       );
 
       if (response.statusCode == 200) {
+        // Optimistic local update so badge clears instantly.
+        notifications = notifications.map((rawItem) {
+          final Map<String, dynamic> item = rawItem is Map<String, dynamic>
+              ? Map<String, dynamic>.from(rawItem)
+              : (rawItem is Map
+                  ? Map<String, dynamic>.from(rawItem.cast<String, dynamic>())
+                  : <String, dynamic>{});
+          item['is_read'] = true;
+          return item;
+        }).toList();
+        unreadNotifications = 0;
+        notifyListeners();
+
+        // Sync with backend to avoid drift.
         await fetchNotifications();
       } else {
         print(
@@ -437,6 +473,65 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       print('Error marking all notifications as read: $e');
+    }
+  }
+
+  Future<void> deleteNotification(int notificationId) async {
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) return;
+
+    try {
+      final response = await http.delete(
+        Uri.parse("$baseUrl/api/notifications/$notificationId"),
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        notifications = notifications.where((rawItem) {
+          final Map<String, dynamic> item = rawItem is Map<String, dynamic>
+              ? Map<String, dynamic>.from(rawItem)
+              : (rawItem is Map
+                  ? Map<String, dynamic>.from(rawItem.cast<String, dynamic>())
+                  : <String, dynamic>{});
+          final idRaw = item['id'];
+          final id =
+              idRaw is int ? idRaw : int.tryParse(idRaw?.toString() ?? '');
+          return id != notificationId;
+        }).toList();
+        unreadNotifications =
+            notifications.where((n) => n is Map && n['is_read'] != true).length;
+        notifyListeners();
+        await fetchNotifications();
+      } else {
+        print(
+            'Error deleting notification: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error deleting notification: $e');
+    }
+  }
+
+  Future<void> deleteAllNotifications() async {
+    final effectiveToken = authToken ?? AuthService.token;
+    if (effectiveToken == null) return;
+
+    try {
+      final response = await http.delete(
+        Uri.parse("$baseUrl/api/notifications"),
+        headers: _headers,
+      );
+
+      if (response.statusCode == 200) {
+        notifications = [];
+        unreadNotifications = 0;
+        notifyListeners();
+        await fetchNotifications();
+      } else {
+        print(
+            'Error deleting all notifications: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error deleting all notifications: $e');
     }
   }
 
@@ -799,6 +894,31 @@ class AppState extends ChangeNotifier {
       print('Error fetching collaboration load analytics: $e');
     }
     return null;
+  }
+
+  Future<Map<String, dynamic>?> getAiUsageAnalytics({
+    String? startDate,
+    String? endDate,
+  }) async {
+    try {
+      final uri = Uri.parse("$baseUrl/api/ai/analytics/usage").replace(
+        queryParameters: {
+          if (startDate != null) 'start_date': startDate,
+          if (endDate != null) 'end_date': endDate,
+        },
+      );
+      final r = await http.get(uri, headers: _headers);
+      if (r.statusCode == 200) {
+        return jsonDecode(r.body);
+      }
+      return {
+        'error_status': r.statusCode,
+        'error': r.body,
+      };
+    } catch (e) {
+      print('Error fetching AI usage analytics: $e');
+      return null;
+    }
   }
 
   Future<Map<String, dynamic>?> getRiskGateProposals({
@@ -1443,7 +1563,77 @@ class AppState extends ChangeNotifier {
       headers: {"Authorization": "Bearer $authToken"},
     );
     if (r.statusCode == 200) {
-      currentUser = jsonDecode(r.body);
+      final raw = jsonDecode(r.body);
+      currentUser = raw is Map<String, dynamic>
+          ? raw
+          : Map<String, dynamic>.from(raw as Map);
+      AuthService.setUserData(currentUser!, authToken!);
+      notifyListeners();
+    }
+  }
+
+  /// Persists Cloudinary profile photo on the user row (same upload flow as document editor).
+  Future<Map<String, dynamic>?> patchUserProfileAvatar({
+    required String profileImageUrl,
+    required String profileImagePublicId,
+  }) async {
+    final token = authToken ?? AuthService.token;
+    if (token == null) return null;
+    try {
+      // Use /api/user/profile (auth blueprint) — accepts Firebase ID tokens.
+      // Root /user/profile uses legacy app.py token_required (JWT only) → 401 for Firebase.
+      final r = await http.patch(
+        Uri.parse('$_apiBaseUrl/user/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
+          'profile_image_url': profileImageUrl,
+          'profile_image_public_id': profileImagePublicId,
+        }),
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body) as Map<String, dynamic>;
+        currentUser = data;
+        authToken = token;
+        AuthService.setUserData(data, token);
+        notifyListeners();
+        return data;
+      }
+      print('patchUserProfileAvatar failed: ${r.statusCode} ${r.body}');
+      return null;
+    } catch (e) {
+      print('patchUserProfileAvatar error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> clearUserProfileAvatar() async {
+    final token = authToken ?? AuthService.token;
+    if (token == null) return null;
+    try {
+      final r = await http.patch(
+        Uri.parse('$_apiBaseUrl/user/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'clear_profile_image': true}),
+      );
+      if (r.statusCode == 200) {
+        final data = jsonDecode(r.body) as Map<String, dynamic>;
+        currentUser = data;
+        authToken = token;
+        AuthService.setUserData(data, token);
+        notifyListeners();
+        return data;
+      }
+      print('clearUserProfileAvatar failed: ${r.statusCode} ${r.body}');
+      return null;
+    } catch (e) {
+      print('clearUserProfileAvatar error: $e');
+      return null;
     }
   }
 

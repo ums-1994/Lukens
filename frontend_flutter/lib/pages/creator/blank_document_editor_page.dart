@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
@@ -17,7 +18,11 @@ import '../../services/asset_service.dart';
 import '../../services/role_service.dart';
 import '../../services/ai_assistant_api.dart';
 import '../../api.dart';
+import '../../theme/manager_theme_controller.dart';
+import '../../utils/manager_session_actions.dart';
 import '../../theme/premium_theme.dart';
+import '../../widgets/admin/admin_sidebar.dart';
+import '../../widgets/manager_page_background.dart';
 import '../../utils/html_content_parser.dart';
 import '../../widgets/header.dart';
 import 'governance_panel.dart';
@@ -43,6 +48,8 @@ class BlankDocumentEditorPage extends StatefulWidget {
       isCollaborator; // For collaborator mode - hide navigation, show only editor
   final bool requireVersionDescription;
   final bool forceCommentsPanelOpen;
+  final int? initialCommentId;
+  final int? initialSectionIndex;
 
   const BlankDocumentEditorPage({
     super.key,
@@ -55,6 +62,8 @@ class BlankDocumentEditorPage extends StatefulWidget {
     this.isCollaborator = false, // Default to false
     this.requireVersionDescription = false,
     this.forceCommentsPanelOpen = false,
+    this.initialCommentId,
+    this.initialSectionIndex,
   });
 
   @override
@@ -217,15 +226,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final textWidth = (pageContentWidth - 32).clamp(200.0, pageContentWidth);
     painter.layout(maxWidth: textWidth);
 
-    const bubbleRightOutsidePage = -220.0; // place outside A4 card
-    const bubbleWidth = 200.0;
-    const baseYInSection = 86.0; // approx: title + spacers + padding
+    // Negative right pushes bubbles outside the page Stack (clipBehavior: Clip.none
+    // is already set on the Stack, so they render in the right gutter without
+    // overlapping the document text).
+    const bubbleWidth = 150.0;
+    const bubbleRightOutsidePage = -(bubbleWidth + 8.0);
+    const baseYInSection = 86.0;
 
     rootCommentsForSection.sort((a, b) {
       final aStart = int.tryParse(a['start_offset']?.toString() ?? '') ?? 0;
       final bStart = int.tryParse(b['start_offset']?.toString() ?? '') ?? 0;
       return aStart.compareTo(bStart);
     });
+
+    double lastPlacedTop = -1000.0;
+    const minBubbleGap = 6.0;
 
     return rootCommentsForSection.map((c) {
       final start = int.tryParse(c['start_offset']?.toString() ?? '') ?? 0;
@@ -235,8 +250,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         Rect.zero,
       );
 
-      final top = baseYInSection + caretOffset.dy;
-      final name = c['commenter_name']?.toString() ?? 'User';
+      final desiredTop = baseYInSection + caretOffset.dy;
+      final top = desiredTop <= lastPlacedTop + minBubbleGap
+          ? lastPlacedTop + minBubbleGap
+          : desiredTop;
+      lastPlacedTop = top;
+      final name = _commentPersonaTag(c);
       final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
       final commentText = c['comment_text']?.toString() ?? '';
       final timestampLabel = _formatTimestamp(c['timestamp']);
@@ -269,111 +288,95 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           onTapDown: (details) {
             final id = int.tryParse(c['id']?.toString() ?? '');
             if (id == null) return;
+            _focusedHighlightCommentId = id;
+            _startHighlightPulse();
             _showThreadOverlay(
               rootCommentId: id,
               globalPosition: details.globalPosition,
             );
           },
           child: Opacity(
-            opacity: isResolved ? 0.7 : 1.0,
+            opacity: isResolved ? 0.55 : 1.0,
             child: Container(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isResolved
-                      ? Colors.grey.shade300
-                      : const Color(0xFF00BCD4).withOpacity(0.35),
+                borderRadius: BorderRadius.circular(4),
+                border: Border(
+                  left: BorderSide(
+                    color: isResolved
+                        ? Colors.grey.shade400
+                        : const Color(0xFF00BCD4),
+                    width: 2.5,
+                  ),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.10),
-                    blurRadius: 10,
-                    offset: const Offset(0, 6),
+                    color: Colors.black.withOpacity(0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
                   ),
                 ],
               ),
-              child: Row(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircleAvatar(
-                    radius: 14,
-                    backgroundColor: const Color(0xFF00BCD4),
-                    child: Text(
-                      initial,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 8,
+                        backgroundColor: const Color(0xFF00BCD4),
+                        child: Text(
+                          initial,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
                           name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1A1A1A),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF333333),
                           ),
                         ),
-                        if (timestampLabel.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            timestampLabel,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey.shade600,
-                            ),
+                      ),
+                      if (replies.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF00BCD4).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
                           ),
-                        ],
-                        const SizedBox(height: 4),
-                        Text(
-                          commentText,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.25,
-                            color: Colors.grey.shade800,
-                          ),
-                        ),
-                        if (replies.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'Reply (${replies.length})',
-                            style: TextStyle(
-                              fontSize: 10,
+                          child: Text(
+                            '+${replies.length}',
+                            style: const TextStyle(
+                              fontSize: 8,
                               fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade700,
+                              color: Color(0xFF00838F),
                             ),
                           ),
-                          if (latestReplyText.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              latestReplyAuthor.isNotEmpty
-                                  ? '$latestReplyAuthor: $latestReplyText'
-                                  : latestReplyText,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 11,
-                                height: 1.25,
-                                color: Colors.grey.shade800,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ],
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    commentText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10,
+                      height: 1.2,
+                      color: Colors.grey.shade700,
                     ),
                   ),
                 ],
@@ -385,45 +388,173 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }).toList();
   }
 
+  String _colorToQuillHex(Color c) {
+    return '#${c.value.toRadixString(16).padLeft(8, '0')}';
+  }
+
+  void _clearQuillHighlights() {
+    for (final section in _sections) {
+      final ranges = _appliedQuillBgRanges[section.id];
+      if (ranges == null || ranges.isEmpty) continue;
+      final docLen = section.richController.document.length;
+      for (final r in ranges) {
+        final s = r[0].clamp(0, docLen - 1);
+        final len = r[1].clamp(0, docLen - 1 - s);
+        if (len <= 0) continue;
+        section.richController.formatText(s, len, Attribute.background);
+      }
+    }
+    _appliedQuillBgRanges.clear();
+  }
+
   void _applyInlineHighlights() {
+    _isMutatingHighlights = true;
     try {
+      _clearQuillHighlights();
+
       final Map<String, List<HighlightRange>> rangesByBlock = {};
+
+      // Always clear existing highlights first so we don't rely on stale controller state.
+      for (final s in _sections) {
+        try {
+          s.controller.setHighlights(const []);
+        } catch (_) {}
+
+        try {
+          s.clearCommentHighlights();
+        } catch (_) {}
+      }
+      int skippedNoBlock = 0;
+      int skippedNoOffset = 0;
+      int matched = 0;
 
       for (final c in _comments) {
         final status = (c['status'] ?? 'open').toString().toLowerCase();
         if (status != 'open' && status != 'resolved') continue;
 
         // Root comments + replies both can have offsets; apply to all.
-        final blockId = c['block_id']?.toString();
-        if (blockId == null || blockId.isEmpty) continue;
+        String? blockId = c['block_id']?.toString();
+        final sectionIndex =
+            int.tryParse(c['section_index']?.toString() ?? '');
+
+        // Determine the best target section for this highlight.
+        int? targetSectionIndex;
+        if (blockId != null && blockId.isNotEmpty) {
+          final idx = _sections.indexWhere((s) => s.id == blockId);
+          if (idx >= 0) {
+            targetSectionIndex = idx;
+          }
+        }
+        if (targetSectionIndex == null && sectionIndex != null) {
+          if (sectionIndex >= 0 && sectionIndex < _sections.length) {
+            targetSectionIndex = sectionIndex;
+            blockId = _sections[sectionIndex].id;
+          }
+        }
+        if (targetSectionIndex == null || blockId == null || blockId.isEmpty) {
+          skippedNoBlock++;
+          print(
+              '🟡 highlight skip: cannot map comment ${c['id']} to section. block_id=${c['block_id']} section_index=${c['section_index']}');
+          continue;
+        }
 
         final startRaw = c['start_offset'];
         final endRaw = c['end_offset'];
-        final start = int.tryParse(startRaw?.toString() ?? '');
-        final end = int.tryParse(endRaw?.toString() ?? '');
-        if (start == null || end == null) continue;
-        if (end <= start) continue;
+        int? start = int.tryParse(startRaw?.toString() ?? '');
+        int? end = int.tryParse(endRaw?.toString() ?? '');
+        final sectionText = _sections[targetSectionIndex].controller.text;
 
-        final color = status == 'open'
-            ? Colors.yellow.withOpacity(0.3)
-            : Colors.yellow.withOpacity(0.12);
+        // If offsets are missing, derive them from highlighted_text so other
+        // personas can still see the highlight.
+        if (start == null || end == null) {
+          final selectedText = (c['highlighted_text'] ?? '').toString();
+          if (selectedText.isEmpty) {
+            skippedNoOffset++;
+            continue;
+          }
+          final idx = sectionText.indexOf(selectedText);
+          if (idx < 0) {
+            skippedNoOffset++;
+            continue;
+          }
+          start = idx;
+          end = idx + selectedText.length;
+        }
+
+        if (start == null || end == null) {
+          skippedNoOffset++;
+          continue;
+        }
+
+        if (end < start) {
+          final tmp = start;
+          start = end;
+          end = tmp;
+        }
+
+        final maxLen = sectionText.length;
+        start = start.clamp(0, maxLen);
+        end = end.clamp(0, maxLen);
+        if (end <= start) {
+          skippedNoOffset++;
+          continue;
+        }
+
+        matched++;
+        final commentId = int.tryParse(c['id']?.toString() ?? '');
+        final isFocusedComment =
+            _focusedHighlightCommentId != null && commentId == _focusedHighlightCommentId;
+        final pulseWave = _highlightPulseActive
+            ? (0.5 + 0.5 * math.sin(_highlightPulseTick * 0.7))
+            : 0.6;
+        final focusedAlpha = 0.30 + (0.30 * pulseWave);
+        final color = isFocusedComment
+            ? Colors.orange.withOpacity(focusedAlpha)
+            : (status == 'open'
+                ? Colors.yellow.withOpacity(0.40)
+                : Colors.yellow.withOpacity(0.18));
 
         rangesByBlock.putIfAbsent(blockId, () => <HighlightRange>[]).add(
               HighlightRange(
                 start: start,
                 end: end,
                 color: color,
-                commentId: int.tryParse(c['id']?.toString() ?? ''),
+                commentId: commentId,
               ),
             );
       }
 
+      print('🖍️ Highlights: ${_comments.length} comments, $matched with offsets, $skippedNoBlock no block_id, $skippedNoOffset no offsets');
+
+      final sectionIds = _sections.map((s) => s.id).toList();
+      final blockIds = rangesByBlock.keys.toList();
+      print('🖍️ Section IDs: $sectionIds');
+      print('🖍️ Block IDs in comments: $blockIds');
+
+      int appliedCount = 0;
       for (final section in _sections) {
         final ranges = rangesByBlock[section.id] ?? const <HighlightRange>[];
         section.controller.setHighlights(ranges);
+
+        final docLen = section.richController.document.length;
+        final applied = <List<int>>[];
+        for (final range in ranges) {
+          final s = range.start.clamp(0, docLen - 1);
+          final e = range.end.clamp(0, docLen - 1);
+          final len = e - s;
+          if (len <= 0) continue;
+          final hex = _colorToQuillHex(range.color);
+          section.richController.formatText(s, len, BackgroundAttribute(hex));
+          applied.add([s, len]);
+          appliedCount++;
+        }
+        _appliedQuillBgRanges[section.id] = applied;
       }
+      print('🖍️ Applied $appliedCount Quill background highlights');
     } catch (e) {
       print('⚠️ Error applying inline highlights: $e');
+    } finally {
+      _isMutatingHighlights = false;
     }
   }
 
@@ -492,6 +623,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   OverlayEntry? _addCommentOverlay;
   Offset? _lastContentTapGlobalPosition;
   int? _pendingScrollToCommentId;
+  int? _focusedHighlightCommentId;
+  Timer? _highlightPulseTimer;
+  int _highlightPulseTick = 0;
+  bool _highlightPulseActive = false;
+  bool _isMutatingHighlights = false;
+  Map<String, List<List<int>>> _appliedQuillBgRanges = {};
   List<Map<String, dynamic>> _collaborators = [];
   bool _isCollaborating = false;
 
@@ -511,6 +648,27 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     _threadOverlay?.remove();
     _threadOverlay = null;
     _activeThreadRootId = null;
+  }
+
+  void _startHighlightPulse() {
+    _highlightPulseTimer?.cancel();
+    _highlightPulseTick = 0;
+    _highlightPulseActive = true;
+    _applyInlineHighlights();
+
+    _highlightPulseTimer =
+        Timer.periodic(const Duration(milliseconds: 120), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      _highlightPulseTick++;
+      if (_highlightPulseTick >= 16) {
+        _highlightPulseActive = false;
+        timer.cancel();
+      }
+      _applyInlineHighlights();
+    });
   }
 
   void _showThreadOverlay(
@@ -581,7 +739,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     children: [
                       Expanded(
                         child: Text(
-                          root['commenter_name']?.toString() ?? 'User',
+                          _commentPersonaTag(root),
                           style: const TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -616,7 +774,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                   child: Align(
                                     alignment: Alignment.centerLeft,
                                     child: Text(
-                                      '${r['commenter_name'] ?? 'User'}: ${r['comment_text'] ?? ''}',
+                                      '${_commentPersonaTag(r)}: ${r['comment_text'] ?? ''}',
                                       style: const TextStyle(
                                           fontSize: 12, height: 1.35),
                                     ),
@@ -848,6 +1006,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
     if (widget.forceCommentsPanelOpen) {
       _showCommentsPanel = true;
+    }
+    if (widget.initialCommentId != null) {
+      _pendingScrollToCommentId = widget.initialCommentId;
+      _showCommentsPanel = true;
+    }
+    if (widget.initialSectionIndex != null) {
+      _selectedSectionForComment = widget.initialSectionIndex;
+      _draftSectionIndex = widget.initialSectionIndex;
     }
 
     // Check if AI-generated sections are provided
@@ -1496,12 +1662,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       final dynamic rawContent = proposal['content'];
       if (rawContent != null &&
           (!(rawContent is String) ||
-              (rawContent as String).trim().isNotEmpty)) {
+              rawContent.trim().isNotEmpty)) {
         try {
-          contentData = rawContent is String
-              ? Map<String, dynamic>.from(json.decode(rawContent) as Map)
-              : Map<String, dynamic>.from(
-                  rawContent is Map ? rawContent as Map : <String, dynamic>{});
+          dynamic decodedContent = rawContent;
+          if (rawContent is String) {
+            decodedContent = json.decode(rawContent);
+          }
+
+          if (decodedContent is Map) {
+            contentData = Map<String, dynamic>.from(decodedContent);
+          } else if (decodedContent is List) {
+            // Some older records store proposal content directly as a sections list.
+            contentData = <String, dynamic>{
+              'title': proposal['title'] ?? 'Untitled Document',
+              'sections': decodedContent,
+            };
+          }
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
         }
@@ -1514,9 +1690,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           List<dynamic> sectionList;
           if (rawSections is List && rawSections.isNotEmpty) {
             sectionList = rawSections;
-          } else if (rawSections is Map && (rawSections as Map).isNotEmpty) {
+          } else if (rawSections is Map && rawSections.isNotEmpty) {
             sectionList =
-                (rawSections as Map).entries.map<Map<String, dynamic>>((e) {
+                rawSections.entries.map<Map<String, dynamic>>((e) {
               final v = e.value;
               return {
                 'title': e.key.toString(),
@@ -1538,7 +1714,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
       if (contentData != null && contentData.isNotEmpty) {
         try {
-          final Map<String, dynamic> data = contentData!;
+          final Map<String, dynamic> data = contentData;
           setState(() {
             // Set title
             _titleController.text =
@@ -1582,7 +1758,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       (sectionData['paragraphAlignment'] ?? 'left').toString(),
                   richParagraphs:
                       (sectionData['richParagraphs'] as List<dynamic>?)
-                              ?.map((p) => Map<String, dynamic>.from(p as Map))
+                              ?.whereType<Map>()
+                              .map((p) => Map<String, dynamic>.from(p))
                               .toList() ??
                           [],
                   backgroundColor: sectionData['backgroundColor'] != null
@@ -1593,8 +1770,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   sectionType: sectionTypeRaw,
                   isCoverPage: isCover,
                   inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
-                          ?.map((img) =>
-                              InlineImage.fromJson(img as Map<String, dynamic>))
+                          ?.whereType<Map>()
+                          .map((img) => InlineImage.fromJson(
+                              Map<String, dynamic>.from(img)))
                           .toList() ??
                       [],
                   tables: (sectionData['tables'] as List<dynamic>?)
@@ -1612,8 +1790,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       [],
                   positionedPricingTables:
                       (sectionData['positionedPricingTables'] as List<dynamic>?)
-                              ?.map((p) => PositionedPricingTable.fromJson(
-                                  p as Map<String, dynamic>))
+                              ?.whereType<Map>()
+                              .map((p) => PositionedPricingTable.fromJson(
+                                  Map<String, dynamic>.from(p)))
                               .toList() ??
                           [],
                 );
@@ -1681,6 +1860,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
           _ensureSectionSelectionListeners();
 
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
+
+          try {
+            final ids = _sections.map((s) => s.id).toList();
+            print('🧭 Sections loaded: count=${_sections.length} ids=$ids');
+          } catch (_) {}
+
           print('✅ Loaded proposal content with ${_sections.length} sections');
         } catch (e) {
           print('⚠️ Error parsing proposal content: $e');
@@ -1707,6 +1895,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             fallbackSection.contentFocus.addListener(() => setState(() {}));
             fallbackSection.titleFocus.addListener(() => setState(() {}));
           });
+
+          _ensureSectionSelectionListeners();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
         }
       } else {
         // If backend returned no content, ensure we still have an editable section
@@ -1723,6 +1916,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           });
 
           _ensureSectionSelectionListeners();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _applyInlineHighlights();
+          });
         }
       }
     } catch (e) {
@@ -1808,13 +2004,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
         // Add replies if they exist
         final replies = comment['replies'] as List<dynamic>? ?? [];
-        for (var reply in replies) {
-          addCommentWithReplies(reply as Map<String, dynamic>);
+        for (var reply in replies.whereType<Map>()) {
+          addCommentWithReplies(Map<String, dynamic>.from(reply));
         }
       }
 
-      for (var comment in comments) {
-        addCommentWithReplies(comment as Map<String, dynamic>);
+      for (var comment in (comments as List).whereType<Map>()) {
+        addCommentWithReplies(Map<String, dynamic>.from(comment));
       }
 
       if (!mounted) return;
@@ -1831,6 +2027,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 comment['author_username'] ??
                 comment['author_email'] ??
                 'User #${comment['created_by']}',
+            'commenter_username': comment['author_username'],
+            'commenter_role': comment['author_role'],
             'created_by': comment['created_by'],
             'comment_text': comment['comment_text'],
             'section_index': comment['section_index'],
@@ -1849,11 +2047,52 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         }
       });
 
+      try {
+        if (_comments.isNotEmpty) {
+          final c = _comments.first;
+          print(
+              '🧾 First comment anchors: id=${c['id']} block_id=${c['block_id']} section_index=${c['section_index']} start=${c['start_offset']} end=${c['end_offset']} text=${(c['highlighted_text'] ?? '').toString()}');
+        }
+      } catch (_) {}
+
       // If a thread overlay is open, force it to rebuild so new replies appear.
       _threadOverlay?.markNeedsBuild();
       print('✅ Loaded ${flatComments.length} comments (including replies)');
 
-      _applyInlineHighlights();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Brief delay so Quill documents finish rendering before
+        // applying BackgroundAttribute highlights.
+        Future.delayed(const Duration(milliseconds: 150), () {
+          if (mounted) _applyInlineHighlights();
+        });
+      });
+
+      if (_pendingScrollToCommentId != null) {
+        final pendingId = _pendingScrollToCommentId!;
+        final target = _comments.firstWhere(
+          (c) => c['id']?.toString() == pendingId.toString(),
+          orElse: () => <String, dynamic>{},
+        );
+        if (target.isNotEmpty) {
+          final rootId = target['parent_id'] != null
+              ? int.tryParse(target['parent_id']?.toString() ?? '')
+              : int.tryParse(target['id']?.toString() ?? '');
+          if (rootId != null) {
+            _pendingScrollToCommentId = rootId;
+            _focusedHighlightCommentId = rootId;
+            _startHighlightPulse();
+          }
+          _showCommentsPanel = true;
+          _selectedSectionForComment ??=
+              int.tryParse(target['section_index']?.toString() ?? '');
+          _applyInlineHighlights();
+        }
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _pendingScrollToCommentId == null) return;
+          _scrollToCommentCard(_pendingScrollToCommentId!);
+          _pendingScrollToCommentId = null;
+        });
+      }
 
       if (mounted) {
         unawaited(() async {
@@ -2027,6 +2266,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   @override
   void dispose() {
     _autoSaveTimer?.cancel();
+    _highlightPulseTimer?.cancel();
     _selectionSnackDebounce?.cancel();
     _removeAddCommentOverlay();
     _removeThreadOverlay();
@@ -2562,18 +2802,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
 
     final query = prefix.substring(atIndex + 1);
-    if (query.contains(RegExp('[\\s@#\$%^&*()+\\-=/\\\\{}\\[\\]|;:\'",<>?]'))) {
+    if (query.contains(RegExp('[\\s@#\$%^&*()+=/\\\\{}\\[\\]|;:\'",<>?]'))) {
       _clearMentionState();
       return;
     }
 
     final suffix = text.substring(caretIndex);
-    if (suffix.isNotEmpty && !RegExp(r'^[A-Za-z0-9_.]*').hasMatch(suffix[0])) {
+    if (suffix.isNotEmpty && !RegExp(r'^[A-Za-z0-9_.-]*').hasMatch(suffix[0])) {
       _clearMentionState();
       return;
     }
 
-    if (!RegExp(r'^[A-Za-z0-9_.]*$').hasMatch(query)) {
+    if (!RegExp(r'^[A-Za-z0-9_.-]*$').hasMatch(query)) {
       _clearMentionState();
       return;
     }
@@ -2663,7 +2903,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     if (_mentionStartIndex == -1) return;
 
     String mentionKey =
-        (user['username']?.toString().trim() ?? '').replaceAll(' ', '');
+        (user['mention_key']?.toString().trim() ??
+                user['username']?.toString().trim() ??
+                '')
+            .replaceAll(' ', '');
     if (mentionKey.isEmpty) {
       final email = user['email']?.toString() ?? '';
       if (email.contains('@')) {
@@ -2671,7 +2914,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       }
     }
 
-    mentionKey = mentionKey.replaceAll(RegExp(r'[^A-Za-z0-9_.]'), '');
+    mentionKey = mentionKey.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '');
     if (mentionKey.isEmpty) {
       return;
     }
@@ -2734,7 +2977,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
 
     final spans = <TextSpan>[];
-    final mentionRegex = RegExp(r'@([A-Za-z0-9_.]+)');
+    final mentionRegex = RegExp(r'@([A-Za-z0-9_.-]+)');
     int lastIndex = 0;
 
     for (final match in mentionRegex.allMatches(text)) {
@@ -3430,8 +3673,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   DateTime _toSast(DateTime dt) {
-    // South Africa Standard Time is UTC+2 year-round.
-    return dt.toUtc().add(const Duration(hours: 2));
+    final utc = dt.isUtc
+        ? dt
+        : DateTime.utc(dt.year, dt.month, dt.day, dt.hour, dt.minute,
+            dt.second, dt.millisecond, dt.microsecond);
+    return utc.add(const Duration(hours: 2));
   }
 
   String _formatTimestamp(dynamic timestamp) {
@@ -3439,7 +3685,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     if (parsed == null) return '';
     try {
       final DateTime dt = _toSast(parsed);
-      final now = _toSast(DateTime.now());
+      final now = _toSast(DateTime.now().toUtc());
 
       final timePart = DateFormat('HH:mm').format(dt);
       final isSameDate =
@@ -3470,6 +3716,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     } catch (e) {
       return '';
     }
+  }
+
+  String _commentPersonaTag(Map<String, dynamic> comment) {
+    final username = comment['commenter_username']?.toString().trim();
+    if (username == null || username.isEmpty) {
+      final fallback = comment['commenter_name']?.toString().trim();
+      return (fallback == null || fallback.isEmpty) ? 'user' : fallback;
+    }
+    final rawRole = comment['commenter_role']?.toString().trim() ?? '';
+    if (rawRole.isEmpty) return username;
+    final role = rawRole.toLowerCase().replaceAll(' ', '_');
+    return '$username-$role';
   }
 
   // Status helper methods
@@ -3966,6 +4224,26 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       _onContentChanged();
       if (section.contentFocus.hasFocus) {
         _syncToolbarStateFromRichSelection();
+        // Prevent Quill from extending comment-highlight background to
+        // newly-typed characters.  This fires only for user input (not
+        // during _applyInlineHighlights which sets _isMutatingHighlights).
+        if (!_isMutatingHighlights) {
+          final sel = section.richController.selection;
+          if (sel.isCollapsed && sel.baseOffset > 0) {
+            final offset = sel.baseOffset;
+            final style = section.richController.document
+                .collectStyle(offset - 1, 1);
+            if (style.containsKey(Attribute.background.key)) {
+              _isMutatingHighlights = true;
+              try {
+                section.richController.formatText(
+                    offset - 1, 1, Attribute.background);
+              } finally {
+                _isMutatingHighlights = false;
+              }
+            }
+          }
+        }
       }
     });
     section.titleController.addListener(_onContentChanged);
@@ -3988,6 +4266,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   void _onContentChanged() {
+    if (_isMutatingHighlights) return;
     if (_selectedSectionIndex >= 0 &&
         _selectedSectionIndex < _sections.length &&
         _sections[_selectedSectionIndex].contentFocus.hasFocus) {
@@ -4011,20 +4290,39 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     });
   }
 
+  List<Map<String, dynamic>> _stripHighlightBackgrounds(
+      List<Map<String, dynamic>> delta) {
+    return delta.map((op) {
+      if (op.containsKey('attributes')) {
+        final attrs = Map<String, dynamic>.from(op['attributes'] as Map);
+        attrs.remove('background');
+        if (attrs.isEmpty) {
+          final cleaned = Map<String, dynamic>.from(op);
+          cleaned.remove('attributes');
+          return cleaned;
+        }
+        return <String, dynamic>{...op, 'attributes': attrs};
+      }
+      return op;
+    }).toList();
+  }
+
   String _serializeDocumentContent() {
-    // Serialize sections into JSON format for backend storage
     final documentData = {
       'title': _titleController.text,
       'sections': _sections
-          .map((section) => {
+          .map((section) {
+                final cleanDelta =
+                    _stripHighlightBackgrounds(section.exportRichDelta());
+                return {
                 'id': section.id,
                 'title': section.titleController.text,
                 'content': section.controller.text,
-                'richContentDelta': section.exportRichDelta(),
+                'richContentDelta': cleanDelta,
                 'lineSpacing': section.lineSpacing,
                 'paragraphAlignment': section.paragraphAlignment,
                 'richParagraphs': paragraphsFromQuillDelta(
-                  section.exportRichDelta(),
+                  cleanDelta,
                   defaultFontFamily: _selectedFont,
                   defaultFontSize: double.tryParse(_selectedFontSize) ?? 12.0,
                   defaultAlignment: section.paragraphAlignment,
@@ -4041,7 +4339,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 'positionedPricingTables': section.positionedPricingTables
                     .map((p) => p.toJson())
                     .toList(),
-              })
+              };})
           .toList(),
       'metadata': {
         'currency': _selectedCurrency,
@@ -4350,7 +4648,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         sectionType: sectionTypeRaw,
         isCoverPage: isCover,
         inlineImages: (sectionData['inlineImages'] as List<dynamic>?)
-            ?.map((img) => InlineImage.fromJson(img as Map<String, dynamic>))
+            ?.whereType<Map>()
+            .map((img) => InlineImage.fromJson(Map<String, dynamic>.from(img)))
             .toList(),
         tables: (sectionData['tables'] as List<dynamic>?)?.map((tableData) {
               try {
@@ -4364,12 +4663,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               }
             }).toList() ??
             [],
-        positionedPricingTables: (sectionData['positionedPricingTables']
-                    as List<dynamic>?)
-                ?.map((p) =>
-                    PositionedPricingTable.fromJson(p as Map<String, dynamic>))
-                .toList() ??
-            [],
+        positionedPricingTables:
+            (sectionData['positionedPricingTables'] as List<dynamic>?)
+                    ?.whereType<Map>()
+                    .map((p) => PositionedPricingTable.fromJson(
+                        Map<String, dynamic>.from(p)))
+                    .toList() ??
+                [],
       );
 
       if (newSection.tables.isNotEmpty) {
@@ -5119,18 +5419,35 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final isCollaboratorMode = widget.isCollaborator;
     final forceCommentsPanelOpen = widget.forceCommentsPanelOpen;
     final _statusForSidebar = (_proposalStatus ?? '').toLowerCase().trim();
-    // Show the full sidebar to finance when the proposal is returned for changes
-    // so they can access Content Library and insert blocks like any other editor.
-    final hideLeftSidebar = context.watch<RoleService>().isFinance() &&
+    final appState = context.watch<AppState>();
+    final isAdminUser = _isAdminUser();
+    // Keep admin navigation available in-editor so admins can move back
+    // to dashboard pages after opening a proposal from mention notifications.
+    // Finance still hides this sidebar unless changes were requested.
+    final hideLeftSidebar =
+        context.watch<RoleService>().isFinance() &&
         _statusForSidebar != 'changes requested';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F5),
-      body: Row(
-        children: [
+      backgroundColor: Colors.transparent,
+      body: ManagerPageBackground(
+        child: Row(
+          children: [
           // Left Sidebar (hide in read-only mode AND collaborator mode)
           if (!isReadOnly && !isCollaboratorMode && !hideLeftSidebar)
-            _buildLeftSidebar(),
+            (isAdminUser
+                ? Material(
+                    child: AdminSidebar(
+                      isCollapsed: appState.isAdminSidebarCollapsed,
+                      currentPage: appState.adminNavLabel,
+                      onToggle: appState.toggleAdminSidebar,
+                      onSelect: (label) {
+                        appState.setAdminNavLabel(label);
+                        _navigateToPage(label);
+                      },
+                    ),
+                  )
+                : _buildLeftSidebar()),
           // Sections Sidebar (conditional, hide in read-only mode AND collaborator mode)
           if (!isReadOnly && !isCollaboratorMode && _showSectionsSidebar)
             _buildSectionsSidebar(),
@@ -5187,6 +5504,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   ),
           ),
         ],
+        ),
       ),
     );
   }
@@ -5432,6 +5750,31 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildLeftSidebar() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final sidebarDecoration = chrome.isDark
+        ? BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.black.withOpacity(0.3),
+                Colors.black.withOpacity(0.2),
+              ],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            border: Border(
+              right: BorderSide(
+                color: PremiumTheme.glassWhiteBorder,
+                width: 1,
+              ),
+            ),
+          )
+        : BoxDecoration(
+            color: chrome.sidebarBackground,
+            border: Border(
+              right: BorderSide(color: chrome.sidebarRightBorder, width: 1),
+            ),
+          );
+
     return GestureDetector(
       onTap: () {
         if (_isSidebarCollapsed) {
@@ -5442,22 +5785,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),
         width: _isSidebarCollapsed ? 90.0 : 250.0,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.black.withOpacity(0.3),
-              Colors.black.withOpacity(0.2),
-            ],
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-          ),
-          border: Border(
-            right: BorderSide(
-              color: PremiumTheme.glassWhiteBorder,
-              width: 1,
-            ),
-          ),
-        ),
+        decoration: sidebarDecoration,
         child: SingleChildScrollView(
           child: Column(
             children: [
@@ -5471,10 +5799,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   child: Container(
                     height: 44,
                     decoration: BoxDecoration(
-                      color: PremiumTheme.glassWhite,
+                      color: chrome.isDark
+                          ? PremiumTheme.glassWhite
+                          : chrome.sidebarHoverFill,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: PremiumTheme.glassWhiteBorder,
+                        color: chrome.isDark
+                            ? PremiumTheme.glassWhiteBorder
+                            : chrome.divider,
                         width: 1,
                       ),
                     ),
@@ -5485,12 +5817,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       children: [
                         if (!_isSidebarCollapsed)
                           Expanded(
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 12),
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12),
                               child: Text(
                                 'Navigation',
                                 style: TextStyle(
-                                  color: Colors.white,
+                                  color: chrome.textPrimary,
                                   fontSize: 12,
                                 ),
                               ),
@@ -5504,7 +5837,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             _isSidebarCollapsed
                                 ? Icons.keyboard_arrow_right
                                 : Icons.keyboard_arrow_left,
-                            color: Colors.white,
+                            color: chrome.textPrimary,
                           ),
                         ),
                       ],
@@ -5514,19 +5847,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               ),
               const SizedBox(height: 12),
               // Navigation items - show admin sidebar if user is admin
-              _buildAdminSidebarItems(),
+              _buildAdminSidebarItems(chrome),
               const SizedBox(height: 20),
               // Divider
               if (!_isSidebarCollapsed)
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16),
                   height: 1,
-                  color: const Color(0xFF2C3E50),
+                  color: chrome.isDark
+                      ? const Color(0xFF2C3E50)
+                      : chrome.divider,
                 ),
               const SizedBox(height: 12),
               // Logout button
-              _buildNavItem(
-                  'Logout', 'assets/images/Logout_KhonoBuzz.png', false),
+              _buildNavItem('Logout',
+                  'assets/images/Logout_KhonoBuzz.png', false, chrome),
               const SizedBox(height: 20),
             ],
           ),
@@ -5551,7 +5886,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     }
   }
 
-  Widget _buildAdminSidebarItems() {
+  Widget _buildAdminSidebarItems(ManagerChromeTheme chrome) {
     final isAdmin = _isAdminUser();
 
     if (isAdmin) {
@@ -5559,33 +5894,37 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       return Column(
         children: [
           _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-              _currentPage == 'Dashboard'),
+              _currentPage == 'Dashboard', chrome),
           _buildNavItem(
               'Proposals for Review',
               'assets/images/Time Allocation_Approval_Blue.png',
-              _currentPage == 'Proposals for Review'),
+              _currentPage == 'Proposals for Review',
+              chrome),
           _buildNavItem(
               'Governance & Risk',
               'assets/images/Time Allocation_Approval_Blue.png',
-              _currentPage == 'Governance & Risk'),
+              _currentPage == 'Governance & Risk',
+              chrome),
           _buildNavItem(
               'Template Management',
               'assets/images/content_library.png',
-              _currentPage == 'Template Management'),
+              _currentPage == 'Template Management',
+              chrome),
           _buildNavItem('Content Library', 'assets/images/content_library.png',
-              _currentPage == 'Content Library'),
+              _currentPage == 'Content Library', chrome),
           _buildNavItem('Client Management', 'assets/images/collaborations.png',
-              _currentPage == 'Client Management'),
+              _currentPage == 'Client Management', chrome),
           _buildNavItem('User Management', 'assets/images/collaborations.png',
-              _currentPage == 'User Management'),
+              _currentPage == 'User Management', chrome),
           _buildNavItem(
               'Approved Proposals',
               'assets/images/Time Allocation_Approval_Blue.png',
-              _currentPage == 'Approved Proposals'),
+              _currentPage == 'Approved Proposals',
+              chrome),
           _buildNavItem('Audit Logs', 'assets/images/analytics.png',
-              _currentPage == 'Audit Logs'),
+              _currentPage == 'Audit Logs', chrome),
           _buildNavItem('Settings', 'assets/images/analytics.png',
-              _currentPage == 'Settings'),
+              _currentPage == 'Settings', chrome),
         ],
       );
     } else {
@@ -5593,29 +5932,34 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
       return Column(
         children: [
           _buildNavItem('Dashboard', 'assets/images/Dahboard.png',
-              _currentPage == 'Dashboard'),
+              _currentPage == 'Dashboard', chrome),
           _buildNavItem('My Proposals', 'assets/images/My_Proposals.png',
-              _currentPage == 'My Proposals'),
+              _currentPage == 'My Proposals', chrome),
           _buildNavItem('Templates', 'assets/images/content_library.png',
-              _currentPage == 'Templates'),
+              _currentPage == 'Templates', chrome),
           _buildNavItem('Content Library', 'assets/images/content_library.png',
-              _currentPage == 'Content Library'),
+              _currentPage == 'Content Library', chrome),
           _buildNavItem('Client Management', 'assets/images/collaborations.png',
-              _currentPage == 'Client Management'),
+              _currentPage == 'Client Management', chrome),
           _buildNavItem(
               'Approved Proposals',
               'assets/images/Time Allocation_Approval_Blue.png',
-              _currentPage == 'Approved Proposals'),
+              _currentPage == 'Approved Proposals',
+              chrome),
           _buildNavItem(
               'Analytics (My Pipeline)',
               'assets/images/analytics.png',
-              _currentPage == 'Analytics (My Pipeline)'),
+              _currentPage == 'Analytics (My Pipeline)',
+              chrome),
         ],
       );
     }
   }
 
-  Widget _buildNavItem(String label, String assetPath, bool isActive) {
+  Widget _buildNavItem(
+      String label, String assetPath, bool isActive, ManagerChromeTheme chrome) {
+    final inactiveLabel =
+        chrome.isDark ? const Color(0xFFECF0F1) : chrome.textPrimary;
     if (_isSidebarCollapsed) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -5708,7 +6052,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 child: Text(
                   label,
                   style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
+                    color: isActive ? Colors.white : inactiveLabel,
                     fontSize: 14,
                     fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                   ),
@@ -5734,6 +6078,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         } else {
           Navigator.pushReplacementNamed(context, '/creator_dashboard');
         }
+        break;
+      case 'Approvals':
+        Navigator.pushReplacementNamed(
+          context,
+          '/admin_approvals',
+          arguments: const {'initialFilter': 'pending'},
+        );
+        break;
+      case 'Analytics':
+        Navigator.pushReplacementNamed(
+          context,
+          isAdmin ? '/admin_analytics' : '/analytics',
+        );
+        break;
+      case 'History':
+        Navigator.pushReplacementNamed(context, '/admin_history');
         break;
       case 'Proposals for Review':
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
@@ -5766,6 +6126,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
@@ -5803,8 +6164,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ),
         );
         break;
+      case 'Account Profile':
+        ManagerSessionActions.goToAccountProfile(context);
+        break;
       case 'Logout':
-        Navigator.pushReplacementNamed(context, '/login');
+      case 'Sign Out':
+        ManagerSessionActions.showLogoutDialog(context);
         break;
     }
   }
@@ -5816,11 +6181,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildSectionsSidebar() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     return Container(
       width: 220,
       decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(right: BorderSide(color: Colors.grey[200]!, width: 1)),
+        color: chrome.isDark ? Colors.white : chrome.floatingFill,
+        border: Border(right: BorderSide(color: chrome.divider, width: 1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -5830,12 +6196,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Sections',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
+                    color: chrome.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -5902,7 +6268,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                       fontWeight: FontWeight.w500,
                                       color: isSelected
                                           ? const Color(0xFF00BCD4)
-                                          : const Color(0xFF1A1A1A),
+                                          : chrome.textPrimary,
                                     ),
                                   ),
                                 ),
@@ -5986,6 +6352,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildTopHeader() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     final isFinanceRole = context.watch<RoleService>().isFinance();
     final isManagerRole = context.watch<RoleService>().isCreator();
     final statusKey = (_proposalStatus ?? '').toString().toLowerCase().trim();
@@ -5994,7 +6361,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final isChangesRequested = statusKey == 'changes requested';
 
     return Container(
-      color: Colors.white,
+      color: chrome.isDark ? Colors.white : chrome.floatingFill,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
       child: Row(
         children: [
@@ -6007,9 +6374,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: Colors.grey[50],
+                      color: chrome.isDark ? Colors.grey[50] : chrome.fieldFill,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.grey[300]!, width: 1),
+                      border: Border.all(color: chrome.fieldBorder, width: 1),
                     ),
                     child: Row(
                       children: [
@@ -6021,19 +6388,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             controller: _titleController,
                             enabled: !widget
                                 .readOnly, // Disable editing in read-only mode
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A),
+                              color: chrome.textPrimary,
                             ),
                             decoration: InputDecoration(
                               hintText: widget.readOnly
                                   ? '' // No hint in read-only mode
                                   : 'Click to edit document title...',
-                              hintStyle: const TextStyle(
+                              hintStyle: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w400,
-                                color: Color(0xFFBDC3C7),
+                                color: chrome.textMuted,
                               ),
                               border: InputBorder.none,
                               focusedBorder: InputBorder.none,
@@ -6083,10 +6450,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               children: [
                 Text(
                   '${_getCurrencySymbol()} ',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF1A1A1A),
+                    color: chrome.textPrimary,
                   ),
                 ),
                 Flexible(
@@ -6106,10 +6473,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                           child: Text(
                             _computePricingTotal().toStringAsFixed(2),
                             textAlign: TextAlign.left,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF1A1A1A),
+                              color: chrome.textPrimary,
                             ),
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -6122,21 +6489,21 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             // Price value input - ready for future use
                             setState(() {});
                           },
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A1A),
+                            color: chrome.textPrimary,
                           ),
                           decoration: InputDecoration(
                             hintText: '0.00',
                             hintStyle: TextStyle(
                               fontSize: 14,
-                              color: Colors.grey[400],
+                              color: chrome.textMuted,
                             ),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(4),
                               borderSide: BorderSide(
-                                color: Colors.grey[300]!,
+                                color: chrome.fieldBorder,
                                 width: 1,
                               ),
                             ),
@@ -6433,12 +6800,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     final canEdit = !widget.readOnly;
     if (!canEdit) return const SizedBox.shrink();
 
+    final chrome = context.watch<ManagerThemeController>().chrome;
     // ~50% larger controls; shifted slightly left vs centered row.
     const double kToolbarScale = 1.5;
     final double iconSz = 24 * kToolbarScale;
     final double ddFont = 14 * kToolbarScale;
     final double gapSm = 12 * kToolbarScale;
     final double gapMd = 18 * kToolbarScale;
+    final ddStyle =
+        TextStyle(fontSize: ddFont, color: chrome.textPrimary);
 
     // Single toolbar instance bound to the active section (selectedSectionIndex).
     // Formatting actions apply to current Quill selection/cursor.
@@ -6450,9 +6820,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         bottom: 16 * kToolbarScale,
       ),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: chrome.isDark ? Colors.white : chrome.floatingFill,
         border: Border(
-          bottom: BorderSide(color: Colors.grey[200]!, width: 1),
+          bottom: BorderSide(color: chrome.divider, width: 1),
         ),
       ),
       child: Focus(
@@ -6502,8 +6872,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 DropdownButton<String>(
                   value: _selectedFont,
                   underline: const SizedBox(),
-                  style: TextStyle(
-                      fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  style: ddStyle,
                   onChanged: (v) {
                     if (v == null) return;
                     final attr = _attributeForFont(v);
@@ -6520,7 +6889,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   ].map((font) {
                     return DropdownMenuItem(
                       value: font,
-                      child: Text(font, style: TextStyle(fontSize: ddFont)),
+                      child: Text(font, style: ddStyle),
                     );
                   }).toList(),
                 ),
@@ -6529,8 +6898,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 DropdownButton<String>(
                   value: _selectedFontSize,
                   underline: const SizedBox(),
-                  style: TextStyle(
-                      fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  style: ddStyle,
                   onChanged: (v) {
                     if (v == null) return;
                     final attr = _attributeForSize(v);
@@ -6590,8 +6958,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 DropdownButton<String>(
                   value: _selectedLineSpacing,
                   underline: const SizedBox(),
-                  style: TextStyle(
-                      fontSize: ddFont, color: const Color(0xFF1A1A1A)),
+                  style: ddStyle,
                   onChanged: (v) {
                     if (v == null) return;
                     _applyLineSpacing(v);
@@ -6601,7 +6968,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                         v == '1.0' ? 'Single' : (v == '1.5' ? '1.5' : 'Double');
                     return DropdownMenuItem(
                       value: v,
-                      child: Text(label, style: TextStyle(fontSize: ddFont)),
+                      child: Text(label, style: ddStyle),
                     );
                   }).toList(),
                 ),
@@ -6630,20 +6997,24 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   Widget _buildSmallDropdown(
       String label, List<String> items, Function(String?) onChanged) {
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final itemStyle =
+        TextStyle(fontSize: 12, color: chrome.textPrimary);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey[400]!),
+        border: Border.all(color: chrome.fieldBorder),
         borderRadius: BorderRadius.circular(4),
       ),
       child: DropdownButton<String>(
         value: label,
         underline: const SizedBox(),
         isDense: true,
+        style: itemStyle,
         items: items.map((item) {
           return DropdownMenuItem(
             value: item,
-            child: Text(item, style: const TextStyle(fontSize: 12)),
+            child: Text(item, style: itemStyle),
           );
         }).toList(),
         onChanged: onChanged,
@@ -8216,18 +8587,19 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   Widget _buildRightSidebar() {
     final bool isCollapsed = _isRightSidebarCollapsed;
+    final chrome = context.watch<ManagerThemeController>().chrome;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       width: isCollapsed ? 56 : 300,
-      color: Colors.white,
+      color: chrome.isDark ? Colors.white : chrome.floatingFill,
       child: Column(
         children: [
           // Panel tabs/icons at the top + collapse toggle
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+              border: Border(bottom: BorderSide(color: chrome.divider)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -8238,15 +8610,15 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         _buildPanelTabIcon(
-                            Icons.tune, 'templates', 'Templates'),
+                            Icons.tune, 'templates', 'Templates', chrome),
                         _buildPanelTabIcon(
-                            Icons.add_box_outlined, 'build', 'Build'),
+                            Icons.add_box_outlined, 'build', 'Build', chrome),
                         _buildPanelTabIcon(
-                            Icons.cloud_upload_outlined, 'upload', 'Upload'),
+                            Icons.cloud_upload_outlined, 'upload', 'Upload', chrome),
                         _buildPanelTabIcon(
-                            Icons.edit_note, 'signature', 'Signature'),
+                            Icons.edit_note, 'signature', 'Signature', chrome),
                         _buildPanelTabIcon(
-                            Icons.verified, 'review', 'Review & Complete'),
+                            Icons.verified, 'review', 'Review & Complete', chrome),
                         _buildAIAnalysisIcon(),
                       ],
                     ),
@@ -8261,14 +8633,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                      color: Colors.grey[100],
+                      color: chrome.isDark ? Colors.grey[100] : chrome.fieldFill,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey[300]!, width: 1),
+                      border: Border.all(color: chrome.fieldBorder, width: 1),
                     ),
                     child: Icon(
                       isCollapsed ? Icons.chevron_left : Icons.chevron_right,
                       size: 18,
-                      color: Colors.grey[700],
+                      color: chrome.textSecondary,
                     ),
                   ),
                 ),
@@ -8290,7 +8662,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
     );
   }
 
-  Widget _buildPanelTabIcon(IconData icon, String panelName, String tooltip) {
+  Widget _buildPanelTabIcon(IconData icon, String panelName, String tooltip,
+      ManagerChromeTheme chrome) {
     bool isActive = _selectedPanel == panelName;
     return Tooltip(
       message: tooltip,
@@ -8310,7 +8683,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
             child: Icon(
               icon,
               size: 22,
-              color: isActive ? const Color(0xFF00BCD4) : Colors.grey[600],
+              color: isActive
+                  ? const Color(0xFF00BCD4)
+                  : (chrome.isDark ? Colors.grey[600]! : chrome.textMuted),
             ),
           ),
         ),
@@ -8336,15 +8711,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildTemplatesPanel() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Template Settings',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
+            color: chrome.textPrimary,
           ),
         ),
         const SizedBox(height: 12),
@@ -8394,22 +8770,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey[300]!),
+                border: Border.all(color: chrome.fieldBorder),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
+                  Text(
                     'Template Style',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
-                      color: Color(0xFF1A3A52),
+                      color: chrome.textPrimary,
                     ),
                   ),
                   Icon(Icons.arrow_forward_ios,
-                      size: 16, color: const Color(0xFF1A3A52)),
+                      size: 16, color: chrome.textPrimary),
                 ],
               ),
             ),
@@ -8420,20 +8796,20 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           'Adjust margins, orientation, background, etc.',
           style: TextStyle(
             fontSize: 12,
-            color: Colors.grey[600],
+            color: chrome.textSecondary,
             height: 1.4,
           ),
         ),
         const SizedBox(height: 24),
-        Container(height: 1, color: Colors.grey[200]),
+        Container(height: 1, color: chrome.divider),
         const SizedBox(height: 24),
         // Currency Options
-        const Text(
+        Text(
           'Currency Options',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
+            color: chrome.textPrimary,
           ),
         ),
         const SizedBox(height: 12),
@@ -8456,7 +8832,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey[300]!),
+                border: Border.all(color: chrome.fieldBorder),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Row(
@@ -8464,13 +8840,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 children: [
                   Text(
                     _selectedCurrency,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
-                      color: Color(0xFF1A1A1A),
+                      color: chrome.textPrimary,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
-                  Icon(Icons.expand_more, size: 18, color: Colors.grey[600]),
+                  Icon(Icons.expand_more,
+                      size: 18, color: chrome.textSecondary),
                 ],
               ),
             ),
@@ -8894,15 +9271,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildBuildPanel() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Build',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
+            color: chrome.textPrimary,
           ),
         ),
         const SizedBox(height: 20),
@@ -8921,14 +9299,14 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           ],
         ),
         const SizedBox(height: 24),
-        const Divider(),
+        Divider(color: chrome.divider),
         const SizedBox(height: 16),
-        const Text(
+        Text(
           'Text Settings',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
+            color: chrome.textPrimary,
           ),
         ),
         const SizedBox(height: 12),
@@ -9110,6 +9488,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildBuildItem(IconData icon, String label) {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -9125,9 +9504,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         borderRadius: BorderRadius.circular(8),
         child: Container(
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey[200]!),
+            border: Border.all(color: chrome.divider),
             borderRadius: BorderRadius.circular(8),
-            color: Colors.grey[50],
+            color: chrome.isDark ? Colors.grey[50] : chrome.fieldFill,
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -9136,10 +9515,10 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               const SizedBox(height: 8),
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF1A1A1A),
+                  color: chrome.textPrimary,
                 ),
               ),
             ],
@@ -9151,16 +9530,18 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
 
   Widget _buildUploadPanel() {
     bool hasImages = _uploadedImages.isNotEmpty;
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final tabInactive = chrome.textSecondary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Uploads',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
+            color: chrome.textPrimary,
           ),
         ),
         const SizedBox(height: 16),
@@ -9187,7 +9568,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             fontWeight: FontWeight.w500,
                             color: _uploadTabSelected == 'this_document'
                                 ? const Color(0xFF1A3A52)
-                                : Colors.grey[600],
+                                : tabInactive,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -9223,7 +9604,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             fontWeight: FontWeight.w500,
                             color: _uploadTabSelected == 'library'
                                 ? const Color(0xFF1A3A52)
-                                : Colors.grey[600],
+                                : tabInactive,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -9655,16 +10036,17 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         .where((sig) =>
             sig.toLowerCase().contains(_signatureSearchQuery.toLowerCase()))
         .toList();
+    final chrome = context.watch<ManagerThemeController>().chrome;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Signatures',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
+            color: chrome.textPrimary,
           ),
         ),
         const SizedBox(height: 16),
@@ -9675,21 +10057,23 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
               _signatureSearchQuery = value;
             });
           },
+          style: TextStyle(color: chrome.textPrimary),
           decoration: InputDecoration(
             hintText: 'Start typing',
             hintStyle: TextStyle(
               fontSize: 13,
-              color: Colors.grey[400],
+              color: chrome.textMuted,
             ),
-            prefixIcon: Icon(Icons.search, color: Colors.grey[600], size: 18),
+            prefixIcon:
+                Icon(Icons.search, color: chrome.textSecondary, size: 18),
             prefixText: 'Signatures for   ',
             prefixStyle: TextStyle(
               fontSize: 12,
-              color: Colors.grey[600],
+              color: chrome.textSecondary,
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
-              borderSide: BorderSide(color: Colors.grey[300]!),
+              borderSide: BorderSide(color: chrome.fieldBorder),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(6),
@@ -10062,6 +10446,8 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                               'User';
                           final email = user['email']?.toString();
                           final username = user['username']?.toString();
+                          final mentionKey = user['mention_key']?.toString();
+                          final role = user['role']?.toString();
                           return ListTile(
                             dense: true,
                             onTap: () => _insertMention(user),
@@ -10086,8 +10472,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                             ),
                             subtitle: Text(
                               [
+                                if (mentionKey != null && mentionKey.isNotEmpty)
+                                  '@$mentionKey',
                                 if (username != null && username.isNotEmpty)
                                   '@$username',
+                                if (role != null && role.isNotEmpty) role,
                                 if (email != null && email.isNotEmpty) email,
                               ].join(' • '),
                               style: TextStyle(
@@ -10185,29 +10574,35 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         .length;
 
     final hasDraft = _draftBlockId != null && _showCommentsPanel;
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final headerOnDark = chrome.isDark;
 
     return Container(
       width: 400,
-      color: Colors.white,
+      color: chrome.isDark ? Colors.white : chrome.floatingFill,
       child: Column(
         children: [
           // Header
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFF1A3A52),
-              border: Border(bottom: BorderSide(color: Colors.grey[300]!)),
+              color: headerOnDark
+                  ? const Color(0xFF1A3A52)
+                  : chrome.floatingFill,
+              border: Border(bottom: BorderSide(color: chrome.divider)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.comment, color: Colors.white, size: 20),
+                Icon(Icons.comment,
+                    color: headerOnDark ? Colors.white : chrome.textPrimary,
+                    size: 20),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'Comments',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: headerOnDark ? Colors.white : chrome.textPrimary,
                   ),
                 ),
                 const Spacer(),
@@ -10224,7 +10619,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: openCount > 0 ? Colors.white : Colors.grey,
+                      color: openCount > 0
+                          ? Colors.white
+                          : chrome.textMuted,
                     ),
                   ),
                 ),
@@ -10235,7 +10632,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                       _showCommentsPanel = false;
                     });
                   },
-                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  icon: Icon(Icons.close,
+                      color: headerOnDark ? Colors.white : chrome.textPrimary,
+                      size: 20),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                 ),
@@ -10247,7 +10646,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+              border: Border(bottom: BorderSide(color: chrome.divider)),
             ),
             child: Row(
               children: [
@@ -10584,7 +10983,7 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                     Row(
                       children: [
                         Text(
-                          comment['commenter_name'] ?? 'Unknown User',
+                          _commentPersonaTag(comment),
                           style: TextStyle(
                             fontSize: isReply ? 12 : 13,
                             fontWeight: FontWeight.w600,
@@ -12080,6 +12479,12 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                               ? currentContent
                                               : 'Instructions:\n$instructions\n\nText:\n$currentContent';
 
+                                          if (!mounted || !dialogOpen) return;
+                                          setDialogState(() {
+                                            progressLabel =
+                                                'Improving… large models can take a few minutes.';
+                                          });
+
                                           final result =
                                               await AiAssistantApi.improveArea(
                                             token: token,
@@ -12126,17 +12531,22 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                         if (!mounted || !dialogOpen) return;
                                         final raw = e.toString();
                                         String friendly;
-                                        if (raw.contains('504') ||
+                                        if (e is TimeoutException) {
+                                          friendly =
+                                              'Timed out waiting for the AI. Shorten the section or wait and try again.';
+                                        } else if (raw.contains('504') ||
                                             raw.contains('Gateway') ||
                                             raw.contains('Timeout')) {
                                           friendly =
-                                              'AI Assistant is taking longer than expected. Please retry.';
+                                              'AI Assistant timed out or the gateway closed the connection. Try a shorter section or retry.';
                                         } else if (raw.contains('500') ||
                                             raw.contains(
                                                 'Internal Server Error') ||
                                             raw.contains('server error')) {
                                           friendly =
                                               'AI service error. Please try again in a moment.';
+                                        } else if (raw.startsWith('Exception: ')) {
+                                          friendly = raw.substring(11);
                                         } else {
                                           friendly = raw;
                                         }
@@ -12168,7 +12578,9 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                                     )
                                   : const Icon(Icons.auto_awesome, size: 18),
                               label: Text(isGenerating
-                                  ? 'Generating...'
+                                  ? (selectedAction == 'improve'
+                                      ? 'Improving...'
+                                      : 'Generating...')
                                   : (selectedAction == 'generate'
                                       ? 'Generate'
                                       : selectedAction == 'full_proposal'
@@ -13081,15 +13493,16 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
   }
 
   Widget _buildReviewPanel() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'Review & Complete',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1A1A1A),
+            color: chrome.textPrimary,
           ),
         ),
         const SizedBox(height: 16),
@@ -13109,11 +13522,11 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
                 children: [
                   Icon(Icons.info_outline, color: Colors.blue[700], size: 16),
                   const SizedBox(width: 8),
-                  const Text(
+                  Text(
                     'Comprehensive Analysis',
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A1A),
+                      color: chrome.textPrimary,
                     ),
                   ),
                 ],

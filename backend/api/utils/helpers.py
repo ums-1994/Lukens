@@ -7,6 +7,7 @@ import html
 import traceback
 import sys
 from datetime import datetime, timedelta
+import psycopg2
 import psycopg2.extras
 
 from api.utils.database import get_db_connection
@@ -328,9 +329,24 @@ def notify_proposal_collaborators(
 
             # Fetch proposal details
             cursor.execute(
-                "SELECT user_id, title FROM proposals WHERE id = %s",
-                (proposal_id,),
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'proposals'
+                """
             )
+            cols = {r.get('column_name') for r in cursor.fetchall() or []}
+            owner_col = 'user_id' if 'user_id' in cols else ('owner_id' if 'owner_id' in cols else None)
+            if owner_col:
+                cursor.execute(
+                    f"SELECT {owner_col} AS owner_id, title FROM proposals WHERE id = %s",
+                    (proposal_id,),
+                )
+            else:
+                cursor.execute(
+                    "SELECT title FROM proposals WHERE id = %s",
+                    (proposal_id,),
+                )
             proposal = cursor.fetchone()
             if not proposal:
                 return
@@ -362,7 +378,7 @@ def notify_proposal_collaborators(
                 cursor.execute("SELECT id FROM users WHERE username = %s", (identifier,))
                 return cursor.fetchone()
 
-            owner = _resolve_user_row(proposal.get('user_id'))
+            owner = _resolve_user_row(proposal.get('owner_id'))
             if owner and owner['id'] != exclude_user_id:
                 create_notification(
                     owner['id'],
@@ -1168,7 +1184,7 @@ def generate_proposal_pdf(
     return pdf_bytes
 
 
-def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, signer_title, return_url):
+def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, signer_title, return_url, client_user_id: str | None = None):
     """
     Create DocuSign envelope with redirect signing (works on HTTP)
     Uses redirect mode instead of embedded signing - user is redirected to DocuSign website
@@ -1248,13 +1264,15 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         
         tabs = Tabs(sign_here_tabs=[sign_here])
         
-        # Create signer - email notifications will be handled by DocuSign automatically
+        # Create signer.
+        # If client_user_id is set, the signer becomes a captive (embedded) recipient
+        # and DocuSign will not send an email to that recipient.
         signer = Signer(
             email=signer_email,
             name=signer_name,
             recipient_id='1',
             routing_order='1',
-            # client_user_id is NOT set - this enables redirect mode (works on HTTP)
+            client_user_id=client_user_id,
             tabs=tabs
         )
         
@@ -1299,11 +1317,11 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
             print(f"⚠️  Could not verify envelope status: {status_error}")
             # Don't fail if status check fails, but log it
         
-        # Create recipient view (redirect signing URL - works on HTTP)
-        # For redirect mode, we don't set client_user_id (that's only for embedded)
+        # Create recipient view (redirect/embedded signing URL).
+        # If client_user_id is set, include it to enable embedded signing.
         recipient_view_request = RecipientViewRequest(
             authentication_method='none',
-            # client_user_id is NOT set - this makes it redirect mode instead of embedded
+            client_user_id=client_user_id,
             recipient_id='1',
             return_url=return_url,
             user_name=signer_name,
@@ -1342,5 +1360,113 @@ def create_docusign_envelope(proposal_id, pdf_bytes, signer_name, signer_email, 
         raise
     except Exception as e:
         print(f"❌ Error creating DocuSign envelope: {e}")
+        traceback.print_exc()
+        raise
+
+
+def create_docusign_signing_url(
+    envelope_id: str,
+    signer_name: str,
+    signer_email: str,
+    return_url: str,
+    client_user_id: str | None = None,
+):
+    """Create a fresh DocuSign recipient view URL for an existing envelope.
+
+    DocuSign recipient view URLs can expire quickly. This allows the client
+    portal to mint a new redirect signing URL on demand.
+    """
+    if os.getenv('ENABLE_DOCUSIGN', 'false').lower() != 'true':
+        return {
+            'disabled': True,
+            'reason': 'docusign_disabled',
+            'detail': 'DocuSign is disabled on this server. Set ENABLE_DOCUSIGN=true to enable.',
+        }
+
+    try:
+        from docusign_esign import (
+            ApiClient,
+            EnvelopesApi,
+            RecipientViewRequest,
+        )
+        from docusign_esign.client.api_exception import ApiException
+    except ImportError as e:
+        raise Exception(
+            f"DocuSign SDK not installed. Install with: pip install docusign-esign. Error: {e}"
+        )
+
+    try:
+        from api.utils.docusign_utils import get_docusign_jwt_token
+
+        access_token = get_docusign_jwt_token()
+        account_id = os.getenv('DOCUSIGN_ACCOUNT_ID')
+        if not account_id:
+            raise Exception(
+                "DOCUSIGN_ACCOUNT_ID is required. Get it from: https://demo.docusign.net → Settings → My Account Information → Account ID"
+            )
+
+        base_path = os.getenv('DOCUSIGN_BASE_PATH') or os.getenv(
+            'DOCUSIGN_BASE_URL', 'https://demo.docusign.net/restapi'
+        )
+
+        api_client = ApiClient()
+        api_client.host = base_path
+        api_client.set_default_header("Authorization", f"Bearer {access_token}")
+
+        envelopes_api = EnvelopesApi(api_client)
+
+        # Determine the correct recipient_id for this envelope.
+        # Hardcoding recipient_id='1' can produce a view-only experience if the
+        # actual recipient id differs.
+        recipient_id = None
+        try:
+            recipients = envelopes_api.list_recipients(account_id, envelope_id)
+            signers = getattr(recipients, 'signers', None) or []
+            target = (signer_email or '').strip().lower()
+            for s in signers:
+                try:
+                    email = (getattr(s, 'email', None) or '').strip().lower()
+                    if target and email == target:
+                        recipient_id = getattr(s, 'recipient_id', None)
+                        break
+                except Exception:
+                    continue
+            if not recipient_id and signers:
+                recipient_id = getattr(signers[0], 'recipient_id', None)
+        except Exception:
+            recipient_id = None
+        if not recipient_id:
+            recipient_id = '1'
+
+        # Redirect mode: omit client_user_id.
+        # Embedded mode: include client_user_id.
+        recipient_view_request = RecipientViewRequest(
+            authentication_method='none',
+            recipient_id=str(recipient_id),
+            return_url=return_url,
+            user_name=signer_name,
+            email=signer_email,
+            client_user_id=client_user_id,
+        )
+
+        view_results = envelopes_api.create_recipient_view(
+            account_id,
+            envelope_id,
+            recipient_view_request=recipient_view_request,
+        )
+
+        signing_url = getattr(view_results, 'url', None)
+        if not signing_url:
+            raise Exception('DocuSign recipient view returned no URL')
+
+        return {
+            'envelope_id': envelope_id,
+            'signing_url': signing_url,
+        }
+    except ApiException as e:
+        print(f"❌ DocuSign API error: {e}")
+        raise
+    except Exception as e:
+        print(f"❌ Error creating DocuSign signing URL: {e}")
         traceback.print_exc()
         raise

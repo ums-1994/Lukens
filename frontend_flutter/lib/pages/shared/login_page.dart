@@ -106,8 +106,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   Future<void> _loginWithGoogle() async {
     setState(() => _isLoading = true);
     try {
-      final firebaseCredential =
-          await FirebaseService.signInWithGoogle();
+      final firebaseCredential = await FirebaseService.signInWithGoogle();
 
       if (firebaseCredential == null || firebaseCredential.user == null) {
         if (mounted) {
@@ -139,7 +138,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
         headers: {'Content-Type': 'application/json'},
-        body: json.encode({'id_token': firebaseIdToken}),
+        body: json.encode({
+          'id_token': firebaseIdToken,
+        }),
       );
 
       if (!mounted) return;
@@ -200,10 +201,13 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         final rawRole = userProfile['role']?.toString() ?? '';
         final userRole = rawRole.toLowerCase().trim();
         final roleKey = userRole.replaceAll('-', '_');
-        final isAdmin = roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
+        final isAdmin =
+            roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
         final isFinance = roleKey.startsWith('finance') ||
             roleKey == 'financial_manager' ||
-            roleKey == 'financial manager';
+            roleKey == 'finance_manager' ||
+            roleKey == 'financial manager' ||
+            roleKey == 'finance manager';
 
         String dashboardRoute;
         if (isAdmin) {
@@ -297,7 +301,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       // sent to finance dashboard). Backend uses DB role for existing users.
       print('📡 Sending Firebase token to backend...');
 
-      final requestBody = {'id_token': firebaseIdToken};
+      final requestBody = {
+        'id_token': firebaseIdToken,
+      };
 
       final response = await http.post(
         Uri.parse('${AuthService.baseUrl}/api/firebase'),
@@ -358,15 +364,15 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           String dashboardRoute;
 
           final roleKey = userRole.replaceAll('-', '_');
-          final isAdmin = roleKey == 'admin' ||
-              roleKey == 'ceo' ||
-              roleKey == 'approver';
+          final isAdmin =
+              roleKey == 'admin' || roleKey == 'ceo' || roleKey == 'approver';
           final isFinance = roleKey.startsWith('finance') ||
               roleKey == 'financial_manager' ||
-              roleKey == 'financial manager';
-          final isManager = roleKey == 'manager' ||
-              roleKey == 'creator' ||
-              roleKey == 'user';
+              roleKey == 'finance_manager' ||
+              roleKey == 'financial manager' ||
+              roleKey == 'finance manager';
+          final isManager =
+              roleKey == 'manager' || roleKey == 'creator' || roleKey == 'user';
 
           if (isAdmin) {
             dashboardRoute = '/approver_dashboard';

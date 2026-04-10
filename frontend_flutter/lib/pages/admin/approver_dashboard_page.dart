@@ -35,7 +35,23 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   int _approvedThisMonthCount = 0;
   int _sentToClientCount = 0;
   int _clientApprovedCount = 0;
-  List<Map<String, dynamic>> _recentApprovals = [];
+
+  List<Map<String, dynamic>> _combinedProposals = [];
+  List<Map<String, dynamic>> _attentionBlocked = [];
+  List<Map<String, dynamic>> _attentionDelayed = [];
+  List<Map<String, dynamic>> _attentionNeedsApproval = [];
+  List<Map<String, dynamic>> _attentionAwaitingSignature = [];
+  List<Map<String, dynamic>> _attentionRecentlySigned = [];
+  int _attentionBlockedTotal = 0;
+  int _attentionDelayedTotal = 0;
+  int _attentionNeedsApprovalTotal = 0;
+  int _attentionAwaitingSignatureTotal = 0;
+  int _attentionRecentlySignedTotal = 0;
+  Map<String, int> _riskReasons = {};
+  int _draftCount = 0;
+  int _reviewCount = 0;
+  int _releasedCount = 0;
+  int _signedCount = 0;
 
   bool _isSidebarCollapsed = false;
   String _currentPage = 'Dashboard';
@@ -52,6 +68,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       _enforceAccessAndLoad();
       if (!mounted) return;
       context.read<AppState>().setAdminNavLabel('Dashboard');
+      context.read<AppState>().fetchNotifications();
     });
   }
 
@@ -163,7 +180,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       int approvedThisMonthCount = 0;
       int sentToClientCount = 0;
       int clientApprovedCount = 0;
-      List<Map<String, dynamic>> recentApprovals = [];
+      List<Map<String, dynamic>> combinedForDashboard = [];
 
       try {
         List<Map<String, dynamic>> allProposals = [];
@@ -231,12 +248,9 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
 
         // Compute dashboard metrics from the combined set
         for (final proposal in combined) {
-          final riskScore = _parseDouble(proposal['risk_score']);
-          final riskLevel =
-              (proposal['risk_level'] ?? '').toString().toLowerCase().trim();
-          if ((riskScore != null && riskScore >= 70) ||
-              riskLevel == 'high' ||
-              riskLevel == 'critical') {
+          final riskScore = _extractRiskScore(proposal);
+          final riskLevel = _extractRiskLevel(proposal);
+          if (_isHighRisk(riskScore: riskScore, riskLevel: riskLevel)) {
             highRiskCount++;
           }
 
@@ -293,18 +307,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           }
         }
 
-        // Build recent approvals list from the combined proposals
-        recentApprovals = List<Map<String, dynamic>>.from(combined);
-        recentApprovals.sort((a, b) {
-          final aDate = _parseDate(a['updated_at'] ?? a['updatedAt']) ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          final bDate = _parseDate(b['updated_at'] ?? b['updatedAt']) ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          return bDate.compareTo(aDate);
-        });
-        if (recentApprovals.length > 5) {
-          recentApprovals = recentApprovals.sublist(0, 5);
-        }
+        combinedForDashboard = List<Map<String, dynamic>>.from(combined);
       } catch (e) {
         print('⚠️ Error computing approver metrics: $e');
       }
@@ -316,9 +319,11 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           _approvedThisMonthCount = approvedThisMonthCount;
           _sentToClientCount = sentToClientCount;
           _clientApprovedCount = clientApprovedCount;
-          _recentApprovals = recentApprovals;
+          _combinedProposals = combinedForDashboard;
           _isLoading = false;
         });
+
+        _computeOperationsModel();
       }
     } catch (e, stackTrace) {
       print('❌ Error loading approver data: $e');
@@ -371,14 +376,13 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
               children: [
                 Material(
                   child: AdminSidebar(
-                    isCollapsed: _isSidebarCollapsed,
+                    isCollapsed: app.isAdminSidebarCollapsed,
                     currentPage: _currentPage,
-                    onToggle: () => setState(
-                      () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                    ),
+                    onToggle: () =>
+                        context.read<AppState>().toggleAdminSidebar(),
                     onSelect: (label) {
                       setState(() => _currentPage = label);
-                      _navigateToPage(context, label);
+                      _navigateToPage(label);
                     },
                   ),
                 ),
@@ -422,17 +426,22 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                                         _buildHeroSection(),
                                         SizedBox(height: compact ? 16 : 24),
                                         _buildSection(
-                                          'Proposals Awaiting Your Approval',
+                                          'Pipeline Health',
+                                          _buildPipelineHealthInline(),
+                                        ),
+                                        SizedBox(height: compact ? 16 : 24),
+                                        _buildSection(
+                                          'What Needs Attention',
+                                          _buildWhatNeedsAttentionInline(),
+                                        ),
+                                        SizedBox(height: compact ? 16 : 24),
+                                        _buildSection(
+                                          'Approval Queue',
                                           _isLoading
                                               ? const Center(
                                                   child:
                                                       CircularProgressIndicator())
                                               : _buildPendingApprovalsList(),
-                                        ),
-                                        SizedBox(height: compact ? 16 : 24),
-                                        _buildSection(
-                                          'Recent Proposals',
-                                          _buildRecentProposalsTable(),
                                         ),
                                       ],
                                     ),
@@ -447,105 +456,6 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecentProposalsTable() {
-    if (_recentApprovals.isEmpty) {
-      final compact = MediaQuery.sizeOf(context).height < 860;
-      return Padding(
-        padding: EdgeInsets.symmetric(vertical: compact ? 16 : 24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text(
-              'No recent proposals requiring your review.',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      children: [
-        _buildRecentTableHeader(),
-        const SizedBox(height: 12),
-        ..._recentApprovals.map(_buildRecentProposalRow).toList(),
-      ],
-    );
-  }
-
-  Widget _buildRecentTableHeader() {
-    final headerStyle = PremiumTheme.labelMedium.copyWith(
-      color: Colors.white70,
-      letterSpacing: 1.0,
-    );
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: Row(
-        children: [
-          Expanded(flex: 4, child: Text('PROPOSAL', style: headerStyle)),
-          Expanded(flex: 3, child: Text('CLIENT', style: headerStyle)),
-          Expanded(flex: 2, child: Text('DATE', style: headerStyle)),
-          Expanded(flex: 2, child: Text('STATUS', style: headerStyle)),
-          const SizedBox(width: 80),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecentProposalRow(Map<String, dynamic> proposal) {
-    final submittedDate = proposal['updated_at'] != null
-        ? DateTime.tryParse(proposal['updated_at'].toString())
-        : null;
-    final client = proposal['client_name'] ?? proposal['client'] ?? 'Unknown';
-    final status = proposal['status']?.toString() ?? 'Pending';
-    final dateLabel = submittedDate != null
-        ? DateFormat('dd MMM yyyy').format(submittedDate)
-        : '—';
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 4,
-            child: Text(
-              proposal['title'] ?? 'Untitled Proposal',
-              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: Text(
-              client,
-              style: PremiumTheme.bodyMedium,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              dateLabel,
-              style: PremiumTheme.bodyMedium,
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: _buildStatusPill(status),
-          ),
-          SizedBox(
-            width: 80,
-            child: TextButton(
-              onPressed: () => _openProposal(proposal),
-              child: const Text('Review'),
             ),
           ),
         ],
@@ -599,36 +509,40 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     final displayRole =
         backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Admin';
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Approver Dashboard',
-              style: PremiumTheme.titleLarge,
+    Widget left() {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Operations Control Center',
+            style: PremiumTheme.titleLarge,
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Monitor pipeline health, governance, and priority actions',
+            style: TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+        ],
+      );
+    }
+
+    Widget right() {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildNotificationBell(app),
+          const SizedBox(width: 12),
+          ClipOval(
+            child: Image.asset(
+              'assets/images/User_Profile.png',
+              width: 48,
+              height: 48,
+              fit: BoxFit.cover,
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Review and approve proposals assigned to you',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-          ],
-        ),
-        Row(
-          children: [
-            ClipOval(
-              child: Image.asset(
-                'assets/images/User_Profile.png',
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Column(
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -638,16 +552,295 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   displayRole,
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
+          ),
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 980;
+        if (stacked) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              left(),
+              const SizedBox(height: 12),
+              Align(alignment: Alignment.centerLeft, child: right()),
+            ],
+          );
+        }
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            left(),
+            const SizedBox(width: 16),
+            right(),
           ],
+        );
+      },
+    );
+  }
+
+  Widget _buildNotificationBell(AppState app) {
+    final unread = app.unreadNotifications;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.18)),
+          ),
+          child: IconButton(
+            tooltip: 'Notifications',
+            icon: const Icon(Icons.notifications_none, color: Colors.white),
+            onPressed: () async {
+              await app.fetchNotifications();
+              if (!mounted) return;
+              await _showNotificationsDialog(app);
+            },
+          ),
         ),
+        if (unread > 0)
+          Positioned(
+            right: -3,
+            top: -3,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: const BoxDecoration(
+                color: Color(0xFFE74C3C),
+                borderRadius: BorderRadius.all(Radius.circular(999)),
+              ),
+              child: Text(
+                unread > 99 ? '99+' : unread.toString(),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
       ],
+    );
+  }
+
+  String _formatNotificationTimestamp(dynamic raw) {
+    if (raw == null) return '';
+    final value = raw.toString().trim();
+    if (value.isEmpty) return '';
+    final dt = DateTime.tryParse(value);
+    if (dt == null) return value;
+    final local = dt.toLocal();
+    final diff = DateTime.now().difference(local);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+    if (diff.inDays < 1) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return DateFormat('MMM d, y • HH:mm').format(local);
+  }
+
+  Future<void> _showNotificationsDialog(AppState app) async {
+    await showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final notifications = app.notifications;
+            final unread = app.unreadNotifications;
+            return Dialog(
+              backgroundColor: const Color(0xFF1E2A44),
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(color: Colors.white.withOpacity(0.12)),
+              ),
+              child: ConstrainedBox(
+                constraints:
+                    const BoxConstraints(maxWidth: 560, maxHeight: 600),
+                child: Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 10, 10),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom:
+                              BorderSide(color: Colors.white.withOpacity(0.08)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.notifications,
+                              color: Colors.white, size: 20),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Notifications',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 16,
+                              ),
+                            ),
+                          ),
+                          if (unread > 0)
+                            TextButton(
+                              onPressed: () async {
+                                await app.markAllNotificationsRead();
+                                await app.fetchNotifications();
+                                setDialogState(() {});
+                              },
+                              child: const Text('Mark all read'),
+                            ),
+                          IconButton(
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            icon:
+                                const Icon(Icons.close, color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Expanded(
+                      child: notifications.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No notifications yet.',
+                                style: TextStyle(color: Colors.white70),
+                              ),
+                            )
+                          : ListView.separated(
+                              padding: const EdgeInsets.all(12),
+                              itemCount: notifications.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                final rawItem = notifications[index];
+                                final Map<String, dynamic> item =
+                                    rawItem is Map<String, dynamic>
+                                        ? rawItem
+                                        : (rawItem is Map
+                                            ? rawItem.cast<String, dynamic>()
+                                            : <String, dynamic>{});
+                                final isRead = item['is_read'] == true;
+                                final title = (item['title'] ?? 'Notification')
+                                    .toString()
+                                    .trim();
+                                final message =
+                                    (item['message'] ?? '').toString().trim();
+                                final timestamp = _formatNotificationTimestamp(
+                                  item['created_at'],
+                                );
+                                final idRaw = item['id'];
+                                final notificationId = idRaw is int
+                                    ? idRaw
+                                    : int.tryParse(idRaw?.toString() ?? '');
+
+                                return InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTap: () async {
+                                    if (!isRead && notificationId != null) {
+                                      await app
+                                          .markNotificationRead(notificationId);
+                                      await app.fetchNotifications();
+                                      setDialogState(() {});
+                                    }
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: isRead
+                                          ? Colors.white.withOpacity(0.04)
+                                          : Colors.white.withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                        color: Colors.white.withOpacity(0.08),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Icon(
+                                          isRead
+                                              ? Icons
+                                                  .notifications_none_outlined
+                                              : Icons.notifications_active,
+                                          color: isRead
+                                              ? Colors.white54
+                                              : const Color(0xFF5DA9FF),
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                title,
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: isRead
+                                                      ? FontWeight.w600
+                                                      : FontWeight.w700,
+                                                ),
+                                              ),
+                                              if (message.isNotEmpty) ...[
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  message,
+                                                  style: const TextStyle(
+                                                    color: Colors.white70,
+                                                    fontSize: 12.5,
+                                                  ),
+                                                ),
+                                              ],
+                                              if (timestamp.isNotEmpty) ...[
+                                                const SizedBox(height: 6),
+                                                Text(
+                                                  timestamp,
+                                                  style: const TextStyle(
+                                                    color: Colors.white54,
+                                                    fontSize: 11,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -825,18 +1018,18 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       children: [
         Expanded(
           child: _buildGlassStatCard(
-            title: 'Sent to Client',
+            title: 'Released',
             value: _sentToClientCount.toString(),
-            subtitle: 'Released to client',
+            subtitle: 'Awaiting client action',
             icon: Icons.send,
           ),
         ),
         const SizedBox(width: 16),
         Expanded(
           child: _buildGlassStatCard(
-            title: 'Client Approved',
+            title: 'Signed',
             value: _clientApprovedCount.toString(),
-            subtitle: 'Client signed',
+            subtitle: 'Client sign-off complete',
             icon: Icons.thumb_up_alt_outlined,
           ),
         ),
@@ -889,6 +1082,259 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           ),
         ],
       ),
+    );
+  }
+
+  void _computeOperationsModel() {
+    if (!mounted) return;
+
+    final now = DateTime.now();
+    final blocked = <Map<String, dynamic>>[];
+    final delayed = <Map<String, dynamic>>[];
+    final needsApproval = <Map<String, dynamic>>[];
+    final awaitingSignature = <Map<String, dynamic>>[];
+    final recentlySigned = <Map<String, dynamic>>[];
+    final reasons = <String, int>{};
+    int highRiskTotal = 0;
+
+    int draft = 0, review = 0, released = 0, signed = 0;
+
+    String statusOf(Map<String, dynamic> p) {
+      final raw = p['status'] ?? p['stage'] ?? p['state'] ?? '';
+      return raw.toString().trim().toLowerCase().replaceAll('_', ' ');
+    }
+
+    bool isSigned(String s) => s == 'signed' || s == 'client signed' || s == 'completed';
+    bool isReleased(String s) => s.contains('released') || s.contains('sent to client') || s.contains('sent for signature') || s.contains('out for signature');
+    bool isReview(String s) => s.contains('review') || s.contains('submitted') || s.contains('pending');
+    bool isDraft(String s) => s.isEmpty || s == 'draft' || s.contains('pricing') || s.contains('in progress');
+
+    void bump(String k) => reasons[k] = (reasons[k] ?? 0) + 1;
+
+    for (final p in _combinedProposals) {
+      final status = statusOf(p);
+      final updatedAt = _parseDate(p['updated_at'] ?? p['updatedAt']);
+      final riskScore = _extractRiskScore(p);
+      final riskLevel = _extractRiskLevel(p);
+      final highRisk = _isHighRisk(riskScore: riskScore, riskLevel: riskLevel);
+      if (highRisk) highRiskTotal++;
+
+      if (isSigned(status)) {
+        signed++;
+      } else if (isReleased(status)) {
+        released++;
+      } else if (isReview(status)) {
+        review++;
+      } else if (isDraft(status)) {
+        draft++;
+      } else {
+        review++;
+      }
+
+      if (status.contains('pending')) needsApproval.add(p);
+      if (isReleased(status) && !isSigned(status)) awaitingSignature.add(p);
+      if (isSigned(status) && updatedAt != null && now.difference(updatedAt).inDays <= 14) {
+        recentlySigned.add(p);
+      }
+      if (!isSigned(status) && updatedAt != null && now.difference(updatedAt).inDays >= 14) {
+        delayed.add(p);
+      }
+
+      final title = (p['title'] ?? '').toString().trim();
+      final clientEmail = (p['client_email'] ?? p['clientEmail'] ?? '').toString().trim();
+      final budget = _parseBudget(p['budget']);
+      final missingTitle = title.isEmpty;
+      final missingBudget = budget <= 0;
+      final missingEmailForRelease = isReleased(status) && clientEmail.isEmpty;
+
+      if (highRisk || missingTitle || missingBudget || missingEmailForRelease) blocked.add(p);
+
+      if (highRisk) bump('High risk score');
+      if (missingEmailForRelease) bump('Missing client email');
+      if (missingBudget) bump('Missing budget');
+      if (missingTitle) bump('Missing title');
+    }
+
+    blocked.sort((a, b) => (_parseDate(b['updated_at'] ?? b['updatedAt']) ?? DateTime(1970))
+        .compareTo(_parseDate(a['updated_at'] ?? a['updatedAt']) ?? DateTime(1970)));
+
+    final topReasons = reasons.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    final trimmedReasons = <String, int>{};
+    for (final e in topReasons.take(3)) {
+      trimmedReasons[e.key] = e.value;
+    }
+
+    setState(() {
+      _highRiskCount = highRiskTotal;
+      _attentionBlockedTotal = blocked.length;
+      _attentionDelayedTotal = delayed.length;
+      _attentionNeedsApprovalTotal = needsApproval.length;
+      _attentionAwaitingSignatureTotal = awaitingSignature.length;
+      _attentionRecentlySignedTotal = recentlySigned.length;
+      _attentionBlocked = blocked.take(5).toList();
+      _attentionDelayed = delayed.take(5).toList();
+      _attentionNeedsApproval = needsApproval.take(5).toList();
+      _attentionAwaitingSignature = awaitingSignature.take(5).toList();
+      _attentionRecentlySigned = recentlySigned.take(5).toList();
+      _riskReasons = trimmedReasons;
+      _draftCount = draft;
+      _reviewCount = review;
+      _releasedCount = released;
+      _signedCount = signed;
+    });
+  }
+
+  Widget _buildPipelineHealthInline() {
+    return Row(
+      children: [
+        Expanded(child: _buildStatusPill('Draft: $_draftCount')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildStatusPill('Review: $_reviewCount')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildStatusPill('Released: $_releasedCount')),
+        const SizedBox(width: 10),
+        Expanded(child: _buildStatusPill('Signed: $_signedCount')),
+      ],
+    );
+  }
+
+  Widget _buildWhatNeedsAttentionInline() {
+    Widget row({
+      required String label,
+      required int count,
+      required VoidCallback onView,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$label: $count',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            TextButton(
+              onPressed: onView,
+              child: const Text('View'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        row(
+          label: 'Blocked proposals',
+          count: _attentionBlockedTotal,
+          onView: () {
+            Navigator.pushReplacementNamed(
+              context,
+              '/admin_approvals',
+              arguments: const {
+                'initialFilter': 'blocked',
+              },
+            );
+          },
+        ),
+        row(
+          label: 'Delayed (14+ days inactive)',
+          count: _attentionDelayedTotal,
+          onView: () {
+            Navigator.pushReplacementNamed(
+              context,
+              '/admin_approvals',
+              arguments: const {
+                'initialFilter': 'all',
+                'staleDays': 14,
+              },
+            );
+          },
+        ),
+        row(
+          label: 'Needs approval',
+          count: _attentionNeedsApprovalTotal,
+          onView: () {
+            Navigator.pushReplacementNamed(
+              context,
+              '/admin_approvals',
+              arguments: const {'initialFilter': 'ready'},
+            );
+          },
+        ),
+        row(
+          label: 'Released awaiting signature',
+          count: _attentionAwaitingSignatureTotal,
+          onView: () {
+            Navigator.pushReplacementNamed(
+              context,
+              '/admin_approvals',
+              arguments: const {
+                'initialFilter': 'approved',
+                'pipelineStage': 'released_awaiting_signature',
+              },
+            );
+          },
+        ),
+        row(
+          label: 'Recently signed',
+          count: _attentionRecentlySignedTotal,
+          onView: () {
+            Navigator.pushReplacementNamed(
+              context,
+              '/admin_approvals',
+              arguments: const {
+                'initialFilter': 'approved',
+                'pipelineStage': 'recently_signed',
+                'recentDays': 14,
+              },
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRiskGateInline() {
+    if (_riskReasons.isEmpty) {
+      return const Text('No risk signals available.', style: TextStyle(color: Colors.white70));
+    }
+    final items = _riskReasons.entries
+        .map((e) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Text(
+                '${e.key}: ${e.value}',
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
+            ))
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...items,
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: () {
+              Navigator.pushReplacementNamed(
+                context,
+                '/admin_approvals',
+                arguments: const {
+                  'initialFilter': 'all',
+                  'minRiskScore': 70,
+                },
+              );
+            },
+            icon: const Icon(Icons.arrow_forward, size: 16),
+            label: const Text('Review high-risk'),
+          ),
+        ),
+      ],
     );
   }
 
@@ -988,6 +1434,11 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                       _currentPage == 'Analytics', context),
                   _buildNavItem('History', 'assets/images/analytics.png',
                       _currentPage == 'History', context),
+                  _buildNavItem(
+                      'Content Library',
+                      'assets/images/content_library.png',
+                      _currentPage == 'Content Library',
+                      context),
                   const SizedBox(height: 20),
                 ],
               ),
@@ -1020,7 +1471,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             child: InkWell(
               onTap: () {
                 setState(() => _currentPage = label);
-                _navigateToPage(context, label);
+                _navigateToPage(label);
               },
               borderRadius: BorderRadius.circular(30),
               child: Container(
@@ -1056,7 +1507,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
           borderRadius: BorderRadius.circular(12),
           onTap: () {
             setState(() => _currentPage = label);
-            _navigateToPage(context, label);
+            _navigateToPage(label);
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1116,7 +1567,8 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   }
 
   void _toggleSidebar() {
-    setState(() => _isSidebarCollapsed = !_isSidebarCollapsed);
+    final app = context.read<AppState>();
+    app.setAdminSidebarCollapsed(!app.isAdminSidebarCollapsed);
   }
 
   Widget _buildPendingApprovalsList() {
@@ -1154,7 +1606,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             child: TextButton(
               onPressed: () {
                 setState(() => _currentPage = 'Approvals');
-                _navigateToPage(context, 'Approvals');
+                _navigateToPage('Approvals');
               },
               child: Text(
                 'View all (${_pendingApprovals.length})',
@@ -1166,11 +1618,26 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     );
   }
 
+  void _handleLogout() {
+    AuthService.logout();
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      '/login',
+      (Route<dynamic> route) => false,
+    );
+  }
+
   Widget _buildPendingApprovalCard(Map<String, dynamic> proposal) {
     final submittedDate = proposal['updated_at'] != null
         ? DateTime.tryParse(proposal['updated_at'].toString())
         : null;
-    final value = proposal['budget'];
+    final value = proposal['budget'] ??
+        proposal['amount'] ??
+        proposal['value'] ??
+        proposal['proposal_value'] ??
+        proposal['deal_value'] ??
+        proposal['total_value'] ??
+        proposal['pipeline_value'];
     final client = proposal['client_name'] ?? proposal['client'] ?? 'Unknown';
 
     final compact = MediaQuery.sizeOf(context).height < 860;
@@ -1205,7 +1672,7 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                     submittedDate != null
                         ? DateFormat('dd MMM yyyy').format(submittedDate)
                         : 'Unknown'),
-                if (value != null && value != 0) ...[
+                if (_parseBudget(value) > 0) ...[
                   SizedBox(width: compact ? 8 : 12),
                   _buildInfoChip(
                       Icons.attach_money, _formatCurrency(_parseBudget(value))),
@@ -1563,9 +2030,79 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     if (value == null) return null;
     if (value is num) return value.toDouble();
     if (value is String && value.trim().isNotEmpty) {
-      return double.tryParse(value.trim());
+      final cleaned = value.trim().replaceAll('%', '');
+      return double.tryParse(cleaned);
     }
     return null;
+  }
+
+  Map<String, dynamic>? _extractRiskGateObject(Map<String, dynamic> proposal) {
+    final raw = proposal['risk_gate'] ??
+        proposal['riskGate'] ??
+        proposal['risk_analysis'] ??
+        proposal['riskAnalysis'] ??
+        proposal['riskResult'] ??
+        proposal['risk_result'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        final decoded = json.decode(raw);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  double? _extractRiskScore(Map<String, dynamic> proposal) {
+    final gate = _extractRiskGateObject(proposal);
+    final raw = proposal['risk_score'] ??
+        proposal['riskScore'] ??
+        proposal['risk'] ??
+        proposal['risk_percent'] ??
+        proposal['riskPercent'] ??
+        proposal['risk_rating'] ??
+        proposal['riskRating'] ??
+        gate?['risk_score'] ??
+        gate?['riskScore'] ??
+        gate?['score'] ??
+        gate?['risk'] ??
+        gate?['risk_percent'] ??
+        gate?['riskPercent'];
+    final parsed = _parseDouble(raw);
+    if (parsed == null) return null;
+
+    // Some backends store risk as 0..1; normalize to 0..100.
+    if (parsed > 0 && parsed <= 1) return parsed * 100;
+    return parsed;
+  }
+
+  String _extractRiskLevel(Map<String, dynamic> proposal) {
+    final gate = _extractRiskGateObject(proposal);
+    return (proposal['risk_level'] ??
+            proposal['riskLevel'] ??
+            proposal['riskLevelLabel'] ??
+            gate?['risk_level'] ??
+            gate?['riskLevel'] ??
+            gate?['level'] ??
+            gate?['risk_level_label'] ??
+            gate?['riskLevelLabel'] ??
+            '')
+        .toString()
+        .toLowerCase()
+        .trim();
+  }
+
+  bool _isHighRisk({required double? riskScore, required String riskLevel}) {
+    if (riskScore != null && riskScore >= 70) return true;
+    if (riskLevel.isEmpty) return false;
+    return riskLevel == 'high' ||
+        riskLevel == 'critical' ||
+        riskLevel.contains('high') ||
+        riskLevel.contains('critical');
   }
 
   String _formatCurrency(double value) {
@@ -1573,34 +2110,29 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     return _currencyFormatter.format(value);
   }
 
-  void _navigateToPage(BuildContext context, String label) {
-    switch (label) {
+  void _navigateToPage(String page) {
+    setState(() => _currentPage = page);
+
+    switch (page) {
       case 'Dashboard':
         Navigator.pushReplacementNamed(context, '/approver_dashboard');
         break;
       case 'Approvals':
-        // Go to the dedicated admin approvals view
-        Navigator.pushReplacementNamed(
-          context,
-          '/admin_approvals',
-          arguments: const {'initialFilter': 'pending'},
-        );
+        Navigator.pushReplacementNamed(context, '/admin_approvals');
         break;
       case 'Analytics':
-        Navigator.pushReplacementNamed(context, '/analytics');
+      case 'All analytics':
+      case 'My analytics':
+        Navigator.pushReplacementNamed(context, '/admin_analytics');
         break;
       case 'History':
-        // History of approvals also uses the admin approvals view
-        Navigator.pushReplacementNamed(
-          context,
-          '/admin_approvals',
-          arguments: const {'initialFilter': 'approved'},
-        );
+        Navigator.pushReplacementNamed(context, '/admin_history');
+        break;
+      case 'Content Library':
+        Navigator.pushNamed(context, '/content_library');
         break;
       case 'Sign Out':
-        AuthService.logout();
-        Navigator.pushNamedAndRemoveUntil(
-            context, '/login', (Route<dynamic> route) => false);
+        _handleLogout();
         break;
     }
   }

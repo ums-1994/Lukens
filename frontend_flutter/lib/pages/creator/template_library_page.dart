@@ -11,7 +11,10 @@ import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/app_colors.dart';
+import '../../theme/manager_theme_controller.dart';
 import '../../widgets/app_side_nav.dart';
+import '../../widgets/manager_page_background.dart';
+import '../../utils/manager_session_actions.dart';
 
 class TemplateLibraryPage extends StatefulWidget {
   const TemplateLibraryPage({Key? key}) : super(key: key);
@@ -22,6 +25,8 @@ class TemplateLibraryPage extends StatefulWidget {
 
 class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     with TickerProviderStateMixin {
+  static List<Template>? _cachedTemplates;
+
   final TextEditingController _searchController = TextEditingController();
   String _typeFilter = 'all';
   String _statusFilter = 'all';
@@ -71,7 +76,15 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
       vsync: this,
     );
     _animationController.value = 1.0;
-    _loadTemplates();
+
+    if (_cachedTemplates != null && _cachedTemplates!.isNotEmpty) {
+      _templates = List<Template>.from(_cachedTemplates!);
+      _applyFilters();
+      _isLoading = false;
+      _loadTemplates(showLoader: false);
+    } else {
+      _loadTemplates();
+    }
   }
 
   @override
@@ -81,15 +94,14 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     super.dispose();
   }
 
-  Future<void> _loadTemplates() async {
-    setState(() {
-      _isLoading = true;
-    });
+  Future<void> _loadTemplates({bool showLoader = true}) async {
+    if (showLoader && mounted) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
 
     try {
-      // Mock API call - replace with your actual API
-      await Future.delayed(const Duration(seconds: 1));
-
       // Mock data
       final List<Template> mockTemplates = [
         Template(
@@ -278,13 +290,16 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
 
       setState(() {
         _templates = mockTemplates;
+        _cachedTemplates = List<Template>.from(mockTemplates);
         _applyFilters();
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted && showLoader) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
       _showError('Failed to load templates: $e');
     }
   }
@@ -423,6 +438,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
         Navigator.pushReplacementNamed(context, '/dashboard');
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
@@ -440,45 +456,13 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
+      case 'Account Profile':
+        ManagerSessionActions.goToAccountProfile(context);
+        break;
       case 'Logout':
-        _handleLogout(context);
+        ManagerSessionActions.showLogoutDialog(context);
         break;
     }
-  }
-
-  void _handleLogout(BuildContext context) {
-    // Show confirmation dialog
-    showDialog(
-      context: context,
-      builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: const Text('Confirm Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                // Perform logout
-                final app = context.read<AppState>();
-                app.logout();
-                AuthService.logout();
-                Navigator.pushNamedAndRemoveUntil(
-                    context, '/login', (route) => false);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE74C3C),
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Logout'),
-            ),
-          ],
-        );
-      },
-    );
   }
 
   Widget _buildFixedSidebar(BuildContext context) {
@@ -632,7 +616,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                         assetPath: 'assets/images/Logout_KhonoBuzz.png',
                         isSelected: false,
                         isCollapsed: effectiveCollapsed,
-                        onTap: () => _handleLogout(context),
+                        onTap: () => ManagerSessionActions.showLogoutDialog(context),
                       ),
                       const SizedBox(height: 20),
                     ],
@@ -930,8 +914,8 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        color: Colors.transparent,
+      backgroundColor: Colors.transparent,
+      body: ManagerPageBackground(
         child: _isLoading
             ? const Center(
                 child: CircularProgressIndicator(color: PremiumTheme.teal))
@@ -1006,6 +990,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   }
 
   Widget _buildHeader() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     return Row(
       children: [
         const Icon(Icons.dashboard, size: 32, color: PremiumTheme.teal),
@@ -1013,16 +998,17 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'Template Library',
               style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: PremiumTheme.textPrimary),
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: chrome.textPrimary,
+              ),
             ),
             Text(
               'Create and manage proposal templates with dynamic fields',
-              style: const TextStyle(color: PremiumTheme.textSecondary),
+              style: TextStyle(color: chrome.textSecondary),
             ),
           ],
         ),
@@ -1032,8 +1018,16 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   }
 
   Widget _buildFilters() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final panelDecoration = chrome.isDark
+        ? PremiumTheme.glassCard(borderRadius: 16)
+        : chrome.floatingPanelDecoration(radius: 10);
+    final fieldFill = chrome.isDark ? PremiumTheme.darkBg2 : chrome.fieldFill;
+    final fieldBorder =
+        chrome.isDark ? Colors.white.withOpacity(0.1) : chrome.fieldBorder;
+
     return Container(
-      decoration: PremiumTheme.glassCard(borderRadius: 16),
+      decoration: panelDecoration,
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
@@ -1041,21 +1035,20 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
           Expanded(
             child: TextField(
               controller: _searchController,
-              style: const TextStyle(color: PremiumTheme.textPrimary),
+              style: TextStyle(color: chrome.textPrimary),
               decoration: InputDecoration(
-                prefixIcon:
-                    const Icon(Icons.search, color: PremiumTheme.textSecondary),
+                prefixIcon: Icon(Icons.search, color: chrome.textSecondary),
                 hintText: 'Search templates...',
-                hintStyle: const TextStyle(color: PremiumTheme.textTertiary),
+                hintStyle: TextStyle(color: chrome.textMuted),
                 filled: true,
-                fillColor: PremiumTheme.darkBg2,
+                fillColor: fieldFill,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                  borderSide: BorderSide(color: fieldBorder),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.white.withOpacity(0.1)),
+                  borderSide: BorderSide(color: fieldBorder),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1076,14 +1069,14 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
           Container(
             width: 150,
             decoration: BoxDecoration(
-              color: PremiumTheme.darkBg2,
+              color: fieldFill,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: fieldBorder),
             ),
             child: DropdownButtonFormField<String>(
               initialValue: _typeFilter,
-              dropdownColor: PremiumTheme.darkBg2,
-              style: const TextStyle(color: PremiumTheme.textPrimary),
+              dropdownColor: chrome.dropdownSurface,
+              style: TextStyle(color: chrome.textPrimary),
               decoration: InputDecoration(
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1091,25 +1084,25 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                 filled: true,
-                fillColor: PremiumTheme.darkBg2,
+                fillColor: fieldFill,
               ),
-              items: const [
+              items: [
                 DropdownMenuItem(
                     value: 'all',
                     child: Text('All Types',
-                        style: TextStyle(color: PremiumTheme.textPrimary))),
+                        style: TextStyle(color: chrome.textPrimary))),
                 DropdownMenuItem(
                     value: 'proposal',
                     child: Text('Proposal',
-                        style: TextStyle(color: PremiumTheme.textPrimary))),
+                        style: TextStyle(color: chrome.textPrimary))),
                 DropdownMenuItem(
                     value: 'sow',
                     child: Text('SOW',
-                        style: TextStyle(color: PremiumTheme.textPrimary))),
+                        style: TextStyle(color: chrome.textPrimary))),
                 DropdownMenuItem(
                     value: 'rfi',
                     child: Text('RFI',
-                        style: TextStyle(color: PremiumTheme.textPrimary))),
+                        style: TextStyle(color: chrome.textPrimary))),
               ],
               onChanged: (value) {
                 setState(() {
@@ -1125,14 +1118,14 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
           Container(
             width: 150,
             decoration: BoxDecoration(
-              color: PremiumTheme.darkBg2,
+              color: fieldFill,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white.withOpacity(0.1)),
+              border: Border.all(color: fieldBorder),
             ),
             child: DropdownButtonFormField<String>(
               initialValue: _statusFilter,
-              dropdownColor: PremiumTheme.darkBg2,
-              style: const TextStyle(color: PremiumTheme.textPrimary),
+              dropdownColor: chrome.dropdownSurface,
+              style: TextStyle(color: chrome.textPrimary),
               decoration: InputDecoration(
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -1140,25 +1133,25 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                 filled: true,
-                fillColor: PremiumTheme.darkBg2,
+                fillColor: fieldFill,
               ),
-              items: const [
+              items: [
                 DropdownMenuItem(
                     value: 'all',
                     child: Text('All Status',
-                        style: TextStyle(color: PremiumTheme.textPrimary))),
+                        style: TextStyle(color: chrome.textPrimary))),
                 DropdownMenuItem(
                     value: 'draft',
                     child: Text('Draft',
-                        style: TextStyle(color: PremiumTheme.textPrimary))),
+                        style: TextStyle(color: chrome.textPrimary))),
                 DropdownMenuItem(
                     value: 'pending_approval',
                     child: Text('Pending',
-                        style: TextStyle(color: PremiumTheme.textPrimary))),
+                        style: TextStyle(color: chrome.textPrimary))),
                 DropdownMenuItem(
                     value: 'approved',
                     child: Text('Approved',
-                        style: TextStyle(color: PremiumTheme.textPrimary))),
+                        style: TextStyle(color: chrome.textPrimary))),
               ],
               onChanged: (value) {
                 setState(() {
@@ -1174,8 +1167,15 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   }
 
   Widget _buildPublicTemplates() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final panelDecoration = chrome.isDark
+        ? PremiumTheme.glassCard(borderRadius: 16)
+        : chrome.floatingPanelDecoration(radius: 10);
+    final badgeBg =
+        chrome.isDark ? PremiumTheme.darkBg3 : chrome.fieldFill;
+
     return Container(
-      decoration: PremiumTheme.glassCard(borderRadius: 16),
+      decoration: panelDecoration,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1185,25 +1185,26 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
               children: [
                 const Icon(Icons.star, color: PremiumTheme.warning, size: 24),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'Approved Templates',
                   style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: PremiumTheme.textPrimary),
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: chrome.textPrimary,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.darkBg3,
+                    color: badgeBg,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     _publicTemplates.length.toString(),
-                    style: const TextStyle(
-                        color: PremiumTheme.textPrimary,
+                    style: TextStyle(
+                        color: chrome.textPrimary,
                         fontSize: 12,
                         fontWeight: FontWeight.w600),
                   ),
@@ -1239,8 +1240,15 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   }
 
   Widget _buildMyTemplates() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final panelDecoration = chrome.isDark
+        ? PremiumTheme.glassCard(borderRadius: 16)
+        : chrome.floatingPanelDecoration(radius: 10);
+    final badgeBg =
+        chrome.isDark ? PremiumTheme.darkBg3 : chrome.fieldFill;
+
     return Container(
-      decoration: PremiumTheme.glassCard(borderRadius: 16),
+      decoration: panelDecoration,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1250,25 +1258,26 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
               children: [
                 const Icon(Icons.people, color: PremiumTheme.info, size: 24),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'My Templates',
                   style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: PremiumTheme.textPrimary),
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: chrome.textPrimary,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: PremiumTheme.darkBg3,
+                    color: badgeBg,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
                     _myTemplates.length.toString(),
-                    style: const TextStyle(
-                        color: PremiumTheme.textPrimary,
+                    style: TextStyle(
+                        color: chrome.textPrimary,
                         fontSize: 12,
                         fontWeight: FontWeight.w600),
                   ),
@@ -1313,6 +1322,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
   }
 
   Widget _buildTemplateCard(Template template, {bool isMyTemplate = false}) {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     final statusConfig = _statusConfig[template.approvalStatus]!;
     final isSOW = template.templateType.toLowerCase() == 'sow';
     final isProposal = template.templateType.toLowerCase() == 'proposal';
@@ -1322,12 +1332,16 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
             ? PremiumTheme.info
             : PremiumTheme.purple;
 
+    final cardDecoration = chrome.isDark
+        ? PremiumTheme.glassCard(
+            borderRadius: 16,
+            gradientStart: cardColor.withOpacity(0.1),
+            gradientEnd: cardColor.withOpacity(0.05),
+          )
+        : chrome.floatingPanelDecoration(radius: 10);
+
     return Container(
-      decoration: PremiumTheme.glassCard(
-        borderRadius: 16,
-        gradientStart: cardColor.withOpacity(0.1),
-        gradientEnd: cardColor.withOpacity(0.05),
-      ),
+      decoration: cardDecoration,
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1342,10 +1356,10 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                   children: [
                     Text(
                       template.name,
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
-                          color: PremiumTheme.textPrimary),
+                          color: chrome.textPrimary),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1353,8 +1367,8 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                     if (template.description != null)
                       Text(
                         template.description!,
-                        style: const TextStyle(
-                            fontSize: 12, color: PremiumTheme.textSecondary),
+                        style: TextStyle(
+                            fontSize: 12, color: chrome.textSecondary),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1367,16 +1381,20 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
-                            color: PremiumTheme.darkBg3,
+                            color: chrome.isDark
+                                ? PremiumTheme.darkBg3
+                                : chrome.fieldFill,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                                color: Colors.white.withOpacity(0.1)),
+                                color: chrome.isDark
+                                    ? Colors.white.withOpacity(0.1)
+                                    : chrome.fieldBorder),
                           ),
                           child: Text(
                             template.templateType.toUpperCase(),
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 10,
-                                color: PremiumTheme.textSecondary),
+                                color: chrome.textSecondary),
                           ),
                         ),
                         Container(
@@ -1430,8 +1448,7 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
           // Stats
           Text(
             '${template.sections.length} sections • ${template.usageCount} uses',
-            style:
-                const TextStyle(fontSize: 12, color: PremiumTheme.textTertiary),
+            style: TextStyle(fontSize: 12, color: chrome.textMuted),
           ),
           const SizedBox(height: 12),
           // Actions
@@ -1463,8 +1480,8 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                     );
                   },
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                    foregroundColor: PremiumTheme.textSecondary,
+                    side: BorderSide(color: chrome.divider),
+                    foregroundColor: chrome.textSecondary,
                   ),
                   child: const Icon(Icons.edit, size: 16),
                 ),
@@ -1472,8 +1489,8 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                 OutlinedButton(
                   onPressed: () => _cloneTemplate(template),
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: Colors.white.withOpacity(0.2)),
-                    foregroundColor: PremiumTheme.textSecondary,
+                    side: BorderSide(color: chrome.divider),
+                    foregroundColor: chrome.textSecondary,
                   ),
                   child: const Icon(Icons.copy, size: 16),
                 ),
@@ -1491,11 +1508,11 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
                   child: OutlinedButton.icon(
                     onPressed: () => _cloneTemplate(template),
                     icon: Icon(Icons.copy,
-                        size: 16, color: Colors.white.withOpacity(0.7)),
+                        size: 16, color: chrome.textSecondary),
                     label: Text('Clone',
-                        style: TextStyle(color: Colors.white.withOpacity(0.7))),
+                        style: TextStyle(color: chrome.textSecondary)),
                     style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: Colors.white.withOpacity(0.2)),
+                      side: BorderSide(color: chrome.divider),
                       padding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                   ),
@@ -1514,15 +1531,16 @@ class _TemplateLibraryPageState extends State<TemplateLibraryPage>
     bool showButton = false,
     VoidCallback? onButtonPressed,
   }) {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     return Container(
       padding: const EdgeInsets.all(40),
       child: Column(
         children: [
-          Icon(icon, size: 48, color: PremiumTheme.textTertiary),
+          Icon(icon, size: 48, color: chrome.textMuted),
           const SizedBox(height: 16),
           Text(
             message,
-            style: const TextStyle(color: PremiumTheme.textSecondary),
+            style: TextStyle(color: chrome.textSecondary),
           ),
           if (showButton) ...[
             const SizedBox(height: 16),

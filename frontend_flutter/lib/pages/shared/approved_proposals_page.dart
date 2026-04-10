@@ -3,11 +3,16 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:http/http.dart' as http;
 import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../theme/manager_theme_controller.dart';
 import '../../widgets/app_side_nav.dart';
+import '../../widgets/manager_page_background.dart';
+import '../../utils/manager_session_actions.dart';
+import 'dart:async';
 import 'dart:convert';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
@@ -30,6 +35,117 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
   bool _isSidebarCollapsed = false;
   String _currentNavLabel = 'Approved Proposals';
+
+  Future<void> _openSignedProposal(Map<String, dynamic> proposal) async {
+    final idRaw = proposal['id'];
+    final proposalId =
+        idRaw is int ? idRaw : int.tryParse(idRaw?.toString() ?? '');
+    final status = (proposal['status'] ?? '').toString().toLowerCase().trim();
+
+    if (proposalId == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('❌ Could not open signed proposal (missing proposal id).'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final isSigned = status == 'signed' ||
+        status == 'completed' ||
+        status == 'client signed';
+    if (!isSigned) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚠️ Proposal is not signed yet (status: "$status").'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    AuthService.restoreSessionFromStorage();
+    var token = AuthService.token;
+    if (token == null) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      token = AuthService.token;
+    }
+
+    if (token == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Session expired. Please login again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Opening signed proposal...'),
+        backgroundColor: Colors.black87,
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      final url =
+          '${ApiService.baseUrl}/api/proposals/$proposalId/signed-document';
+      final response = await http.get(
+        Uri.parse(url),
+        headers: {
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => throw Exception('Request timed out'),
+      );
+
+      if (response.statusCode != 200) {
+        String detail = 'Failed to retrieve signed proposal.';
+        try {
+          final decoded = jsonDecode(response.body);
+          if (decoded is Map && decoded['detail'] != null) {
+            detail = decoded['detail'].toString();
+          }
+        } catch (_) {}
+
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ $detail'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      final bytes = response.bodyBytes;
+      final blob = html.Blob([bytes], 'application/pdf');
+      final objectUrl = html.Url.createObjectUrlFromBlob(blob);
+      html.window.open(objectUrl, '_blank');
+      Timer(const Duration(seconds: 60), () {
+        try {
+          html.Url.revokeObjectUrl(objectUrl);
+        } catch (_) {}
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Could not open signed proposal: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -162,6 +278,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         Navigator.pushReplacementNamed(context, '/creator-dashboard');
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
@@ -179,9 +296,11 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
+      case 'Account Profile':
+        ManagerSessionActions.goToAccountProfile(context);
+        break;
       case 'Logout':
-        AuthService.logout();
-        Navigator.pushReplacementNamed(context, '/login');
+        ManagerSessionActions.showLogoutDialog(context);
         break;
     }
   }
@@ -189,13 +308,15 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
   @override
   Widget build(BuildContext context) {
     final app = context.watch<AppState>();
+    final chrome = context.watch<ManagerThemeController>().chrome;
 
     return Scaffold(
-      body: Container(
-        color: Colors.transparent,
-        height: MediaQuery.of(context).size.height,
-        child: Row(
-          children: [
+      backgroundColor: Colors.transparent,
+      body: ManagerPageBackground(
+        child: SizedBox(
+          height: MediaQuery.of(context).size.height,
+          child: Row(
+            children: [
             // Consistent Sidebar using AppSideNav
             Consumer<AppState>(
               builder: (context, app, child) {
@@ -224,25 +345,16 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
               child: Column(
                 children: [
                   // Header - Fixed at top
-                  Container(
+                  Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Colors.black.withValues(alpha: 0.3),
-                          Colors.transparent,
-                        ],
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                      ),
-                    ),
-                    child: _buildHeader(app),
+                    child: _buildHeader(app, chrome),
                   ),
                   const SizedBox(height: 24),
 
                   // Scrollable Content
                   Expanded(
                     child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -253,7 +365,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                           // Content
                           _isLoading
                               ? const Center(child: CircularProgressIndicator())
-                              : _buildApprovedList(),
+                              : _buildApprovedList(chrome),
                         ],
                       ),
                     ),
@@ -263,11 +375,12 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
             ),
           ],
         ),
+        ),
       ),
     );
   }
 
-  Widget _buildHeader(AppState app) {
+  Widget _buildHeader(AppState app, ManagerChromeTheme chrome) {
     final user = AuthService.currentUser ?? app.currentUser ?? {};
     final email = user['email']?.toString() ?? 'user@example.com';
     final backendRole = user['role']?.toString().toLowerCase() ?? 'manager';
@@ -275,7 +388,8 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Manager';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: chrome.floatingPanelDecoration(radius: 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -285,12 +399,14 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
             children: [
               Text(
                 'Approved Proposals',
-                style: PremiumTheme.titleLarge,
+                style: PremiumTheme.titleLarge.copyWith(
+                  color: chrome.textPrimary,
+                ),
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 'View proposals that have been approved and signed by clients',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
+                style: TextStyle(color: chrome.textSecondary, fontSize: 13),
               ),
             ],
           ),
@@ -311,14 +427,14 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                 children: [
                   Text(
                     email,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: chrome.textPrimary,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
                   Text(
                     displayRole,
-                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    style: TextStyle(color: chrome.textSecondary, fontSize: 12),
                   ),
                 ],
               ),
@@ -338,7 +454,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
         children: [
@@ -393,34 +509,35 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
     );
   }
 
-  Widget _buildApprovedList() {
+  Widget _buildApprovedList(ManagerChromeTheme chrome) {
     if (_approvedProposals.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(24),
+          color: chrome.floatingFill,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: chrome.divider),
         ),
         child: Column(
           children: [
             Icon(
               Icons.inbox_outlined,
               size: 64,
-              color: Colors.white54,
+              color: chrome.textMuted,
             ),
             const SizedBox(height: 16),
             Text(
               'No approved proposals yet',
               style: TextStyle(
-                color: Colors.white70,
+                color: chrome.textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Proposals that clients approve and sign will appear here.',
-              style: TextStyle(color: Colors.white54, fontSize: 14),
+              style: TextStyle(color: chrome.textSecondary, fontSize: 14),
             ),
           ],
         ),
@@ -441,7 +558,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -477,7 +594,7 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -508,99 +625,107 @@ class _ApprovedProposalsPageState extends State<ApprovedProposalsPage>
         const SizedBox(height: 24),
 
         // Proposals List
-        ..._approvedProposals.map((proposal) => _buildProposalCard(proposal)),
+        ..._approvedProposals.map(
+            (proposal) => _buildProposalCard(proposal, chrome)),
       ],
     );
   }
 
-  Widget _buildProposalCard(Map<String, dynamic> proposal) {
+  Widget _buildProposalCard(
+      Map<String, dynamic> proposal, ManagerChromeTheme chrome) {
     final title = proposal['title']?.toString() ?? 'Untitled Proposal';
     final client = proposal['client_name']?.toString() ??
         proposal['client']?.toString() ??
         'Unknown Client';
     final budget = proposal['budget']?.toString() ?? '0';
-    final status = proposal['status']?.toString() ?? 'unknown';
+    final status = (proposal['status'] ?? '').toString().toLowerCase().trim();
     final date = proposal['updated_at']?.toString();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.2),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
+    final statusLabel = (status == 'signed' ||
+            status == 'completed' ||
+            status == 'client signed' ||
+            status == 'client approved')
+        ? 'Signed'
+        : 'Approved';
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => _openSignedProposal(proposal),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(20),
+        decoration: chrome.floatingPanelDecoration(radius: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: chrome.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      client,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
+                      const SizedBox(height: 4),
+                      Text(
+                        client,
+                        style: TextStyle(
+                          color: chrome.textSecondary,
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'Approved',
-                  style: const TextStyle(
-                    color: Colors.green,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    ],
                   ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Value: ${_currencyFormatter.format(double.tryParse(budget.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0)}',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-              ),
-              Text(
-                date != null ? _formatDate(DateTime.tryParse(date)) : 'No date',
-                style: const TextStyle(
-                  color: Colors.white54,
-                  fontSize: 12,
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Value: ${_currencyFormatter.format(double.tryParse(budget.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0)}',
+                  style: TextStyle(
+                    color: chrome.textSecondary,
+                    fontSize: 14,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+                Text(
+                  date != null
+                      ? _formatDate(DateTime.tryParse(date))
+                      : 'No date',
+                  style: TextStyle(
+                    color: chrome.textMuted,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

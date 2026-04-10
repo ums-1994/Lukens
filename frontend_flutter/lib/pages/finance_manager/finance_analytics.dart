@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'dart:convert';
@@ -12,7 +13,6 @@ import 'package:http/http.dart' as http;
 
 import '../../api.dart';
 import '../../services/auth_service.dart';
-import '../../services/role_service.dart';
 import '../../theme/premium_theme.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/finance/finance_sidebar.dart';
@@ -29,6 +29,189 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
   final ScrollController _scrollController = ScrollController();
   final NumberFormat _currencyFormatter =
       NumberFormat.currency(symbol: 'R', decimalDigits: 0);
+  Timer? _aiUsageRefreshTimer;
+  int _aiUsageRefreshTick = 0;
+
+  Future<List<Map<String, dynamic>>>? _pipelineFunnelFuture;
+  Future<List<Map<String, dynamic>>>? _alertsFuture;
+
+  Future<List<Map<String, dynamic>>> _fetchPipelineFunnel() async {
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+
+    if (token == null) return [];
+
+    try {
+      final uri = Uri.parse('$baseUrl/api/finance/funnel');
+      final r = await http.get(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      });
+      if (r.statusCode != 200) return [];
+      final decoded = jsonDecode(r.body);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  String _formatCurrency(double value) {
+    return _currencyFormatter.format(value);
+  }
+
+  Widget _buildPipelineFunnelChart() {
+    final future = _pipelineFunnelFuture ?? _fetchPipelineFunnel();
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Center(
+            child: CircularProgressIndicator(
+              valueColor:
+                  AlwaysStoppedAnimation<Color>(Colors.white.withOpacity(0.7)),
+            ),
+          );
+        }
+
+        final items = snapshot.data ?? [];
+        final stages = <String>[];
+        final values = <double>[];
+        for (final r in items) {
+          final s = (r['stage'] ?? '').toString();
+          if (s.isEmpty) continue;
+          stages.add(s);
+          values.add((r['value'] is num)
+              ? (r['value'] as num).toDouble()
+              : double.tryParse(r['value']?.toString() ?? '') ?? 0.0);
+        }
+
+        if (stages.isEmpty) {
+          return Center(
+            child: Text(
+              'No data',
+              style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+            ),
+          );
+        }
+
+        final maxY = (values.fold<double>(0, (a, b) => a > b ? a : b))
+            .clamp(1, double.infinity);
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.03),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withOpacity(0.06)),
+          ),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+          child: BarChart(
+            BarChartData(
+              maxY: maxY * 1.1,
+              minY: 0,
+              alignment: BarChartAlignment.spaceAround,
+              groupsSpace: 18,
+              barTouchData: BarTouchData(
+                enabled: true,
+                touchTooltipData: BarTouchTooltipData(
+                  tooltipPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  tooltipMargin: 12,
+                  getTooltipColor: (group) => Colors.white.withOpacity(0.92),
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                    final label = groupIndex >= 0 && groupIndex < stages.length
+                        ? stages[groupIndex]
+                        : '';
+                    return BarTooltipItem(
+                      '$label\nvalue : ${_formatCurrency(rod.toY)}',
+                      PremiumTheme.bodyMedium.copyWith(
+                        color: Colors.black87,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: Colors.white.withOpacity(0.08),
+                  strokeWidth: 1,
+                ),
+              ),
+              borderData: FlBorderData(show: false),
+              titlesData: FlTitlesData(
+                topTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 42,
+                    getTitlesWidget: (value, meta) {
+                      if (value == 0) {
+                        return Text(
+                          'R0',
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        );
+                      }
+                      if (value == meta.max) {
+                        return Text(
+                          _formatCurrency(value),
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 34,
+                    getTitlesWidget: (value, meta) {
+                      final i = value.toInt();
+                      if (i < 0 || i >= stages.length) {
+                        return const SizedBox.shrink();
+                      }
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          stages[i],
+                          style: PremiumTheme.labelMedium
+                              .copyWith(color: Colors.white60, fontSize: 10),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              barGroups: List.generate(stages.length, (i) {
+                return BarChartGroupData(
+                  x: i,
+                  barRods: [
+                    BarChartRodData(
+                      toY: values[i],
+                      color: PremiumTheme.teal,
+                      width: 18,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ],
+                );
+              }),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   bool _canAccessAudit(AppState app) {
     final role = (app.currentUser?['role'] ?? '').toString().toLowerCase();
@@ -40,18 +223,272 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      final roleService = context.read<RoleService>();
-      if (!roleService.isFinance()) {
-        roleService.switchRole(UserRole.finance);
-      }
       context.read<AppState>().fetchProposals();
+    });
+    _aiUsageRefreshTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted) return;
+      setState(() => _aiUsageRefreshTick++);
     });
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _pipelineFunnelFuture ??= _fetchPipelineFunnel();
+    _alertsFuture ??= _fetchAlerts(year: DateTime.now().year);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchAlerts({required int year}) async {
+    final app = context.read<AppState>();
+    final token = app.authToken ?? AuthService.token;
+    if (token == null) return [];
+
+    try {
+      final uri = Uri.parse('$baseUrl/api/finance/alerts')
+          .replace(queryParameters: {'year': year.toString()});
+      final r = await http.get(uri, headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      });
+      if (r.statusCode != 200) return [];
+      final decoded = jsonDecode(r.body);
+      if (decoded is List) {
+        return decoded
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Color _alertColor(String severity) {
+    final s = severity.toLowerCase();
+    if (s == 'warning') return Colors.orange;
+    if (s == 'critical') return Colors.redAccent;
+    return PremiumTheme.info;
+  }
+
+  Widget _buildFinancialAlertsPanel() {
+    final year = DateTime.now().year;
+    final future = _alertsFuture ?? _fetchAlerts(year: year);
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return SizedBox(
+            height: 220,
+            child: Center(
+              child: CircularProgressIndicator(
+                valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.white.withOpacity(0.7)),
+              ),
+            ),
+          );
+        }
+
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return SizedBox(
+            height: 80,
+            child: Center(
+              child: Text(
+                'No alerts',
+                style: PremiumTheme.bodyMedium.copyWith(color: Colors.white60),
+              ),
+            ),
+          );
+        }
+
+        final shown = items.take(10).toList();
+        return Column(
+          children: [
+            for (int i = 0; i < shown.length; i++) ...[
+              Row(
+                children: [
+                  Container(
+                    height: 10,
+                    width: 10,
+                    decoration: BoxDecoration(
+                      color: _alertColor(
+                          (shown[i]['severity'] ?? 'info').toString()),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      (shown[i]['type'] ?? '').toString().replaceAll('_', ' '),
+                      style:
+                          PremiumTheme.bodyMedium.copyWith(color: Colors.white),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    (shown[i]['client'] ?? '').toString(),
+                    style: PremiumTheme.labelMedium
+                        .copyWith(color: Colors.white60),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+              if (i != shown.length - 1)
+                Divider(color: Colors.white.withOpacity(0.06), height: 14),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  @override
   void dispose() {
+    _aiUsageRefreshTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<Map<String, dynamic>?> _fetchAiUsageAnalytics() async {
+    final now = DateTime.now();
+    final start = now.subtract(const Duration(days: 30));
+    final fmt = DateFormat('yyyy-MM-dd');
+    return context.read<AppState>().getAiUsageAnalytics(
+          startDate: fmt.format(start),
+          endDate: fmt.format(now),
+        );
+  }
+
+  Widget _buildAiUsagePanel(Map<String, dynamic>? data) {
+    if (data == null) {
+      return const Center(child: Text('AI usage data unavailable'));
+    }
+    if (data['error_status'] != null) {
+      return Center(
+        child: Text('Unable to load AI usage (${data['error_status']})'),
+      );
+    }
+
+    final totals = (data['totals'] as Map?)?.cast<String, dynamic>() ?? {};
+    final endpointSplit = ((data['endpoint_split'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+    final topUsers = ((data['top_users'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((e) => e.cast<String, dynamic>())
+        .toList();
+    final usageSummary =
+        (data['usage_summary'] as Map?)?.cast<String, dynamic>() ?? {};
+    final averageSpendZar = (usageSummary['average_spend_zar'] is num)
+        ? usageSummary['average_spend_zar'] as num
+        : 0;
+    final averageSpendReason =
+        (usageSummary['average_spend_reason'] ?? '').toString();
+
+    int n(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse((v ?? '').toString()) ?? 0;
+    }
+
+    final chips = Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _statPill('Requests', n(totals['total_requests']).toString()),
+        _statPill('Success', n(totals['success_count']).toString()),
+        _statPill('Failed', n(totals['failed_count']).toString()),
+        _statPill('Blocked', n(totals['blocked_count']).toString()),
+        _statPill(
+          'Acceptance',
+          '${((totals['acceptance_rate'] as num?) ?? 0).toStringAsFixed(1)}%',
+        ),
+        _statPill('Tokens',
+            NumberFormat.compact().format(n(usageSummary['total_tokens']))),
+        _statPill('Average Spent', 'R ${averageSpendZar.toStringAsFixed(2)}'),
+      ],
+    );
+
+    Widget listCard(
+        String title, List<Map<String, dynamic>> rows, String lk, String rk) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.03),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title,
+                style: PremiumTheme.bodyMedium
+                    .copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 8),
+            if (rows.isEmpty)
+              Text('No data',
+                  style: PremiumTheme.bodySmall.copyWith(color: Colors.white60))
+            else
+              ...rows.take(8).map((r) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            (r[lk] ?? '-').toString(),
+                            overflow: TextOverflow.ellipsis,
+                            style: PremiumTheme.bodySmall,
+                          ),
+                        ),
+                        Text((r[rk] ?? '0').toString(),
+                            style: PremiumTheme.bodySmall),
+                      ],
+                    ),
+                  )),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        chips,
+        if (averageSpendReason.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Text(
+            'Reason: $averageSpendReason',
+            style: PremiumTheme.bodyMedium.copyWith(color: Colors.white70),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+                child: listCard(
+                    'By Endpoint', endpointSplit, 'endpoint', 'requests')),
+            const SizedBox(width: 12),
+            Expanded(
+                child: listCard('Top Users', topUsers, 'username', 'requests')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _statPill(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      child: Text('$label: $value', style: PremiumTheme.bodySmall),
+    );
   }
 
   void _showExportDialog() {
@@ -1215,6 +1652,42 @@ class _FinanceAnalyticsPageState extends State<FinanceAnalyticsPage> {
                                   approved: approved,
                                   released: released,
                                 ),
+                              ),
+                              const SizedBox(height: 18),
+                              _panel(
+                                title: 'AI Usage',
+                                subtitle:
+                                    'Live usage across AI Assistant and Risk Gate (auto-refresh every 20s)',
+                                child: FutureBuilder<Map<String, dynamic>?>(
+                                  key: ValueKey(
+                                      'finance_ai_usage_$_aiUsageRefreshTick'),
+                                  future: _fetchAiUsageAnalytics(),
+                                  builder: (context, snapshot) {
+                                    if (snapshot.connectionState ==
+                                        ConnectionState.waiting) {
+                                      return const Center(
+                                          child: CircularProgressIndicator());
+                                    }
+                                    if (snapshot.hasError) {
+                                      return const Center(
+                                          child: Text(
+                                              'Failed to load AI usage analytics.'));
+                                    }
+                                    return _buildAiUsagePanel(snapshot.data);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 18),
+                              _panel(
+                                title: 'Pipeline Funnel Chart',
+                                subtitle: 'Proposal value by stage',
+                                child: _buildPipelineFunnelChart(),
+                              ),
+                              const SizedBox(height: 18),
+                              _panel(
+                                title: 'Financial Alerts',
+                                subtitle: 'Deals requiring attention',
+                                child: _buildFinancialAlertsPanel(),
                               ),
                               const SizedBox(height: 24),
                               const Footer(),

@@ -11,6 +11,10 @@ import psycopg2
 import psycopg2.extras
 
 from api.utils.database import get_db_connection, _pg_conn, release_pg_conn
+from api.utils.profile_avatar import (
+    fetch_user_profile_dict_by_username,
+    patch_user_profile_avatar,
+)
 from api.utils.decorators import token_required
 from api.utils.auth import verify_token, get_valid_tokens, generate_token, hash_password, verify_password, save_tokens
 from api.utils.firebase_auth import verify_firebase_token, get_user_from_token, firebase_token_required, initialize_firebase
@@ -31,6 +35,57 @@ def _normalize_role(raw_role, default='manager'):
     if role_key in {'manager', 'creator', 'user'}:
         return 'manager'
     return default
+
+
+def _is_finance_requested(requested_role) -> bool:
+    role_key = (requested_role or '').strip().lower().replace('-', '_').replace(' ', '_')
+    return role_key.startswith('finance') or role_key in {
+        'financial_manager',
+        'finance_manager',
+        'financial manager',
+        'finance manager',
+    }
+
+
+def _try_upgrade_to_finance_manager(cursor, conn, user_id, uid, email) -> bool:
+    """Safely upgrade role to finance_manager for the authenticated Firebase user.
+
+    We only perform this upgrade when we can reasonably prove the user controls the
+    account (firebase_uid matches, or the row is not yet linked).
+    """
+    try:
+        cursor.execute(
+            """UPDATE users
+                   SET role = 'finance_manager'
+                 WHERE id = %s
+                   AND (firebase_uid IS NULL OR firebase_uid = %s)""",
+            (user_id, uid),
+        )
+        upgraded = cursor.rowcount > 0
+        if upgraded:
+            conn.commit()
+        else:
+            conn.rollback()
+        return upgraded
+    except psycopg2.ProgrammingError:
+        # firebase_uid column may not exist in older schemas; fall back to an email-scoped update.
+        conn.rollback()
+        cursor.execute(
+            """UPDATE users
+                   SET role = 'finance_manager'
+                 WHERE id = %s
+                   AND email = %s""",
+            (user_id, email),
+        )
+        upgraded = cursor.rowcount > 0
+        if upgraded:
+            conn.commit()
+        else:
+            conn.rollback()
+        return upgraded
+    except Exception:
+        conn.rollback()
+        return False
 
 def _select_firebase_user(cursor, email, uid):
     """
@@ -392,26 +447,10 @@ def forgot_password():
 def get_current_user(username=None):
     """Get current user information"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                '''SELECT id, username, email, full_name, role, department, is_active
-                   FROM users WHERE username = %s''',
-                (username,)
-            )
-            result = cursor.fetchone()
-            if result:
-                return {
-                    'id': result[0],
-                    'username': result[1],
-                    'email': result[2],
-                    'full_name': result[3],
-                    'role': result[4],
-                    'department': result[5],
-                    'is_active': result[6]
-                }
-            
-            return {'detail': 'User not found'}, 404
+        user = fetch_user_profile_dict_by_username(username)
+        if user:
+            return user
+        return {'detail': 'User not found'}, 404
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -420,26 +459,22 @@ def get_current_user(username=None):
 def get_user_profile(username=None):
     """Get user profile (alias for /me)"""
     try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                '''SELECT id, username, email, full_name, role, department, is_active
-                   FROM users WHERE username = %s''',
-                (username,)
-            )
-            result = cursor.fetchone()
-            if result:
-                return {
-                    'id': result[0],
-                    'username': result[1],
-                    'email': result[2],
-                    'full_name': result[3],
-                    'role': result[4],
-                    'department': result[5],
-                    'is_active': result[6]
-                }
-            
-            return {'detail': 'User not found'}, 404
+        user = fetch_user_profile_dict_by_username(username)
+        if user:
+            return user
+        return {'detail': 'User not found'}, 404
+    except Exception as e:
+        return {'detail': str(e)}, 500
+
+
+@bp.patch("/user/profile")
+@token_required
+def patch_user_profile(username=None):
+    """Update profile photo (Cloudinary) or clear it."""
+    try:
+        data = request.get_json(silent=True) or {}
+        body, status = patch_user_profile_avatar(username, data)
+        return body, status
     except Exception as e:
         return {'detail': str(e)}, 500
 
@@ -535,6 +570,15 @@ def firebase_auth():
                 normalized_role = _normalize_role(user_role, default='manager')
                 if normalized_role == 'manager' and (user_role or '').strip():
                     print(f'⚠️ Unknown role "{user_role}", defaulting to "manager"')
+
+                # If the client is registering/logging in with a finance role but the DB still
+                # has manager/user, upgrade ONLY to finance_manager (never to admin) and only
+                # when we can safely bind it to this Firebase identity.
+                if normalized_role == 'manager' and _is_finance_requested(requested_role):
+                    if _try_upgrade_to_finance_manager(cursor, conn, user_id, uid, email):
+                        user_role = 'finance_manager'
+                        normalized_role = 'finance_manager'
+                        print(f'🔐 Upgraded user {email} to finance_manager (safe Firebase-bound upgrade)')
 
                 # SECURITY: Never upgrade stored roles based on a client-provided "role" during login.
                 # This is an escalation vector (e.g. if the frontend persists a stale role locally).

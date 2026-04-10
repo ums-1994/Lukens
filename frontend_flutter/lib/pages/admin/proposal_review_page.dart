@@ -37,7 +37,6 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
   bool _isSubmittingComment = false;
   bool _showVersions = false;
   final ScrollController _scrollController = ScrollController();
-  bool _isSidebarCollapsed = false;
   String _currentPage = 'Approvals';
 
   void _safeSetState(VoidCallback fn) {
@@ -614,10 +613,14 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
 
     try {
       final token = AuthService.token;
-      if (token == null) return;
+      if (token == null) {
+        throw Exception('Session expired. Please log in again.');
+      }
 
       final proposalId = int.tryParse(widget.proposalId);
-      if (proposalId == null) return;
+      if (proposalId == null) {
+        throw Exception('Invalid proposal ID.');
+      }
 
       final response = await http.post(
         Uri.parse(
@@ -661,7 +664,14 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           Navigator.pop(context, 'rejected');
         }
       } else {
-        throw Exception('Failed to request changes');
+        String detail = 'Failed to request changes';
+        try {
+          final decoded = json.decode(response.body);
+          if (decoded is Map && decoded['detail'] != null) {
+            detail = decoded['detail'].toString();
+          }
+        } catch (_) {}
+        throw Exception(detail);
       }
     } catch (e) {
       if (mounted) {
@@ -1527,11 +1537,9 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
           if (isAdmin)
             Material(
               child: AdminSidebar(
-                isCollapsed: _isSidebarCollapsed,
+                isCollapsed: appState.isAdminSidebarCollapsed,
                 currentPage: _currentPage,
-                onToggle: () => setState(
-                  () => _isSidebarCollapsed = !_isSidebarCollapsed,
-                ),
+                onToggle: () => appState.toggleAdminSidebar(),
                 onSelect: (label) {
                   if (label != 'Sign Out') setState(() => _currentPage = label);
                   _navigateAdminToPage(context, label);
@@ -1557,14 +1565,10 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         );
         break;
       case 'Analytics':
-        Navigator.pushReplacementNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/admin_analytics');
         break;
       case 'History':
-        Navigator.pushReplacementNamed(
-          context,
-          '/admin_approvals',
-          arguments: const {'initialFilter': 'approved'},
-        );
+        Navigator.pushReplacementNamed(context, '/admin_history');
         break;
       case 'Sign Out':
         AuthService.logout();

@@ -133,7 +133,7 @@ def cycle_time_metrics(username=None, user_id=None, email=None):
 
             if scope == "all":
                 role_lower = str(my_role).strip().lower()
-                if role_lower not in {"admin", "ceo"}:
+                if role_lower not in {"admin", "ceo", "approver"}:
                     return jsonify({"detail": "Not authorized for scope=all"}), 403
                 team_owner_ids = None
             else:
@@ -468,7 +468,7 @@ def client_engagement(username=None, user_id=None, email=None):
 
             if scope == "all":
                 role_lower = str(my_role).strip().lower()
-                if role_lower not in {"admin", "ceo"}:
+                if role_lower not in {"admin", "ceo", "approver"}:
                     return jsonify({"detail": "Not authorized for scope=all"}), 403
                 team_owner_ids = None
             else:
@@ -629,9 +629,19 @@ def client_engagement(username=None, user_id=None, email=None):
         elif "signed_date" in existing_columns:
             signed_expr = "signed_date"
 
+        updated_expr = "created_at"
+        if "updated_at" in existing_columns:
+            updated_expr = "COALESCE(updated_at, created_at)"
+
         cursor.execute(
             f"""
-            SELECT id, created_at, {release_expr} AS released_at, {signed_expr} AS signed_at
+            SELECT
+                id,
+                created_at,
+                {updated_expr} AS updated_at,
+                status,
+                {release_expr} AS released_at,
+                {signed_expr} AS signed_at
             FROM proposals
             WHERE {where_sql}
             """,
@@ -747,16 +757,37 @@ def client_engagement(username=None, user_id=None, email=None):
 
         # Time to sign: signed_at - released_at (fallback created_at)
         signed_durations = []
-        for _, created_at, released_at, signed_at in proposals:
-            if not signed_at:
+        def _status_indicates_released(status_text):
+            s = (status_text or "").strip().lower()
+            return (
+                "sent to client" in s
+                or "sent for signature" in s
+                or "released" in s
+                or "approved" in s
+            )
+
+        def _status_indicates_signed(status_text):
+            s = (status_text or "").strip().lower()
+            return "signed" in s or "client approved" in s or "completed" in s
+
+        for _, created_at, updated_at, status_text, released_at, signed_at in proposals:
+            effective_released_at = released_at
+            if not effective_released_at and _status_indicates_released(status_text):
+                effective_released_at = created_at
+
+            effective_signed_at = signed_at
+            if not effective_signed_at and _status_indicates_signed(status_text):
+                effective_signed_at = updated_at or created_at
+
+            if not effective_signed_at:
                 continue
-            if start_date and signed_at < start_date:
+            if start_date and effective_signed_at < start_date:
                 continue
-            if end_date and signed_at > end_date:
+            if end_date and effective_signed_at > end_date:
                 continue
-            base = released_at or created_at
-            if base and signed_at and signed_at >= base:
-                signed_durations.append((signed_at - base).total_seconds() / 86400.0)
+            base = effective_released_at or created_at
+            if base and effective_signed_at and effective_signed_at >= base:
+                signed_durations.append((effective_signed_at - base).total_seconds() / 86400.0)
 
         avg_days = None
         if signed_durations:
@@ -764,10 +795,18 @@ def client_engagement(username=None, user_id=None, email=None):
 
         released_count = 0
         signed_count = 0
-        for _, _, released_at, signed_at in proposals:
-            if released_at:
+        for _, created_at, updated_at, status_text, released_at, signed_at in proposals:
+            effective_released_at = released_at
+            if not effective_released_at and _status_indicates_released(status_text):
+                effective_released_at = created_at
+
+            effective_signed_at = signed_at
+            if not effective_signed_at and _status_indicates_signed(status_text):
+                effective_signed_at = updated_at or created_at
+
+            if effective_released_at:
                 released_count += 1
-            if signed_at and released_at:
+            if effective_signed_at and effective_released_at:
                 signed_count += 1
         rate_percent = 0.0
         if released_count > 0:
@@ -916,7 +955,7 @@ def collaboration_load(username=None, user_id=None, email=None):
 
                 if scope == "all":
                     role_lower = str(my_role).strip().lower()
-                    if role_lower not in {"admin", "ceo"}:
+                    if role_lower not in {"admin", "ceo", "approver"}:
                         return jsonify({"detail": "Not authorized for scope=all"}), 403
                     team_owner_ids = None
                 else:

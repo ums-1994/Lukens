@@ -27,6 +27,125 @@ from api.utils.email import send_email
 bp = Blueprint('proposals', __name__)
 
 
+def _extract_amount_from_content(content_data):
+    if not content_data:
+        return 0.0
+
+    def _parse_num(v):
+        if v is None:
+            return 0.0
+        if isinstance(v, (int, float)):
+            return float(v)
+        cleaned = str(v).replace(',', '').replace('R', '').replace('$', '').strip()
+        try:
+            return float(cleaned)
+        except Exception:
+            return 0.0
+
+    if isinstance(content_data, dict):
+        for key in ['budget', 'amount', 'total', 'value', 'price']:
+            if key in content_data:
+                amount = _parse_num(content_data.get(key))
+                if amount > 0:
+                    return float(amount)
+
+    def _find_header_index(headers, needles):
+        if not isinstance(headers, list):
+            return None
+        for i, header in enumerate(headers):
+            try:
+                h = str(header).lower().strip()
+            except Exception:
+                continue
+            for n in needles:
+                if h == n or n in h:
+                    return i
+        return None
+
+    def _table_subtotal_from_cells(cells):
+        if not isinstance(cells, list) or not cells:
+            return 0.0
+        header_row = cells[0] if isinstance(cells[0], list) else None
+        if not isinstance(header_row, list):
+            return 0.0
+
+        total_col = _find_header_index(header_row, ['total', 'amount', 'line total'])
+        qty_col = _find_header_index(header_row, ['quantity', 'qty'])
+        unit_col = _find_header_index(header_row, ['unit price', 'price'])
+
+        subtotal = 0.0
+        for row in cells[1:]:
+            if not isinstance(row, list):
+                continue
+            row_total = 0.0
+            if total_col is not None and 0 <= total_col < len(row):
+                row_total = _parse_num(row[total_col])
+            if row_total == 0.0:
+                qty = _parse_num(row[qty_col]) if qty_col is not None and 0 <= qty_col < len(row) else 0.0
+                unit = _parse_num(row[unit_col]) if unit_col is not None and 0 <= unit_col < len(row) else 0.0
+                row_total = qty * unit
+            subtotal += float(row_total)
+        return float(subtotal)
+
+    def _sum_price_tables_from_tables_list(tables_any):
+        if not isinstance(tables_any, list):
+            return 0.0
+        total = 0.0
+        for t in tables_any:
+            if not isinstance(t, dict):
+                continue
+            if str(t.get('type') or '').lower().strip() != 'price':
+                continue
+            cells = t.get('cells')
+            subtotal = _table_subtotal_from_cells(cells)
+            vat_rate = _parse_num(t.get('vatRate'))
+            vat = subtotal * vat_rate if vat_rate > 0 else 0.0
+            total += (subtotal + vat)
+        return float(total)
+
+    def _sum_price_tables_from_section(section):
+        if not isinstance(section, dict):
+            return 0.0
+        total = 0.0
+        total += _sum_price_tables_from_tables_list(section.get('tables'))
+
+        positioned = section.get('positionedPricingTables')
+        if isinstance(positioned, list):
+            for p in positioned:
+                if not isinstance(p, dict):
+                    continue
+                table = p.get('table')
+                if isinstance(table, dict):
+                    total += _sum_price_tables_from_tables_list([table])
+
+        body = section.get('body') or section.get('content')
+        if isinstance(body, dict):
+            total += _sum_price_tables_from_tables_list(body.get('tables'))
+            positioned2 = body.get('positionedPricingTables')
+            if isinstance(positioned2, list):
+                for p in positioned2:
+                    if not isinstance(p, dict):
+                        continue
+                    table = p.get('table')
+                    if isinstance(table, dict):
+                        total += _sum_price_tables_from_tables_list([table])
+        return float(total)
+
+    sections_list = None
+    if isinstance(content_data, dict) and isinstance(content_data.get('sections'), list):
+        sections_list = content_data.get('sections')
+    elif isinstance(content_data, list):
+        sections_list = content_data
+
+    if isinstance(sections_list, list):
+        total = 0.0
+        for section in sections_list:
+            total += _sum_price_tables_from_section(section)
+        return float(total)
+
+    return 0.0
+
+
 def _role_key(raw_role: Optional[str]) -> str:
     return (raw_role or '').strip().lower()
 
@@ -426,6 +545,8 @@ def get_proposals(username=None, user_id=None, email=None):
 
             requester_role = (requester_role or '').strip().lower()
             is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_admin = requester_role in ['admin', 'ceo']
+            is_manager = _is_manager_role(requester_role)
 
             if not user_id and not is_finance:
                 resolved_user_id = resolve_user_id(cursor, username or email)
@@ -447,9 +568,34 @@ def get_proposals(username=None, user_id=None, email=None):
             """)
             existing_columns = [row[0] for row in cursor.fetchall()]
             print(f"📋 Available columns in proposals table: {existing_columns}")
+
+            def _pick_first(existing, candidates):
+                for c in candidates:
+                    if c in existing:
+                        return c
+                return None
+
+            amount_col = _pick_first(
+                existing_columns,
+                [
+                    'budget',
+                    'amount',
+                    'value',
+                    'proposal_value',
+                    'deal_value',
+                    'total_value',
+                    'pipeline_value',
+                ],
+            )
+            if amount_col:
+                budget_select = (
+                    "NULLIF(regexp_replace(" + amount_col + "::text, '[^0-9\\.-]', '', 'g'), '')::numeric AS budget"
+                )
+            else:
+                budget_select = "NULL::numeric AS budget"
             
-            # Finance users can see all proposals
-            if is_finance:
+            # Finance/Admin/Manager users can see all proposals (including drafts).
+            if is_finance or is_admin or is_manager:
                 select_cols = ['id', 'title', 'content', 'status']
                 if 'owner_id' in existing_columns:
                     select_cols.append('owner_id')
@@ -461,8 +607,7 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('client_name')
                 if 'client_email' in existing_columns:
                     select_cols.append('client_email')
-                if 'budget' in existing_columns:
-                    select_cols.append('budget')
+                select_cols.append(budget_select)
                 if 'timeline_days' in existing_columns:
                     select_cols.append('timeline_days')
                 if 'created_at' in existing_columns:
@@ -478,7 +623,6 @@ def get_proposals(username=None, user_id=None, email=None):
 
                 query = f'''SELECT {', '.join(select_cols)}
                      FROM proposals
-                     WHERE LOWER(COALESCE(status, '')) <> 'draft'
                      ORDER BY created_at DESC'''
                 cursor.execute(query)
 
@@ -489,8 +633,7 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('client')
                 elif 'client_name' in existing_columns:
                     select_cols.append('client_name')
-                if 'budget' in existing_columns:
-                    select_cols.append('budget')
+                select_cols.append(budget_select)
                 if 'created_at' in existing_columns:
                     select_cols.append('created_at')
                 if 'updated_at' in existing_columns:
@@ -514,8 +657,7 @@ def get_proposals(username=None, user_id=None, email=None):
                     select_cols.append('client_name')
                 if 'client_email' in existing_columns:
                     select_cols.append('client_email')
-                if 'budget' in existing_columns:
-                    select_cols.append('budget')
+                select_cols.append(budget_select)
                 if 'timeline_days' in existing_columns:
                     select_cols.append('timeline_days')
                 if 'created_at' in existing_columns:
@@ -604,6 +746,19 @@ def get_proposals(username=None, user_id=None, email=None):
                             proposal['budget'] = None
                     else:
                         proposal['budget'] = None
+
+                    if proposal.get('budget') is None or float(proposal.get('budget') or 0) <= 0:
+                        try:
+                            content_obj = None
+                            if row_dict.get('content'):
+                                content_obj = json.loads(row_dict['content']) if isinstance(row_dict['content'], str) else row_dict['content']
+                            extracted = _extract_amount_from_content(content_obj)
+                            if extracted <= 0 and sections_data:
+                                extracted = _extract_amount_from_content(sections_data)
+                            if extracted > 0:
+                                proposal['budget'] = float(extracted)
+                        except Exception:
+                            pass
                     
                     proposal['timeline_days'] = row_dict.get('timeline_days')
                     
@@ -705,6 +860,8 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
 
             requester_role = (requester_role or '').strip().lower()
             is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_admin = requester_role in ['admin', 'ceo']
+            is_manager = _is_manager_role(requester_role)
 
             # Some environments do not have a dedicated `sections` column on proposals.
             # If the client sends `sections` but the DB does not support it, store it in `content`.
@@ -733,53 +890,11 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
 
             before_status = (before_row[0] or '').strip().lower()
             before_content = before_row[1] if len(before_row) > 1 else None
-
-            before_sections = None
-            if 'sections' in existing_columns:
-                try:
-                    before_sections = before_row[select_cols.index('sections')]
-                except Exception:
-                    before_sections = None
-
-            before_budget = None
-            if 'budget' in existing_columns:
-                try:
-                    before_budget = before_row[select_cols.index('budget')]
-                except Exception:
-                    before_budget = None
 
             sent_locked = ('sent to client' in before_status) or ('released' in before_status)
             if sent_locked and is_finance:
                 if any(k in data for k in ['content', 'budget']):
                     return jsonify({'detail': 'Pricing changes are not allowed after proposal is sent to client'}), 403
-
-            # Some environments do not have a dedicated `sections` column on proposals.
-            # If the client sends `sections` but the DB does not support it, store it in `content`.
-            if 'sections' in data and 'sections' not in existing_columns:
-                if 'content' not in data:
-                    data['content'] = data.get('sections')
-                data.pop('sections', None)
-
-            select_cols = ['status', 'content']
-            if 'sections' in existing_columns:
-                select_cols.append('sections')
-            if 'budget' in existing_columns:
-                select_cols.append('budget')
-
-            cursor.execute(
-                f"""
-                SELECT {', '.join(select_cols)}
-                FROM proposals
-                WHERE id = %s
-                """,
-                (proposal_id,),
-            )
-            before_row = cursor.fetchone()
-            if not before_row:
-                return jsonify({'detail': 'Proposal not found'}), 404
-
-            before_status = (before_row[0] or '').strip().lower()
-            before_content = before_row[1] if len(before_row) > 1 else None
 
             before_sections = None
             if 'sections' in existing_columns:
@@ -815,7 +930,7 @@ def update_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 ]:
                     data.pop(forbidden, None)
 
-            if not is_finance:
+            if not is_finance and not is_admin and not is_manager:
                 cursor.execute(
                     f"SELECT {owner_col} FROM proposals WHERE id = %s",
                     (proposal_id,),
@@ -1071,8 +1186,7 @@ def delete_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 requester_role = None
             requester_role = (requester_role or '').strip().lower()
             is_admin = requester_role in ['admin', 'ceo']
-            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
-            is_finance = requester_role.startswith('finance') or requester_role in ['finance']
+            is_manager = _is_manager_role(requester_role)
 
             # Verify proposal exists and ownership (unless admin)
             cursor.execute(
@@ -1084,7 +1198,7 @@ def delete_proposal(username=None, proposal_id=None, user_id=None, email=None):
                 return jsonify({'detail': 'Proposal not found'}), 404
 
             proposal_owner_id = proposal_row[0]
-            if not is_admin and str(proposal_owner_id) != str(resolved_user_id):
+            if not is_admin and not is_manager and str(proposal_owner_id) != str(resolved_user_id):
                 return jsonify({'detail': 'Proposal not found or access denied'}), 404
 
             # Best-effort cleanup of dependent rows for schemas without ON DELETE CASCADE.
@@ -1168,6 +1282,7 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
             requester_role = (requester_role or '').strip().lower()
             is_admin = requester_role in ['admin', 'ceo', 'approver']
             is_finance = requester_role.startswith('finance') or requester_role == 'finance'
+            is_manager = _is_manager_role(requester_role)
 
             # Detect proposals table schema
             cursor.execute(
@@ -1210,9 +1325,9 @@ def get_proposal(username=None, proposal_id=None, user_id=None, email=None):
             where_clause = 'id = %s'
             params = [proposal_id]
 
-            # Non-admins can only read their own proposals, OR any proposal in
-            # "Changes Requested" / "Resubmitted" state (so manager/creator can open it to edit).
-            if not is_admin and not is_finance and owner_col:
+            # Non-admins can only read their own proposals.
+            # Managers are allowed to read all proposals.
+            if not is_admin and not is_finance and not is_manager and owner_col:
                 where_clause += (
                     f" AND ({owner_col}::text = %s::text"
                     " OR status IN ('Changes Requested', 'changes requested', 'Resubmitted', 'resubmitted'))"

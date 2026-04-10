@@ -6,14 +6,85 @@ import os
 import traceback
 import secrets
 import jwt
+import psycopg2
 import psycopg2.extras
 from datetime import datetime, timedelta
 
 from api.utils.database import get_db_connection
 from api.utils.decorators import token_required
 from api.utils.email import send_email, get_logo_html
+from api.utils.helpers import create_notification
 
 bp = Blueprint('collaborator', __name__)
+
+
+def _get_comment_notification_recipients(cursor, proposal_id, actor_user_id):
+    """Collect users who should receive comment/reply notifications for a proposal."""
+    recipients = set()
+
+    # Proposal owner
+    cursor.execute("SELECT owner_id FROM proposals WHERE id = %s", (proposal_id,))
+    proposal_row = cursor.fetchone()
+    owner_id = proposal_row.get('owner_id') if proposal_row else None
+    if owner_id:
+        recipients.add(int(owner_id))
+
+    # Accepted collaborators mapped to existing users
+    cursor.execute(
+        """
+        SELECT DISTINCT u.id
+        FROM collaboration_invitations ci
+        JOIN users u ON LOWER(u.email) = LOWER(ci.invited_email)
+        WHERE ci.proposal_id = %s
+          AND LOWER(COALESCE(ci.status, '')) IN ('accepted', 'active')
+        """,
+        (proposal_id,),
+    )
+    for row in cursor.fetchall() or []:
+        uid = row.get('id')
+        if uid:
+            recipients.add(int(uid))
+
+    # Existing participants in the comment thread (manager/admin/finance, etc.)
+    cursor.execute(
+        """
+        SELECT DISTINCT created_by AS id
+        FROM document_comments
+        WHERE proposal_id = %s
+        """,
+        (proposal_id,),
+    )
+    for row in cursor.fetchall() or []:
+        uid = row.get('id')
+        if uid:
+            recipients.add(int(uid))
+
+    # Never notify the actor for their own comment/reply
+    recipients.discard(int(actor_user_id))
+    return recipients
+
+
+def _get_proposal_owner_and_title(cursor, proposal_id):
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'proposals'
+        """
+    )
+    cols = {r.get('column_name') for r in cursor.fetchall() or []}
+    owner_col = 'user_id' if 'user_id' in cols else ('owner_id' if 'owner_id' in cols else None)
+    if not owner_col:
+        return None, f"Proposal {proposal_id}"
+
+    cursor.execute(
+        f"SELECT {owner_col} AS owner_id, title FROM proposals WHERE id = %s",
+        (proposal_id,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None, f"Proposal {proposal_id}"
+    return row.get('owner_id'), row.get('title') or f"Proposal {proposal_id}"
 
 @bp.get("/api/collaborate")
 def get_collaboration_access():
@@ -147,6 +218,32 @@ def add_guest_comment():
             """, (proposal_id, comment_text, user_id, 'open'))
             
             result = cursor.fetchone()
+            comment_id = result['id']
+
+            # Notify proposal owner when a collaborator/guest comments
+            try:
+                owner_id, proposal_title = _get_proposal_owner_and_title(
+                    cursor,
+                    proposal_id,
+                )
+                commenter_label = invited_email or 'A collaborator'
+                if owner_id:
+                    create_notification(
+                        owner_id,
+                        'proposal_comment_added',
+                        'New comment on your proposal',
+                        f"{commenter_label} commented on \"{proposal_title}\"",
+                        proposal_id=proposal_id,
+                        metadata={
+                            'comment_id': comment_id,
+                            'comment_author_id': user_id,
+                            'comment_author_email': invited_email,
+                            'proposal_title': proposal_title,
+                        },
+                    )
+            except Exception as notify_error:
+                print(f"⚠️ Error notifying proposal owner on guest comment: {notify_error}")
+
             conn.commit()
             
             return dict(result), 201
@@ -206,10 +303,52 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                 return {'detail': 'User not found'}, 404
 
             user_id = user['id']
-            
-            cursor.execute('SELECT title FROM proposals WHERE id = %s', (proposal_id,))
-            proposal_row = cursor.fetchone()
-            proposal_title = proposal_row['title'] if proposal_row else f"Proposal {proposal_id}"
+
+            proposal_owner_id, proposal_title = _get_proposal_owner_and_title(
+                cursor,
+                proposal_id,
+            )
+
+            # Best-effort: if offsets aren't provided but highlighted_text is, derive offsets from
+            # the current section text so highlights persist for all viewers.
+            try:
+                if (start_offset is None or end_offset is None) and highlighted_text and section_index is not None:
+                    cursor.execute('SELECT content FROM proposals WHERE id = %s', (proposal_id,))
+                    content_row = cursor.fetchone() or {}
+                    content_val = content_row.get('content')
+                    section_text = None
+                    if isinstance(content_val, dict):
+                        sections = content_val.get('sections')
+                        if isinstance(sections, list) and 0 <= int(section_index) < len(sections):
+                            sec = sections[int(section_index)]
+                            if isinstance(sec, dict):
+                                section_text = sec.get('content') or sec.get('text')
+                            elif isinstance(sec, str):
+                                section_text = sec
+                    elif isinstance(content_val, str):
+                        try:
+                            import json
+                            parsed = json.loads(content_val)
+                            sections = parsed.get('sections') if isinstance(parsed, dict) else None
+                            if isinstance(sections, list) and 0 <= int(section_index) < len(sections):
+                                sec = sections[int(section_index)]
+                                if isinstance(sec, dict):
+                                    section_text = sec.get('content') or sec.get('text')
+                                elif isinstance(sec, str):
+                                    section_text = sec
+                        except Exception:
+                            section_text = None
+
+                    if section_text and isinstance(section_text, str):
+                        idx = section_text.find(str(highlighted_text))
+                        if idx >= 0:
+                            start_offset = idx
+                            end_offset = idx + len(str(highlighted_text))
+            except Exception as e:
+                print(f"⚠️ Could not derive comment offsets: {e}")
+
+            if block_id is not None:
+                block_id = str(block_id)
             
             # Validate parent_id if provided (must exist and belong to same proposal)
             if parent_id:
@@ -280,6 +419,40 @@ def create_comment(username=None, user_id=None, proposal_id=None):
                 )
             except Exception as e:
                 print(f"⚠️ Error logging activity: {e}")
+
+            # Notify all proposal participants (owner/collaborators/comment participants)
+            try:
+                commenter_name = user.get('full_name') or user.get('email') or username or 'Someone'
+                is_reply = bool(parent_id)
+                notification_title = (
+                    'New reply on proposal comment' if is_reply else 'New comment on your proposal'
+                )
+                notification_message = (
+                    f"{commenter_name} replied on \"{proposal_title}\""
+                    if is_reply
+                    else f"{commenter_name} commented on \"{proposal_title}\""
+                )
+                notification_type = 'proposal_comment_replied' if is_reply else 'proposal_comment_added'
+
+                recipient_ids = _get_comment_notification_recipients(
+                    cursor, proposal_id=proposal_id, actor_user_id=user_id
+                )
+                for recipient_id in recipient_ids:
+                    create_notification(
+                        recipient_id,
+                        notification_type,
+                        notification_title,
+                        notification_message,
+                        proposal_id=proposal_id,
+                        metadata={
+                            'comment_id': comment_id,
+                            'comment_author_id': user_id,
+                            'proposal_title': proposal_title,
+                            'parent_id': parent_id,
+                        },
+                    )
+            except Exception as notify_error:
+                print(f"⚠️ Error notifying participants on comment: {notify_error}")
             
             return dict(result), 201
             
@@ -336,7 +509,7 @@ def get_document_comments(username=None, user_id=None, proposal_id=None):
                        dc.start_offset, dc.end_offset,
                        dc.status, dc.parent_id, dc.block_type, dc.block_id,
                        dc.resolved_by, dc.resolved_at, dc.updated_at,
-                       u.full_name as author_name, u.email as author_email, u.username as author_username,
+                       u.full_name as author_name, u.email as author_email, u.username as author_username, u.role as author_role,
                        ru.full_name as resolver_name
                 FROM document_comments dc
                 LEFT JOIN users u ON dc.created_by = u.id
@@ -477,6 +650,46 @@ def toggle_comment_reaction(username=None, user_id=None, comment_id=None):
                     INSERT INTO comment_reactions (comment_id, user_id, emoji)
                     VALUES (%s, %s, %s)
                 """, (comment_id, current_user_id, emoji))
+
+                # Notify original comment author when someone reacts
+                try:
+                    cursor.execute("""
+                        SELECT dc.created_by, dc.proposal_id, p.title AS proposal_title
+                        FROM document_comments dc
+                        LEFT JOIN proposals p ON p.id = dc.proposal_id
+                        WHERE dc.id = %s
+                    """, (comment_id,))
+                    comment_owner = cursor.fetchone()
+
+                    if comment_owner and comment_owner.get('created_by') and comment_owner['created_by'] != current_user_id:
+                        cursor.execute(
+                            "SELECT full_name, email FROM users WHERE id = %s",
+                            (current_user_id,),
+                        )
+                        reactor = cursor.fetchone()
+                        reactor_name = (
+                            (reactor.get('full_name') if reactor else None)
+                            or (reactor.get('email') if reactor else None)
+                            or username
+                            or 'Someone'
+                        )
+                        proposal_title = comment_owner.get('proposal_title') or f"Proposal #{comment_owner.get('proposal_id')}"
+                        create_notification(
+                            comment_owner['created_by'],
+                            'comment_reaction_added',
+                            'New reaction to your comment',
+                            f"{reactor_name} reacted {emoji} to your comment on \"{proposal_title}\"",
+                            proposal_id=comment_owner.get('proposal_id'),
+                            metadata={
+                                'comment_id': comment_id,
+                                'emoji': emoji,
+                                'reacted_by': current_user_id,
+                                'proposal_title': proposal_title,
+                            },
+                        )
+                except Exception as notify_error:
+                    print(f"⚠️ Error notifying comment author on reaction: {notify_error}")
+
                 conn.commit()
                 return {'action': 'added', 'emoji': emoji}, 200
             
@@ -640,7 +853,7 @@ def search_users(username=None):
             # Search users by username, email, or full_name
             search_pattern = f'%{query}%'
             cursor.execute("""
-                SELECT id, username, email, full_name
+                SELECT id, username, email, full_name, role
                 FROM users
                 WHERE is_active = true 
                   AND (
@@ -666,6 +879,12 @@ def search_users(username=None):
                         'id': u['id'],
                         'username': u['username'],
                         'email': u['email'],
+                        'role': u.get('role'),
+                        'mention_key': (
+                            f"{u['username']}-{(u.get('role') or '').strip().lower().replace(' ', '_')}"
+                            if (u.get('role') or '').strip()
+                            else u['username']
+                        ),
                         'full_name': u['full_name'] or u['username'],
                         'display_name': u['full_name'] or u['username']
                     }

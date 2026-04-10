@@ -3,12 +3,14 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../services/client_service.dart';
 import '../../services/auth_service.dart';
-import '../../services/asset_service.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/footer.dart';
 import '../../theme/premium_theme.dart';
 import '../../api.dart';
 import '../../widgets/app_side_nav.dart';
+import '../../widgets/manager_page_background.dart';
+import '../../theme/manager_theme_controller.dart';
+import '../../utils/manager_session_actions.dart';
 import 'dart:ui';
 
 class ClientManagementPage extends StatefulWidget {
@@ -25,8 +27,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   String _selectedTab = 'clients'; // clients, invitations
   String _inviteFilter = 'all'; // all, verified, unverified
   String _searchQuery = '';
-  String _currentPage = 'Client Management';
-  bool _isSidebarCollapsed = false;
   final ScrollController _scrollController = ScrollController();
   bool _routeSynced = false;
 
@@ -67,161 +67,174 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
 
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              width: 520,
-              padding: const EdgeInsets.all(32),
-              decoration: PremiumTheme.glassCard(),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) {
+        final chrome = Provider.of<ManagerThemeController>(ctx).chrome;
+        final panel = Container(
+          width: 520,
+          padding: const EdgeInsets.all(32),
+          decoration: chrome.isDark
+              ? PremiumTheme.glassCard()
+              : chrome.floatingPanelDecoration(radius: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          gradient: PremiumTheme.tealGradient,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.person_add_alt_1,
-                            color: Colors.white, size: 24),
-                      ),
-                      const SizedBox(width: 16),
-                      const Expanded(
-                        child: Text(
-                          'Add Client',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: PremiumTheme.tealGradient,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.person_add_alt_1,
+                        color: Colors.white, size: 24),
                   ),
-                  const SizedBox(height: 24),
-                  _buildTextField(
-                    controller: companyController,
-                    label: 'Company Name',
-                    icon: Icons.business,
-                    hint: 'Acme Inc.',
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTextField(
-                    controller: emailController,
-                    label: 'Client Email',
-                    icon: Icons.email,
-                    hint: 'client@company.com',
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTextField(
-                    controller: contactController,
-                    label: 'Contact Person (Optional)',
-                    icon: Icons.person,
-                    hint: 'Jane Doe',
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTextField(
-                    controller: phoneController,
-                    label: 'Phone (Optional)',
-                    icon: Icons.phone,
-                    hint: '+27 ...',
-                  ),
-                  const SizedBox(height: 32),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text(
-                          'Cancel',
-                          style: TextStyle(color: Color(0xFFB0BEC5)),
-                        ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      'Add Client',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: chrome.textPrimary,
                       ),
-                      const SizedBox(width: 12),
-                      ElevatedButton(
-                        onPressed: () async {
-                          final company = companyController.text.trim();
-                          final email = emailController.text.trim();
-                          if (company.isEmpty || email.isEmpty) {
-                            _showSnackBar(
-                                'Please enter company name and client email');
-                            return;
-                          }
-
-                          Navigator.pop(ctx);
-                          setState(() => _loading = true);
-                          try {
-                            final token = AuthService.token;
-                            if (token == null) {
-                              _showSnackBar(
-                                  'Authentication error: Please log in again');
-                              return;
-                            }
-
-                            final result = await ClientService.createClient(
-                              token: token,
-                              companyName: company,
-                              email: email,
-                              contactPerson:
-                                  contactController.text.trim().isNotEmpty
-                                      ? contactController.text.trim()
-                                      : null,
-                              phone: phoneController.text.trim().isNotEmpty
-                                  ? phoneController.text.trim()
-                                  : null,
-                            );
-
-                            if (result != null && result['success'] == true) {
-                              _showSnackBar('Client added successfully',
-                                  isSuccess: true);
-                              await _loadData();
-                            } else {
-                              _showSnackBar(
-                                  'Failed to add client - check console for details');
-                            }
-                          } catch (e) {
-                            _showSnackBar('Error: $e');
-                          } finally {
-                            if (mounted) setState(() => _loading = false);
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: PremiumTheme.teal,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 32, vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.save, size: 18),
-                            SizedBox(width: 8),
-                            Text('Save Client',
-                                style: TextStyle(fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, color: chrome.textPrimary),
+                    onPressed: () => Navigator.pop(ctx),
                   ),
                 ],
               ),
-            ),
+              const SizedBox(height: 24),
+              _buildTextField(
+                controller: companyController,
+                label: 'Company Name',
+                icon: Icons.business,
+                hint: 'Acme Inc.',
+                chrome: chrome,
+              ),
+              const SizedBox(height: 16),
+              _buildTextField(
+                controller: emailController,
+                label: 'Client Email',
+                icon: Icons.email,
+                hint: 'client@company.com',
+                chrome: chrome,
+              ),
+              const SizedBox(height: 16),
+              _buildTextField(
+                controller: contactController,
+                label: 'Contact Person (Optional)',
+                icon: Icons.person,
+                hint: 'Jane Doe',
+                chrome: chrome,
+              ),
+              const SizedBox(height: 16),
+              _buildTextField(
+                controller: phoneController,
+                label: 'Phone (Optional)',
+                icon: Icons.phone,
+                hint: '+27 ...',
+                chrome: chrome,
+              ),
+              const SizedBox(height: 32),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(color: chrome.textSecondary),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton(
+                    onPressed: () async {
+                      final company = companyController.text.trim();
+                      final email = emailController.text.trim();
+                      if (company.isEmpty || email.isEmpty) {
+                        _showSnackBar(
+                            'Please enter company name and client email');
+                        return;
+                      }
+
+                      Navigator.pop(ctx);
+                      setState(() => _loading = true);
+                      try {
+                        final token = AuthService.token;
+                        if (token == null) {
+                          _showSnackBar(
+                              'Authentication error: Please log in again');
+                          return;
+                        }
+
+                        final result = await ClientService.createClient(
+                          token: token,
+                          companyName: company,
+                          email: email,
+                          contactPerson:
+                              contactController.text.trim().isNotEmpty
+                                  ? contactController.text.trim()
+                                  : null,
+                          phone: phoneController.text.trim().isNotEmpty
+                              ? phoneController.text.trim()
+                              : null,
+                        );
+
+                        if (result != null && result['success'] == true) {
+                          _showSnackBar('Client added successfully',
+                              isSuccess: true);
+                          await _loadData();
+                        } else {
+                          _showSnackBar(
+                              'Failed to add client - check console for details');
+                        }
+                      } catch (e) {
+                        _showSnackBar('Error: $e');
+                      } finally {
+                        if (mounted) setState(() => _loading = false);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: PremiumTheme.teal,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.save, size: 18),
+                        SizedBox(width: 8),
+                        Text('Save Client',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ),
-      ),
+        );
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: chrome.isDark
+                ? BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: panel,
+                  )
+                : panel,
+          ),
+        );
+      },
     );
   }
 
@@ -229,12 +242,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
-  }
-
-  void _toggleSidebar() {
-    setState(() {
-      _isSidebarCollapsed = !_isSidebarCollapsed;
-    });
   }
 
   void _syncRoute() {
@@ -300,127 +307,139 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
 
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: Container(
-              width: 500,
-              padding: const EdgeInsets.all(32),
-              decoration: PremiumTheme.glassCard(),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) {
+        final chrome = Provider.of<ManagerThemeController>(ctx).chrome;
+        final panel = Container(
+          width: 500,
+          padding: const EdgeInsets.all(32),
+          decoration: chrome.isDark
+              ? PremiumTheme.glassCard()
+              : chrome.floatingPanelDecoration(radius: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          gradient: PremiumTheme.tealGradient,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(Icons.mail_outline,
-                            color: Colors.white, size: 24),
-                      ),
-                      const SizedBox(width: 16),
-                      const Expanded(
-                        child: Text(
-                          'Invite Client',
-                          style: TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white),
-                        onPressed: () => Navigator.pop(ctx),
-                      ),
-                    ],
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: PremiumTheme.tealGradient,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.mail_outline,
+                        color: Colors.white, size: 24),
                   ),
-                  const SizedBox(height: 24),
-                  const Text(
-                    'Send a secure onboarding link to your client',
-                    style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 14),
-                  ),
-                  const SizedBox(height: 24),
-                  _buildTextField(
-                    controller: emailController,
-                    label: 'Client Email',
-                    icon: Icons.email,
-                    hint: 'client@company.com',
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTextField(
-                    controller: companyController,
-                    label: 'Company Name (Optional)',
-                    icon: Icons.business,
-                    hint: 'Acme Inc.',
-                  ),
-                  const SizedBox(height: 16),
-                  _buildTextField(
-                    controller: expiryController,
-                    label: 'Link Expires in (Days)',
-                    icon: Icons.timer,
-                    hint: '7',
-                    keyboardType: TextInputType.number,
-                  ),
-                  const SizedBox(height: 32),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text(
-                          'Cancel',
-                          style: TextStyle(color: Color(0xFFB0BEC5)),
-                        ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      'Invite Client',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
+                        color: chrome.textPrimary,
                       ),
-                      const SizedBox(width: 12),
-                      ElevatedButton(
-                        onPressed: () async {
-                          if (emailController.text.trim().isEmpty) {
-                            _showSnackBar('Please enter a client email');
-                            return;
-                          }
-
-                          Navigator.pop(ctx);
-                          await _sendInvitation(
-                            emailController.text.trim(),
-                            companyController.text.trim(),
-                            int.tryParse(expiryController.text.trim()) ?? 7,
-                          );
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: PremiumTheme.teal,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 32, vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: const Row(
-                          children: [
-                            Icon(Icons.send, size: 18),
-                            SizedBox(width: 8),
-                            Text('Send Invitation',
-                                style: TextStyle(fontWeight: FontWeight.w600)),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, color: chrome.textPrimary),
+                    onPressed: () => Navigator.pop(ctx),
                   ),
                 ],
               ),
-            ),
+              const SizedBox(height: 24),
+              Text(
+                'Send a secure onboarding link to your client',
+                style: TextStyle(color: chrome.textSecondary, fontSize: 14),
+              ),
+              const SizedBox(height: 24),
+              _buildTextField(
+                controller: emailController,
+                label: 'Client Email',
+                icon: Icons.email,
+                hint: 'client@company.com',
+                chrome: chrome,
+              ),
+              const SizedBox(height: 16),
+              _buildTextField(
+                controller: companyController,
+                label: 'Company Name (Optional)',
+                icon: Icons.business,
+                hint: 'Acme Inc.',
+                chrome: chrome,
+              ),
+              const SizedBox(height: 16),
+              _buildTextField(
+                controller: expiryController,
+                label: 'Link Expires in (Days)',
+                icon: Icons.timer,
+                hint: '7',
+                keyboardType: TextInputType.number,
+                chrome: chrome,
+              ),
+              const SizedBox(height: 32),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Text(
+                      'Cancel',
+                      style: TextStyle(color: chrome.textSecondary),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton(
+                    onPressed: () async {
+                      if (emailController.text.trim().isEmpty) {
+                        _showSnackBar('Please enter a client email');
+                        return;
+                      }
+
+                      Navigator.pop(ctx);
+                      await _sendInvitation(
+                        emailController.text.trim(),
+                        companyController.text.trim(),
+                        int.tryParse(expiryController.text.trim()) ?? 7,
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: PremiumTheme.teal,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.send, size: 18),
+                        SizedBox(width: 8),
+                        Text('Send Invitation',
+                            style: TextStyle(fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ),
-      ),
+        );
+
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: chrome.isDark
+                ? BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                    child: panel,
+                  )
+                : panel,
+          ),
+        );
+      },
     );
   }
 
@@ -429,15 +448,23 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     required String label,
     required IconData icon,
     required String hint,
+    required ManagerChromeTheme chrome,
     TextInputType keyboardType = TextInputType.text,
   }) {
+    final fill = chrome.isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : chrome.fieldFill;
+    final borderSide = chrome.isDark
+        ? Colors.white.withValues(alpha: 0.2)
+        : chrome.fieldBorder;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: chrome.textPrimary,
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -445,17 +472,17 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         const SizedBox(height: 8),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.1),
+            color: fill,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
+            border: Border.all(color: borderSide),
           ),
           child: TextField(
             controller: controller,
             keyboardType: keyboardType,
-            style: const TextStyle(color: Colors.white),
+            style: TextStyle(color: chrome.textPrimary),
             decoration: InputDecoration(
               hintText: hint,
-              hintStyle: const TextStyle(color: Color(0xFF78909C)),
+              hintStyle: TextStyle(color: chrome.textMuted),
               prefixIcon: Icon(icon, color: PremiumTheme.teal, size: 20),
               border: InputBorder.none,
               contentPadding:
@@ -527,8 +554,8 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     final userRole = user?['role'] ?? 'Financial Manager';
 
     return Scaffold(
-      body: Container(
-        color: Colors.transparent,
+      backgroundColor: Colors.transparent,
+      body: ManagerPageBackground(
         child: Row(
           children: [
             Consumer<AppState>(
@@ -670,113 +697,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     );
   }
 
-  Widget _buildNavItem(
-      String label, String assetPath, bool isActive, BuildContext context) {
-    if (_isSidebarCollapsed) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: () {
-              setState(() => _currentPage = label);
-              _navigateToPage(context, label);
-            },
-            borderRadius: BorderRadius.circular(30),
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isActive
-                      ? const Color(0xFFE74C3C)
-                      : const Color(0xFFCBD5E1),
-                  width: isActive ? 2 : 1,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.08),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.all(6),
-              child: ClipOval(
-                child: AssetService.buildImageWidget(assetPath,
-                    fit: BoxFit.contain),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () {
-          setState(() => _currentPage = label);
-          _navigateToPage(context, label);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: isActive ? const Color(0xFF3498DB) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: isActive
-                ? Border.all(color: const Color(0xFF2980B9), width: 1)
-                : null,
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isActive
-                        ? const Color(0xFFE74C3C)
-                        : const Color(0xFFCBD5E1),
-                    width: isActive ? 2 : 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                padding: const EdgeInsets.all(6),
-                child: ClipOval(
-                  child: AssetService.buildImageWidget(assetPath,
-                      fit: BoxFit.contain),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: isActive ? Colors.white : const Color(0xFFECF0F1),
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   bool _isAdminUser() {
     try {
       final user = AuthService.currentUser;
@@ -800,6 +720,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         }
         break;
       case 'My Proposals':
+      case 'Proposals':
         Navigator.pushReplacementNamed(context, '/proposals');
         break;
       case 'Templates':
@@ -817,11 +738,11 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       case 'Analytics (My Pipeline)':
         Navigator.pushReplacementNamed(context, '/analytics');
         break;
+      case 'Account Profile':
+        ManagerSessionActions.goToAccountProfile(context);
+        break;
       case 'Logout':
-        final app = Provider.of<AppState>(context, listen: false);
-        app.logout();
-        AuthService.logout();
-        Navigator.pushNamed(context, '/login');
+        ManagerSessionActions.showLogoutDialog(context);
         break;
       default:
         if (isAdmin) {
@@ -833,175 +754,201 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   }
 
   Widget _buildHeader() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.all(32),
-          decoration: PremiumTheme.glassCard(
-            gradientStart: PremiumTheme.cyan,
-            gradientEnd: PremiumTheme.teal,
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final titleStyle = TextStyle(
+      fontSize: 28,
+      fontWeight: FontWeight.bold,
+      color: chrome.isDark ? Colors.white : chrome.textPrimary,
+    );
+    final subtitleStyle = TextStyle(
+      fontSize: 14,
+      color: chrome.isDark ? const Color(0xFFE0F7FA) : chrome.textSecondary,
+    );
+
+    final row = Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: chrome.isDark
+                ? Colors.white.withValues(alpha: 0.2)
+                : PremiumTheme.teal.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Row(
+          child: Icon(
+            Icons.people,
+            color: chrome.isDark ? Colors.white : PremiumTheme.teal,
+            size: 32,
+          ),
+        ),
+        const SizedBox(width: 20),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.people, color: Colors.white, size: 32),
+              Text('Client Management', style: titleStyle),
+              const SizedBox(height: 8),
+              Text(
+                'Manage your clients and track onboarding progress',
+                style: subtitleStyle,
               ),
-              const SizedBox(width: 20),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Client Management',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    SizedBox(height: 8),
-                    Text(
-                      'Manage your clients and track onboarding progress',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Color(0xFFE0F7FA),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (_isFinanceUser()) ...[
-                ElevatedButton.icon(
-                  onPressed: _showAddClientDialog,
-                  icon: const Icon(Icons.add, size: 20),
-                  label: const Text('Add Client',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: PremiumTheme.teal,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                ),
-                const SizedBox(width: 12),
-              ],
-              if (_canManageInvitations())
-                ElevatedButton.icon(
-                  onPressed: _showInviteDialog,
-                  icon: const Icon(Icons.person_add, size: 20),
-                  label: const Text('Invite Client',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: PremiumTheme.teal,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                ),
             ],
           ),
         ),
-      ),
+        if (_isFinanceUser()) ...[
+          ElevatedButton.icon(
+            onPressed: _showAddClientDialog,
+            icon: const Icon(Icons.add, size: 20),
+            label: const Text('Add Client',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: PremiumTheme.teal,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
+        if (_canManageInvitations())
+          ElevatedButton.icon(
+            onPressed: _showInviteDialog,
+            icon: const Icon(Icons.person_add, size: 20),
+            label: const Text('Invite Client',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: PremiumTheme.teal,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
+          ),
+      ],
+    );
+
+    if (chrome.isDark) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            padding: const EdgeInsets.all(32),
+            decoration: PremiumTheme.glassCard(
+              gradientStart: PremiumTheme.cyan,
+              gradientEnd: PremiumTheme.teal,
+            ),
+            child: row,
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.all(32),
+      decoration: chrome.floatingPanelDecoration(radius: 10),
+      child: row,
     );
   }
 
   Widget _buildSearchAndFilter() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final innerFill = chrome.isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : chrome.fieldFill;
+    final innerBorder = chrome.isDark
+        ? Colors.white.withValues(alpha: 0.2)
+        : chrome.fieldBorder;
+
+    final inner = Container(
+      padding: const EdgeInsets.all(20),
+      decoration:
+          chrome.isDark ? PremiumTheme.glassCard() : chrome.floatingPanelDecoration(radius: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: innerFill,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: innerBorder),
+              ),
+              child: TextField(
+                onChanged: (value) => setState(() => _searchQuery = value),
+                style: TextStyle(color: chrome.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Search clients...',
+                  hintStyle: TextStyle(color: chrome.textMuted),
+                  prefixIcon:
+                      const Icon(Icons.search, color: PremiumTheme.teal),
+                  border: InputBorder.none,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                ),
+              ),
+            ),
+          ),
+          if (_canManageInvitations() && _selectedTab == 'invitations') ...[
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: innerFill,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: innerBorder),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _inviteFilter,
+                  dropdownColor: chrome.dropdownSurface,
+                  items: [
+                    DropdownMenuItem(
+                        value: 'all',
+                        child: Text('All',
+                            style: TextStyle(color: chrome.textPrimary))),
+                    DropdownMenuItem(
+                        value: 'verified',
+                        child: Text('Verified',
+                            style: TextStyle(color: chrome.textPrimary))),
+                    DropdownMenuItem(
+                        value: 'unverified',
+                        child: Text('Unverified',
+                            style: TextStyle(color: chrome.textPrimary))),
+                  ],
+                  onChanged: (val) =>
+                      setState(() => _inviteFilter = val ?? 'all'),
+                  icon: Icon(Icons.filter_alt, color: chrome.textPrimary),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(width: 12),
+          IconButton(
+            onPressed: _loadData,
+            icon: Icon(Icons.refresh, color: chrome.textPrimary),
+            style: IconButton.styleFrom(
+              backgroundColor: innerFill,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.all(16),
+            ),
+          ),
+        ],
+      ),
+    );
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: PremiumTheme.glassCard(),
-          child: Row(
-            children: [
-              Expanded(
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border:
-                        Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                  ),
-                  child: TextField(
-                    onChanged: (value) => setState(() => _searchQuery = value),
-                    style: const TextStyle(color: Colors.white),
-                    decoration: const InputDecoration(
-                      hintText: 'Search clients...',
-                      hintStyle: TextStyle(color: Color(0xFF78909C)),
-                      prefixIcon: Icon(Icons.search, color: PremiumTheme.teal),
-                      border: InputBorder.none,
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    ),
-                  ),
-                ),
-              ),
-              if (_canManageInvitations() && _selectedTab == 'invitations') ...[
-                const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border:
-                        Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: _inviteFilter,
-                      dropdownColor: const Color(0xFF0E1726),
-                      items: const [
-                        DropdownMenuItem(
-                            value: 'all',
-                            child: Text('All',
-                                style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(
-                            value: 'verified',
-                            child: Text('Verified',
-                                style: TextStyle(color: Colors.white))),
-                        DropdownMenuItem(
-                            value: 'unverified',
-                            child: Text('Unverified',
-                                style: TextStyle(color: Colors.white))),
-                      ],
-                      onChanged: (val) =>
-                          setState(() => _inviteFilter = val ?? 'all'),
-                      icon: const Icon(Icons.filter_alt, color: Colors.white),
-                    ),
-                  ),
-                ),
-              ],
-              const SizedBox(width: 12),
-              IconButton(
-                onPressed: _loadData,
-                icon: const Icon(Icons.refresh, color: Colors.white),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.white.withValues(alpha: 0.1),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.all(16),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      child: chrome.isDark
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: inner,
+            )
+          : inner,
     );
   }
 
@@ -1025,146 +972,137 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       return _isEmailVerified(i);
     }).length;
 
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final labelStyle = TextStyle(
+      color: chrome.isDark ? Colors.white : chrome.textSecondary,
+      fontSize: 14,
+    );
+    final valueStyle = TextStyle(
+      color: chrome.isDark ? Colors.white : chrome.textPrimary,
+      fontSize: 32,
+      fontWeight: FontWeight.bold,
+    );
+    final hintStyle = TextStyle(
+      color: chrome.isDark
+          ? Colors.white.withValues(alpha: 0.7)
+          : chrome.textMuted,
+      fontSize: 12,
+    );
+
+    Widget wrapStat(Widget inner) {
+      return Expanded(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: chrome.isDark
+              ? BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                  child: inner,
+                )
+              : inner,
+        ),
+      );
+    }
+
     return Row(
       children: [
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: PremiumTheme.statCard(PremiumTheme.tealGradient),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        wrapStat(
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: chrome.isDark
+                ? PremiumTheme.statCard(PremiumTheme.tealGradient)
+                : chrome.floatingPanelDecoration(radius: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.people, color: Colors.white, size: 20),
-                        SizedBox(width: 8),
-                        Text('Total Clients',
-                            style:
-                                TextStyle(color: Colors.white, fontSize: 14)),
-                      ],
+                    Icon(
+                      Icons.people,
+                      color: chrome.isDark ? Colors.white : PremiumTheme.teal,
+                      size: 20,
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '${_clients.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      '$activeClients active',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontSize: 12,
-                      ),
-                    ),
+                    const SizedBox(width: 8),
+                    Text('Total Clients', style: labelStyle),
                   ],
                 ),
-              ),
+                const SizedBox(height: 12),
+                Text('${_clients.length}', style: valueStyle),
+                Text('$activeClients active', style: hintStyle),
+              ],
             ),
           ),
         ),
         if (_canManageInvitations()) ...[
           const SizedBox(width: 16),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: PremiumTheme.statCard(PremiumTheme.blueGradient),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+          wrapStat(
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: chrome.isDark
+                  ? PremiumTheme.statCard(PremiumTheme.blueGradient)
+                  : chrome.floatingPanelDecoration(radius: 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
                     children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.mail, color: Colors.white, size: 20),
-                          SizedBox(width: 8),
-                          Text('Pending Invites',
-                              style:
-                                  TextStyle(color: Colors.white, fontSize: 14)),
-                        ],
+                      Icon(
+                        Icons.mail,
+                        color:
+                            chrome.isDark ? Colors.white : PremiumTheme.info,
+                        size: 20,
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        '$pendingInvites',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        '$completedInvites completed',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.7),
-                          fontSize: 12,
-                        ),
-                      ),
+                      const SizedBox(width: 8),
+                      Text('Pending Invites', style: labelStyle),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  Text('$pendingInvites', style: valueStyle),
+                  Text('$completedInvites completed', style: hintStyle),
+                ],
               ),
             ),
           ),
         ],
         const SizedBox(width: 16),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                decoration: PremiumTheme.statCard(PremiumTheme.purpleGradient),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+        wrapStat(
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: chrome.isDark
+                ? PremiumTheme.statCard(PremiumTheme.purpleGradient)
+                : chrome.floatingPanelDecoration(radius: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.rate_review, color: Colors.white, size: 20),
-                        SizedBox(width: 8),
-                        Text('This Month',
-                            style:
-                                TextStyle(color: Colors.white, fontSize: 14)),
-                      ],
+                    Icon(
+                      Icons.rate_review,
+                      color:
+                          chrome.isDark ? Colors.white : PremiumTheme.purple,
+                      size: 20,
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '${_clients.where((c) {
-                        if (c['created_at'] == null) return false;
-                        try {
-                          final createdAt =
-                              DateTime.parse(c['created_at'].toString());
-                          final now = DateTime.now();
-                          return createdAt.month == now.month &&
-                              createdAt.year == now.year;
-                        } catch (_) {
-                          return false;
-                        }
-                      }).length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    Text(
-                      'new clients',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.7),
-                        fontSize: 12,
-                      ),
-                    ),
+                    const SizedBox(width: 8),
+                    Text('This Month', style: labelStyle),
                   ],
                 ),
-              ),
+                const SizedBox(height: 12),
+                Text(
+                  '${_clients.where((c) {
+                    if (c['created_at'] == null) return false;
+                    try {
+                      final createdAt =
+                          DateTime.parse(c['created_at'].toString());
+                      final now = DateTime.now();
+                      return createdAt.month == now.month &&
+                          createdAt.year == now.year;
+                    } catch (_) {
+                      return false;
+                    }
+                  }).length}',
+                  style: valueStyle,
+                ),
+                Text('new clients', style: hintStyle),
+              ],
             ),
           ),
         ),
@@ -1173,110 +1111,119 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
   }
 
   Widget _buildTabs() {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: PremiumTheme.glassCard(),
-          child: Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: () => setState(() => _selectedTab = 'clients'),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
+    final chrome = context.watch<ManagerThemeController>().chrome;
+    final inactiveColor = chrome.isDark ? Colors.white : chrome.textPrimary;
+
+    final inner = Container(
+      decoration:
+          chrome.isDark ? PremiumTheme.glassCard() : chrome.floatingPanelDecoration(radius: 10),
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () => setState(() => _selectedTab = 'clients'),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(
+                  color: _selectedTab == 'clients'
+                      ? PremiumTheme.teal.withValues(alpha: 0.3)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                  border: _selectedTab == 'clients'
+                      ? Border.all(color: PremiumTheme.teal, width: 2)
+                      : null,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.people,
                       color: _selectedTab == 'clients'
-                          ? PremiumTheme.teal.withValues(alpha: 0.3)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(20),
-                      border: _selectedTab == 'clients'
-                          ? Border.all(color: PremiumTheme.teal, width: 2)
-                          : null,
+                          ? PremiumTheme.teal
+                          : inactiveColor,
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.people,
-                          color: _selectedTab == 'clients'
+                    const SizedBox(width: 8),
+                    Text(
+                      'Clients (${_clients.length})',
+                      style: TextStyle(
+                        color: _selectedTab == 'clients'
+                            ? PremiumTheme.teal
+                            : inactiveColor,
+                        fontWeight: _selectedTab == 'clients'
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_canManageInvitations())
+            Expanded(
+              child: InkWell(
+                onTap: () => setState(() => _selectedTab = 'invitations'),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                    color: _selectedTab == 'invitations'
+                        ? PremiumTheme.teal.withValues(alpha: 0.3)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    border: _selectedTab == 'invitations'
+                        ? Border.all(color: PremiumTheme.teal, width: 2)
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.mail,
+                        color: _selectedTab == 'invitations'
+                            ? PremiumTheme.teal
+                            : inactiveColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Invitations (${_invitations.where((i) {
+                          final status =
+                              i['status']?.toString().toLowerCase() ?? '';
+                          final clientId = i['client_id'];
+                          return status != 'completed' &&
+                              (clientId == null ||
+                                  clientId.toString().isEmpty);
+                        }).length})',
+                        style: TextStyle(
+                          color: _selectedTab == 'invitations'
                               ? PremiumTheme.teal
-                              : Colors.white,
+                              : inactiveColor,
+                          fontWeight: _selectedTab == 'invitations'
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Clients (${_clients.length})',
-                          style: TextStyle(
-                            color: _selectedTab == 'clients'
-                                ? PremiumTheme.teal
-                                : Colors.white,
-                            fontWeight: _selectedTab == 'clients'
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              if (_canManageInvitations())
-                Expanded(
-                  child: InkWell(
-                    onTap: () => setState(() => _selectedTab = 'invitations'),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      decoration: BoxDecoration(
-                        color: _selectedTab == 'invitations'
-                            ? PremiumTheme.teal.withValues(alpha: 0.3)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(20),
-                        border: _selectedTab == 'invitations'
-                            ? Border.all(color: PremiumTheme.teal, width: 2)
-                            : null,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.mail,
-                            color: _selectedTab == 'invitations'
-                                ? PremiumTheme.teal
-                                : Colors.white,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Invitations (${_invitations.where((i) {
-                              final status =
-                                  i['status']?.toString().toLowerCase() ?? '';
-                              final clientId = i['client_id'];
-                              return status != 'completed' &&
-                                  (clientId == null ||
-                                      clientId.toString().isEmpty);
-                            }).length})',
-                            style: TextStyle(
-                              color: _selectedTab == 'invitations'
-                                  ? PremiumTheme.teal
-                                  : Colors.white,
-                              fontWeight: _selectedTab == 'invitations'
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: chrome.isDark
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: inner,
+            )
+          : inner,
     );
   }
 
   Widget _buildClientsTable() {
+    final chrome = context.watch<ManagerThemeController>().chrome;
     var filteredClients = _clients;
     if (_searchQuery.isNotEmpty) {
       filteredClients = _clients.where((client) {
@@ -1288,109 +1235,118 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     }
 
     if (filteredClients.isEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.all(48),
-            decoration: PremiumTheme.glassCard(),
-            child: const Center(
-              child: Column(
-                children: [
-                  Icon(Icons.people_outline,
-                      size: 64, color: Color(0xFF78909C)),
-                  SizedBox(height: 16),
-                  Text(
-                    'No clients yet',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Start by inviting your first client',
-                    style: TextStyle(color: Color(0xFF78909C)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: PremiumTheme.glassCard(),
+      final emptyInner = Container(
+        padding: const EdgeInsets.all(48),
+        decoration:
+            chrome.isDark ? PremiumTheme.glassCard() : chrome.floatingPanelDecoration(radius: 10),
+        child: Center(
           child: Column(
             children: [
-              // Table Header
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Expanded(
-                        flex: 3,
-                        child: Text('Company',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
-                    const Expanded(
-                        flex: 2,
-                        child: Text('Contact',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
-                    const Expanded(
-                        flex: 2,
-                        child: Text('Email',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
-                    const Expanded(
-                        flex: 2,
-                        child: Text('Industry',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
-                    const Expanded(
-                        flex: 1,
-                        child: Text('Status',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
-                    if (_canManageInvitations())
-                      const SizedBox(
-                          width: 80,
-                          child: Text('Actions',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600))),
-                  ],
+              Icon(Icons.people_outline, size: 64, color: chrome.textMuted),
+              const SizedBox(height: 16),
+              Text(
+                'No clients yet',
+                style: TextStyle(
+                  color: chrome.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              // Table Rows
-              ...filteredClients.map((client) => _buildClientRow(client)),
+              const SizedBox(height: 8),
+              Text(
+                'Start by inviting your first client',
+                style: TextStyle(color: chrome.textSecondary),
+              ),
             ],
           ),
         ),
+      );
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: chrome.isDark
+            ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: emptyInner,
+              )
+            : emptyInner,
+      );
+    }
+
+    final tableInner = Container(
+      decoration:
+          chrome.isDark ? PremiumTheme.glassCard() : chrome.floatingPanelDecoration(radius: 10),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: chrome.isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : chrome.fieldFill,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                    flex: 3,
+                    child: Text('Company',
+                        style: TextStyle(
+                            color: chrome.textPrimary,
+                            fontWeight: FontWeight.w600))),
+                Expanded(
+                    flex: 2,
+                    child: Text('Contact',
+                        style: TextStyle(
+                            color: chrome.textPrimary,
+                            fontWeight: FontWeight.w600))),
+                Expanded(
+                    flex: 2,
+                    child: Text('Email',
+                        style: TextStyle(
+                            color: chrome.textPrimary,
+                            fontWeight: FontWeight.w600))),
+                Expanded(
+                    flex: 2,
+                    child: Text('Industry',
+                        style: TextStyle(
+                            color: chrome.textPrimary,
+                            fontWeight: FontWeight.w600))),
+                Expanded(
+                    flex: 1,
+                    child: Text('Status',
+                        style: TextStyle(
+                            color: chrome.textPrimary,
+                            fontWeight: FontWeight.w600))),
+                if (_canManageInvitations())
+                  SizedBox(
+                      width: 80,
+                      child: Text('Actions',
+                          style: TextStyle(
+                              color: chrome.textPrimary,
+                              fontWeight: FontWeight.w600))),
+              ],
+            ),
+          ),
+          ...filteredClients.map((client) => _buildClientRow(client, chrome)),
+        ],
       ),
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: chrome.isDark
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: tableInner,
+            )
+          : tableInner,
     );
   }
 
-  Widget _buildClientRow(Map<String, dynamic> client) {
+  Widget _buildClientRow(Map<String, dynamic> client, ManagerChromeTheme chrome) {
     final company = client['company_name'] ?? 'N/A';
     final contact = client['contact_person'] ?? 'N/A';
     final email = client['email'] ?? 'N/A';
@@ -1408,33 +1364,36 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         : holdingInfo.toString();
     final status = client['status'] ?? 'active';
 
+    final rowDivider = chrome.isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : chrome.divider;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
       decoration: BoxDecoration(
         border: Border(
-          bottom:
-              BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+          bottom: BorderSide(color: rowDivider, width: 1),
         ),
       ),
       child: Row(
         children: [
           Expanded(
               flex: 3,
-              child:
-                  Text(company, style: const TextStyle(color: Colors.white))),
+              child: Text(company,
+                  style: TextStyle(color: chrome.textPrimary))),
           Expanded(
               flex: 2,
               child: Text(contact,
-                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
+                  style: TextStyle(color: chrome.textSecondary))),
           Expanded(
               flex: 2,
               child: Text(email,
-                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
+                  style: TextStyle(color: chrome.textSecondary))),
           Expanded(
               flex: 2,
               child: Text(industry,
-                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
+                  style: TextStyle(color: chrome.textSecondary))),
           Expanded(
             flex: 1,
             child: Container(
@@ -1477,7 +1436,7 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.more_vert, size: 18),
-                    color: Colors.white,
+                    color: chrome.textPrimary,
                     onPressed: () => _showClientMenu(client),
                     tooltip: 'More Options',
                   ),
@@ -1516,110 +1475,123 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
       }).toList();
     }
 
-    if (filteredInvitations.isEmpty) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            padding: const EdgeInsets.all(48),
-            decoration: PremiumTheme.glassCard(),
-            child: const Center(
-              child: Column(
-                children: [
-                  Icon(Icons.mail_outline, size: 64, color: Color(0xFF78909C)),
-                  SizedBox(height: 16),
-                  Text(
-                    'No invitations yet',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    'Send your first client invitation',
-                    style: TextStyle(color: Color(0xFF78909C)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-    }
+    final chrome = context.watch<ManagerThemeController>().chrome;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-        child: Container(
-          decoration: PremiumTheme.glassCard(),
+    if (filteredInvitations.isEmpty) {
+      final emptyInner = Container(
+        padding: const EdgeInsets.all(48),
+        decoration:
+            chrome.isDark ? PremiumTheme.glassCard() : chrome.floatingPanelDecoration(radius: 10),
+        child: Center(
           child: Column(
             children: [
-              // Table Header
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Expanded(
-                        flex: 3,
-                        child: Text('Email',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
-                    const Expanded(
-                        flex: 2,
-                        child: Text('Company',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
-                    const Expanded(
-                        flex: 2,
-                        child: Text('Sent Date',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
-                    const Expanded(
-                        flex: 2,
-                        child: Text('Expires',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
-                    const Expanded(
-                        flex: 1,
-                        child: Text('Status',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600))),
-                    if (_canManageInvitations())
-                      const SizedBox(
-                          width: 80,
-                          child: Text('Actions',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600))),
-                  ],
+              Icon(Icons.mail_outline, size: 64, color: chrome.textMuted),
+              const SizedBox(height: 16),
+              Text(
+                'No invitations yet',
+                style: TextStyle(
+                  color: chrome.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              // Table Rows
-              ...filteredInvitations
-                  .map((invite) => _buildInvitationRow(invite)),
+              const SizedBox(height: 8),
+              Text(
+                'Send your first client invitation',
+                style: TextStyle(color: chrome.textSecondary),
+              ),
             ],
           ),
         ),
+      );
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: chrome.isDark
+            ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: emptyInner,
+              )
+            : emptyInner,
+      );
+    }
+
+    final tableInner = Container(
+      decoration:
+          chrome.isDark ? PremiumTheme.glassCard() : chrome.floatingPanelDecoration(radius: 10),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: chrome.isDark
+                  ? Colors.white.withValues(alpha: 0.1)
+                  : chrome.fieldFill,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(20),
+                topRight: Radius.circular(20),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                    flex: 3,
+                    child: Text('Email',
+                        style: TextStyle(
+                            color: chrome.textPrimary,
+                            fontWeight: FontWeight.w600))),
+                Expanded(
+                    flex: 2,
+                    child: Text('Company',
+                        style: TextStyle(
+                            color: chrome.textPrimary,
+                            fontWeight: FontWeight.w600))),
+                Expanded(
+                    flex: 2,
+                    child: Text('Sent Date',
+                        style: TextStyle(
+                            color: chrome.textPrimary,
+                            fontWeight: FontWeight.w600))),
+                Expanded(
+                    flex: 2,
+                    child: Text('Expires',
+                        style: TextStyle(
+                            color: chrome.textPrimary,
+                            fontWeight: FontWeight.w600))),
+                Expanded(
+                    flex: 1,
+                    child: Text('Status',
+                        style: TextStyle(
+                            color: chrome.textPrimary,
+                            fontWeight: FontWeight.w600))),
+                if (_canManageInvitations())
+                  SizedBox(
+                      width: 80,
+                      child: Text('Actions',
+                          style: TextStyle(
+                              color: chrome.textPrimary,
+                              fontWeight: FontWeight.w600))),
+              ],
+            ),
+          ),
+          ...filteredInvitations
+              .map((invite) => _buildInvitationRow(invite, chrome)),
+        ],
       ),
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: chrome.isDark
+          ? BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: tableInner,
+            )
+          : tableInner,
     );
   }
 
-  Widget _buildInvitationRow(Map<String, dynamic> invite) {
+  Widget _buildInvitationRow(
+      Map<String, dynamic> invite, ManagerChromeTheme chrome) {
     final email = invite['invited_email'] ?? 'N/A';
     final company = invite['expected_company'] ?? 'Not specified';
     final status = invite['status'] ?? 'pending';
@@ -1635,31 +1607,34 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
             .format(DateTime.parse(invite['expires_at'].toString()))
         : 'N/A';
 
+    final rowDivider = chrome.isDark
+        ? Colors.white.withValues(alpha: 0.1)
+        : chrome.divider;
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         border: Border(
-          bottom:
-              BorderSide(color: Colors.white.withValues(alpha: 0.1), width: 1),
+          bottom: BorderSide(color: rowDivider, width: 1),
         ),
       ),
       child: Row(
         children: [
           Expanded(
               flex: 3,
-              child: Text(email, style: const TextStyle(color: Colors.white))),
+              child: Text(email, style: TextStyle(color: chrome.textPrimary))),
           Expanded(
               flex: 2,
               child: Text(company,
-                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
+                  style: TextStyle(color: chrome.textSecondary))),
           Expanded(
               flex: 2,
               child: Text(sentDate,
-                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
+                  style: TextStyle(color: chrome.textSecondary))),
           Expanded(
               flex: 2,
               child: Text(expiresDate,
-                  style: const TextStyle(color: Color(0xFFB0BEC5)))),
+                  style: TextStyle(color: chrome.textSecondary))),
           Expanded(
             flex: 1,
             child: Container(
@@ -1706,58 +1681,6 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
     }
   }
 
-  void _handleInvitationAction(
-      String action, Map<String, dynamic> invite) async {
-    final token = AuthService.token;
-    if (token == null) return;
-
-    final inviteId = invite['id'];
-    if (inviteId == null) return;
-
-    switch (action) {
-      case 'resend':
-        final success = await ClientService.resendInvitation(token, inviteId);
-        _showSnackBar(
-          success ? 'Invitation resent!' : 'Failed to resend invitation',
-          isSuccess: success,
-        );
-        if (success) _loadData();
-        break;
-      case 'send_code':
-        final success =
-            await ClientService.sendVerificationCode(token, inviteId);
-        _showSnackBar(
-          success ? 'Verification code sent!' : 'Failed to send code',
-          isSuccess: success,
-        );
-        if (success) _loadData();
-        break;
-      case 'cancel':
-        final success = await ClientService.cancelInvitation(token, inviteId);
-        _showSnackBar(
-          success ? 'Invitation canceled' : 'Failed to cancel invitation',
-          isSuccess: success,
-        );
-        if (success) _loadData();
-        break;
-      case 'delete':
-        final confirmed = await _confirmAction(
-          title: 'Delete Invitation',
-          message:
-              'This will permanently remove the invitation for ${invite['invited_email'] ?? 'this email'}. Continue?',
-          confirmLabel: 'Delete',
-        );
-        if (!confirmed) return;
-        final success = await ClientService.deleteInvitation(token, inviteId);
-        _showSnackBar(
-          success ? 'Invitation deleted' : 'Failed to delete invitation',
-          isSuccess: success,
-        );
-        if (success) _loadData();
-        break;
-    }
-  }
-
   void _showClientMenu(Map<String, dynamic> client) {
     // TODO: Show menu with options (edit, view notes, link proposal, etc.)
     _showSnackBar('Client menu coming soon!');
@@ -1792,58 +1715,5 @@ class _ClientManagementPageState extends State<ClientManagementPage> {
         ],
       ),
     );
-  }
-
-  Future<bool> _confirmAction({
-    required String title,
-    required String message,
-    String confirmLabel = 'Confirm',
-  }) async {
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF0E1726),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: PremiumTheme.error.withValues(alpha: 0.2),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.delete_forever, color: Colors.white),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          message,
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Keep', style: TextStyle(color: Colors.white70)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: PremiumTheme.error,
-              foregroundColor: Colors.white,
-            ),
-            child: Text(confirmLabel),
-          ),
-        ],
-      ),
-    );
-    return result ?? false;
   }
 }

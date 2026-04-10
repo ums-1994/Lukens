@@ -17,6 +17,7 @@ import 'pages/creator/content_library_page.dart';
 import 'pages/creator/templates_page.dart';
 import 'pages/creator/template_builder.dart';
 import 'pages/creator/client_management_page.dart';
+import 'pages/creator/manager_account_profile_page.dart';
 import 'pages/admin/approver_dashboard_page.dart';
 import 'pages/admin/admin_approvals_page.dart';
 import 'pages/admin/proposal_review_page.dart';
@@ -37,6 +38,7 @@ import 'pages/client/client_onboarding_page.dart';
 import 'pages/client/client_dashboard_home.dart';
 import 'pages/finance_manager/finance_analytics.dart';
 import 'pages/admin/analytics_page.dart' as admin;
+import 'pages/admin/admin_history_page.dart';
 import 'pages/admin/ai_configuration_page.dart';
 import 'pages/creator/settings_page.dart';
 import 'pages/shared/cinematic_sequence_page.dart';
@@ -44,6 +46,7 @@ import 'services/auth_service.dart';
 import 'services/role_service.dart';
 import 'api.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'theme/manager_theme_controller.dart';
 
 const String _buildSha =
     String.fromEnvironment('BUILD_SHA', defaultValue: 'dev');
@@ -236,9 +239,82 @@ class MyApp extends StatelessWidget {
       // Extract token from current URL query parameters
       final currentUrl = web.window.location.href;
       final uri = Uri.parse(currentUrl);
-      final token = uri.queryParameters['token'];
+      String? token = uri.queryParameters['token'];
+
+      // If not found in query params, try extracting from hash fragment or full URL
+      if (token == null || token.isEmpty) {
+        final hash = web.window.location.hash;
+        if (hash.contains('token=')) {
+          final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+          if (hashMatch != null) {
+            token = hashMatch.group(1);
+          }
+        }
+        // Try full URL as fallback
+        if (token == null || token.isEmpty) {
+          final urlMatch = RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+          if (urlMatch != null) {
+            token = urlMatch.group(1);
+          }
+        }
+      }
+
+      if (token != null && token.isNotEmpty) {
+        try {
+          token = Uri.decodeComponent(token);
+        } catch (_) {}
+      }
       return MaterialPageRoute(
         builder: (context) => EmailVerificationPage(token: token),
+      );
+    }
+
+    // Handle client dashboard route
+    if (settings.name == '/client/dashboard' ||
+        (settings.name != null &&
+            settings.name!.startsWith('/client/dashboard'))) {
+      final currentUrl = web.window.location.href;
+      final hash = web.window.location.hash;
+      String? token;
+
+      try {
+        final name = settings.name ?? '';
+        final routeUri = Uri.parse(name);
+        token = routeUri.queryParameters['token'];
+      } catch (_) {}
+
+      if (token == null || token.isEmpty) {
+        try {
+          final uri = Uri.parse(currentUrl);
+          token = uri.queryParameters['token'];
+        } catch (_) {}
+      }
+
+      if ((token == null || token.isEmpty) && hash.contains('token=')) {
+        try {
+          final normalizedFragment =
+              hash.startsWith('#') ? hash.substring(1) : hash;
+          final fragmentUri = Uri.parse('http://dummy/$normalizedFragment');
+          token = fragmentUri.queryParameters['token'];
+        } catch (_) {}
+      }
+
+      if (token != null && token.isNotEmpty) {
+        final validToken = token;
+        return MaterialPageRoute(
+          builder: (context) => ClientDashboardHome(
+            initialToken: validToken,
+            initialNavIndex: 0,
+            showSummary: true,
+          ),
+        );
+      }
+
+      return MaterialPageRoute(
+        builder: (context) => const ClientDashboardHome(
+          initialNavIndex: 0,
+          showSummary: true,
+        ),
       );
     }
 
@@ -286,12 +362,74 @@ class MyApp extends StatelessWidget {
       if (token != null && token.isNotEmpty) {
         final validToken = token;
         return MaterialPageRoute(
-          builder: (context) => ClientDashboardHome(initialToken: validToken),
+          builder: (context) => ClientDashboardHome(
+            initialToken: validToken,
+            initialNavIndex: 1,
+            showSummary: false,
+          ),
         );
       }
 
       return MaterialPageRoute(
-        builder: (context) => const ClientDashboardHome(),
+        builder: (context) => const ClientDashboardHome(
+          initialNavIndex: 1,
+          showSummary: false,
+        ),
+      );
+    }
+
+    // Handle client documents route
+    if (settings.name == '/client/documents' ||
+        (settings.name != null &&
+            settings.name!.startsWith('/client/documents'))) {
+      final currentUrl = web.window.location.href;
+      final hash = web.window.location.hash;
+      String? token;
+
+      try {
+        final name = settings.name ?? '';
+        final routeUri = Uri.parse(name);
+        token = routeUri.queryParameters['token'];
+      } catch (_) {
+        // ignore
+      }
+
+      if (token == null || token.isEmpty) {
+        try {
+          final uri = Uri.parse(currentUrl);
+          token = uri.queryParameters['token'];
+        } catch (_) {
+          // ignore
+        }
+      }
+
+      if ((token == null || token.isEmpty) && hash.contains('token=')) {
+        try {
+          final normalizedFragment =
+              hash.startsWith('#') ? hash.substring(1) : hash;
+          final fragmentUri = Uri.parse('http://dummy/$normalizedFragment');
+          token = fragmentUri.queryParameters['token'];
+        } catch (_) {
+          // ignore
+        }
+      }
+
+      if (token != null && token.isNotEmpty) {
+        final validToken = token;
+        return MaterialPageRoute(
+          builder: (context) => ClientDashboardHome(
+            initialToken: validToken,
+            initialNavIndex: 2,
+            showSummary: false,
+          ),
+        );
+      }
+
+      return MaterialPageRoute(
+        builder: (context) => const ClientDashboardHome(
+          initialNavIndex: 2,
+          showSummary: false,
+        ),
       );
     }
 
@@ -308,6 +446,7 @@ class MyApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (context) => AppState()),
         ChangeNotifierProvider(create: (context) => RoleService()),
+        ChangeNotifierProvider(create: (context) => ManagerThemeController()),
       ],
       child: MaterialApp(
         title: 'Lukens',
@@ -322,9 +461,11 @@ class MyApp extends StatelessWidget {
           return Stack(
             children: [
               Positioned.fill(
-                child: Image.asset(
-                  'assets/images/Global BG.jpg',
-                  fit: BoxFit.cover,
+                child: IgnorePointer(
+                  child: Image.asset(
+                    'assets/images/Global BG.jpg',
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
               if (child != null) child,
@@ -367,14 +508,60 @@ class MyApp extends StatelessWidget {
             // This will be handled by onGenerateRoute, but adding as fallback
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
-            final token = uri.queryParameters['token'];
+            String? token = uri.queryParameters['token'];
+
+            if (token == null || token.isEmpty) {
+              final hash = web.window.location.hash;
+              if (hash.contains('token=')) {
+                final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+                if (hashMatch != null) {
+                  token = hashMatch.group(1);
+                }
+              }
+              if (token == null || token.isEmpty) {
+                final urlMatch =
+                    RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+                if (urlMatch != null) {
+                  token = urlMatch.group(1);
+                }
+              }
+            }
+
+            if (token != null && token.isNotEmpty) {
+              try {
+                token = Uri.decodeComponent(token);
+              } catch (_) {}
+            }
             return EmailVerificationPage(token: token);
           },
           '/verify': (context) {
             // Direct verification route
             final currentUrl = web.window.location.href;
             final uri = Uri.parse(currentUrl);
-            final token = uri.queryParameters['token'];
+            String? token = uri.queryParameters['token'];
+
+            if (token == null || token.isEmpty) {
+              final hash = web.window.location.hash;
+              if (hash.contains('token=')) {
+                final hashMatch = RegExp(r'token=([^&#]+)').firstMatch(hash);
+                if (hashMatch != null) {
+                  token = hashMatch.group(1);
+                }
+              }
+              if (token == null || token.isEmpty) {
+                final urlMatch =
+                    RegExp(r'token=([^&#]+)').firstMatch(currentUrl);
+                if (urlMatch != null) {
+                  token = urlMatch.group(1);
+                }
+              }
+            }
+
+            if (token != null && token.isNotEmpty) {
+              try {
+                token = Uri.decodeComponent(token);
+              } catch (_) {}
+            }
             return EmailVerificationPage(token: token);
           },
           '/home': (context) => const DashboardPage(),
@@ -421,6 +608,16 @@ class MyApp extends StatelessWidget {
                   isCollaborator: args['isCollaborator'] ?? false,
                   forceCommentsPanelOpen:
                       args['forceCommentsPanelOpen'] ?? false,
+                  initialCommentId: args['initialCommentId'] is int
+                      ? args['initialCommentId'] as int
+                      : int.tryParse(
+                          args['initialCommentId']?.toString() ?? '',
+                        ),
+                  initialSectionIndex: args['initialSectionIndex'] is int
+                      ? args['initialSectionIndex'] as int
+                      : int.tryParse(
+                          args['initialSectionIndex']?.toString() ?? '',
+                        ),
                 );
               }
             }
@@ -481,16 +678,34 @@ class MyApp extends StatelessWidget {
           '/admin_dashboard': (context) => const ApproverDashboardPage(),
           '/cinematic': (context) => const CinematicSequencePage(),
           '/client_management': (context) => const ClientManagementPage(),
+          '/manager_account_profile': (context) =>
+              const ManagerAccountProfilePage(),
           '/collaboration': (context) =>
               const ClientManagementPage(), // Redirected to Client Management
           // '/collaborate' is handled by onGenerateRoute to extract token
           '/analytics': (context) {
-            final role = context.watch<RoleService>();
-            if (role.isFinance()) {
+            final rawRole =
+                AuthService.currentUser?['role']?.toString().toLowerCase() ??
+                    '';
+            final roleKey = rawRole.trim().replaceAll('-', '_');
+            final isFinance = roleKey.startsWith('finance') ||
+                roleKey == 'financial_manager' ||
+                roleKey == 'finance_manager' ||
+                roleKey == 'financial manager' ||
+                roleKey == 'finance manager';
+            final isAdmin = roleKey == 'admin' || roleKey == 'ceo';
+            if (isFinance) {
               return const FinanceAnalyticsPage();
             }
-            return const admin.AnalyticsPage();
+            if (isAdmin) {
+              return const admin.AnalyticsPage(mode: admin.AnalyticsPageMode.admin);
+            }
+            return const admin.AnalyticsPage(mode: admin.AnalyticsPageMode.creator);
           },
+          '/admin_analytics': (context) {
+            return const admin.AnalyticsPage(mode: admin.AnalyticsPageMode.admin);
+          },
+          '/admin_history': (context) => const AdminHistoryPage(),
           '/approved-proposals': (context) => const ApprovedProposalsPage(),
           '/ai-configuration': (context) => const AIConfigurationPage(),
           '/settings': (context) => const SettingsPage(),
@@ -562,6 +777,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   Future<void> _checkVerificationUrl() async {
     final currentUrl = web.window.location.href;
     final uri = Uri.parse(currentUrl);
+    final hash = web.window.location.hash;
 
     // Check for external Khonobuzz JWT login (source=khonobuzz&token=...)
     final source = uri.queryParameters['source'] ?? '';
@@ -671,6 +887,29 @@ class _AuthWrapperState extends State<AuthWrapper> {
         uri.path.contains('/client/proposals') ||
         uri.fragment.contains('/client/proposals');
 
+    final isClientDashboard = currentUrl.contains('/client/dashboard') ||
+        uri.path.contains('/client/dashboard') ||
+        uri.fragment.contains('/client/dashboard');
+
+    if (isClientDashboard) {
+      final clientToken = _extractTokenFromUrl(currentUrl);
+      if (clientToken != null && clientToken.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ClientDashboardHome(
+                initialToken: clientToken,
+                initialNavIndex: 0,
+                showSummary: true,
+              ),
+            ),
+          );
+        });
+        return;
+      }
+    }
+
     if (isClientProposals) {
       // Preview mode support
       bool isClientPreview = false;
@@ -692,7 +931,10 @@ class _AuthWrapperState extends State<AuthWrapper> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => const ClientDashboardHome(),
+              builder: (context) => const ClientDashboardHome(
+                initialNavIndex: 1,
+                showSummary: false,
+              ),
             ),
           );
         });
@@ -710,8 +952,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) =>
-                  ClientDashboardHome(initialToken: clientToken),
+              builder: (context) => ClientDashboardHome(
+                initialToken: clientToken,
+                initialNavIndex: 1,
+                showSummary: false,
+              ),
             ),
           );
         });
@@ -741,13 +986,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
     final isCollaborationUrl = currentUrl.contains('/collaborate') ||
         uri.path.contains('/collaborate');
 
-    // Check if this is a verification URL (but not onboarding, client proposals, or collaboration)
-    if (!isOnboarding &&
-        !isCollaborationUrl &&
-        uri.queryParameters.containsKey('token')) {
-      final token = uri.queryParameters['token'];
+    // Only treat URLs as email verification when they actually target the
+    // verify-email route. Some external hubs use a generic `token` query param
+    // for their own auth, which should NOT route to email verification.
+    final isVerifyEmailUrl = currentUrl.contains('verify-email') ||
+        uri.path.contains('verify-email') ||
+        hash.contains('verify-email');
+
+    if (!isOnboarding && !isCollaborationUrl && isVerifyEmailUrl) {
+      final token = _extractTokenFromUrl(currentUrl);
       if (token != null && token.isNotEmpty) {
-        // Navigate to verification page
         WidgetsBinding.instance.addPostFrameCallback((_) {
           Navigator.push(
             context,
@@ -832,6 +1080,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
         uri.path.contains('/client/proposals') ||
         uri.fragment.contains('/client/proposals');
 
+    final isClientDashboard = currentUrl.contains('/client/dashboard') ||
+        hash.contains('/client/dashboard') ||
+        uri.path.contains('/client/dashboard') ||
+        uri.fragment.contains('/client/dashboard');
+
     bool isClientPreview = false;
     try {
       isClientPreview = uri.queryParameters['preview'] == '1';
@@ -850,9 +1103,31 @@ class _AuthWrapperState extends State<AuthWrapper> {
           currentUrl.contains('preview=1') || hash.contains('preview=1');
     }
 
+    if (isClientDashboard) {
+      final extractedToken = _extractTokenFromUrl(currentUrl);
+      if (extractedToken != null && extractedToken.isNotEmpty) {
+        String tokenValue = extractedToken;
+        try {
+          tokenValue = Uri.decodeComponent(tokenValue);
+        } catch (_) {}
+        return ClientDashboardHome(
+          initialToken: tokenValue,
+          initialNavIndex: 0,
+          showSummary: true,
+        );
+      }
+      return const ClientDashboardHome(
+        initialNavIndex: 0,
+        showSummary: true,
+      );
+    }
+
     if (isClientProposals) {
       if (isClientPreview) {
-        return const ClientDashboardHome();
+        return const ClientDashboardHome(
+          initialNavIndex: 1,
+          showSummary: false,
+        );
       }
       final extractedToken = _extractTokenFromUrl(currentUrl);
       if (extractedToken != null && extractedToken.isNotEmpty) {
@@ -864,7 +1139,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
         final tokenPreview =
             tokenValue.length >= 10 ? tokenValue.substring(0, 10) : tokenValue;
         print('📍 Client token: $tokenPreview...');
-        return ClientDashboardHome(initialToken: tokenValue);
+        return ClientDashboardHome(
+          initialToken: tokenValue,
+          initialNavIndex: 1,
+          showSummary: false,
+        );
       }
     }
 
