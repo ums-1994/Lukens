@@ -358,9 +358,7 @@ class _DashboardPageState extends State<DashboardPage>
   static bool _notificationIsCommentMessage(Map<String, dynamic> n) {
     final t =
         (n['notification_type'] ?? n['type'] ?? '').toString().toLowerCase();
-    return t.contains('comment') ||
-        t == 'mentioned' ||
-        t.contains('mention');
+    return t.contains('comment') || t == 'mentioned' || t.contains('mention');
   }
 
   static Map<String, dynamic> _asNotificationMap(dynamic raw) {
@@ -405,8 +403,7 @@ class _DashboardPageState extends State<DashboardPage>
     final unread = _unreadNotificationCount(app, messagesOnly: false);
     return _buildIconButton(
       chrome: chrome,
-      assetPath:
-          'assets/images/new icons for manager/notifications.png',
+      assetPath: 'assets/images/new icons for manager/notifications.png',
       badge: unread > 0 ? unread : null,
       onTap: () async {
         await app.fetchNotifications();
@@ -433,11 +430,13 @@ class _DashboardPageState extends State<DashboardPage>
                   _unreadNotificationCount(app, messagesOnly: messagesOnly);
 
               Future<void> markAllInSheet() async {
-                for (final n in List<Map<String, dynamic>>.from(notifications)) {
+                for (final n
+                    in List<Map<String, dynamic>>.from(notifications)) {
                   if (n['is_read'] == true) continue;
                   final idRaw = n['id'];
-                  final id =
-                      idRaw is int ? idRaw : int.tryParse(idRaw?.toString() ?? '');
+                  final id = idRaw is int
+                      ? idRaw
+                      : int.tryParse(idRaw?.toString() ?? '');
                   if (id != null) await app.markNotificationRead(id);
                 }
                 await app.fetchNotifications();
@@ -445,10 +444,12 @@ class _DashboardPageState extends State<DashboardPage>
               }
 
               Future<void> deleteAllInSheet() async {
-                for (final n in List<Map<String, dynamic>>.from(notifications)) {
+                for (final n
+                    in List<Map<String, dynamic>>.from(notifications)) {
                   final idRaw = n['id'];
-                  final id =
-                      idRaw is int ? idRaw : int.tryParse(idRaw?.toString() ?? '');
+                  final id = idRaw is int
+                      ? idRaw
+                      : int.tryParse(idRaw?.toString() ?? '');
                   if (id != null) await app.deleteNotification(id);
                 }
                 await app.fetchNotifications();
@@ -779,7 +780,9 @@ class _DashboardPageState extends State<DashboardPage>
                 });
               },
               child: Icon(
-                chrome.isDark ? Icons.wb_sunny_rounded : Icons.dark_mode_rounded,
+                chrome.isDark
+                    ? Icons.wb_sunny_rounded
+                    : Icons.dark_mode_rounded,
                 color: Colors.white,
               ),
             )
@@ -794,11 +797,8 @@ class _DashboardPageState extends State<DashboardPage>
                     .toString()
                     .toLowerCase()
                     .trim();
-                final isAdmin = role == 'admin' ||
-                    role == 'ceo' ||
-                    role == 'manager' ||
-                    role == 'creator' ||
-                    role == 'financial manager';
+                final isAdmin =
+                    role == 'admin' || role == 'ceo' || role == 'approver';
                 return AppSideNav(
                   isCollapsed: app.isSidebarCollapsed,
                   currentLabel: app.currentNavLabel,
@@ -948,8 +948,7 @@ class _DashboardPageState extends State<DashboardPage>
           ),
           const SizedBox(width: 10),
           PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert,
-                color: chrome.textSecondary, size: 28),
+            icon: Icon(Icons.more_vert, color: chrome.textSecondary, size: 28),
             onSelected: (value) {
               if (value == 'logout') {
                 app.logout();
@@ -1261,7 +1260,6 @@ class _DashboardPageState extends State<DashboardPage>
                 decoration: BoxDecoration(
                   color: _getItemColor(isSelected, hovering, isCollapsed),
                   borderRadius: BorderRadius.circular(10),
-                  
                 ),
                 child: isCollapsed
                     ? _buildCollapsedItem(
@@ -1515,8 +1513,7 @@ class _DashboardPageState extends State<DashboardPage>
   // Legacy wrapper kept for CEO/Client dashboard branches
   Widget _buildSection(
       String title, Widget content, ManagerChromeTheme chrome) {
-    return _buildDashboardSection(
-        title: title, child: content, chrome: chrome);
+    return _buildDashboardSection(title: title, child: content, chrome: chrome);
   }
 
   Widget _buildDashboardSection({
@@ -1977,7 +1974,8 @@ class _DashboardPageState extends State<DashboardPage>
         chrome: chrome,
         iconAsset: 'assets/images/new icons for manager/risk_gate_tab.png',
         title: 'AI-Powered Compound Risk Gate',
-        subtitle: 'AI analyses multiple small deviations and flags combined risks.',
+        subtitle:
+            'AI analyses multiple small deviations and flags combined risks.',
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 32),
@@ -2026,10 +2024,12 @@ class _DashboardPageState extends State<DashboardPage>
       chrome: chrome,
       iconAsset: 'assets/images/new icons for manager/risk_gate_tab.png',
       title: 'AI-Powered Compound Risk Gate',
-      subtitle: 'AI analyses multiple small deviations and flags combined risks.',
+      subtitle:
+          'AI analyses multiple small deviations and flags combined risks.',
       badge: _riskItems.isNotEmpty ? _riskItems.length : null,
       child: Column(
-        children: _riskItems.map((risk) => _buildRiskItem(risk, chrome)).toList(),
+        children:
+            _riskItems.map((risk) => _buildRiskItem(risk, chrome)).toList(),
       ),
     );
   }
@@ -2260,13 +2260,11 @@ class _DashboardPageState extends State<DashboardPage>
             child: Center(
               child: Column(
                 children: [
-                  Icon(Icons.inbox_outlined,
-                      size: 64, color: chrome.textMuted),
+                  Icon(Icons.inbox_outlined, size: 64, color: chrome.textMuted),
                   const SizedBox(height: 12),
                   Text(
                     'No proposals found',
-                    style: TextStyle(
-                        fontSize: 16, color: chrome.textSecondary),
+                    style: TextStyle(fontSize: 16, color: chrome.textSecondary),
                   ),
                 ],
               ),
@@ -2327,8 +2325,8 @@ class _DashboardPageState extends State<DashboardPage>
         (proposal['client_name'] ?? proposal['client'] ?? '').toString().trim();
     final isSentToClient = status.toLowerCase() == 'sent to client';
     final proposalId = proposal['id']?.toString();
-    final selected = proposalId != null &&
-        _selectedRecentProposalIds.contains(proposalId);
+    final selected =
+        proposalId != null && _selectedRecentProposalIds.contains(proposalId);
 
     // Read-only for statuses where editing is not allowed
     final editableStatuses = {'draft', 'changes requested'};
@@ -2464,8 +2462,8 @@ class _DashboardPageState extends State<DashboardPage>
               borderRadius: BorderRadius.circular(10),
               child: Padding(
                 padding: const EdgeInsets.all(4),
-                child: Icon(Icons.insights,
-                    size: 24, color: chrome.textSecondary),
+                child:
+                    Icon(Icons.insights, size: 24, color: chrome.textSecondary),
               ),
             ),
           ],
@@ -2552,8 +2550,7 @@ class _DashboardPageState extends State<DashboardPage>
   Widget _buildSystemComponents(ManagerChromeTheme chrome) {
     final components = [
       {
-        'icon':
-            'assets/images/new icons for manager/Template_li`brary_tab.png',
+        'icon': 'assets/images/new icons for manager/Template_li`brary_tab.png',
         'label': 'Template Library',
       },
       {
@@ -2889,7 +2886,8 @@ class _DashboardPageState extends State<DashboardPage>
                     iconAsset:
                         'assets/images/new icons for manager/available_tools.png',
                     title: 'Available Tools',
-                    subtitle: 'Additional description can be included if required.',
+                    subtitle:
+                        'Additional description can be included if required.',
                     child: _buildSystemComponents(chrome),
                   ),
                 ],
@@ -2906,7 +2904,8 @@ class _DashboardPageState extends State<DashboardPage>
                     iconAsset:
                         'assets/images/new icons for manager/proposal_workflow.png',
                     title: 'Proposal Workflow',
-                    subtitle: 'Additional description can be included if required.',
+                    subtitle:
+                        'Additional description can be included if required.',
                     child: _buildWorkflow(context, chrome),
                   ),
                   const SizedBox(height: 16),
@@ -2979,8 +2978,7 @@ class _DashboardPageState extends State<DashboardPage>
                   child: Center(
                     child: Column(
                       children: [
-                        Icon(Icons.inbox,
-                            size: 64, color: chrome.textMuted),
+                        Icon(Icons.inbox, size: 64, color: chrome.textMuted),
                         const SizedBox(height: 16),
                         Text(
                           'No proposals yet',

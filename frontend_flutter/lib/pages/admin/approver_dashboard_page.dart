@@ -509,38 +509,40 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     final displayRole =
         backendRole == 'admin' || backendRole == 'ceo' ? 'Admin' : 'Admin';
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Operations Control Center',
-              style: PremiumTheme.titleLarge,
+    Widget left() {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Operations Control Center',
+            style: PremiumTheme.titleLarge,
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Monitor pipeline health, governance, and priority actions',
+            style: TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+        ],
+      );
+    }
+
+    Widget right() {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildNotificationBell(app),
+          const SizedBox(width: 12),
+          ClipOval(
+            child: Image.asset(
+              'assets/images/User_Profile.png',
+              width: 48,
+              height: 48,
+              fit: BoxFit.cover,
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Monitor pipeline health, governance, and priority actions',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
-          ],
-        ),
-        Row(
-          children: [
-            _buildNotificationBell(app),
-            const SizedBox(width: 12),
-            ClipOval(
-              child: Image.asset(
-                'assets/images/User_Profile.png',
-                width: 48,
-                height: 48,
-                fit: BoxFit.cover,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Column(
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -550,16 +552,46 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 Text(
                   displayRole,
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
+          ),
+        ],
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final stacked = constraints.maxWidth < 980;
+        if (stacked) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              left(),
+              const SizedBox(height: 12),
+              Align(alignment: Alignment.centerLeft, child: right()),
+            ],
+          );
+        }
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            left(),
+            const SizedBox(width: 16),
+            right(),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -1998,19 +2030,48 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
     if (value == null) return null;
     if (value is num) return value.toDouble();
     if (value is String && value.trim().isNotEmpty) {
-      return double.tryParse(value.trim());
+      final cleaned = value.trim().replaceAll('%', '');
+      return double.tryParse(cleaned);
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? _extractRiskGateObject(Map<String, dynamic> proposal) {
+    final raw = proposal['risk_gate'] ??
+        proposal['riskGate'] ??
+        proposal['risk_analysis'] ??
+        proposal['riskAnalysis'] ??
+        proposal['riskResult'] ??
+        proposal['risk_result'];
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is String && raw.trim().isNotEmpty) {
+      try {
+        final decoded = json.decode(raw);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {
+        return null;
+      }
     }
     return null;
   }
 
   double? _extractRiskScore(Map<String, dynamic> proposal) {
+    final gate = _extractRiskGateObject(proposal);
     final raw = proposal['risk_score'] ??
         proposal['riskScore'] ??
         proposal['risk'] ??
         proposal['risk_percent'] ??
         proposal['riskPercent'] ??
         proposal['risk_rating'] ??
-        proposal['riskRating'];
+        proposal['riskRating'] ??
+        gate?['risk_score'] ??
+        gate?['riskScore'] ??
+        gate?['score'] ??
+        gate?['risk'] ??
+        gate?['risk_percent'] ??
+        gate?['riskPercent'];
     final parsed = _parseDouble(raw);
     if (parsed == null) return null;
 
@@ -2020,7 +2081,16 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
   }
 
   String _extractRiskLevel(Map<String, dynamic> proposal) {
-    return (proposal['risk_level'] ?? proposal['riskLevel'] ?? proposal['riskLevelLabel'] ?? '')
+    final gate = _extractRiskGateObject(proposal);
+    return (proposal['risk_level'] ??
+            proposal['riskLevel'] ??
+            proposal['riskLevelLabel'] ??
+            gate?['risk_level'] ??
+            gate?['riskLevel'] ??
+            gate?['level'] ??
+            gate?['risk_level_label'] ??
+            gate?['riskLevelLabel'] ??
+            '')
         .toString()
         .toLowerCase()
         .trim();
@@ -2053,15 +2123,10 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
       case 'Analytics':
       case 'All analytics':
       case 'My analytics':
-        Navigator.pushReplacementNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/admin_analytics');
         break;
       case 'History':
-        // History of approvals also uses the admin approvals view
-        Navigator.pushReplacementNamed(
-          context,
-          '/admin_approvals',
-          arguments: const {'initialFilter': 'approved'},
-        );
+        Navigator.pushReplacementNamed(context, '/admin_history');
         break;
       case 'Content Library':
         Navigator.pushNamed(context, '/content_library');

@@ -1565,14 +1565,10 @@ class _ProposalReviewPageState extends State<ProposalReviewPage> {
         );
         break;
       case 'Analytics':
-        Navigator.pushReplacementNamed(context, '/analytics');
+        Navigator.pushReplacementNamed(context, '/admin_analytics');
         break;
       case 'History':
-        Navigator.pushReplacementNamed(
-          context,
-          '/admin_approvals',
-          arguments: const {'initialFilter': 'approved'},
-        );
+        Navigator.pushReplacementNamed(context, '/admin_history');
         break;
       case 'Sign Out':
         AuthService.logout();

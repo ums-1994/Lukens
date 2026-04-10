@@ -968,7 +968,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             ),
             if (!_isSidebarCollapsed)
               Container(
-                margin: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                margin:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                 height: 1,
                 color: Colors.white.withValues(alpha: 0.14),
               ),
@@ -1014,7 +1015,8 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   }) {
     final bool selected = _selectedNavIndex == index;
     final bool isHovering = _hoverSidebarIndex == index;
-    final int badgeCount = label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
+    final int badgeCount =
+        label == 'Proposals' ? _proposalsRequiringActionCount() : 0;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hoverSidebarIndex = index),
@@ -1117,7 +1119,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             return Container(
               color: const Color(0xFF2A2A2A),
               child: SingleChildScrollView(
-                child: Column(
+                  child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 14),
@@ -1501,258 +1503,262 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
             ],
           ),
           child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  listTitle,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-              if (_selectedNavIndex == 0)
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _dashboardDocFilter = 'all';
-                    });
-                  },
-                  child: const Text('View All'),
-                ),
-              Text(
-                '${docs.length}',
-                style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.70), fontSize: 12),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (_selectedNavIndex == 0)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
+              Row(
                 children: [
-                  _filterChip('View All', 'all'),
-                  const SizedBox(width: 10),
-                  _filterChip('Released', 'released'),
-                  const SizedBox(width: 10),
-                  _filterChip('Signed', 'signed'),
-                  const SizedBox(width: 10),
-                  _filterChip('Changes Requested', 'changes_requested'),
+                  Expanded(
+                    child: Text(
+                      listTitle,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  if (_selectedNavIndex == 0)
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _dashboardDocFilter = 'all';
+                        });
+                      },
+                      child: const Text('View All'),
+                    ),
+                  Text(
+                    '${docs.length}',
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.70),
+                        fontSize: 12),
+                  ),
                 ],
               ),
-            ),
-          if (_selectedNavIndex == 0) const SizedBox(height: 12),
-          if (docs.isEmpty)
-            Text(
-              isDocumentsTab
-                  ? 'No signed documents available yet.'
-                  : isProposalsTab
-                      ? 'No proposals are currently awaiting signature.'
-                      : 'No documents available for this link.',
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
-            )
-          else
-            ListView.separated(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: docs.length > 6 ? 6 : docs.length,
-              separatorBuilder: (_, __) => Divider(
-                height: 14,
-                color: Colors.white.withValues(alpha: 0.08),
-              ),
-              itemBuilder: (context, index) {
-                final doc = docs[index];
-                final selected = _selectedDocument?['id']?.toString() ==
-                    doc['id']?.toString();
-                final status = (doc['status'] ?? '').toString();
-
-                Widget _statusChip(String rawStatus) {
-                  final normalizedLabel = _normalizeStatus(rawStatus);
-                  final lower = normalizedLabel.toLowerCase().trim();
-                  Color bg = Colors.white.withValues(alpha: 0.10);
-                  Color fg = Colors.white;
-                  String label = normalizedLabel.isEmpty
-                      ? (rawStatus.isEmpty ? 'Unknown' : rawStatus)
-                      : normalizedLabel;
-                  double chipWidth = 87.89;
-
-                  if (lower.contains('signed')) {
-                    bg = const Color(0xFF6CA510);
-                    fg = Colors.white;
-                    chipWidth = 87.89;
-                  } else if (lower.contains('pending') ||
-                      lower.contains('released') ||
-                      lower.contains('sent for signature') ||
-                      lower.contains('in review')) {
-                    bg = const Color(0xFFEA990C);
-                    fg = Colors.white;
-                    chipWidth = 88.51;
-                    if (lower.contains('pending')) {
-                      label = 'Request Sent';
-                    }
-                  } else if (lower.contains('rejected') ||
-                      lower.contains('declined')) {
-                    bg = const Color(0xFFE74C3C);
-                    fg = Colors.white;
-                    chipWidth = 88.51;
-                  }
-
-                  return SizedBox(
-                    width: chipWidth,
-                    height: 23.36,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                          color: bg, borderRadius: BorderRadius.circular(26.06)),
-                      child: Center(
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: fg,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            height: 1.0,
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }
-
-                Widget _viewChip(VoidCallback onPressed) {
-                  return SizedBox(
-                    width: 48.56,
-                    height: 23.36,
-                    child: TextButton(
-                      style: TextButton.styleFrom(
-                        backgroundColor: const Color(0xFF7F7F7F),
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.zero,
-                        minimumSize: const Size(48.56, 23.36),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(26.06),
-                        ),
-                      ),
-                      onPressed: onPressed,
-                      child: const Text(
-                        'VIEW',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          height: 1.0,
-                        ),
-                      ),
-                    ),
-                  );
-                }
-
-                return InkWell(
-                  onTap: () {
-                    setState(() {
-                      _selectedDocument = doc;
-                    });
-                  },
+              const SizedBox(height: 12),
+              if (_selectedNavIndex == 0)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      Icon(
-                        selected
-                            ? Icons.check_box
-                            : Icons.check_box_outline_blank,
-                        color:
-                            selected ? Colors.lightBlueAccent : Colors.white70,
-                        size: 18,
-                      ),
+                      _filterChip('View All', 'all'),
                       const SizedBox(width: 10),
-                      Expanded(
-                        child: Builder(
-                          builder: (context) {
-                            final lead = '${_documentLabel(doc)} #${doc['id']}';
-                            final rawTitle =
-                                (doc['title'] ?? 'Untitled').toString();
-
-                            // Figma text treatment: lead is bold small-caps, project part is italic.
-                            return SizedBox(
-                              height: 18.44,
-                              child: RichText(
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                text: TextSpan(
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontFamily: 'Poppins',
-                                    fontSize: 9.22,
-                                    height: 1.0174,
-                                    letterSpacing: 0.0922,
-                                  ),
-                                  children: [
-                                    TextSpan(
-                                      text: '$lead ',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontFeatures: [
-                                          ui.FontFeature.enable('smcp')
-                                        ],
-                                      ),
-                                    ),
-                                    TextSpan(
-                                      text: '- $rawTitle',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w500,
-                                        fontStyle: FontStyle.italic,
-                                        fontFeatures: [
-                                          ui.FontFeature.enable('smcp')
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      if (isDocumentsTab)
-                        TextButton(
-                          onPressed: () => _downloadPdfForDocument(doc),
-                          child: const Text('Download'),
-                        )
-                      else if (isProposalsTab)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _statusChip(status),
-                            const SizedBox(width: 7.84),
-                            _viewChip(() {
-                              setState(() {
-                                _selectedDocument = doc;
-                              });
-                              _openSigningUrl(doc);
-                            }),
-                          ],
-                        )
-                      else
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _statusChip(status),
-                            const SizedBox(width: 7.84),
-                            _viewChip(() => _openProposal(doc)),
-                          ],
-                        ),
+                      _filterChip('Released', 'released'),
+                      const SizedBox(width: 10),
+                      _filterChip('Signed', 'signed'),
+                      const SizedBox(width: 10),
+                      _filterChip('Changes Requested', 'changes_requested'),
                     ],
                   ),
-                );
-              },
-            ),
-        ],
+                ),
+              if (_selectedNavIndex == 0) const SizedBox(height: 12),
+              if (docs.isEmpty)
+                Text(
+                  isDocumentsTab
+                      ? 'No signed documents available yet.'
+                      : isProposalsTab
+                          ? 'No proposals are currently awaiting signature.'
+                          : 'No documents available for this link.',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.70)),
+                )
+              else
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: docs.length > 6 ? 6 : docs.length,
+                  separatorBuilder: (_, __) => Divider(
+                    height: 14,
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
+                  itemBuilder: (context, index) {
+                    final doc = docs[index];
+                    final selected = _selectedDocument?['id']?.toString() ==
+                        doc['id']?.toString();
+                    final status = (doc['status'] ?? '').toString();
+
+                    Widget _statusChip(String rawStatus) {
+                      final normalizedLabel = _normalizeStatus(rawStatus);
+                      final lower = normalizedLabel.toLowerCase().trim();
+                      Color bg = Colors.white.withValues(alpha: 0.10);
+                      Color fg = Colors.white;
+                      String label = normalizedLabel.isEmpty
+                          ? (rawStatus.isEmpty ? 'Unknown' : rawStatus)
+                          : normalizedLabel;
+                      double chipWidth = 87.89;
+
+                      if (lower.contains('signed')) {
+                        bg = const Color(0xFF6CA510);
+                        fg = Colors.white;
+                        chipWidth = 87.89;
+                      } else if (lower.contains('pending') ||
+                          lower.contains('released') ||
+                          lower.contains('sent for signature') ||
+                          lower.contains('in review')) {
+                        bg = const Color(0xFFEA990C);
+                        fg = Colors.white;
+                        chipWidth = 88.51;
+                        if (lower.contains('pending')) {
+                          label = 'Request Sent';
+                        }
+                      } else if (lower.contains('rejected') ||
+                          lower.contains('declined')) {
+                        bg = const Color(0xFFE74C3C);
+                        fg = Colors.white;
+                        chipWidth = 88.51;
+                      }
+
+                      return SizedBox(
+                        width: chipWidth,
+                        height: 23.36,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                              color: bg,
+                              borderRadius: BorderRadius.circular(26.06)),
+                          child: Center(
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: fg,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                height: 1.0,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    Widget _viewChip(VoidCallback onPressed) {
+                      return SizedBox(
+                        width: 48.56,
+                        height: 23.36,
+                        child: TextButton(
+                          style: TextButton.styleFrom(
+                            backgroundColor: const Color(0xFF7F7F7F),
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(48.56, 23.36),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(26.06),
+                            ),
+                          ),
+                          onPressed: onPressed,
+                          child: const Text(
+                            'VIEW',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              height: 1.0,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedDocument = doc;
+                        });
+                      },
+                      child: Row(
+                        children: [
+                          Icon(
+                            selected
+                                ? Icons.check_box
+                                : Icons.check_box_outline_blank,
+                            color: selected
+                                ? Colors.lightBlueAccent
+                                : Colors.white70,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Builder(
+                              builder: (context) {
+                                final lead =
+                                    '${_documentLabel(doc)} #${doc['id']}';
+                                final rawTitle =
+                                    (doc['title'] ?? 'Untitled').toString();
+
+                                // Figma text treatment: lead is bold small-caps, project part is italic.
+                                return SizedBox(
+                                  height: 18.44,
+                                  child: RichText(
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    text: TextSpan(
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontFamily: 'Poppins',
+                                        fontSize: 9.22,
+                                        height: 1.0174,
+                                        letterSpacing: 0.0922,
+                                      ),
+                                      children: [
+                                        TextSpan(
+                                          text: '$lead ',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontFeatures: [
+                                              ui.FontFeature.enable('smcp')
+                                            ],
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: '- $rawTitle',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w500,
+                                            fontStyle: FontStyle.italic,
+                                            fontFeatures: [
+                                              ui.FontFeature.enable('smcp')
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                          if (isDocumentsTab)
+                            TextButton(
+                              onPressed: () => _downloadPdfForDocument(doc),
+                              child: const Text('Download'),
+                            )
+                          else if (isProposalsTab)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _statusChip(status),
+                                const SizedBox(width: 7.84),
+                                _viewChip(() {
+                                  setState(() {
+                                    _selectedDocument = doc;
+                                  });
+                                  _openSigningUrl(doc);
+                                }),
+                              ],
+                            )
+                          else
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _statusChip(status),
+                                const SizedBox(width: 7.84),
+                                _viewChip(() => _openProposal(doc)),
+                              ],
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+            ],
           ),
         ),
       ),
@@ -2074,8 +2080,10 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildSummaryTiles(),
-          const SizedBox(height: 16),
+          if (widget.showSummary) ...[
+            _buildSummaryTiles(),
+            const SizedBox(height: 16),
+          ],
           _buildRecentDocuments(),
         ],
       );
@@ -3680,21 +3688,7 @@ class _ClientDashboardHomeState extends State<ClientDashboardHome> {
   String _formatDate(dynamic date) {
     if (date == null) return 'N/A';
     try {
-      final raw = date.toString();
-      final hasTimezone = RegExp(r'(Z|[+-]\d{2}:\d{2})$').hasMatch(raw);
-      final parsedRaw = DateTime.parse(raw);
-      final dt = hasTimezone
-          ? parsedRaw.toLocal()
-          : DateTime.utc(
-              parsedRaw.year,
-              parsedRaw.month,
-              parsedRaw.day,
-              parsedRaw.hour,
-              parsedRaw.minute,
-              parsedRaw.second,
-              parsedRaw.millisecond,
-              parsedRaw.microsecond,
-            ).toLocal();
+      final dt = DateTime.parse(date.toString());
       final now = DateTime.now();
       final diff = now.difference(dt);
 

@@ -6087,14 +6087,13 @@ class _BlankDocumentEditorPageState extends State<BlankDocumentEditorPage> {
         );
         break;
       case 'Analytics':
-        Navigator.pushReplacementNamed(context, '/analytics');
-        break;
-      case 'History':
         Navigator.pushReplacementNamed(
           context,
-          '/admin_approvals',
-          arguments: const {'initialFilter': 'approved'},
+          isAdmin ? '/admin_analytics' : '/analytics',
         );
+        break;
+      case 'History':
+        Navigator.pushReplacementNamed(context, '/admin_history');
         break;
       case 'Proposals for Review':
         Navigator.pushReplacementNamed(context, '/approver_dashboard');

@@ -19,8 +19,19 @@ import '../../widgets/admin/admin_sidebar.dart';
 import '../../widgets/manager_page_background.dart';
 import '../creator/widgets/completion_rates_widget.dart';
 
+enum AnalyticsPageMode {
+  auto,
+  creator,
+  admin,
+}
+
 class AnalyticsPage extends StatefulWidget {
-  const AnalyticsPage({super.key});
+  const AnalyticsPage({
+    super.key,
+    this.mode = AnalyticsPageMode.auto,
+  });
+
+  final AnalyticsPageMode mode;
 
   @override
   State<AnalyticsPage> createState() => _AnalyticsPageState();
@@ -54,10 +65,21 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   );
   static const _currencySymbol = 'R';
 
+  bool get _effectiveIsAdmin {
+    switch (widget.mode) {
+      case AnalyticsPageMode.admin:
+        return true;
+      case AnalyticsPageMode.creator:
+        return false;
+      case AnalyticsPageMode.auto:
+        return _isAdminUser();
+    }
+  }
+
   String _resolvedScopeForCurrentUser() {
     // Prevent empty analytics caused by invalid scope/role combinations.
     final selected = _cycleTimeScope.trim().toLowerCase();
-    if (_isAdminUser()) {
+    if (_effectiveIsAdmin) {
       return selected.isEmpty ? 'all' : selected;
     }
     if (selected == 'all') return 'self';
@@ -67,8 +89,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   @override
   void initState() {
     super.initState();
-    if (_isAdminUser()) {
+    if (_effectiveIsAdmin) {
       _cycleTimeScope = 'all';
+    } else {
+      _cycleTimeScope = 'self';
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final app = context.read<AppState>();
@@ -2390,398 +2414,375 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final filtered = _filterProposals(app.proposals);
     final analytics = _calculateAnalytics(filtered);
     final metrics = _buildMetricCards(analytics);
-    final isAdminUser = _isAdminUser();
+    final isAdminUser = _effectiveIsAdmin;
+
     _calculatePipelineCounts(filtered);
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: ManagerPageBackground(
-        child: Row(
-          children: [
-            isAdminUser
-                ? AdminSidebar(
-                    isCollapsed: sidebarCollapsed,
-                    currentPage: 'Analytics',
-                    onToggle: app.toggleAdminSidebar,
-                    onSelect: (label) {
-                      app.setAdminNavLabel(label);
-                      _navigatePage(label);
-                    },
-                  )
-                : AppSideNav(
-                    isCollapsed: app.isSidebarCollapsed,
-                    currentLabel: 'Analytics (My Pipeline)',
-                    isAdmin: false,
-                    onToggle: app.toggleSidebar,
-                    onSelect: _navigatePage,
-                  ),
-            Expanded(
-              child: CustomScrollbar(
-                controller: _scrollController,
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.only(right: 24),
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Column(
+
+    final analyticsContent = CustomScrollbar(
+      controller: _scrollController,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        padding: const EdgeInsets.only(right: 24),
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 900;
+                  final actions = Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _buildGlassDropdown(),
+                      _buildGlassButton(
+                        'Refresh',
+                        Icons.refresh,
+                        () async {
+                          await context.read<AppState>().fetchProposals();
+                          if (!mounted) return;
+                          setState(() {
+                            _cycleTimeRefreshTick++;
+                          });
+                        },
+                      ),
+                      _buildGlassButton(
+                        'Export',
+                        Icons.download,
+                        _showExportDialog,
+                      ),
+                    ],
+                  );
+
+                  if (compact) {
+                    return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            final compact = constraints.maxWidth < 900;
-                            final actions = Wrap(
-                              spacing: 12,
-                              runSpacing: 12,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                _buildGlassDropdown(),
-                                _buildGlassButton(
-                                  'Refresh',
-                                  Icons.refresh,
-                                  () async {
-                                    await context
-                                        .read<AppState>()
-                                        .fetchProposals();
-                                    if (!mounted) return;
-                                    setState(() {
-                                      _cycleTimeRefreshTick++;
-                                    });
-                                  },
-                                ),
-                                _buildGlassButton(
-                                  'Export',
-                                  Icons.download,
-                                  _showExportDialog,
-                                ),
-                              ],
-                            );
-
-                            if (compact) {
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Analytics Dashboard',
-                                    style: PremiumTheme.displayMedium
-                                        .copyWith(fontSize: 28),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Comprehensive business intelligence and performance metrics',
-                                    style: PremiumTheme.bodyLarge.copyWith(
-                                      color: PremiumTheme.textSecondary,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  actions,
-                                ],
-                              );
-                            }
-
-                            return Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Analytics Dashboard',
-                                      style: PremiumTheme.displayMedium
-                                          .copyWith(fontSize: 28),
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'Comprehensive business intelligence and performance metrics',
-                                      style: PremiumTheme.bodyLarge.copyWith(
-                                        color: PremiumTheme.textSecondary,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                actions,
-                              ],
-                            );
-                          },
+                        Text(
+                          'Analytics Dashboard',
+                          style: PremiumTheme.displayMedium.copyWith(
+                            fontSize: 28,
+                          ),
                         ),
-                        const SizedBox(height: 32),
-                        _buildGlobalFilterBar(),
-                        const SizedBox(height: 24),
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            final compact = constraints.maxWidth < 900;
-                            if (compact) {
-                              return Column(
-                                children: [
-                                  for (int i = 0; i < metrics.length; i++) ...[
-                                    _buildGlassMetricCard(
-                                      metrics[i].title,
-                                      metrics[i].value,
-                                      metrics[i].change,
-                                      metrics[i].isPositive,
-                                      metrics[i].subtitle,
-                                    ),
-                                    if (i != metrics.length - 1)
-                                      const SizedBox(height: 20),
-                                  ],
-                                ],
-                              );
-                            }
+                        const SizedBox(height: 8),
+                        Text(
+                          'Comprehensive business intelligence and performance metrics',
+                          style: PremiumTheme.bodyLarge.copyWith(
+                            color: PremiumTheme.textSecondary,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        actions,
+                      ],
+                    );
+                  }
 
-                            return Row(
-                              children: [
-                                for (int i = 0; i < metrics.length; i++) ...[
-                                  Expanded(
-                                    child: _buildGlassMetricCard(
-                                      metrics[i].title,
-                                      metrics[i].value,
-                                      metrics[i].change,
-                                      metrics[i].isPositive,
-                                      metrics[i].subtitle,
-                                    ),
-                                  ),
-                                  if (i != metrics.length - 1)
-                                    const SizedBox(width: 20),
-                                ],
-                              ],
-                            );
-                          },
+                  return Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Analytics Dashboard',
+                            style: PremiumTheme.displayMedium.copyWith(
+                              fontSize: 28,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Comprehensive business intelligence and performance metrics',
+                            style: PremiumTheme.bodyLarge.copyWith(
+                              color: PremiumTheme.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      actions,
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 32),
+              _buildGlobalFilterBar(),
+              const SizedBox(height: 24),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 900;
+                  if (compact) {
+                    return Column(
+                      children: [
+                        for (int i = 0; i < metrics.length; i++) ...[
+                          _buildGlassMetricCard(
+                            metrics[i].title,
+                            metrics[i].value,
+                            metrics[i].change,
+                            metrics[i].isPositive,
+                            metrics[i].subtitle,
+                          ),
+                          if (i != metrics.length - 1)
+                            const SizedBox(height: 20),
+                        ],
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      for (int i = 0; i < metrics.length; i++) ...[
+                        Expanded(
+                          child: _buildGlassMetricCard(
+                            metrics[i].title,
+                            metrics[i].value,
+                            metrics[i].change,
+                            metrics[i].isPositive,
+                            metrics[i].subtitle,
+                          ),
                         ),
-                        const SizedBox(height: 32),
-                        _buildGlassChartCard(
-                          'Revenue Analytics',
-                          _buildRevenueChart(analytics.monthlyPoints),
-                          height: 350,
-                        ),
-                        const SizedBox(height: 32),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        if (i != metrics.length - 1)
+                          const SizedBox(width: 20),
+                      ],
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 32),
+              _buildGlassChartCard(
+                'Revenue Analytics',
+                _buildRevenueChart(analytics.monthlyPoints),
+                height: 350,
+              ),
+              const SizedBox(height: 32),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: FutureBuilder<Map<String, dynamic>?>(
+                      key: ValueKey(
+                        'pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}',
+                      ),
+                      future: _fetchPipelineBundle(),
+                      builder: (context, snapshot) {
+                        final waiting =
+                            snapshot.connectionState == ConnectionState.waiting;
+                        final hasError = snapshot.hasError;
+                        final bundle = snapshot.data;
+                        final pipelineData =
+                            (bundle?['pipeline'] as Map?)?.cast<String, dynamic>();
+
+                        Widget pipelineBody;
+                        if (waiting) {
+                          pipelineBody = const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        } else if (hasError || pipelineData == null) {
+                          pipelineBody = Center(
+                            child: Text(
+                              'Failed to load pipeline view.',
+                              style: PremiumTheme.bodyMedium
+                                  .copyWith(color: Colors.white70),
+                            ),
+                          );
+                        } else {
+                          pipelineBody = _buildProposalPipelineView(pipelineData);
+                        }
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Expanded(
-                              child: FutureBuilder<Map<String, dynamic>?>(
-                                key: ValueKey(
-                                    'pipeline_bundle_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_cycleTimeScope}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_pipelineStageFilter ?? ''}'),
-                                future: _fetchPipelineBundle(),
-                                builder: (context, snapshot) {
-                                  final waiting = snapshot.connectionState ==
-                                      ConnectionState.waiting;
-                                  final hasError = snapshot.hasError;
-                                  final bundle = snapshot.data;
-                                  final pipelineData =
-                                      (bundle?['pipeline'] as Map?)
-                                          ?.cast<String, dynamic>();
-                                  (bundle?['completion_rates'] as Map?)
-                                      ?.cast<String, dynamic>();
-
-                                  Widget pipelineBody;
-                                  if (waiting) {
-                                    pipelineBody = const Center(
-                                      child: CircularProgressIndicator(),
-                                    );
-                                  } else if (hasError) {
-                                    pipelineBody = Center(
-                                      child: Text(
-                                        'Failed to load pipeline view.',
-                                        style: PremiumTheme.bodyMedium
-                                            .copyWith(color: Colors.white70),
-                                      ),
-                                    );
-                                  } else if (pipelineData == null) {
-                                    pipelineBody = Center(
-                                      child: Text(
-                                        'Failed to load pipeline view.',
-                                        style: PremiumTheme.bodyMedium
-                                            .copyWith(color: Colors.white70),
-                                      ),
-                                    );
-                                  } else {
-                                    pipelineBody = _buildProposalPipelineView(
-                                        pipelineData);
-                                  }
-
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      _buildGlassChartCard(
-                                        'Proposal Pipeline View',
-                                        pipelineBody,
-                                        height: 520,
-                                      ),
-                                      const SizedBox(height: 32),
-                                      CompletionRatesWidget(
-                                        onOpenProposal: (id, status, title) =>
-                                            Navigator.pushNamed(
-                                          context,
-                                          '/blank-document',
-                                          arguments: {
-                                            'proposalId': id.toString(),
-                                            'proposalTitle': title,
-                                            'readOnly': false,
-                                          },
-                                        ),
-                                      ),
-                                    ],
-                                  );
+                            _buildGlassChartCard(
+                              'Proposal Pipeline View',
+                              pipelineBody,
+                              height: 520,
+                            ),
+                            const SizedBox(height: 32),
+                            CompletionRatesWidget(
+                              onOpenProposal: (id, status, title) =>
+                                  Navigator.pushNamed(
+                                context,
+                                '/blank-document',
+                                arguments: {
+                                  'proposalId': id.toString(),
+                                  'proposalTitle': title,
+                                  'readOnly': false,
                                 },
                               ),
                             ),
                           ],
-                        ),
-                        const SizedBox(height: 32),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: _buildGlassChartCard(
-                                'Proposal Status',
-                                _buildProposalStatusChart(
-                                    analytics.statusCounts),
-                                height: 320,
-                              ),
-                            ),
-                            const SizedBox(width: 20),
-                            Expanded(
-                              child: _buildGlassChartCard(
-                                'Win Rate',
-                                _buildWinRatePieChart(
-                                    analytics.winRate, analytics.lossRate),
-                                height: 320,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 32),
-                        _buildGlassChartCard(
-                          'Risk Gate',
-                          FutureBuilder<Map<String, dynamic>?>(
-                            key: ValueKey(
-                                'risk_gate_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
-                            future: _fetchRiskGateSummary(),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Center(
-                                    child: CircularProgressIndicator());
-                              }
-                              if (snapshot.hasError) {
-                                return Center(
-                                  child: Text(
-                                    'Failed to load risk gate summary.',
-                                    style: PremiumTheme.bodyMedium.copyWith(
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                );
-                              }
-                              final data = snapshot.data;
-                              return _buildRiskGateIndicator(data);
-                            },
-                          ),
-                          height: 170,
-                        ),
-                        if (_canViewAiUsage()) ...[
-                          const SizedBox(height: 32),
-                          _buildGlassChartCard(
-                            'AI Usage',
-                            FutureBuilder<Map<String, dynamic>?>(
-                              key: ValueKey(
-                                  'ai_usage_${_cycleTimeRefreshTick}_${_selectedPeriod}'),
-                              future: _fetchAiUsageAnalytics(),
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return const Center(
-                                      child: CircularProgressIndicator());
-                                }
-                                if (snapshot.hasError) {
-                                  return Center(
-                                    child: Text(
-                                      'Failed to load AI usage analytics.',
-                                      style: PremiumTheme.bodyMedium
-                                          .copyWith(color: Colors.white70),
-                                    ),
-                                  );
-                                }
-                                return _buildAiUsageCard(snapshot.data);
-                              },
-                            ),
-                            height: 360,
-                          ),
-                        ],
-                        const SizedBox(height: 32),
-                        _buildGlassChartCard(
-                          'Collaboration Load',
-                          FutureBuilder<Map<String, dynamic>?>(
-                            key: ValueKey(
-                                'collab_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
-                            future: _fetchCollaborationLoad(),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Center(
-                                    child: CircularProgressIndicator());
-                              }
-                              if (snapshot.hasError) {
-                                return Center(
-                                  child: Text(
-                                    'Failed to load collaboration metrics.',
-                                    style: PremiumTheme.bodyMedium.copyWith(
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                );
-                              }
-                              return _buildCollaborationLoadCard(snapshot.data);
-                            },
-                          ),
-                          height: 360,
-                        ),
-                        const SizedBox(height: 32),
-                        _buildGlassChartCard(
-                          'Client Engagement',
-                          FutureBuilder<Map<String, dynamic>?>(
-                            key: ValueKey(
-                                'engagement_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}'),
-                            future: _fetchClientEngagement(),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Center(
-                                    child: CircularProgressIndicator());
-                              }
-                              if (snapshot.hasError) {
-                                return Center(
-                                  child: Text(
-                                    'Failed to load client engagement.',
-                                    style: PremiumTheme.bodyMedium.copyWith(
-                                      color: Colors.white70,
-                                    ),
-                                  ),
-                                );
-                              }
-                              return _buildClientEngagementCard(snapshot.data);
-                            },
-                          ),
-                          height: 360,
-                        ),
-                        const SizedBox(height: 32),
-                        _buildGlassChartCard(
-                          'Cycle Time Metrics',
-                          _buildCycleTimeContent(null),
-                          height: 320,
-                        ),
-                        const SizedBox(height: 32),
-                        _buildGlassPerformanceTable(analytics.recentProposals),
-                        const SizedBox(height: 32),
-                      ],
+                        );
+                      },
                     ),
                   ),
-                ),
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 32),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: _buildGlassChartCard(
+                      'Proposal Status',
+                      _buildProposalStatusChart(analytics.statusCounts),
+                      height: 320,
+                    ),
+                  ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: _buildGlassChartCard(
+                      'Win Rate',
+                      _buildWinRatePieChart(
+                        analytics.winRate,
+                        analytics.lossRate,
+                      ),
+                      height: 320,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 32),
+              _buildGlassChartCard(
+                'Risk Gate',
+                FutureBuilder<Map<String, dynamic>?>(
+                  key: ValueKey(
+                    'risk_gate_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}',
+                  ),
+                  future: _fetchRiskGateSummary(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          'Failed to load risk gate summary.',
+                          style: PremiumTheme.bodyMedium
+                              .copyWith(color: Colors.white70),
+                        ),
+                      );
+                    }
+                    return _buildRiskGateIndicator(snapshot.data);
+                  },
+                ),
+                height: 170,
+              ),
+              if (_canViewAiUsage()) ...[
+                const SizedBox(height: 32),
+                _buildGlassChartCard(
+                  'AI Usage',
+                  FutureBuilder<Map<String, dynamic>?>(
+                    key: ValueKey(
+                      'ai_usage_${_cycleTimeRefreshTick}_${_selectedPeriod}',
+                    ),
+                    future: _fetchAiUsageAnalytics(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return Center(
+                          child: Text(
+                            'Failed to load AI usage analytics.',
+                            style: PremiumTheme.bodyMedium
+                                .copyWith(color: Colors.white70),
+                          ),
+                        );
+                      }
+                      return _buildAiUsageCard(snapshot.data);
+                    },
+                  ),
+                  height: 360,
+                ),
+              ],
+              const SizedBox(height: 32),
+              _buildGlassChartCard(
+                'Collaboration Load',
+                FutureBuilder<Map<String, dynamic>?>(
+                  key: ValueKey(
+                    'collab_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}',
+                  ),
+                  future: _fetchCollaborationLoad(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          'Failed to load collaboration metrics.',
+                          style: PremiumTheme.bodyMedium
+                              .copyWith(color: Colors.white70),
+                        ),
+                      );
+                    }
+                    return _buildCollaborationLoadCard(snapshot.data);
+                  },
+                ),
+                height: 480,
+              ),
+              const SizedBox(height: 32),
+              _buildGlassChartCard(
+                'Client Engagement',
+                FutureBuilder<Map<String, dynamic>?>(
+                  key: ValueKey(
+                    'engagement_${_cycleTimeRefreshTick}_${_selectedPeriod}_${_globalClientCtrl.text}_${_globalOwnerCtrl.text}_${_globalProposalTypeCtrl.text}_${_globalRegionCtrl.text}',
+                  ),
+                  future: _fetchClientEngagement(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          'Failed to load client engagement.',
+                          style: PremiumTheme.bodyMedium
+                              .copyWith(color: Colors.white70),
+                        ),
+                      );
+                    }
+                    return _buildClientEngagementCard(snapshot.data);
+                  },
+                ),
+                height: 520,
+              ),
+            ],
+          ),
         ),
       ),
+    );
+
+    final body = Row(
+      children: [
+        if (isAdminUser)
+          AdminSidebar(
+            isCollapsed: sidebarCollapsed,
+            currentPage: 'Analytics',
+            onToggle: app.toggleAdminSidebar,
+            onSelect: (label) {
+              app.setAdminNavLabel(label);
+              _navigatePage(label);
+            },
+          )
+        else
+          AppSideNav(
+            isCollapsed: app.isSidebarCollapsed,
+            currentLabel: 'Analytics (My Pipeline)',
+            isAdmin: false,
+            onToggle: app.toggleSidebar,
+            onSelect: _navigatePage,
+          ),
+        Expanded(child: analyticsContent),
+      ],
+    );
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: isAdminUser
+          ? Container(color: Colors.transparent, child: body)
+          : ManagerPageBackground(child: body),
     );
   }
 
@@ -3813,16 +3814,32 @@ class _AnalyticsPageState extends State<AnalyticsPage>
           isAdminUser ? '/admin_approvals' : '/approved_proposals',
         );
         break;
+      case 'Approved Proposals':
+        Navigator.pushReplacementNamed(context, '/approved_proposals');
+        break;
+      case 'Proposals':
+        Navigator.pushReplacementNamed(context, '/proposals');
+        break;
+      case 'Templates':
+        Navigator.pushReplacementNamed(context, '/templates');
+        break;
+      case 'Content Library':
+        Navigator.pushReplacementNamed(context, '/content_library');
+        break;
+      case 'Client Management':
+        Navigator.pushReplacementNamed(context, '/client_management');
+        break;
       case 'Analytics':
+      case 'Analytics (My Pipeline)':
         break; // already on this page
       case 'History':
-        Navigator.pushReplacementNamed(
-          context,
-          '/admin_approvals',
-          arguments: const {'initialFilter': 'approved'},
-        );
+        Navigator.pushReplacementNamed(context, '/admin_history');
+        break;
+      case 'Account Profile':
+        Navigator.pushReplacementNamed(context, '/manager_account_profile');
         break;
       case 'Sign Out':
+      case 'Logout':
         AuthService.logout();
         Navigator.pushNamedAndRemoveUntil(
             context, '/login', (Route<dynamic> route) => false);
@@ -3928,7 +3945,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
               break;
             case 'Analytics':
             case 'Analytics (My Pipeline)':
-              Navigator.pushReplacementNamed(context, '/analytics');
+              Navigator.pushReplacementNamed(
+                context,
+                isAdminUser ? '/admin_analytics' : '/analytics',
+              );
               break;
             default:
               Navigator.pushReplacementNamed(

@@ -4259,14 +4259,13 @@ class _ContentLibraryPageState extends State<ContentLibraryPage>
         );
         break;
       case 'Analytics':
-        Navigator.pushReplacementNamed(context, '/analytics');
-        break;
-      case 'History':
         Navigator.pushReplacementNamed(
           context,
-          '/admin_approvals',
-          arguments: const {'initialFilter': 'approved'},
+          isAdmin ? '/admin_analytics' : '/analytics',
         );
+        break;
+      case 'History':
+        Navigator.pushReplacementNamed(context, '/admin_history');
         break;
       case 'My Proposals':
       case 'Proposals':
