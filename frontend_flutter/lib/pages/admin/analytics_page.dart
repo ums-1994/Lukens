@@ -13,6 +13,7 @@ import '../../api.dart';
 import '../../services/auth_service.dart';
 import '../../theme/manager_theme_controller.dart';
 import '../../theme/premium_theme.dart';
+import '../../utils/proposal_status_vocabulary.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/app_side_nav.dart';
 import '../../widgets/admin/admin_sidebar.dart';
@@ -1881,9 +1882,9 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final List<_ProposalPerformanceRow> performanceRows = [];
 
     for (final proposal in normalized) {
-      final statusRaw = (proposal['status'] ?? 'Draft').toString();
-      final statusLabel = _formatStatusLabel(statusRaw);
-      final statusLower = statusRaw.toLowerCase();
+      final statusRaw = ProposalStatusVocabulary.extractRawStatus(proposal);
+      final statusLower = ProposalStatusVocabulary.normalize(statusRaw);
+      final statusLabel = _formatStatusLabel(statusLower);
       statusCounts[statusLabel] = (statusCounts[statusLabel] ?? 0) + 1;
 
       final budget = _parseBudget(proposal['budget'] ??
@@ -2311,11 +2312,16 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   bool _isWinStatus(String status) {
-    return status.contains('signed') || status.contains('won');
+    final normalized = ProposalStatusVocabulary.normalize(status);
+    final stage = ProposalStatusVocabulary.lifecycleStageFromStatus(normalized);
+    return stage == ProposalLifecycleStage.signed || normalized.contains('won');
   }
 
   bool _isLossStatus(String status) {
-    return status.contains('lost') || status.contains('declined');
+    final normalized = ProposalStatusVocabulary.normalize(status);
+    return normalized.contains('lost') ||
+        normalized.contains('declined') ||
+        normalized.contains('rejected');
   }
 
   bool _isClosedStatus(String status) {
@@ -2323,35 +2329,39 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   double _probabilityForStatus(String status) {
-    if (_isWinStatus(status)) return 1;
-    if (_isLossStatus(status)) return 0;
-    if (status.contains('sent to client')) return 0.8;
-    if (status.contains('pending ceo') || status.contains('in review')) {
-      return 0.6;
+    final normalized = ProposalStatusVocabulary.normalize(status);
+    if (_isWinStatus(normalized)) return 1;
+    if (_isLossStatus(normalized)) return 0;
+
+    final stage = ProposalStatusVocabulary.lifecycleStageFromStatus(normalized);
+    switch (stage) {
+      case ProposalLifecycleStage.released:
+        return 0.8;
+      case ProposalLifecycleStage.inReview:
+        return 0.6;
+      case ProposalLifecycleStage.draft:
+        return 0.3;
+      case ProposalLifecycleStage.signed:
+        return 1;
+      case ProposalLifecycleStage.unknown:
+        return 0.5;
     }
-    if (status.contains('draft')) return 0.3;
-    return 0.5;
   }
 
   Color _statusColor(String status) {
-    if (_isWinStatus(status)) return PremiumTheme.success;
-    if (_isLossStatus(status)) return PremiumTheme.error;
-    if (status.contains('sent to client')) return PremiumTheme.info;
-    if (status.contains('pending') || status.contains('review')) {
-      return PremiumTheme.warning;
-    }
-    return PremiumTheme.orange;
+    final normalized = ProposalStatusVocabulary.normalize(status);
+    if (_isLossStatus(normalized)) return PremiumTheme.error;
+
+    final stage = ProposalStatusVocabulary.lifecycleStageFromStatus(normalized);
+    if (stage == ProposalLifecycleStage.signed) return PremiumTheme.success;
+    return ProposalStatusVocabulary.lifecycleStageColor(stage);
   }
 
   String _formatStatusLabel(String status) {
-    if (status.isEmpty) return 'Draft';
-    final parts = status
-        .replaceAll('_', ' ')
-        .split(' ')
-        .where((part) => part.isNotEmpty)
-        .map((part) => part[0].toUpperCase() + part.substring(1).toLowerCase())
-        .toList();
-    return parts.isEmpty ? 'Draft' : parts.join(' ');
+    final normalized = ProposalStatusVocabulary.normalize(status);
+    if (_isLossStatus(normalized)) return 'Lost';
+    final stage = ProposalStatusVocabulary.lifecycleStageFromStatus(normalized);
+    return ProposalStatusVocabulary.lifecycleStageLabel(stage);
   }
 
   bool _isAdminUser() {
@@ -2365,17 +2375,10 @@ class _AnalyticsPageState extends State<AnalyticsPage>
   }
 
   String? _pipelineStageForStatus(String statusLower) {
-    final s = statusLower.trim();
-    if (s.isEmpty || s.contains('draft')) return 'Draft';
-    if (s.contains('signed') || s.contains('won')) return 'Signed';
-    if (s.contains('sent to client') || s.contains('released'))
-      return 'Released';
-    if (s.contains('review') ||
-        (s.contains('pending') && s.contains('ceo')) ||
-        s.contains('approved')) {
-      return 'In Review';
-    }
-    return null;
+    final normalized = ProposalStatusVocabulary.normalize(statusLower);
+    final stage = ProposalStatusVocabulary.lifecycleStageFromStatus(normalized);
+    if (stage == ProposalLifecycleStage.unknown) return null;
+    return ProposalStatusVocabulary.lifecycleStageLabel(stage);
   }
 
   Map<String, int> _calculatePipelineCounts(List<dynamic> rawProposals) {
@@ -3107,8 +3110,7 @@ class _AnalyticsPageState extends State<AnalyticsPage>
     final statuses = [
       'Draft',
       'In Review',
-      'Pending Ceo Approval',
-      'Sent To Client',
+      'Released',
       'Signed',
       'Lost',
     ];

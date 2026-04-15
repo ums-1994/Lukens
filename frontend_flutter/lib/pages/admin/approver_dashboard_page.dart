@@ -10,6 +10,7 @@ import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../utils/proposal_status_vocabulary.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/admin/admin_sidebar.dart';
 import 'package:intl/intl.dart';
@@ -254,48 +255,23 @@ class _ApproverDashboardPageState extends State<ApproverDashboardPage>
             highRiskCount++;
           }
 
-          dynamic rawStatus(dynamic p) {
-            if (p is! Map) return null;
-            return p['status'] ??
-                p['proposal_status'] ??
-                p['approval_status'] ??
-                p['state'] ??
-                p['stage'];
-          }
+          final status = ProposalStatusVocabulary.normalize(
+            ProposalStatusVocabulary.extractRawStatus(proposal),
+          );
+          final stage = ProposalStatusVocabulary.lifecycleStageFromStatus(status);
 
-          String normalizeStatus(dynamic value) {
-            return (value ?? '')
-                .toString()
-                .trim()
-                .toLowerCase()
-                .replaceAll('_', ' ');
-          }
-
-          final status = normalizeStatus(rawStatus(proposal));
-
-          final isSentToClient = status.contains('released') ||
-              status.contains('release') ||
-              status == 'sent' ||
-              status.contains('sent to client') ||
-              status.contains('client sent') ||
-              status.contains('shared');
+          final isSentToClient = stage == ProposalLifecycleStage.released;
           if (isSentToClient) {
             sentToClientCount++;
           }
 
-          final isClientApproved = status == 'signed' ||
-              status == 'client signed' ||
-              status == 'client approved' ||
-              status == 'approved' ||
-              status == 'completed';
+          final isClientApproved = stage == ProposalLifecycleStage.signed;
           if (isClientApproved) {
             clientApprovedCount++;
           }
 
-          final isApproved = isClientApproved ||
-              isSentToClient ||
-              status.contains('sent for signature') ||
-              status.contains('out for signature');
+          final isApproved =
+              stage == ProposalLifecycleStage.released || stage == ProposalLifecycleStage.signed;
           if (isApproved) {
             final updatedRaw = proposal['updated_at'] ?? proposal['updatedAt'];
             final updatedAt = _parseDate(updatedRaw);

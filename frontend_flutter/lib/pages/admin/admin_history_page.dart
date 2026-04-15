@@ -11,6 +11,7 @@ import '../../api.dart';
 import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../utils/proposal_status_vocabulary.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/admin/admin_sidebar.dart';
 
@@ -303,16 +304,21 @@ class _AdminHistoryPageState extends State<AdminHistoryPage>
   }
 
   String _statusLabel(dynamic statusRaw) {
-    final s = (statusRaw ?? '').toString().replaceAll('_', ' ').trim();
-    if (s.isEmpty) return 'Status updated';
-    return s
-        .split(' ')
-        .map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}')
-        .join(' ');
+    final normalized = ProposalStatusVocabulary.normalize(statusRaw);
+    final stage = ProposalStatusVocabulary.lifecycleStageFromStatus(normalized);
+    if (stage == ProposalLifecycleStage.unknown && normalized.isEmpty) {
+      return 'Status updated';
+    }
+    if (stage == ProposalLifecycleStage.unknown) {
+      return ProposalStatusVocabulary.titleCase(statusRaw, emptyLabel: 'Status updated');
+    }
+    return ProposalStatusVocabulary.lifecycleStageLabel(stage);
   }
 
   AuditEventType _classifyStatus(String statusLower) {
-    if (statusLower.contains('signed') || statusLower.contains('client signed')) {
+    final normalized = ProposalStatusVocabulary.normalize(statusLower);
+    final stage = ProposalStatusVocabulary.lifecycleStageFromStatus(normalized);
+    if (stage == ProposalLifecycleStage.signed) {
       return AuditEventType.clientSigned;
     }
     return AuditEventType.statusUpdated;

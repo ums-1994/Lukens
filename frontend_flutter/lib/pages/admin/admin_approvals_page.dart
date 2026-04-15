@@ -12,6 +12,7 @@ import '../../services/auth_service.dart';
 import '../../services/api_service.dart';
 import '../../services/asset_service.dart';
 import '../../theme/premium_theme.dart';
+import '../../utils/proposal_status_vocabulary.dart';
 import '../../widgets/custom_scrollbar.dart';
 import '../../widgets/admin/admin_sidebar.dart';
 // ignore: avoid_web_libraries_in_flutter
@@ -1771,64 +1772,13 @@ class _AdminApprovalsPageState extends State<AdminApprovalsPage>
   }
 
   String _formatStatusLabel(String rawStatus) {
-    final status = rawStatus.toLowerCase().trim();
-    switch (status) {
-      case 'draft':
-        return 'Draft';
-      case 'pending':
-      case 'pending approval':
-        return 'Request for Change';
-      case 'pending ceo approval':
-        return 'Pending CEO Approval';
-      case 'sent':
-        return 'Sent';
-      case 'sent to client':
-        return 'Sent to Client';
-      case 'approved':
-        return 'Approved';
-      case 'signed':
-        return 'Signed';
-      case 'client signed':
-        return 'Client Signed';
-      case 'completed':
-        return 'Completed';
-      case 'declined':
-        return 'Declined';
-      case 'rejected':
-        return 'Rejected';
-      default:
-        if (status.isEmpty) return '—';
-        return status
-            .split(' ')
-            .where((p) => p.isNotEmpty)
-            .map((p) => p[0].toUpperCase() + p.substring(1))
-            .join(' ');
-    }
+    return ProposalStatusVocabulary.titleCase(rawStatus, emptyLabel: '—');
   }
 
   Color _getStatusColor(String rawStatus) {
-    final status = rawStatus.toLowerCase().trim();
-    switch (status) {
-      case 'draft':
-        return PremiumTheme.purple;
-      case 'pending':
-      case 'pending approval':
-      case 'pending ceo approval':
-        return PremiumTheme.orange;
-      case 'sent':
-      case 'sent to client':
-        return PremiumTheme.pink;
-      case 'approved':
-      case 'signed':
-      case 'client signed':
-      case 'completed':
-        return PremiumTheme.teal;
-      case 'declined':
-      case 'rejected':
-        return PremiumTheme.error;
-      default:
-        return Colors.white70;
-    }
+    final normalized = ProposalStatusVocabulary.normalize(rawStatus);
+    final stage = ProposalStatusVocabulary.lifecycleStageFromStatus(normalized);
+    return ProposalStatusVocabulary.lifecycleStageColor(stage);
   }
 
   Widget _buildStatusChip(String label, Color color) {
